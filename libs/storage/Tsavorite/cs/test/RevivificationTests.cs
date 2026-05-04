@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -336,7 +336,7 @@ namespace Tsavorite.test.Revivification
             for (long keyNum = 0; keyNum < NumRecords; keyNum++)
             {
                 long valueNum = keyNum * ValueMult;
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum));
+                                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref valueNum);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -373,7 +373,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.WaitForRecords(store, want: true);
             }
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(updateKey, updateValue) : bContext.RMW(updateKey, ref updateValueNum);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(updateKey, ref updateValueNum) : bContext.RMW(updateKey, ref updateValueNum);
 
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: false);
@@ -407,7 +407,7 @@ namespace Tsavorite.test.Revivification
                 long valueNum = keyNum + ValueMult;
                 var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 var value = SpanByte.FromPinnedVariable(ref valueNum);
-                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, value) : bContext.RMW(key, ref valueNum);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref valueNum) : bContext.RMW(key, ref valueNum);
             }
 
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
@@ -466,7 +466,7 @@ namespace Tsavorite.test.Revivification
             for (keyNum = NumRecords; keyNum < maxRecord; keyNum++)
             {
                 valueNum = keyNum * ValueMult;
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum));
+                                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref valueNum);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
 
@@ -475,7 +475,7 @@ namespace Tsavorite.test.Revivification
 
             var tailAddress = store.Log.TailAddress;
             valueNum = maxRecord * ValueMult;
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref maxRecord)), SpanByte.FromPinnedVariable(ref valueNum)) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref maxRecord)), ref valueNum);
+                        _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref maxRecord)), ref valueNum) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref maxRecord)), ref valueNum);
 
             ClassicAssert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (recordPtr was not revivified)");
         }
@@ -573,18 +573,20 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, upsertInfo.Address);
-                return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
                 logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, upsertInfo.Address, isIPU: true);
-                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
+                    return false;
+                return true;
             }
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -667,10 +669,10 @@ namespace Tsavorite.test.Revivification
                 base.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 AssertInfoValid(ref upsertInfo);
-                base.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                base.PostInitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
             }
 
             public override void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -699,7 +701,7 @@ namespace Tsavorite.test.Revivification
             public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref PinnedSpanByte input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref PinnedSpanByte input)
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref PinnedSpanByte input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
         }
 
@@ -791,7 +793,7 @@ namespace Tsavorite.test.Revivification
                 key.Fill((byte)ii);
                 input.Fill((byte)ii);
                 functions.expectedValueLengths.Enqueue(pinnedInputSpan.Length);
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 ClassicAssert.IsEmpty(functions.expectedValueLengths);
             }
@@ -830,7 +832,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedValueLengths.Enqueue(GrowLength);
 
             SpanByteAndMemory output = new();
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
 
             ClassicAssert.IsEmpty(functions.expectedValueLengths);
 
@@ -842,7 +844,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedInputLength = input.Length;
                 functions.expectedValueLengths.Enqueue(input.Length);
 
-                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                 ClassicAssert.IsEmpty(functions.expectedValueLengths);
             }
         }
@@ -928,7 +930,7 @@ namespace Tsavorite.test.Revivification
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
@@ -972,7 +974,7 @@ namespace Tsavorite.test.Revivification
             fillByte = 255;
             key.Fill(fillByte);
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref input, input.ReadOnlySpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref input);
 
             // since above would use revivification free list we should see no change of tail address.
             ClassicAssert.AreEqual(store.Log.TailAddress, tailAddress);
@@ -1008,7 +1010,7 @@ namespace Tsavorite.test.Revivification
             // Get a free recordPtr from a failed IPU.
             if (updateOp == UpdateOp.Upsert)
             {
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
@@ -1035,7 +1037,7 @@ namespace Tsavorite.test.Revivification
 
             if (updateOp == UpdateOp.Upsert)
             {
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
@@ -1078,7 +1080,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedInputLength = InitialLength;
             functions.expectedValueLengths.Enqueue(InitialLength);
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
             ClassicAssert.Greater(store.Log.TailAddress, tailAddress);
         }
 
@@ -1197,7 +1199,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedInputLength = InitialLength;
             functions.expectedValueLengths.Enqueue(InitialLength);
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(keyToTest), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(keyToTest), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(keyToTest), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(keyToTest), ref pinnedInputSpan);
 
             if (expectReviv)
                 ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1240,7 +1242,7 @@ namespace Tsavorite.test.Revivification
 
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
             functions.expectedValueLengths.Enqueue(InitialLength);
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
 
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1291,7 +1293,7 @@ namespace Tsavorite.test.Revivification
                 key.Fill(deletedSlots[ii]);
 
                 functions.expectedValueLengths.Enqueue(InitialLength);
-                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                 ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
             }
         }
@@ -1336,7 +1338,7 @@ namespace Tsavorite.test.Revivification
                 input.Fill((byte)ii);
 
                 functions.expectedValueLengths.Enqueue(InitialLength);
-                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                 if (ii < revivifiableKeyCount)
                     ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, $"unexpected new recordPtr for ii {ii}");
                 else
@@ -1493,7 +1495,7 @@ namespace Tsavorite.test.Revivification
                 long tailAddress = store.Log.TailAddress;
 
                 SpanByteAndMemory output = new();
-                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                 output.Memory?.Dispose();
 
                 if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != store.Log.TailAddress)
@@ -1554,7 +1556,7 @@ namespace Tsavorite.test.Revivification
 
                     SpanByteAndMemory output = new();
                     _ = updateOp == UpdateOp.Upsert
-                        ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output)
+                        ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output)
                         : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                     output.Dispose();
                 }
@@ -1592,7 +1594,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedValueLengths.Enqueue(ObjectIdMap.ObjectIdSize);
 
             // Initial insert of the oversize recordPtr
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
 
             // Delete it
             functions.expectedValueLengths.Enqueue(OversizeLength);
@@ -1605,7 +1607,7 @@ namespace Tsavorite.test.Revivification
 
             // Revivify in the chain. Because this is oversize, the expectedFullValueLength remains the same
             functions.expectedValueLengths.Enqueue(OversizeLength);
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output) : bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
 
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1728,7 +1730,8 @@ namespace Tsavorite.test.Revivification
             {
                 var key = new TestObjectKey { key = ii };
                 var valueObj = new TestObjectValue { value = ii + ValueMult };
-                var status = bContext.Upsert(key, valueObj);
+                var __upsertInput = new TestObjectInput { objectValue = valueObj };
+                var status = bContext.Upsert(key, ref __upsertInput);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -1755,7 +1758,8 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: true);
             ClassicAssert.IsTrue(RevivificationTestUtils.HasRecords(store.RevivificationManager.freeRecordPool), "Expected a free recordPtr after delete and WaitForRecords");
 
-            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, value) : bContext.RMW(key, ref input);
+            var __upsertInput2 = new TestObjectInput { objectValue = value };
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref __upsertInput2) : bContext.RMW(key, ref input);
 
             RevivificationTestUtils.WaitForRecords(store, want: false);
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (recordPtr was revivified)");
@@ -1811,16 +1815,18 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 VerifyKey(logRecord);
-                return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                VerifyKeyAndValue(logRecord, srcValue);
-                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
+                VerifyKeyAndValue(logRecord, input.ReadOnlySpan);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -1926,7 +1932,7 @@ namespace Tsavorite.test.Revivification
                 key.Fill((byte)ii);
                 input.Fill((byte)ii);
 
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -2411,7 +2417,7 @@ namespace Tsavorite.test.Revivification
                         input.Fill((byte)kk);
 
                         localSession.functions.expectedKey = TestSpanByteKey.FromPinnedSpan(PinnedSpanByte.FromPinnedSpan(key));
-                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), input) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                         localSession.functions.expectedKey = default;
                     }
 
@@ -2488,7 +2494,7 @@ namespace Tsavorite.test.Revivification
                         input.Fill((byte)kk);
 
                         localSession.functions.expectedKey = TestSpanByteKey.FromPinnedSpan(PinnedSpanByte.FromPinnedSpan(key));
-                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), input) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                         localSession.functions.expectedKey = default;
                     }
 
@@ -2559,7 +2565,7 @@ namespace Tsavorite.test.Revivification
                         input.Fill((byte)ii);
 
                         localSession.functions.expectedKey = TestSpanByteKey.FromPinnedSpan(PinnedSpanByte.FromPinnedSpan(key));
-                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), input) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan) : localbContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan);
                         localSession.functions.expectedKey = default;
                     }
 

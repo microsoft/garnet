@@ -54,6 +54,20 @@ namespace Tsavorite.test.recovery.objects
             return true;
         }
 
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref UpsertInfo upsertInfo)
+            => dstLogRecord.TrySetValueObject(input.numClicks);
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref Input input, ref Output output, ref UpsertInfo upsertInfo)
+        {
+            logRecord.ValueObject = input.numClicks;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref Input input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+
         // RMW functions
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObject(input.numClicks);

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -130,7 +130,8 @@ namespace Tsavorite.test.recovery
                 ref var keyLong = ref keySpan.AsRef<long>();
                 keyLong = key;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
             }
 
             if (readCacheMode == ReadCacheMode.UseRC)
@@ -267,7 +268,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
@@ -368,7 +370,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
 
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
@@ -421,7 +424,9 @@ namespace Tsavorite.test.recovery
             var bc1 = s1.BasicContext;
 
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
+            }
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
             (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
@@ -442,7 +447,9 @@ namespace Tsavorite.test.recovery
             }
 
             for (long key = 1000; key < 2000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
+            }
 
             // Reset store to empty state
             store.Reset();
@@ -491,7 +498,9 @@ namespace Tsavorite.test.recovery
             }
 
             for (long key = 1000; key < 2000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
+            }
 
             for (long key = 0; key < 2000; key++)
             {
@@ -566,7 +575,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
@@ -690,7 +700,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
@@ -801,7 +812,8 @@ namespace Tsavorite.test.recovery
                 ref var keyLong = ref keySpan.AsRef<long>();
                 keyLong = key;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
             }
 
             if (useReadCache)
@@ -966,7 +978,8 @@ namespace Tsavorite.test.recovery
                 ref var keyLong = ref keySpan.AsRef<long>();
                 keyLong = key;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
             }
 
             var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
@@ -981,7 +994,8 @@ namespace Tsavorite.test.recovery
                 keyLong = key;
                 valueLong = key + 1;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref valueLong);
             }
 
             var version1 = store1.CurrentVersion;
@@ -1000,7 +1014,8 @@ namespace Tsavorite.test.recovery
                 keyLong = key;
                 valueLong = key + 1;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref valueLong);
             }
 
             var version2 = store1.CurrentVersion;
@@ -1119,7 +1134,8 @@ namespace Tsavorite.test.recovery
             public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                _ = bc2.Upsert(TestSpanByteKey.FromPinnedSpan(logRecord.Key), logRecord.ValueSpan);
+                long __val = System.Runtime.InteropServices.MemoryMarshal.Read<long>(logRecord.ValueSpan);
+                _ = bc2.Upsert(TestSpanByteKey.FromPinnedSpan(logRecord.Key), ref __val);
                 return true;
             }
 
@@ -1171,7 +1187,8 @@ namespace Tsavorite.test.recovery
                 // If reInsert, we insert the wrong value during the first pass for the first 500 keys
                 valueLong = reInsert && key < 500 ? key + 1 : key;
 
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
+                // TODO: Manual review needed for InputStruct Upsert
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref valueLong);
             }
 
             if (reInsert)
@@ -1183,7 +1200,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
                 for (long key = 800; key < 1000; key++)
                 {
@@ -1191,7 +1209,8 @@ namespace Tsavorite.test.recovery
                     ref var keyLong = ref keySpan.AsRef<long>();
                     keyLong = key;
 
-                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    // TODO: Manual review needed for InputStruct Upsert
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), ref keyLong);
                 }
             }
 

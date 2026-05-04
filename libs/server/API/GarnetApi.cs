@@ -113,20 +113,6 @@ namespace Garnet.server
         public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
             => storageSession.SET(key, value, ref stringContext);
 
-        /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, IGarnetObject value)
-            => storageSession.SET(key, value, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(in srcLogRecord, ref unifiedContext);
-
-        /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(key, ref input, in srcLogRecord, ref unifiedContext);
-
         #endregion
 
         #region SETEX

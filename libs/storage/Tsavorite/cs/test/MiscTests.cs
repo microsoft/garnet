@@ -72,7 +72,7 @@ namespace Tsavorite.test
                 var output = default(OutputStruct);
 
                 var upsertOptions = new UpsertOptions();
-                var status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
+                var status = bContext.Upsert(key, ref input, ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // InPlaceWriter and InPlaceUpater return false, so we create a new record.
@@ -80,7 +80,7 @@ namespace Tsavorite.test
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 if (updateOp == UpdateOp.Upsert)
                 {
-                    status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out recordMetadata2);
+                    status = bContext.Upsert(key, ref input, ref output, ref upsertOptions, out recordMetadata2);
                     ClassicAssert.AreEqual(1, copyOnWrite.InPlaceWriterCallCount);
                     ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }

@@ -518,188 +518,47 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            TInput input = default;
-            TOutput output = default;
-            return Upsert(key, clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
-        {
-            TInput input = default;
-            TOutput output = default;
-            return Upsert(key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(key, clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(TKey key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out _, userContext, sessionFunctions);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, IHeapObject desiredValue, TContext userContext = default)
-        {
-            TInput input = default;
-            TOutput output = default;
-            return Upsert(key, clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
-        {
-            TInput input = default;
-            TOutput output = default;
-            return Upsert(key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(key, clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(TKey key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return clientSession.store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out _, userContext, sessionFunctions);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return clientSession.store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => Upsert(diskLogRecord, in diskLogRecord);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            TInput input = default;
-            TOutput output = default;
             UpsertOptions upsertOptions = default;
-            return Upsert(key, ref input, in diskLogRecord, ref output, ref upsertOptions);
+            return Upsert(key, ref input, ref output, ref upsertOptions, out _, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            TOutput output = default;
-            UpsertOptions upsertOptions = default;
-            return Upsert(key, ref input, in diskLogRecord, ref output, ref upsertOptions);
-        }
+        public Status Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            => Upsert(key, ref input, ref output, ref upsertOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TSourceLogRecord : ISourceLogRecord
-            => Upsert(inputLogRecord, ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
+        public Status Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextUpsert(key, keyHash, ref input, inputLogRecord: in inputLogRecord, ref output, out _, userContext, sessionFunctions);
+                return clientSession.store.ContextUpsert(key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
                 clientSession.UnsafeSuspendThread();
             }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(TKey key, ref TInput input, TContext userContext = default)
+        {
+            TOutput output = default;
+            return Upsert(key, ref input, ref output, userContext);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(TKey key, ref TInput input, ref UpsertOptions upsertOptions, TContext userContext = default)
+        {
+            TOutput output = default;
+            return Upsert(key, ref input, ref output, ref upsertOptions, userContext);
         }
 
         /// <inheritdoc/>

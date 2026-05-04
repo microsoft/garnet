@@ -107,6 +107,8 @@ namespace Garnet.server
         internal ConsistentReadGarnetApi consistentReadGarnetApi;
         internal TransactionalConsistentReadGarnetApi txnConsistentReadApi;
         internal ReadSessionState readSessionState;
+        internal LogRecordGarnetApi logRecordGarnetApi;
+        internal HeapObjectUpsertGarnetApi heapObjectUpsertGarnetApi;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -300,7 +302,7 @@ namespace Garnet.server
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             var cp = clusterProvider ?? storeWrapper.clusterProvider;
-            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, logRecordGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
@@ -1687,6 +1689,8 @@ namespace Garnet.server
             this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
             this.consistentReadGarnetApi = dbSession.ConsistentGarnetApi;
             this.txnConsistentReadApi = dbSession.TransactionalConsistentGarnetApi;
+            this.logRecordGarnetApi = new LogRecordGarnetApi(dbSession.StorageSession, dbSession.StorageSession.logRecordBasicContext);
+            this.heapObjectUpsertGarnetApi = new HeapObjectUpsertGarnetApi(dbSession.StorageSession, dbSession.StorageSession.heapObjectBasicContext);
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
 

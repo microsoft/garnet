@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using Allure.NUnit;
 using Garnet.test;
@@ -37,7 +36,7 @@ namespace Tsavorite.test
 
             internal PostFunctions() : base() { }
 
-            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref UpsertInfo upsertInfo)
                 => pswAddress = upsertInfo.Address;
 
             public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
@@ -126,7 +125,7 @@ namespace Tsavorite.test
                 if ((expectedAddress % store.hlogBase.PageSize) == 0)
                     expectedAddress += PageHeader.Size;
                 var value = key * 100;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                 ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
@@ -152,7 +151,7 @@ namespace Tsavorite.test
             // Execute the ReadOnly (InternalInsert) test
             store.Log.FlushAndEvict(wait: true);
             int key = TargetKey, value = TargetKey * 100;
-            _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+            _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             _ = bContext.CompletePending(wait: true);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
         }

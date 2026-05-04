@@ -47,6 +47,19 @@ namespace Tsavorite.test
             return true;
         }
 
-        // Upsert functions are unchanged from SessionFunctionsBase
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref int[] output, ref UpsertInfo upsertInfo)
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref int[] output, ref UpsertInfo upsertInfo)
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+            return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
+        }
+
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref PinnedSpanByte input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
     }
 }

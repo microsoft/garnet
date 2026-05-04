@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -384,7 +384,8 @@ namespace Tsavorite.test.recovery.sumstore
                 for (int j = 0; j < len; j++)
                     valueSpan[j] = i;
 
-                _ = bContext.Upsert(key, VLVector.FromPinnedSpan(valueSpan), Empty.Default);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(VLVector.FromPinnedSpan(valueSpan));
+                _ = bContext.Upsert(key, ref __upsertInput, Empty.Default);
             }
             _ = bContext.CompletePending(true);
         }
@@ -398,7 +399,8 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 var key = new TestObjectKey { key = i % (int)DeviceTypeRecoveryTests.NumUniqueKeys };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             _ = bContext.CompletePending(true);
         }

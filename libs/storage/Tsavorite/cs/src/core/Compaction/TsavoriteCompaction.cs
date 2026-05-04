@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 namespace Tsavorite.core
@@ -35,7 +35,7 @@ namespace Tsavorite.core
             if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
-            using var storeSession = NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
+            using var storeSession = NewSession<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>>(new());
             var storebContext = storeSession.BasicContext;
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
@@ -74,7 +74,7 @@ namespace Tsavorite.core
 
             var originalUntilAddress = untilAddress;
 
-            using var storeSession = NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
+            using var storeSession = NewSession<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>>(new());
             var storebContext = storeSession.BasicContext;
 
             var tempKVSettings = new KVSettings(baseDir: null, loggerFactory: loggerFactory)
@@ -85,7 +85,7 @@ namespace Tsavorite.core
             };
 
             using (var tempKv = new TsavoriteKV<TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))
-            using (var tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new()))
+            using (var tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>>(new()))
             {
                 var tempbContext = tempKvSession.BasicContext;
                 using (var iter1 = Log.Scan(hlogBase.BeginAddress, untilAddress))
@@ -96,8 +96,8 @@ namespace Tsavorite.core
                             _ = tempbContext.Delete(iter1);
                         else
                         {
-                            var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
-                            _ = tempbContext.Upsert(in iterLogRecord);
+                            var logRecordInput = new LogRecordInput<ITsavoriteScanIterator> { SourceRecord = iter1 };
+                            _ = tempbContext.Upsert(iter1, ref logRecordInput);
                         }
                     }
                     // Ensure address is at record boundary

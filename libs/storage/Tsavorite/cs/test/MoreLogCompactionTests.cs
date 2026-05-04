@@ -64,7 +64,7 @@ namespace Tsavorite.test
             {
                 if (key == 1010)
                     compactUntil = store.Log.TailAddress;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
             }
 
             for (long key = 0; key < totalRecords / 2; key++)

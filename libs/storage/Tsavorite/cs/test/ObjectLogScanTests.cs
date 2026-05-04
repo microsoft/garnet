@@ -142,7 +142,8 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(_key, _value, Empty.Default);
+                var __upsertInput = new TestObjectInput { objectValue = _value };
+                _ = bContext.Upsert(_key, ref __upsertInput, Empty.Default);
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
@@ -235,7 +236,8 @@ namespace Tsavorite.test
                 }
                 var key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key, value, Empty.Default);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key, ref __upsertInput, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -265,10 +267,10 @@ namespace Tsavorite.test
             // Right now this is unused but helped with debugging so I'm keeping it around.
             internal long insertedAddress;
 
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 insertedAddress = upsertInfo.Address;
-                return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
             }
         }
 
@@ -306,7 +308,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
 
                 if (recordSize == 0)
                 {
@@ -352,7 +355,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i + TotalRecords };
                 var value = new TestObjectValue { value = i + TotalRecords };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             scanCursorFuncs.Initialize(verifyKeys);
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
@@ -415,7 +419,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();

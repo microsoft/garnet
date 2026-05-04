@@ -66,12 +66,13 @@ namespace BenchmarkDotNetTests
             long keyNum = 0, valueNum = 0;
             Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
             Span<byte> value = SpanByte.FromPinnedVariable(ref valueNum);
+            var input = PinnedSpanByte.FromPinnedSpan(value);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
                 keyNum = ii;
                 valueNum = ii + NumRecords;
-                _ = bContext.Upsert(new SpanByteKey(key), value);
+                _ = bContext.Upsert(new SpanByteKey(key), ref input);
             }
 
             if (FlushAndEvict)

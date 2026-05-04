@@ -18,62 +18,14 @@ namespace Tsavorite.core
             => true;
 
         /// <inheritdoc/>
-        public virtual bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(key: logRecord, srcValue, ref input) };
-            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-            return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
-        }
+        public virtual bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
+            => throw new NotImplementedException("InPlaceWriter requires knowledge of TInput to extract the value");
 
         /// <inheritdoc/>
-        public virtual bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(key: logRecord, srcValue, ref input) };
-            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
-        }
+        public virtual bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
+            => throw new NotImplementedException("InitialWriter requires knowledge of TInput to extract the value");
 
-        public virtual bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            // This includes ETag and Expiration
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(key: dstLogRecord, inputLogRecord, ref input) };
-            dstLogRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-            return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-        }
-
-        /// <inheritdoc/>
-        public virtual bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
-        }
-
-        /// <inheritdoc/>
-        public virtual bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
-        }
-
-        /// <inheritdoc/>
-        public virtual bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            // This includes ETag and Expiration
-            return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-        }
-
-        public virtual void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TEpochAccessor : IEpochAccessor
-        { }
-        public virtual void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public virtual void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -82,13 +34,7 @@ namespace Tsavorite.core
         { }
 
         /// <inheritdoc/>
-        public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }
-        /// <inheritdoc/>
-        public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }
-        /// <inheritdoc/>
-        public virtual void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        { }
+        public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo) { }
 
         /// <inheritdoc/>
         public virtual bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
@@ -163,30 +109,12 @@ namespace Tsavorite.core
 #endif
             => throw new NotImplementedException("GetRMWInitialFieldInfo requires knowledge of TInput");
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInput input)
+        public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TInput input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
-        /// <inheritdoc/>
-        public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        /// <inheritdoc/>
-        public virtual RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
+            => throw new NotImplementedException("GetUpsertFieldInfo requires knowledge of TInput");
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }

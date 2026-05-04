@@ -123,7 +123,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -131,7 +132,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = 2 * i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -139,7 +141,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -147,7 +150,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -162,7 +166,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = 3 * i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -198,7 +203,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput);
             }
 
             scanAndVerify(42, useScan: true);
@@ -246,7 +252,8 @@ namespace Tsavorite.test
                 {
                     var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = (tid + 1) * i };
-                    var status = localBContext.Upsert(key1, value);
+                    var __upsertInput = new TestObjectInput { objectValue = value };
+                    var status = localBContext.Upsert(key1, ref __upsertInput);
                     Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
             }
@@ -256,7 +263,8 @@ namespace Tsavorite.test
                 {
                     var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = i + 340000 };
-                    var status = bContext.Upsert(key1, value);
+                    var __upsertInput = new TestObjectInput { objectValue = value };
+                    var status = bContext.Upsert(key1, ref __upsertInput);
                     Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
             }
@@ -352,11 +360,13 @@ namespace Tsavorite.test
             var value = MemoryMarshal.AsBytes(valueSpan);
 
             // Insert all
+            PinnedSpanByte __upsertInput;
             for (var Key = 0; Key < Count; Key++)
             {
                 keySpan[0] = Key;
                 valueSpan[0] = Key;
-                _ = ReadAddSession.BasicContext.Upsert(key, value);
+                __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = ReadAddSession.BasicContext.Upsert(key, ref __upsertInput);
             }
 
             // Delete all
@@ -371,7 +381,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = Key;
                 valueSpan[0] = Key;
-                _ = ReadAddSession.BasicContext.Upsert(key, value);
+                __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = ReadAddSession.BasicContext.Upsert(key, ref __upsertInput);
             }
 
             var ScanIteratorFunctions = new InsDelIns_ScanIteratorFunctions();

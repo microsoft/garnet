@@ -379,7 +379,7 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref StringInput input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -389,7 +389,7 @@ namespace Garnet.server
             var fieldInfo = new RecordFieldInfo()
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = value.Length,
+                ValueSize = input.parseState.GetArgSliceByRef(0).Length,
                 HasETag = false
             };
 
@@ -402,25 +402,6 @@ namespace Garnet.server
                     break;
             }
             return fieldInfo;
-        }
-
-        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            => throw new GarnetException("String store should not be called with IHeapObject");
-
-        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            if (inputLogRecord.Info.ValueIsObject)
-                throw new GarnetException("String store should not be called with IHeapObject");
-            return inputLogRecord.GetRecordFieldInfo();
         }
     }
 }

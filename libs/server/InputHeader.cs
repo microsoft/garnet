@@ -190,6 +190,11 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
+        /// Garnet object for direct object upsert operations
+        /// </summary>
+        public IGarnetObject garnetObject;
+
+        /// <summary>
         /// Create a new instance of ObjectInput
         /// </summary>
         /// <param name="header">Input header</param>
@@ -332,6 +337,20 @@ namespace Garnet.server
         public StringInput(ushort cmd, byte flags = 0, long arg1 = 0)
             : this((RespCommand)cmd, (RespInputFlags)flags, arg1)
         {
+        }
+
+        /// <summary>
+        /// Constructor for simple SET with a value
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="value">Value to set</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, PinnedSpanByte value, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
+        {
+            parseState.InitializeWithArgument(value);
         }
 
         /// <summary>
@@ -625,6 +644,11 @@ namespace Garnet.server
         public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
 
         public int? MaxMigrationHeapAllocationSize { get; set; }
+
+        /// <summary>
+        /// Value data for upsert operations
+        /// </summary>
+        public PinnedSpanByte value;
 
         public VectorInput()
         {

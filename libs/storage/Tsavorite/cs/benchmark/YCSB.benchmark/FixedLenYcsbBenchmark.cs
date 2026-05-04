@@ -139,8 +139,6 @@ namespace Tsavorite.benchmark
             var sw = Stopwatch.StartNew();
 
             FixedLengthKey key = default;
-            FixedLengthValue valueStruct = default;
-            Span<byte> value = valueStruct.AsSpan();
             Input input = default;
             Output output = default;
 
@@ -183,7 +181,7 @@ namespace Tsavorite.benchmark
                         }
                         if (r < upsertPercent)
                         {
-                            _ = uContext.Upsert(key, value, Empty.Default);
+                            _ = uContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                             ++writes_done;
                             continue;
                         }
@@ -195,7 +193,7 @@ namespace Tsavorite.benchmark
                         }
                         _ = uContext.Delete(key, Empty.Default);
                         if (di)
-                            uContext.Upsert(key, value, Empty.Default);
+                            uContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                         ++deletes_done;
                     }
                 }
@@ -229,8 +227,6 @@ namespace Tsavorite.benchmark
             var sw = Stopwatch.StartNew();
 
             FixedLengthKey key = default;
-            FixedLengthValue valueStruct = default;
-            Span<byte> value = valueStruct.AsSpan();
             Input input = default;
             Output output = default;
 
@@ -267,7 +263,7 @@ namespace Tsavorite.benchmark
                     }
                     if (r < upsertPercent)
                     {
-                        _ = bContext.Upsert(key, value, Empty.Default);
+                        _ = bContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                         ++writes_done;
                         continue;
                     }
@@ -279,7 +275,7 @@ namespace Tsavorite.benchmark
                     }
                     _ = bContext.Delete(key, Empty.Default);
                     if (di)
-                        bContext.Upsert(key, value, Empty.Default);
+                        bContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                     ++deletes_done;
                 }
             }
@@ -419,8 +415,6 @@ namespace Tsavorite.benchmark
             uContext.BeginUnsafe();
 
             FixedLengthKey key = default;
-            FixedLengthValue valueStruct = default;
-            Span<byte> value = valueStruct.AsSpan();
 
             try
             {
@@ -438,7 +432,7 @@ namespace Tsavorite.benchmark
                         }
 
                         key = txn_keys_[idx];         // Copy locally for SpanByte backing
-                        _ = uContext.Upsert(key, value, Empty.Default);
+                        _ = uContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                     }
                 }
                 _ = uContext.CompletePending(true);
@@ -465,8 +459,6 @@ namespace Tsavorite.benchmark
             var bContext = session.BasicContext;
 
             FixedLengthKey key = default;
-            FixedLengthValue valueStruct = default;
-            Span<byte> value = valueStruct.AsSpan();
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -482,7 +474,7 @@ namespace Tsavorite.benchmark
                     }
 
                     key = txn_keys_[idx];         // Copy locally for SpanByte backing
-                    _ = bContext.Upsert(key, value, Empty.Default);
+                    _ = bContext.Upsert(key, ref input_[idx & 0x7], Empty.Default);
                 }
             }
 

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using Allure.NUnit;
 using Garnet.test;
@@ -41,22 +40,22 @@ namespace Tsavorite.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ref int output, ref UpsertInfo upsertInfo)
             {
                 RecordSizeInfo sizeInfo = new();    // unused by InitialWriter
-                return InitialWriter(ref logRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
+                return InitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
             }
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastWriteAddress = upsertInfo.Address;
                 ref var value = ref logRecord.ValueSpan.AsRef<int>();
-                value = output = src.AsRef<int>() * input;
+                value = output = logRecord.Key.AsRef<int>() * input;
                 return true;
             }
             /// <inheritdoc/>
-            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref UpsertInfo upsertInfo)
             {
                 ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
                 ref var value = ref dstLogRecord.ValueSpan.AsRef<int>();
@@ -92,6 +91,9 @@ namespace Tsavorite.test.InputOutputParameterTests
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(int), ValueIsObject = false };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref int input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int), ValueIsObject = false };
         }
 
@@ -146,7 +148,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                     var upsertOptions = new UpsertOptions();
                     status = useRMW
                         ? bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, out var recordMetadata)
-                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, SpanByte.FromPinnedVariable(ref key), ref output, ref upsertOptions, out recordMetadata);
+                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, ref upsertOptions, out recordMetadata);
                     if (loading)
                     {
                         if (useRMW)

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -43,54 +42,31 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref ObjectInput input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
         {
             // We know namespaces aren't present in object functions, so don't populate
+            if (input.garnetObject != null)
+            {
+                return new RecordFieldInfo()
+                {
+                    KeySize = key.KeyBytes.Length,
+                    ValueSize = ObjectIdMap.ObjectIdSize,
+                    ValueIsObject = true,
+                    HasETag = false,
+                    HasExpiration = input.arg1 != 0
+                };
+            }
             return new RecordFieldInfo()
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = value.Length,
+                ValueSize = input.parseState.GetArgSliceByRef(0).Length,
                 ValueIsObject = false,
-                HasETag = false
-                // No object commands take an Expiration for Upsert.
-            };
-        }
-
-        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref ObjectInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-        {
-            // We know namespaces aren't present in object functions, so don't populate
-            return new RecordFieldInfo()
-            {
-                KeySize = key.KeyBytes.Length,
-                ValueSize = ObjectIdMap.ObjectIdSize,
-                ValueIsObject = true,
-                HasETag = false
-                // No object commands take an Expiration for Upsert.
-            };
-        }
-
-        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref ObjectInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            return new RecordFieldInfo()
-            {
-                KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = true,
-                HasETag = false
-                // No object commands take an Expiration for Upsert.
+                HasETag = false,
+                HasExpiration = input.arg1 != 0
             };
         }
     }

@@ -83,6 +83,7 @@ namespace Tsavorite.test
     public struct TestObjectInput
     {
         public int value;
+        public IHeapObject objectValue;
 
         public TestValueStyle wantValueStyle;
 
@@ -118,11 +119,11 @@ namespace Tsavorite.test
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
             logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-            if (!logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
+            if (!logRecord.TrySetValueObjectAndPrepareOptionals(input.objectValue, in sizeInfo))
                 return false;
             output.value = (TestObjectValue)logRecord.ValueObject;
             return true;
@@ -147,17 +148,17 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            // (for debugging specific failures) Assert.That(((TestObjectValue)srcValue).value, Is.EqualTo(logRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {upsertInfo.Address}");
-            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+            // (for debugging specific failures) Assert.That(((TestObjectValue)input.objectValue).value, Is.EqualTo(logRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {upsertInfo.Address}");
+            return logRecord.TrySetValueObjectAndPrepareOptionals(input.objectValue, in sizeInfo);
         }
 
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TestObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
@@ -177,11 +178,11 @@ namespace Tsavorite.test
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
             logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+            return logRecord.TrySetValueObjectAndPrepareOptionals(input.objectValue, in sizeInfo);
         }
 
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
@@ -214,14 +215,14 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            => logRecord.TrySetValueObjectAndPrepareOptionals(input.objectValue, in sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TestObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
@@ -269,6 +270,7 @@ namespace Tsavorite.test
     public struct TestLargeObjectInput
     {
         public int value;
+        public IHeapObject objectValue;
         public TestValueStyle wantValueStyle;
         public int expectedSpanLength;
 
@@ -316,22 +318,48 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
             Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
-            if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
-                return false;
-            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+
+            // We do overflow value testing as well as object, so need to be aware when that is requested.
+            var objectValue = (TestLargeObjectValue)input.objectValue;
+            switch (input.wantValueStyle)
+            {
+                case TestValueStyle.None:
+                case TestValueStyle.Object:
+                    if (!logRecord.TrySetValueObject(input.objectValue)) // We should always be non-inline
+                        return false;
+                    output.valueObject = logRecord.Info.ValueIsObject ? objectValue : default;
+                    return true;
+                case TestValueStyle.Inline:
+                case TestValueStyle.Overflow:
+                    var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+                    logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                    return logRecord.TrySetValueSpanAndPrepareOptionals(objectValue.value, in sizeInfo);
+            }
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
             Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
-            if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
-                return false;
-            if (output is not null)
-                output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+
+            // We do overflow value testing as well as object, so need to be aware when that is requested.
+            var objectValue = (TestLargeObjectValue)input.objectValue;
+            switch (input.wantValueStyle)
+            {
+                case TestValueStyle.None:
+                case TestValueStyle.Object:
+                    if (!logRecord.TrySetValueObject(input.objectValue)) // We should always be non-inline
+                        return false;
+                    if (output is not null)
+                        output.valueObject = logRecord.Info.ValueIsObject ? objectValue : default;
+                    return true;
+                case TestValueStyle.Inline:
+                case TestValueStyle.Overflow:
+                    return logRecord.TrySetValueSpanAndPrepareOptionals(objectValue.value, in sizeInfo);
+            }
             return true;
         }
 
@@ -339,17 +367,20 @@ namespace Tsavorite.test
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestLargeObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestLargeObjectInput input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TestLargeObjectInput input)
-            => new()
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TestLargeObjectInput input)
+        {
+            // We do overflow value testing as well as object, so need to be aware when that is requested.
+            var objectValue = (TestLargeObjectValue)input.objectValue;
+            switch (input.wantValueStyle)
             {
-                KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = inputLogRecord.Info.HasETag,
-                HasExpiration = inputLogRecord.Info.HasExpiration
-            };
+                case TestValueStyle.Inline:
+                case TestValueStyle.Overflow:
+                    return new() { KeySize = key.KeyBytes.Length, ValueSize = objectValue.value.Length, ValueIsObject = false };
+                default:
+                    return new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            }
+
+        }
     }
 
     public class TestMultiListObjectValue : HeapObjectBase
@@ -426,6 +457,7 @@ namespace Tsavorite.test
     {
         public int objectIndex, listIndex, itemIndex;
         public long updateValue;
+        public IHeapObject objectValue;
 
         public readonly long ExpectedOutputValue => TestMultiListObjectValue.CreateValue(objectIndex, listIndex, itemIndex);
 
@@ -454,7 +486,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestMultiListObjectInput input, IHeapObject srcValue, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestMultiListObjectInput input, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
         {
             output.valueObject = (TestMultiListObjectValue)logRecord.ValueObject;
             output.oldValue = output.valueObject.lists[input.listIndex][input.itemIndex];
@@ -463,12 +495,12 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestMultiListObjectInput input, IHeapObject srcValue, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestMultiListObjectInput input, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
         {
-            if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
+            if (!logRecord.TrySetValueObject(input.objectValue)) // We should always be non-inline
                 return false;
             if (output is not null)
-                output.valueObject = (TestMultiListObjectValue)srcValue;
+                output.valueObject = (TestMultiListObjectValue)input.objectValue;
             return true;
         }
 
@@ -476,16 +508,7 @@ namespace Tsavorite.test
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestMultiListObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestMultiListObjectInput input)
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TestMultiListObjectInput input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TestMultiListObjectInput input)
-            => new()
-            {
-                KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = inputLogRecord.Info.HasETag,
-                HasExpiration = inputLogRecord.Info.HasExpiration
-            };
     }
 }

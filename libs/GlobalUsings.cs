@@ -185,4 +185,40 @@ global using VectorTransactionalContext = Tsavorite.core.TransactionalContext<
     Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
 
+global using LogRecordBasicContext = Tsavorite.core.BasicContext<
+    Garnet.common.FixedSpanByteKey,
+    Tsavorite.core.LogRecordInput<Tsavorite.core.ISourceLogRecord>,
+    Tsavorite.core.Empty,
+    Tsavorite.core.Empty,
+    Garnet.server.LogRecordSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
+
+global using LogRecordTransactionalContext = Tsavorite.core.TransactionalContext<
+    Garnet.common.FixedSpanByteKey,
+    Tsavorite.core.LogRecordInput<Tsavorite.core.ISourceLogRecord>,
+    Tsavorite.core.Empty,
+    Tsavorite.core.Empty,
+    Garnet.server.LogRecordSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
+
+global using HeapObjectBasicContext = Tsavorite.core.BasicContext<
+    Garnet.common.FixedSpanByteKey,
+    Garnet.server.HeapObjectInput,
+    Tsavorite.core.Empty,
+    Tsavorite.core.Empty,
+    Garnet.server.HeapObjectUpsertSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
+
+global using HeapObjectTransactionalContext = Tsavorite.core.TransactionalContext<
+    Garnet.common.FixedSpanByteKey,
+    Garnet.server.HeapObjectInput,
+    Tsavorite.core.Empty,
+    Tsavorite.core.Empty,
+    Garnet.server.HeapObjectUpsertSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
+
 #endif

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -54,7 +54,8 @@ namespace Tsavorite.test.LargeObjects
                 {
                     var mykey = new TestObjectKey { key = key };
                     var value = new TestLargeObjectValue(rngMode == RandomMode.Rng ? 1 + rng.Next(numItems) : numItems);
-                    _ = bContext.Upsert(mykey, value, Empty.Default);
+                    var __upsertInput = new TestLargeObjectInput { objectValue = value };
+                    _ = bContext.Upsert(mykey, ref __upsertInput, Empty.Default);
                 }
 
                 // Validate read before checkpoint
@@ -143,7 +144,8 @@ namespace Tsavorite.test.LargeObjects
                 {
                     var mykey = new TestObjectKey { key = key };
                     var value = new TestMultiListObjectValue(key, numLists, numItems, rngMode == RandomMode.Rng ? rng : null);
-                    _ = bContext.Upsert(mykey, value, Empty.Default);
+                    var __upsertInput = new TestMultiListObjectInput { objectValue = value };
+                    _ = bContext.Upsert(mykey, ref __upsertInput, Empty.Default);
                 }
 
                 // Validate read before checkpoint

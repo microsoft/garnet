@@ -89,7 +89,8 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -132,7 +133,8 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -140,7 +142,8 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, 0);
             }
 
             store.Log.Flush(true);
@@ -187,7 +190,8 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                var status = bContext.Upsert(key1, value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                var status = bContext.Upsert(key1, ref __upsertInput, 0);
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePending(wait: true);
@@ -253,7 +257,8 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
@@ -300,12 +305,14 @@ namespace Tsavorite.test
             var key = new TestObjectKey { key = 100 };
             var value = new TestObjectValue { value = 20 };
 
-            _ = bContext.Upsert(key, value, 0);
+            var __upsertInput = new TestObjectInput { objectValue = value };
+            _ = bContext.Upsert(key, ref __upsertInput, 0);
 
             store.Log.Flush(true);
 
             value = new TestObjectValue { value = 21 };
-            _ = bContext.Upsert(key, value, 0);
+            __upsertInput = new TestObjectInput { objectValue = value };
+            _ = bContext.Upsert(key, ref __upsertInput, 0);
 
             store.Log.Flush(true);
 

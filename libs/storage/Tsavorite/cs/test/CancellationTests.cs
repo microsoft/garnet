@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using Allure.NUnit;
 using Garnet.test;
@@ -98,7 +97,7 @@ namespace Tsavorite.test.Cancellation
             }
 
             // Upsert functions
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InitialWriter;
                 if (cancelLocation == CancelLocation.InitialWriter)
@@ -106,10 +105,10 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InPlaceWriter;
                 if (cancelLocation == CancelLocation.InPlaceWriter)
@@ -117,9 +116,9 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
                 logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-                return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
             /// <inheritdoc/>
@@ -129,11 +128,8 @@ namespace Tsavorite.test.Cancellation
             public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int) };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref int input)
-                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
-            /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref int input)
-                => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int) };
         }
 
         IDevice log;
@@ -183,7 +179,7 @@ namespace Tsavorite.test.Cancellation
             for (int keyNum = 0; keyNum < NumRecs; keyNum++)
             {
                 var valueNum = keyNum * NumRecs * 10;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref valueNum);
             }
         }
 
@@ -272,7 +268,7 @@ namespace Tsavorite.test.Cancellation
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.InitialWriter;
-            var status = bContext.Upsert(key, value);
+            var status = bContext.Upsert(key, ref valueNum);
             ClassicAssert.IsTrue(status.IsCanceled);
             ClassicAssert.AreEqual(CancelLocation.InitialWriter, functions.lastFunc);
         }
@@ -289,7 +285,7 @@ namespace Tsavorite.test.Cancellation
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.InPlaceWriter;
-            var status = bContext.Upsert(key, value);
+            var status = bContext.Upsert(key, ref valueNum);
             ClassicAssert.IsTrue(status.IsCanceled);
             ClassicAssert.AreEqual(CancelLocation.InPlaceWriter, functions.lastFunc);
         }

@@ -431,7 +431,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
         public ITsavoriteScanIterator Iterate(long untilAddress = -1)
-            => store.Iterate<TInput, TOutput, TContext, TFunctions>(functions, untilAddress);
+            => store.Iterate(untilAddress);
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite, using a temporary TsavoriteKV to ensure uniqueness
@@ -441,7 +441,7 @@ namespace Tsavorite.core
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions
-            => store.Iterate<TInput, TOutput, TContext, TFunctions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
+            => store.Iterate(ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite, using a lookup strategy to ensure uniqueness

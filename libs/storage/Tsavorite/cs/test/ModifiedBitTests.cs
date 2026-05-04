@@ -65,7 +65,7 @@ namespace Tsavorite.test.ModifiedBit
             for (int key = 0; key < NumRecords; key++)
             {
                 var value = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value).IsPending);
             }
         }
 
@@ -154,7 +154,7 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                    status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.RMW:
                     status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
@@ -218,7 +218,7 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                    status = luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.RMW:
                     status = luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
@@ -282,7 +282,7 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = unsafeContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                    status = unsafeContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.RMW:
                     status = unsafeContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
@@ -338,7 +338,7 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = lContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                    status = lContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.RMW:
                     status = lContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);

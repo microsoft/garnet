@@ -100,7 +100,10 @@ namespace Tsavorite.test.ReadCacheTests
             if (recordRegion != RecordRegion.Immutable)
             {
                 for (int keyNum = 0; keyNum < NumKeys; keyNum++)
-                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
+                {
+                    valueVal = keyNum + ValueAdd;
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), ref valueVal);
+                }
                 _ = bContext.CompletePending(true);
                 if (recordRegion == RecordRegion.OnDisk)
                     store.Log.FlushAndEvict(true);
@@ -109,12 +112,18 @@ namespace Tsavorite.test.ReadCacheTests
 
             // Two parts, so we can have some evicted (and bring them into the readcache), and some in immutable (readonly).
             for (int keyNum = 0; keyNum < ImmutableSplitKey; keyNum++)
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
+            {
+                valueVal = keyNum + ValueAdd;
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), ref valueVal);
+            }
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
 
             for (long keyNum = ImmutableSplitKey; keyNum < NumKeys; keyNum++)
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
+            {
+                valueVal = keyNum + ValueAdd;
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), ref valueVal);
+            }
             _ = bContext.CompletePending(true);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
         }
@@ -451,7 +460,8 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 else
                 {
-                    status = bContext.Upsert(key, value.Set(input));
+                    long upsertVal = valueVal + ValueAdd;
+                    status = bContext.Upsert(key, ref upsertVal);
                     ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 }
 
@@ -511,13 +521,15 @@ namespace Tsavorite.test.ReadCacheTests
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
                 keyNum = SpliceInExistingKey;
-                var status = bContext.Upsert(key, value.Set(keyNum + ValueAdd));
+                long upsertVal = keyNum + ValueAdd;
+                var status = bContext.Upsert(key, ref upsertVal);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 keyNum = SpliceInNewKey;
-                var status = bContext.Upsert(key, value.Set(keyNum + ValueAdd));
+                long upsertVal = keyNum + ValueAdd;
+                var status = bContext.Upsert(key, ref upsertVal);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
@@ -767,7 +779,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 long key = ii;
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
                 ClassicAssert.IsFalse(status.IsPending);
                 ClassicAssert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
@@ -852,7 +864,7 @@ namespace Tsavorite.test.ReadCacheTests
                         long key = ii, input = ii + ValueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output)
-                                        : bContext.Upsert(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref input, SpanByte.FromPinnedVariable(ref input), ref output);
+                                        : bContext.Upsert(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -969,20 +981,22 @@ namespace Tsavorite.test.ReadCacheTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
                     return false;
-                srcValue.CopyTo(ref output, memoryPool);
+                input.ReadOnlySpan.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+                if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
                     return false;
-                srcValue.CopyTo(ref output, memoryPool);
+                input.ReadOnlySpan.CopyTo(ref output, memoryPool);
                 return true;
             }
 
@@ -1024,7 +1038,8 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), key);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(key);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref __upsertInput);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             bContext.CompletePending(true);
@@ -1125,7 +1140,7 @@ namespace Tsavorite.test.ReadCacheTests
                         ClassicAssert.IsTrue(BitConverter.TryWriteBytes(input, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(TestSpanByteKey.CopySpan(key), ref pinnedInputSpan, ref output)
-                                        : bContext.Upsert(TestSpanByteKey.CopySpan(key), ref pinnedInputSpan, input, ref output);
+                                        : bContext.Upsert(TestSpanByteKey.CopySpan(key), ref pinnedInputSpan, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)

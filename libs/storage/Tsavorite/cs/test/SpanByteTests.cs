@@ -50,7 +50,8 @@ namespace Tsavorite.test.spanbyte
 
                 fixed (byte* key1Ptr = key1)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key1Ptr, key1.Length), value1);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value1);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key1Ptr, key1.Length), ref __upsertInput);
                     _ = bContext.Read(TestSpanByteKey.FromPointer(key1Ptr, key1.Length), ref input, ref output1);
                 }
 
@@ -63,7 +64,8 @@ namespace Tsavorite.test.spanbyte
 
                 fixed (byte* key2Ptr = key2)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key2Ptr, key2.Length), value2);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value2);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key2Ptr, key2.Length), ref __upsertInput);
                     _ = bContext.Read(TestSpanByteKey.FromPointer(key2Ptr, key2.Length), ref input, ref output2);
                 }
 
@@ -106,7 +108,8 @@ namespace Tsavorite.test.spanbyte
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
                     fixed (byte* keyPtr = key)
                     {
-                        _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                        var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                        _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                     }
                 }
 
@@ -217,7 +220,8 @@ namespace Tsavorite.test.spanbyte
             void Set(long keyValue, Span<byte> valueSpan, int valueLength, byte tag)
             {
                 valueSpan[0] = tag;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyValue)), valueSpan.Slice(0, valueLength), Empty.Default);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(valueSpan.Slice(0, valueLength));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyValue)), ref __upsertInput, Empty.Default);
             }
         }
     }

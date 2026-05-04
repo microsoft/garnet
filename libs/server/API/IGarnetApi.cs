@@ -58,21 +58,6 @@ namespace Garnet.server
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
 
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, IGarnetObject value);
-
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
-
         #endregion
 
         #region SETEX

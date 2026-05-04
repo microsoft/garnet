@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -196,170 +195,53 @@ namespace Tsavorite.core
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default);
+        Status Upsert(TKey key, ref TInput input, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
         /// <param name="output"></param>
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
+        Status Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
         /// <param name="output"></param>
         /// <param name="upsertOptions"></param>
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
+        /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(TKey key, IHeapObject desiredValue, TContext userContext = default);
+        Status Upsert(TKey key, ref TInput input, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
+        /// <param name="input"></param>
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(TKey key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="recordMetadata"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation with a disk log record
-        /// </summary>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record
-        /// </summary>
-        /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record
-        /// </summary>
-        /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
-        /// <param name="input"></param>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record and user-supplied key
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <param name="output"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record and user-supplied key
-        /// </summary>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord;
+        Status Upsert(TKey key, ref TInput input, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// RMW operation

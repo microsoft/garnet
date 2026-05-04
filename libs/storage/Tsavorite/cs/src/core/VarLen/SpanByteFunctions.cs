@@ -30,6 +30,18 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
+
+        /// <inheritdoc/>
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+            return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
+        }
+
+        /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.Length };
         /// <inheritdoc/>
@@ -37,13 +49,9 @@ namespace Tsavorite.core
             // TODO: Namespaces!
             => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref PinnedSpanByte input)
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref PinnedSpanByte input)
             // TODO: Namespaces!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
-        /// <inheritdoc/>
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref PinnedSpanByte input)
-            // TODO: Namespaces!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
 
         /// <inheritdoc />
         public override void ConvertOutputToHeap(ref PinnedSpanByte input, ref SpanByteAndMemory output)

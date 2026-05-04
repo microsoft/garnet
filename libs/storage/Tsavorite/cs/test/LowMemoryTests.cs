@@ -56,7 +56,7 @@ namespace Tsavorite.test.LowMemory
         {
             var bContext1 = s1.BasicContext;
             for (long key = 0; key < NumOps; key++)
-                _ = bContext1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                _ = bContext1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref key);
         }
 
         [Test]

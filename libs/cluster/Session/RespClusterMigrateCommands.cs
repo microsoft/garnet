@@ -183,7 +183,10 @@ namespace Garnet.cluster
                                     // Set if key replace flag is set or key does not exist
                                     var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                                     if (replaceOption || !Exists(keySlice))
-                                        _ = basicGarnetApi.SET(in diskLogRecord);
+                                    {
+                                        var logRecordInput = new LogRecordInput<ISourceLogRecord> { SourceRecord = diskLogRecord, writeToAof = true };
+                                        _ = logRecordGarnetApi.Upsert((FixedSpanByteKey)diskLogRecord.Key, ref logRecordInput);
+                                    }
 
                                     storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                     diskLogRecord.Dispose();

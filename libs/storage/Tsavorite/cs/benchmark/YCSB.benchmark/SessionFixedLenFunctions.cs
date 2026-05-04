@@ -37,40 +37,17 @@ namespace Tsavorite.benchmark
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref UpsertInfo upsertInfo)
         {
-            srcValue.CopyTo(logRecord.ValueSpan);
+            logRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
-
-        public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-            => true; // not used
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref Input input, ref Output output, ref UpsertInfo upsertInfo)
         {
-            srcValue.CopyTo(logRecord.ValueSpan);
+            logRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
-        {
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
-            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(dstLogRecord, inputLogRecord, ref input) };
-            return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
         }
 
         // RMW functions
@@ -125,51 +102,21 @@ namespace Tsavorite.benchmark
 #endif
             => GetFieldInfo();
 
-        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref Input input)
+        /// <summary>Length of value object, when populated by Upsert using given input</summary>
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref Input input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
             => GetFieldInfo();
 
-        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public readonly unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref Input input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            => new() { KeySize = sizeof(FixedLengthKey), ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-
-        /// <summary>Length of value object, when populated by Upsert using given log record and input</summary>
-        public readonly unsafe RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref Input input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-            => throw new NotImplementedException("GetUpsertFieldInfo(TSourceLogRecord)");
-
         static unsafe RecordFieldInfo GetFieldInfo() => new() { KeySize = sizeof(FixedLengthKey), ValueSize = sizeof(FixedLengthValue) };
 
         public readonly void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
 
-        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo) { }
+        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref UpsertInfo upsertInfo) { }
 
-        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo) { }
-
-        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        { }
-
-        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TEpochAccessor : IEpochAccessor
-        { }
-        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct

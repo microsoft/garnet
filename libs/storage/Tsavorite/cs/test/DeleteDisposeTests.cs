@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
@@ -113,7 +113,7 @@ namespace Tsavorite.test
         private void UpsertKey(int key, int value)
         {
             using var s = store.NewSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions>(new SimpleIntSimpleFunctions());
-            _ = s.BasicContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+            _ = s.BasicContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
         }
 
         private static TestSpanByteKey Key(ref int k) => TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref k));
@@ -343,7 +343,8 @@ namespace Tsavorite.test
         private void UpsertObj(int key, int value)
         {
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
-            _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TestObjectValue { value = value }, 0);
+            var __upsertInput = new TestObjectInput { objectValue = new TestObjectValue { value = value } };
+            _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, ref __upsertInput, 0);
         }
 
         #region Delete

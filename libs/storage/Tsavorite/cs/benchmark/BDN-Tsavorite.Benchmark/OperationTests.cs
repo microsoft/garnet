@@ -50,6 +50,7 @@ namespace BenchmarkDotNetTests
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
+            var input = PinnedSpanByte.FromPinnedSpan(valueSpan);
 
             var end = start + NumRecords;
 
@@ -57,7 +58,7 @@ namespace BenchmarkDotNetTests
             {
                 MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
                 MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords;
-                _ = bContext.Upsert(new SpanByteKey(keySpan), valueSpan);
+                _ = bContext.Upsert(new SpanByteKey(keySpan), ref input);
             }
         }
 
@@ -100,12 +101,13 @@ namespace BenchmarkDotNetTests
 
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
             ref var valueLongRef = ref MemoryMarshal.Cast<byte, long>(valueSpan)[0];
+            var input = PinnedSpanByte.FromPinnedSpan(valueSpan);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
                 keyLongRef = ii;
                 valueLongRef = ii + NumRecords * 2;
-                _ = bContext.Upsert(key, valueSpan);
+                _ = bContext.Upsert(key, ref input);
             }
         }
 
@@ -161,18 +163,18 @@ namespace BenchmarkDotNetTests
         // Note: Currently, only the ReadOnlySpan<byte> form of InPlaceWriter value is used here.
 
         /// <inheritdoc/>
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
-            srcValue.CopyTo(logRecord.ValueSpan);
+            input.CopyTo(logRecord.ValueSpan);
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
-            srcValue.CopyTo(dstLogRecord.ValueSpan);
+            input.CopyTo(dstLogRecord.ValueSpan);
             return true;
         }
 

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -42,85 +41,33 @@ namespace Tsavorite.core
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-            => _clientSession.functions.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
+            => _clientSession.functions.InitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-            => _clientSession.functions.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            dstLogRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref dstLogRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
-                return false;
-            logRecord.InfoRef.SetDirtyAndModified();
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo))
-                return false;
-            logRecord.InfoRef.SetDirtyAndModified();
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TOpKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
             where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueSpan, ref upsertInfo, epochAccessor);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
+            => _clientSession.functions.PostUpsertOperation(key, ref input, ref upsertInfo, epochAccessor);
         #endregion Upserts
 
         #region RMWs
@@ -294,29 +241,12 @@ namespace Tsavorite.core
             => _clientSession.functions.GetRMWModifiedFieldInfo(in srcLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, ReadOnlySpan<byte> value, ref TInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, ref TInput input)
             where TOpKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, IHeapObject value, ref TInput input)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.GetUpsertFieldInfo(key, in inputLogRecord, ref input);
+            => _clientSession.functions.GetUpsertFieldInfo(key, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);

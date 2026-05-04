@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -151,7 +151,8 @@ namespace Tsavorite.test.recovery.sumstore
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new AdInput { adId = inputArray[key], numClicks = value };
+                _ = bContext1.Upsert(inputArray[key], ref __upsertInput, Empty.Default);
             }
 
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
@@ -235,7 +236,8 @@ namespace Tsavorite.test.recovery.sumstore
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new AdInput { adId = inputArray[key], numClicks = value };
+                _ = bContext1.Upsert(inputArray[key], ref __upsertInput, Empty.Default);
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -299,7 +301,8 @@ namespace Tsavorite.test.recovery.sumstore
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new AdInput { adId = inputArray[key], numClicks = value };
+                _ = bContext1.Upsert(inputArray[key], ref __upsertInput, Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -364,7 +367,10 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                {
+                    var __upsertInput = new AdInput { adId = inputArray[key], numClicks = value };
+                    _ = bContext1.Upsert(inputArray[key], ref __upsertInput, Empty.Default);
+                }
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
@@ -392,7 +398,8 @@ namespace Tsavorite.test.recovery.sumstore
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
-            status = bContext2.Upsert(inputArray[lastKey], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput2 = new AdInput { adId = inputArray[lastKey], numClicks = value };
+            status = bContext2.Upsert(inputArray[lastKey], ref __upsertInput2, Empty.Default);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
@@ -441,6 +448,20 @@ namespace Tsavorite.test.recovery.sumstore
             output.value = srcLogRecord.ValueSpan.AsRef<NumClicks>();
             return true;
         }
+
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref UpsertInfo upsertInfo)
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref AdInput input, ref Output output, ref UpsertInfo upsertInfo)
+        {
+            logRecord.ValueSpan.AsRef<NumClicks>() = input.numClicks;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref AdInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
 
         // RMW functions
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)

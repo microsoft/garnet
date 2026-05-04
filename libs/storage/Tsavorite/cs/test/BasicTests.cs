@@ -94,7 +94,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
@@ -115,7 +116,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -127,7 +129,8 @@ namespace Tsavorite.test
             var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
             var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-            _ = bContext.Upsert(key2, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+            __upsertInput = new InputStruct { ifield1 = value2.vfield1, ifield2 = value2.vfield2 };
+            _ = bContext.Upsert(key2, ref __upsertInput, Empty.Default);
             status = bContext.Read(key2, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
@@ -155,7 +158,8 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
 
             for (var i = 0; i < 10 * count; i++)
@@ -172,7 +176,8 @@ namespace Tsavorite.test
                 var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.NotFound), status);
 
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
 
             for (var i = 0; i < 10 * count; i++)
@@ -204,7 +209,8 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
 
             r = new Random(10);
@@ -259,7 +265,8 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
 
             r = new Random(RandSeed);
@@ -398,7 +405,8 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
             OutputStruct output = default;
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -420,7 +428,8 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
             OutputStruct output = default;
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -445,7 +454,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -467,7 +477,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
 
             var (status, output) = bContext.Read(key1);
             AssertCompleted(new(StatusCode.Found), status);
@@ -495,7 +506,8 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             ReadOptions readOptions = default;
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -544,7 +556,8 @@ namespace Tsavorite.test
             var readAtAddress = store.Log.BeginAddress;
             Status status;
 
-            _ = skipReadCachebContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = skipReadCachebContext.Upsert(key1, ref __upsertInput, Empty.Default);
 
             void VerifyOutput()
             {
@@ -616,7 +629,8 @@ namespace Tsavorite.test
 
             ClassicAssert.AreEqual(0, store.EntryCount);
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value));
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -649,7 +663,7 @@ namespace Tsavorite.test
             long keyNum = 1, valueNum = 1, input = 10, output = 0;
             var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
             var value = SpanByte.FromPinnedVariable(ref valueNum);
-            _ = bContext.Upsert(key, value);
+            _ = bContext.Upsert(key, ref valueNum);
             _ = bContext.Read(key, ref output);
             ClassicAssert.AreEqual(valueNum, output);
             _ = bContext.RMW(key, ref input);
@@ -702,7 +716,7 @@ namespace Tsavorite.test
                 var value = SpanByte.FromPinnedVariable(ref valueNum);
 
                 hashes[keyNum] = store.storeFunctions.GetKeyHashCode64(key);
-                status = bContext.Upsert(key, value);
+                status = bContext.Upsert(key, ref valueNum);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 status = bContext.Read(key, ref output);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
@@ -724,7 +738,7 @@ namespace Tsavorite.test
                     }
                     else
                     {
-                        status = bContext.Upsert(key, value);
+                        status = bContext.Upsert(key, ref valueNum);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     status = bContext.Read(key, ref output);
@@ -747,7 +761,7 @@ namespace Tsavorite.test
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[keyNum] };
-                        status = bContext.Upsert(key, value, ref upsertOptions);
+                        status = bContext.Upsert(key, ref valueNum, ref upsertOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };
@@ -814,7 +828,7 @@ namespace Tsavorite.test
                 var value = SpanByte.FromPinnedVariable(ref valueNum);
 
                 hashes[keyNum] = store.storeFunctions.GetKeyHashCode64(key);
-                status = bContext.Upsert(key, value);
+                status = bContext.Upsert(key, ref valueNum);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 (status, output) = bContext.Read(key);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
@@ -837,8 +851,7 @@ namespace Tsavorite.test
                     }
                     else
                     {
-                        status = bContext.Upsert(key, value);
-                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        status = bContext.Upsert(key, ref valueNum);                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     (status, output) = bContext.Read(key);
                     ClassicAssert.IsTrue(status.Found, status.ToString());
@@ -861,7 +874,7 @@ namespace Tsavorite.test
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[keyNum] };
-                        status = bContext.Upsert(key, value, ref upsertOptions);
+                        status = bContext.Upsert(key, ref valueNum, ref upsertOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -100,14 +100,14 @@ namespace Tsavorite.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo) => false;
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref ValueStruct input, ref Output output, ref UpsertInfo upsertInfo) => false;
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref UpsertInfo upsertInfo)
             {
-                dstLogRecord.ValueSpan.AsRef<ValueStruct>() = src.AsRef<ValueStruct>();
+                dstLogRecord.ValueSpan.AsRef<ValueStruct>() = input;
                 output.address = upsertInfo.Address;
                 output.recordInfo = dstLogRecord.Info;
                 lastWriteAddress = upsertInfo.Address;
@@ -140,8 +140,8 @@ namespace Tsavorite.test.readaddress
             public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref ValueStruct input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ValueStruct input)
-                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref ValueStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
 
             public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -226,7 +226,7 @@ namespace Tsavorite.test.readaddress
 
                     var status = useRMW
                         ? bContext.RMW(key, ref value)
-                        : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref value));
+                        : bContext.Upsert(key, ref value);
 
                     if (status.IsPending)
                         await bContext.CompletePendingAsync().ConfigureAwait(false);

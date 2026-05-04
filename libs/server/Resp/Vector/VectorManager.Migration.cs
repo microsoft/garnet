@@ -55,11 +55,12 @@ namespace Garnet.server
 
             VectorInput input = default;
             input.AlignmentExpected = true;
+            input.value = PinnedSpanByte.FromPinnedSpan(value);
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
             VectorElementKey key = new((byte)namespaceBytes[0], keyWithoutNamespace);
 
-            var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
+            var status = vectorCtx.Upsert(key, ref input, ref outputSpan);
             if (status.IsPending)
             {
                 CompletePending(ref status, ref outputSpan, ref vectorCtx);

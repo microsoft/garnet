@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -113,7 +113,8 @@ namespace Tsavorite.test.recovery.objects
             {
                 var _key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(_key, value);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(_key, ref __upsertInput);
                 if (i > 0 && i % 100 == 0)
                 {
                     _ = store.TryInitiateFullCheckpoint(out _, checkpointType);

@@ -72,7 +72,8 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(_key, _value, 0);
+                var __upsertInput = new TestObjectInput { objectValue = _value };
+                _ = bContext.Upsert(_key, ref __upsertInput, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -127,11 +128,13 @@ namespace Tsavorite.test
         public void DiskDeleteBasicTest2()
         {
             const int totalRecords = 2000;
+            TestObjectInput __upsertInput;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(_key, _value, 0);
+                __upsertInput = new TestObjectInput { objectValue = _value };
+                _ = bContext.Upsert(_key, ref __upsertInput, 0);
             }
 
             var key100 = new TestObjectKey { key = 100 };
@@ -145,7 +148,8 @@ namespace Tsavorite.test
             var status = bContext.Read(key100, ref input, ref output, 1);
             ClassicAssert.IsFalse(status.Found, status.ToString());
 
-            status = bContext.Upsert(key100, value100, 0);
+            __upsertInput = new TestObjectInput { objectValue = value100 };
+            status = bContext.Upsert(key100, ref __upsertInput, 0);
             ClassicAssert.IsTrue(!status.Found, status.ToString());
 
             status = bContext.Read(key100, ref input, ref output, 0);
@@ -171,7 +175,8 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(_key, _value, 0);
+                __upsertInput = new TestObjectInput { objectValue = _value };
+                _ = bContext.Upsert(_key, ref __upsertInput, 0);
             }
             status = bContext.Read(key100, ref input, ref output, 1);
             ClassicAssert.IsTrue(status.IsPending);

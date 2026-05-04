@@ -49,6 +49,18 @@ namespace Garnet.server
         public VectorTransactionalContext vectorTransactionalContext;
 
         /// <summary>
+        /// Session Contexts for log record copy operations
+        /// </summary>
+        internal LogRecordBasicContext logRecordBasicContext;
+        internal LogRecordTransactionalContext logRecordTransactionalContext;
+
+        /// <summary>
+        /// Session Contexts for heap object upsert operations
+        /// </summary>
+        internal HeapObjectBasicContext heapObjectBasicContext;
+        internal HeapObjectTransactionalContext heapObjectTransactionalContext;
+
+        /// <summary>
         /// Session Contexts for unified store
         /// </summary>
         public UnifiedBasicContext unifiedBasicContext;
@@ -133,6 +145,16 @@ namespace Garnet.server
             var vectorFunctions = new VectorSessionFunctions(functionsState, readSessionState);
             var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions);
 
+            var logRecordFunctions = new LogRecordSessionFunctions(functionsState);
+            var logRecordSession = db.Store.NewSession<FixedSpanByteKey, LogRecordInput<ISourceLogRecord>, Empty, Empty, LogRecordSessionFunctions>(logRecordFunctions);
+            logRecordBasicContext = logRecordSession.BasicContext;
+            logRecordTransactionalContext = logRecordSession.TransactionalContext;
+
+            var heapObjectFunctions = new HeapObjectUpsertSessionFunctions(functionsState);
+            var heapObjectSession = db.Store.NewSession<FixedSpanByteKey, HeapObjectInput, Empty, Empty, HeapObjectUpsertSessionFunctions>(heapObjectFunctions);
+            heapObjectBasicContext = heapObjectSession.BasicContext;
+            heapObjectTransactionalContext = heapObjectSession.TransactionalContext;
+
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
             consistentReadContext = session.ConsistentReadContext;
@@ -168,6 +190,8 @@ namespace Garnet.server
             objectBasicContext.Session?.Dispose();
             unifiedBasicContext.Session?.Dispose();
             vectorBasicContext.Session?.Dispose();
+            logRecordBasicContext.Session?.Dispose();
+            heapObjectBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

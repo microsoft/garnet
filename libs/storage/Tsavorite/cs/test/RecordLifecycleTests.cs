@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -225,7 +225,8 @@ namespace Tsavorite.test
         private void Upsert(int key, int value)
         {
             using var s = NewSession();
-            _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
+            var __upsertInput = new TestObjectInput { objectValue = new TrackedObjectValue { value = value } };
+            _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, ref __upsertInput, 0);
         }
 
         #region CopyUpdate — value-object slot clearing

@@ -72,10 +72,10 @@ namespace Tsavorite.test.Objects
             TestObjectKey key = new() { key = 9999999 };
             TestObjectValue value = new() { value = 23 };
 
-            TestObjectInput input = default;
+            TestObjectInput input = new TestObjectInput { objectValue = value };
             TestObjectOutput output = default;
 
-            _ = bContext.Upsert(key, value, Empty.Default);
+            _ = bContext.Upsert(key, ref input, Empty.Default);
             _ = bContext.Read(key, ref input, ref output, Empty.Default);
             ClassicAssert.AreEqual(value.value, output.value.value);
         }
@@ -113,9 +113,9 @@ namespace Tsavorite.test.Objects
 
             var key = new TestObjectKey { key = keyInt };
             var value = new TestObjectValue { value = keyInt };
-            _ = bContext.Upsert(key, value, Empty.Default);
+            var input = new TestObjectInput { objectValue = value };
+            _ = bContext.Upsert(key, ref input, Empty.Default);
 
-            TestObjectInput input = new();
             TestObjectOutput output = new();
             var status = bContext.Read(key, ref input, ref output, Empty.Default);
             Assert.That(status.IsPending, Is.False);
@@ -144,7 +144,8 @@ namespace Tsavorite.test.Objects
                 var value = new TestObjectValue { value = i };
                 if (i == 120)
                     i += 0;
-                _ = bContext.Upsert(key, value, Empty.Default);
+                var upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key, ref upsertInput, Empty.Default);
             }
 
             TestObjectKey key2 = new() { key = 23 };
@@ -240,8 +241,9 @@ namespace Tsavorite.test.Objects
             {
                 var key = new TestObjectKey { key = ii };
                 var value = new TestLargeObjectValue(valueSize + (ii * 4096));
+                input.objectValue = value;
                 new Span<byte>(value.value).Fill(0x42);
-                _ = bContext.Upsert(key, ref input, value, ref output);
+                _ = bContext.Upsert(key, ref input, ref output);
             }
 
             // Test before and after the flush
@@ -299,8 +301,9 @@ namespace Tsavorite.test.Objects
             {
                 var key = new TestObjectKey { key = lastKey };
                 var value = new TestLargeObjectValue(valueSize);
+                input.objectValue = value;
                 new Span<byte>(value.value).Fill((byte)key.key);
-                _ = bContext.Upsert(key, ref input, value, ref output);
+                _ = bContext.Upsert(key, ref input, ref output);
             }
 
             // The upsert loop implicitly advanced ReadOnlyAddress as pages were turned, which kicks off asynchronous page flushes.
@@ -327,8 +330,9 @@ namespace Tsavorite.test.Objects
             {
                 var key = new TestObjectKey { key = lastKey + ii };
                 var value = new TestLargeObjectValue(valueSize);
+                input.objectValue = value;
                 new Span<byte>(value.value).Fill((byte)key.key);
-                _ = bContext.Upsert(key, ref input, value, ref output);
+                _ = bContext.Upsert(key, ref input, ref output);
             }
 
             store.epoch.Resume();
@@ -406,8 +410,9 @@ namespace Tsavorite.test.Objects
             {
                 var key = new TestObjectKey { key = lastKey };
                 var value = new TestLargeObjectValue(valueSize);
+                input.objectValue = value;
                 new Span<byte>(value.value).Fill((byte)key.key);
-                _ = bContext.Upsert(key, ref input, value, ref output);
+                _ = bContext.Upsert(key, ref input, ref output);
             }
 
             // Verify post-insert conditions.
@@ -499,16 +504,17 @@ namespace Tsavorite.test.Objects
             var valueBuffer = new byte[valueSize * numRec];
             new Span<byte>(valueBuffer).Fill(0x42);
 
+            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow };
+
             for (int ii = 0; ii < numRec; ii++)
             {
                 var key = new TestObjectKey { key = ii };
                 var value = new ReadOnlySpan<byte>(valueBuffer).Slice(0, valueSize * (ii + 1));
-                _ = bContext.Upsert(key, value, Empty.Default);
+                input.objectValue = new TestLargeObjectValue { value = value.ToArray() };
+                _ = bContext.Upsert(key, ref input, Empty.Default);
             }
 
             store.Log.FlushAndEvict(wait: true);
-
-            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow };
 
             for (int ii = 0; ii < numRec; ii++)
             {
@@ -541,10 +547,11 @@ namespace Tsavorite.test.Objects
             for (int ii = 0; ii < numRec; ii++)
             {
                 var value = new TestLargeObjectValue(valueSize + (ii * 4096));
+                input.objectValue = value;
                 var key = new Span<byte>(keyBuf);
                 key.Fill((byte)(ii + 100));
                 new Span<byte>(value.value).Fill(0x42);
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref input, value, ref output);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref input, ref output);
             }
 
             // Test before and after the flush

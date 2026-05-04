@@ -45,7 +45,8 @@ namespace Garnet.test
             var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
 
-            _ = bContext.Upsert((FixedSpanByteKey)key, obj);
+            IGarnetObject upsertInput = obj;
+            _ = bContext.Upsert((FixedSpanByteKey)key, ref upsertInput);
 
             IGarnetObject output = null;
             var status = bContext.Read((FixedSpanByteKey)key, ref output);
@@ -76,7 +77,8 @@ namespace Garnet.test
                 var key = new ReadOnlySpan<byte>([keyNum]);
                 obj.Add([15], 10);
 
-                _ = bContext.Upsert((FixedSpanByteKey)key, obj);
+                IGarnetObject upsertInput = obj;
+                _ = bContext.Upsert((FixedSpanByteKey)key, ref upsertInput);
             }
 
             void LocalRead()
@@ -113,7 +115,7 @@ namespace Garnet.test
                 var key = new ReadOnlySpan<byte>([keyNum]);
                 ((SortedSetObject)obj).Add([15], 10);
 
-                _ = bContext.Upsert((FixedSpanByteKey)key, obj);
+                _ = bContext.Upsert((FixedSpanByteKey)key, ref obj);
                 store.Log.Flush(true);
                 _ = bContext.RMW((FixedSpanByteKey)key, ref obj);
             }
@@ -154,10 +156,33 @@ namespace Garnet.test
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
             public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref IGarnetObject input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref IGarnetObject input)
-                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
-            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref IGarnetObject input)
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref IGarnetObject input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref UpsertInfo upsertInfo)
+            {
+                if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(input, in sizeInfo))
+                    return false;
+                output = input;
+                return true;
+            }
+
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref IGarnetObject input, ref IGarnetObject output, ref UpsertInfo upsertInfo)
+            {
+                var sizeInfo = new RecordSizeInfo()
+                {
+                    FieldInfo = new RecordFieldInfo()
+                    {
+                        KeySize = logRecord.Key.Length,
+                        ValueSize = ObjectIdMap.ObjectIdSize,
+                        ValueIsObject = true
+                    }
+                };
+                if (!logRecord.TrySetValueObjectAndPrepareOptionals(input, in sizeInfo))
+                    return false;
+                output = input;
+                return true;
+            }
         }
 
         private void CreateStore()

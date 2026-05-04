@@ -196,10 +196,10 @@ namespace Garnet.server
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             input.AlignmentExpected = true;
-            var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
+            input.value = PinnedSpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             VectorOutput outputSpan = new();
 
-            var status = ctx.Upsert(keyWithNamespace, ref input, valueSpan, ref outputSpan);
+            var status = ctx.Upsert(keyWithNamespace, ref input, ref outputSpan);
             if (status.IsPending)
             {
                 CompletePending(ref status, ref outputSpan, ref ctx);

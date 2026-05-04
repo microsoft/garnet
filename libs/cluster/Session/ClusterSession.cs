@@ -17,6 +17,7 @@ namespace Garnet.cluster
         readonly TransactionManager txnManager;
         readonly GarnetSessionMetrics sessionMetrics;
         BasicGarnetApi basicGarnetApi;
+        LogRecordGarnetApi logRecordGarnetApi;
         readonly INetworkSender networkSender;
         readonly ILogger logger;
         ClusterSlotVerificationInput csvi;
@@ -52,7 +53,7 @@ namespace Garnet.cluster
         private StringBasicContext stringBasicContext;
         private VectorBasicContext vectorBasicContext;
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, LogRecordGarnetApi logRecordGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -60,6 +61,7 @@ namespace Garnet.cluster
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
+            this.logRecordGarnetApi = logRecordGarnetApi;
             this.stringBasicContext = stringBasicContext;
             this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;

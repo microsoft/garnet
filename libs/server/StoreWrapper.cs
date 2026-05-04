@@ -853,7 +853,7 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());  // TODO replace with Push iterator
+                    using var iter = store.Iterate();  // TODO replace with Push iterator
                     while (!hasKeyInSlots && iter.GetNext())
                     {
                         var key = iter.Key;

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -31,7 +31,7 @@ namespace Tsavorite.test.LockTests
                 return true;
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref long input, ref long output, ref UpsertInfo upsertInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }
@@ -51,14 +51,14 @@ namespace Tsavorite.test.LockTests
                 return base.InitialUpdater(ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref UpsertInfo upsertInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = upsertInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
             }
 
             public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -119,7 +119,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref valueNum).IsPending);
             }
 
             // Update
@@ -151,7 +151,7 @@ namespace Tsavorite.test.LockTests
 
                     // These will both just increment the stored value, ignoring the input argument.
                     long input = default;
-                    _ = useRMW ? localBContext.RMW(key, ref input) : localBContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
+                    _ = useRMW ? localBContext.RMW(key, ref input) : localBContext.Upsert(key, ref input);
                 }
             }
         }
@@ -166,7 +166,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref valueNum).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
@@ -177,7 +177,7 @@ namespace Tsavorite.test.LockTests
             var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
             var value = SpanByte.FromPinnedVariable(ref valueNum);
             var deleteKey = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum));
-            ClassicAssert.IsFalse(bContext.Upsert(key, value).IsPending);
+            ClassicAssert.IsFalse(bContext.Upsert(key, ref valueNum).IsPending);
 
             // Now make sure we did collide
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(deleteKey));
@@ -203,7 +203,7 @@ namespace Tsavorite.test.LockTests
             var status = updateOp switch
             {
                 UpdateOp.RMW => bContext.RMW(deleteKey, ref valueNum),
-                UpdateOp.Upsert => bContext.Upsert(deleteKey, value),
+                UpdateOp.Upsert => bContext.Upsert(deleteKey, ref valueNum),
                 UpdateOp.Delete => throw new InvalidOperationException("UpdateOp.Delete not expected in this test"),
                 _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
             };
@@ -224,7 +224,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref valueNum).IsPending);
             }
 
             var expectedThrowAddress = store.Log.TailAddress;
@@ -244,7 +244,7 @@ namespace Tsavorite.test.LockTests
                 var status = updateOp switch
                 {
                     UpdateOp.RMW => bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), ref input),
-                    UpdateOp.Upsert => bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), SpanByte.FromPinnedVariable(ref input)),
+                    UpdateOp.Upsert => bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), ref input),
                     UpdateOp.Delete => bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum))),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };

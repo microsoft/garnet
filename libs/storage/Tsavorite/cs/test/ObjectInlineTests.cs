@@ -67,7 +67,7 @@ namespace Tsavorite.test.Objects
 
             // Start with an inline value.
             input.wantValueStyle = TestValueStyle.Inline;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -78,14 +78,14 @@ namespace Tsavorite.test.Objects
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 24;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 25;
             input.wantValueStyle = TestValueStyle.Overflow;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -96,7 +96,7 @@ namespace Tsavorite.test.Objects
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 26;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -105,7 +105,7 @@ namespace Tsavorite.test.Objects
 
             input.value = 30;
             input.wantValueStyle = TestValueStyle.Object;   // Overflow -> Object
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -117,7 +117,7 @@ namespace Tsavorite.test.Objects
 
             input.value = 31;
             input.wantValueStyle = TestValueStyle.Overflow;   // Object -> Overflow
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -129,7 +129,7 @@ namespace Tsavorite.test.Objects
 
             input.value = 32;
             input.wantValueStyle = TestValueStyle.Object;   // Overflow -> Object again
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -143,7 +143,7 @@ namespace Tsavorite.test.Objects
 
             input.value = 40;
             input.wantValueStyle = TestValueStyle.Inline;   // Object -> Inline
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -155,7 +155,7 @@ namespace Tsavorite.test.Objects
 
             input.value = 41;
             input.wantValueStyle = TestValueStyle.Object;   // Inline -> Object
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -359,12 +359,12 @@ namespace Tsavorite.test.Objects
                 return result;
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Set(ref output.srcValueStyle, logRecord.Info);
-                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
                 logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
+                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)input.objectValue, ref output);
             }
 
             public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
@@ -384,10 +384,10 @@ namespace Tsavorite.test.Objects
                 return true;
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
-                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
+                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)input.objectValue, ref output);
             }
 
             private bool DoWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output)
@@ -453,7 +453,7 @@ namespace Tsavorite.test.Objects
                 => GetFieldInfo(srcLogRecord, ref input);
             public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
-            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
         }
     }

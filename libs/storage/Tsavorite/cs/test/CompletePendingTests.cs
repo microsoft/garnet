@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
@@ -185,7 +185,8 @@ namespace Tsavorite.test
                 var keyStruct = NewKeyStruct(key);
                 var valueStruct = NewValueStruct(key);
                 processPending.keyAddressDict[key] = store.Log.TailAddress;
-                _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(keyStruct, ref __upsertInput);
             }
 
             // Flush to make reads or RMWs go pending.
@@ -277,6 +278,29 @@ namespace Tsavorite.test
                 output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
                 return true;
             }
+
+            // Upsert functions
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+            {
+                ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+                v.vfield1 = input.ifield1;
+                v.vfield2 = input.ifield2;
+                output.value = v;
+                return true;
+            }
+
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+            {
+                ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+                v.vfield1 = input.ifield1;
+                v.vfield2 = input.ifield2;
+                output.value = v;
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref InputStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         }
 
         [Test]
@@ -292,7 +316,8 @@ namespace Tsavorite.test
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(keyStruct, ref __upsertInput);
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
@@ -303,7 +328,8 @@ namespace Tsavorite.test
             // Insert next record with the same key and flush this too if requested.
             var secondValue = firstValue + 1;
             valueStruct.vfield2 = secondValue * valueMult;
-            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(keyStruct, ref __upsertInput);
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
@@ -324,7 +350,8 @@ namespace Tsavorite.test
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(keyStruct, ref __upsertInput);
 
             // Force collisions to test having another key in the chain
             comparer.forceCollisionHash = comparer.GetHashCode64(keyStruct);
@@ -339,7 +366,8 @@ namespace Tsavorite.test
             var secondValue = firstValue + 1;
             keyStruct = new() { kfield1 = secondValue, kfield2 = secondValue * valueMult };
             valueStruct = new() { vfield1 = secondValue, vfield2 = secondValue * valueMult };
-            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(keyStruct, ref __upsertInput);
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
@@ -361,7 +389,8 @@ namespace Tsavorite.test
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(keyStruct, ref __upsertInput);
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);

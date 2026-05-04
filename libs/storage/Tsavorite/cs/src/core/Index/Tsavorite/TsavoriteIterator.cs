@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,31 +14,27 @@ namespace Tsavorite.core
         /// <summary>
         /// Pull iterator for all (distinct) live key-values stored in Tsavorite
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during iteration</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
-        public ITsavoriteScanIterator Iterate<TInput, TOutput, TContext, TFunctions>(TFunctions functions, long untilAddress = -1)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        public ITsavoriteScanIterator Iterate(long untilAddress = -1)
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-            return new TsavoriteKVIterator<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, functions, untilAddress, loggerFactory: loggerFactory);
+            return new TsavoriteKVIterator<TStoreFunctions, TAllocator>(this, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during iteration</param>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
-        public bool Iterate<TInput, TOutput, TContext, TFunctions, TScanFunctions>(TFunctions functions, ref TScanFunctions scanFunctions, long untilAddress = -1)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-            using TsavoriteKVIterator<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> iter = new(this, functions, untilAddress, loggerFactory: loggerFactory);
+            using TsavoriteKVIterator<TStoreFunctions, TAllocator> iter = new(this, untilAddress, loggerFactory: loggerFactory);
 
             if (!scanFunctions.OnStart(iter.BeginAddress, iter.EndAddress))
                 return false;
@@ -53,15 +49,14 @@ namespace Tsavorite.core
         }
     }
 
-    internal sealed class TsavoriteKVIterator<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteScanIterator
-        where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+    internal sealed class TsavoriteKVIterator<TStoreFunctions, TAllocator> : ITsavoriteScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> tempKv;
-        private readonly ClientSession<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
-        private readonly BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
+        private readonly ClientSession<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>, TStoreFunctions, TAllocator> tempKvSession;
+        private readonly BasicContext<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>, TStoreFunctions, TAllocator> tempbContext;
         private ITsavoriteScanIterator mainKvIter;
         private ITsavoriteScanIterator tempKvIter;
 
@@ -73,7 +68,7 @@ namespace Tsavorite.core
         };
         private IterationPhase iterationPhase;
 
-        public TsavoriteKVIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, TFunctions functions, long untilAddress, ILoggerFactory loggerFactory = null)
+        public TsavoriteKVIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, long untilAddress, ILoggerFactory loggerFactory = null)
         {
             this.store = store;
             iterationPhase = IterationPhase.MainKv;
@@ -88,7 +83,7 @@ namespace Tsavorite.core
             };
 
             tempKv = new TsavoriteKV<TStoreFunctions, TAllocator>(tempKVSettings, store.storeFunctions, store.allocatorFactory);
-            tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions>(functions);
+            tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, LogRecordInput<ITsavoriteScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<ITsavoriteScanIterator>>(new());
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
         }
@@ -226,8 +221,8 @@ namespace Tsavorite.core
             }
             else
             {
-                var iterLogRecord = mainKvIter as ISourceLogRecord;     // Can't use 'ref' on a 'using' variable
-                _ = tempbContext.Upsert(in iterLogRecord);
+                var logRecordInput = new LogRecordInput<ITsavoriteScanIterator> { SourceRecord = mainKvIter };
+                _ = tempbContext.Upsert(mainKvIter, ref logRecordInput);
             }
         }
 

@@ -514,7 +514,8 @@ namespace Garnet.cluster
                             return false;
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
-                        _ = basicGarnetApi.SET(in diskLogRecord);
+                        var logRecordInput = new LogRecordInput<ISourceLogRecord> { SourceRecord = diskLogRecord, writeToAof = false };
+                        _ = logRecordGarnetApi.Upsert((FixedSpanByteKey)diskLogRecord.Key, ref logRecordInput);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
                         diskLogRecord = default; // prevent double-trigger in catch

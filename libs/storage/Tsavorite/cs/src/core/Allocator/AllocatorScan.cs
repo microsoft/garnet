@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -212,13 +212,13 @@ namespace Tsavorite.core
                 long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions;
 
-        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store,
+        private protected bool ScanLookup<TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store,
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress,
                 bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
-            using var session = store.NewSession<TScanIterator, TInput, TOutput, Empty, NoOpSessionFunctions<TInput, TOutput, Empty>>(new NoOpSessionFunctions<TInput, TOutput, Empty>());
+            using var session = store.NewSession<TScanIterator, LogRecordInput<TScanIterator>, Empty, Empty, LogRecordInternalSessionFunctions<TScanIterator>>(new LogRecordInternalSessionFunctions<TScanIterator>());
             var bContext = session.BasicContext;
 
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan

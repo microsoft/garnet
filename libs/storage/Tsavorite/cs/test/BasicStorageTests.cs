@@ -120,7 +120,8 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
             _ = bContext.CompletePending(true);
 

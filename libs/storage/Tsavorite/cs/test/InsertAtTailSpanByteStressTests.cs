@@ -99,22 +99,22 @@ namespace Tsavorite.test.InsertAtTailStressTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
                 logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
-                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
                     return false;
-                srcValue.CopyTo(ref output, memoryPool);
+                input.ReadOnlySpan.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
                     return false;
-                srcValue.CopyTo(ref output, memoryPool);
+                input.ReadOnlySpan.CopyTo(ref output, memoryPool);
                 return true;
             }
 
@@ -157,7 +157,8 @@ namespace Tsavorite.test.InsertAtTailStressTests
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
-                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), key);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(key);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref __upsertInput);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             bContext.CompletePending(true);
@@ -260,7 +261,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
                         ClassicAssert.IsTrue(BitConverter.TryWriteBytes(input, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output)
-                                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
+                                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)

@@ -104,52 +104,12 @@ namespace Garnet.server
             else
             {
                 // Create local sizeInfo
-                sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
+                sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, ref input) };
                 functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
 
                 if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
                     return false;
             }
-
-            UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            return true;
-        }
-
-        internal static bool InPlaceWriterForHeapObjectValue<TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, IHeapObject newValue,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
-            where TVariableLengthInput : IVariableLengthInput<TInput>
-        {
-
-            // Create local sizeInfo
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
-            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
-
-            if (!logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo))
-                return false;
-
-            UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            return true;
-        }
-
-        /// <inheritdoc />
-        internal static bool InPlaceWriterForLogRecordValue<TSourceLogRecord, TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
-            where TSourceLogRecord : ISourceLogRecord
-            where TVariableLengthInput : IVariableLengthInput<TInput>
-        {
-
-            // Create local sizeInfo
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, inputLogRecord, ref input) };
-            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);

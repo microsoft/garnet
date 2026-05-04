@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -94,7 +94,8 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = uContext.Read(key1, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
@@ -123,7 +124,8 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = uContext.Read(key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -135,7 +137,8 @@ namespace Tsavorite.test.UnsafeContext
                 var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                _ = uContext.Upsert(key2, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+                __upsertInput = new InputStruct { ifield1 = value2.vfield1, ifield2 = value2.vfield2 };
+                _ = uContext.Upsert(key2, ref __upsertInput, Empty.Default);
                 status = uContext.Read(key2, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
@@ -173,7 +176,8 @@ namespace Tsavorite.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                    _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 }
 
                 for (int i = 0; i < 10 * count; i++)
@@ -190,7 +194,8 @@ namespace Tsavorite.test.UnsafeContext
                     var status = uContext.Read(key1, ref input, ref output, Empty.Default);
                     AssertCompleted(new(StatusCode.NotFound), status);
 
-                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                    _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 }
 
                 for (int i = 0; i < 10 * count; i++)
@@ -230,7 +235,8 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(10000);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                    _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 }
 
                 r = new Random(10);
@@ -290,7 +296,8 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(RandRange);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                    _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 }
 
                 r = new Random(RandSeed);
@@ -515,7 +522,8 @@ namespace Tsavorite.test.UnsafeContext
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
                 OutputStruct output = new();
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = uContext.Read(key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -545,7 +553,8 @@ namespace Tsavorite.test.UnsafeContext
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
                 OutputStruct output = new();
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = uContext.Read(key1, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -578,7 +587,8 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = uContext.Read(key1, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -608,7 +618,8 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = uContext.Upsert(key1, ref __upsertInput, Empty.Default);
 
                 var (status, output) = uContext.Read(key1);
                 AssertCompleted(new(StatusCode.Found), status);

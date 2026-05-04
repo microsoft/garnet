@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -168,7 +168,8 @@ namespace Tsavorite.test
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 var value = SpanByte.FromPinnedVariable(ref valueStruct);
-                _ = bContext.Upsert(key, value, 0);
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(key, ref __upsertInput, 0);
             }
 
             store.Log.FlushAndEvict(wait: true);
@@ -201,7 +202,8 @@ namespace Tsavorite.test
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 var value = SpanByte.FromPinnedVariable(ref valueStruct);
-                _ = bContext.Upsert(key, value, 0);
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(key, ref __upsertInput, 0);
             }
 
             store.Log.FlushAndEvict(true);
@@ -220,7 +222,8 @@ namespace Tsavorite.test
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 var value = SpanByte.FromPinnedVariable(ref valueStruct);
-                _ = bContext.Upsert(key, value, 0);
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(key, ref __upsertInput, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -251,7 +254,8 @@ namespace Tsavorite.test
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 var value = SpanByte.FromPinnedVariable(ref valueStruct);
-                _ = bContext.Upsert(key, value, 0);
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(key, ref __upsertInput, 0);
 
                 if (i % 8 == 0)
                 {
@@ -294,7 +298,8 @@ namespace Tsavorite.test
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 var value = SpanByte.FromPinnedVariable(ref valueStruct);
-                _ = bContext.Upsert(key, value, 0);
+                var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+                _ = bContext.Upsert(key, ref __upsertInput, 0);
             }
 
             var tail = store.Log.TailAddress;
@@ -352,14 +357,16 @@ namespace Tsavorite.test
             var input = default(InputStruct);
             var output = default(OutputStruct);
 
-            _ = bContext.Upsert(key, value, 0);
+            var __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(key, ref __upsertInput, 0);
             var status = bContext.Read(key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             store.Log.Flush(true);
 
             valueStruct = new ValueStruct { vfield1 = 11, vfield2 = 21 };
-            _ = bContext.Upsert(key, value, 0);
+            __upsertInput = new InputStruct { ifield1 = valueStruct.vfield1, ifield2 = valueStruct.vfield2 };
+            _ = bContext.Upsert(key, ref __upsertInput, 0);
             status = bContext.Read(key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 

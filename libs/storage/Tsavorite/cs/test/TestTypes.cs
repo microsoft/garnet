@@ -121,6 +121,25 @@ namespace Tsavorite.test
             return true;
         }
 
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        {
+            ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+            v.vfield1 = input.ifield1;
+            v.vfield2 = input.ifield2;
+            output.value = v;
+            return true;
+        }
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        {
+            ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+            v.vfield1 = input.ifield1;
+            v.vfield2 = input.ifield2;
+            output.value = v;
+            return true;
+        }
+
         // RMW functions
         public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
@@ -164,8 +183,8 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
     }
 
     public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
@@ -195,6 +214,23 @@ namespace Tsavorite.test
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
             output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
+            return true;
+        }
+
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        {
+            ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+            v.vfield1 = input.ifield1;
+            v.vfield2 = input.ifield2;
+            return true;
+        }
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        {
+            ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+            v.vfield1 = input.ifield1;
+            v.vfield2 = input.ifield2;
             return true;
         }
 
@@ -234,8 +270,8 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
     }
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
@@ -268,13 +304,15 @@ namespace Tsavorite.test
         }
 
         // Upsert functions
-        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
-            logRecord.ValueSpan.AsRef<ValueStruct>() = srcValue.AsRef<ValueStruct>();
+            ref var v = ref logRecord.ValueSpan.AsRef<ValueStruct>();
+            v.vfield1 = input.ifield1;
+            v.vfield2 = input.ifield2;
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
             _ = Interlocked.Increment(ref inPlaceWriterCallCount);
             return false;
@@ -318,11 +356,11 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
             => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
     }
 
-    public class SimpleLongSimpleFunctions : SimpleIntegerFunctionsBase<long>
+    public class SimpleLongSimpleFunctions: SimpleIntegerFunctionsBase<long>
     {
         public SimpleLongSimpleFunctions() : base() { }
         public SimpleLongSimpleFunctions(Func<long, long, long> merger) : base(merger) { }
@@ -350,20 +388,22 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ref TInteger output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
-            if (result)
-                output = srcValue.AsRef<TInteger>();
-            return result;
+            if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo))
+                return false;
+            output = input;
+            return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TInteger input, ref TInteger output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
-            if (result)
-                output = srcValue.AsRef<TInteger>();
-            return result;
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo))
+                return false;
+            output = input;
+            return true;
         }
 
         /// <inheritdoc/>
@@ -407,10 +447,7 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInteger input)
-        {
-            Assert.That(value.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
-        }
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref TInteger input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
     }
 }

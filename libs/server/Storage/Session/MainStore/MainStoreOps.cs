@@ -210,15 +210,17 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
+            var input = new StringInput(RespCommand.SET, value);
+            var status = context.Upsert((FixedSpanByteKey)key, ref input);
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
+            input.parseState.InitializeWithArgument(value);
             var output = new StringOutput();
-            var status = context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
+            var status = context.Upsert((FixedSpanByteKey)key, ref input, ref output);
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
@@ -359,7 +361,15 @@ namespace Garnet.server
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            objectContext.Upsert((FixedSpanByteKey)key, value);
+            var input = new ObjectInput { garnetObject = value };
+            objectContext.Upsert((FixedSpanByteKey)key, ref input);
+            return GarnetStatus.OK;
+        }
+
+        public GarnetStatus SET<THeapObjectContext>(PinnedSpanByte key, ref HeapObjectInput input, ref THeapObjectContext context)
+            where THeapObjectContext : ITsavoriteContext<FixedSpanByteKey, HeapObjectInput, Empty, Empty, HeapObjectUpsertSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            context.Upsert((FixedSpanByteKey)key, ref input);
             return GarnetStatus.OK;
         }
 
@@ -369,7 +379,11 @@ namespace Garnet.server
             unsafe
             {
                 fixed (byte* ptr = value.Span)
-                    context.Upsert((FixedSpanByteKey)key, new ReadOnlySpan<byte>(ptr, value.Length));
+                {
+                    var psb = PinnedSpanByte.FromPinnedPointer(ptr, value.Length);
+                    var input = new StringInput(RespCommand.SET, psb);
+                    context.Upsert((FixedSpanByteKey)key, ref input);
+                }
             }
             return GarnetStatus.OK;
         }

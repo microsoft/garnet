@@ -43,36 +43,27 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SET a log record in the unified store context.
+        /// SET a log record in the store using the log record context.
         /// </summary>
-        /// <typeparam name="TUnifiedContext"></typeparam>
-        /// <typeparam name="TSourceLogRecord"></typeparam>
-        /// <param name="srcLogRecord">The log record</param>
-        /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
+        /// <param name="input">Log record input wrapping the source log record</param>
+        /// <param name="logRecordContext">Basic context for log record operations.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+        public GarnetStatus SET(ref LogRecordInput<ISourceLogRecord> input, ref LogRecordBasicContext logRecordContext)
         {
-            _ = unifiedContext.Upsert(in srcLogRecord);
+            _ = logRecordContext.Upsert((FixedSpanByteKey)input.SourceRecord.Key, ref input);
             return GarnetStatus.OK;
         }
 
         /// <summary>
-        /// SET a log record in the unified store context.
+        /// SET a log record in the store using the log record context, with a key override (e.g. for RENAME).
         /// </summary>
-        /// <typeparam name="TUnifiedContext"></typeparam>
-        /// <typeparam name="TSourceLogRecord"></typeparam>
-        /// <param name="key">The key to override the one in <paramref name="srcLogRecord"/>, e.g. if from RENAME.</param>
-        /// <param name="input"></param>
-        /// <param name="srcLogRecord">The log record</param>
-        /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
+        /// <param name="key">The key to use instead of the one in the source log record.</param>
+        /// <param name="input">Log record input wrapping the source log record</param>
+        /// <param name="logRecordContext">Transactional context for log record operations.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+        public GarnetStatus SET(ReadOnlySpan<byte> key, ref LogRecordInput<ISourceLogRecord> input, ref LogRecordTransactionalContext logRecordContext)
         {
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
+            _ = logRecordContext.Upsert((FixedSpanByteKey)key, ref input);
             return GarnetStatus.OK;
         }
 
@@ -299,7 +290,9 @@ namespace Garnet.server
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
-                    status = SET(newKey, ref input, in logRecord, ref context);
+                    var logRecordInput = new LogRecordInput<ISourceLogRecord> { SourceRecord = logRecord, writeToAof = true };
+                    var logRecordTxnContext = txnManager.LogRecordTransactionalContext;
+                    status = SET(newKey, ref logRecordInput, ref logRecordTxnContext);
                     if (status == GarnetStatus.OK)
                     {
                         result = 1;

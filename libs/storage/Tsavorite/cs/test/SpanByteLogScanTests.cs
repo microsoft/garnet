@@ -101,10 +101,10 @@ namespace Tsavorite.test.spanbyte
             // Right now this is unused but helped with debugging so I'm keeping it around.
             internal long insertedAddress;
 
-            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> src, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 insertedAddress = upsertInfo.Address;
-                return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
+                return dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
         }
 
@@ -129,7 +129,8 @@ namespace Tsavorite.test.spanbyte
 
                 fixed (byte* keyPtr = key)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                 }
             }
 
@@ -171,7 +172,8 @@ namespace Tsavorite.test.spanbyte
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + TotalRecords}".AsSpan());
                 fixed (byte* keyPtr = key)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                 }
             }
             scanCursorFuncs.Initialize(verifyKeys);
@@ -228,7 +230,8 @@ namespace Tsavorite.test.spanbyte
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
                 fixed (byte* keyPtr = key)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                 }
             }
 
@@ -267,7 +270,8 @@ namespace Tsavorite.test.spanbyte
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
                 fixed (byte* keyPtr = key)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                 }
             }
 
@@ -341,7 +345,8 @@ namespace Tsavorite.test.spanbyte
                         var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{rcuRecord}".AsSpan());
                         fixed (byte* keyPtr = key)
                         {
-                            _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                            var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                            _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                         }
                     }).Wait();
 
@@ -429,7 +434,8 @@ namespace Tsavorite.test.spanbyte
 
                 fixed (byte* keyPtr = key)
                 {
-                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
                 }
             }
 
@@ -477,7 +483,8 @@ namespace Tsavorite.test.spanbyte
             for (int ii = 0; ii < totalRecords; ii++)
             {
                 key = value = ii;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(SpanByte.FromPinnedVariable(ref value));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref __upsertInput);
             }
 
             // Evict so we can test the pending scan push

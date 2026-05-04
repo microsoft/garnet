@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -246,7 +246,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             for (long key = 0; key < NumRecords; key++)
             {
                 var value = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value).IsPending);
             }
         }
 
@@ -388,7 +388,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
                     var value = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
-                    _ = luContext.Upsert(keyVec[0].Key, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    _ = luContext.Upsert(keyVec[0].Key, ref value, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
@@ -591,7 +591,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 long dummyInOut = 0;
                 status = useRMW
                     ? luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref expectedResult, ref dummyInOut)
-                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref dummyInOut, SpanByte.FromPinnedVariable(ref expectedResult), ref dummyInOut);
+                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref expectedResult, ref dummyInOut);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     if (status.IsPending)
@@ -738,7 +738,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 resultValue = (read24Output + read51Output) * valueMult2;
                 status = useRMW
                     ? luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue) // value is 'input' for RMW
-                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), SpanByte.FromPinnedVariable(ref resultValue));
+                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
                 status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue);
@@ -902,7 +902,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                         _ = rng.Next(100) switch
                         {
                             int rand when rand < 33 => basicContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key))).status,
-                            int rand when rand < 66 => basicContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)),
+                            int rand when rand < 66 => basicContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value),
                             _ => basicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value)
                         };
                     }
@@ -1072,7 +1072,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseNewKey));
 
                 blt.Increment(ref keyStruct);
-                var status = luContext.Upsert(key, key.KeyBytes);
+                var status = luContext.Upsert(key, ref keyNum);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
                 VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
@@ -1278,7 +1278,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 var status = updateOp switch
                 {
-                    UpdateOp.Upsert => luContext.Upsert(key42, value),
+                    UpdateOp.Upsert => luContext.Upsert(key42, ref valueVal),
                     UpdateOp.RMW => luContext.RMW(keyVec[0].Key, ref valueVal),
                     UpdateOp.Delete => luContext.Delete(key42),
                     _ => new(StatusCode.Error)
@@ -1325,7 +1325,10 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (long keyNum = NumRecords; keyNum < NumRecords + numNewRecords; ++keyNum)
-                    ClassicAssert.IsFalse(bContext.Upsert(key.Set(keyNum), value.Set(keyVal * ValueMult)).IsPending);
+                {
+                    valueVal = keyNum * ValueMult;
+                    ClassicAssert.IsFalse(bContext.Upsert(key.Set(keyNum), ref valueVal).IsPending);
+                }
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1376,7 +1379,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     switch (updateOp)
                     {
                         case UpdateOp.Upsert:
-                            status = luContext.Upsert(key, SpanByte.FromPinnedVariable(ref localValueNum));
+                            status = luContext.Upsert(key, ref localValueNum);
                             if (iter == 0)
                                 ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
@@ -1430,7 +1433,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (long keyNum = NumRecords; keyNum < NumRecords + numNewRecords; ++keyNum)
-                    ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref keyNum)).IsPending);
+                    ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), ref keyNum).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1519,7 +1522,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     switch (updateOp)
                     {
                         case UpdateOp.Upsert:
-                            status = basicContext.Upsert(key, value);
+                            status = basicContext.Upsert(key, ref localValueNum);
                             if (iter == 0)
                                 ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else

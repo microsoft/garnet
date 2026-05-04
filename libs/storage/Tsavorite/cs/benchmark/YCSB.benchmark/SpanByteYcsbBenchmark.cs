@@ -143,6 +143,7 @@ namespace Tsavorite.benchmark
             Span<byte> input = stackalloc byte[kValueDataSize];
             Span<byte> output = stackalloc byte[kValueDataSize];
 
+            var pinnedValueSpan = PinnedSpanByte.FromPinnedSpan(value);
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
@@ -189,7 +190,7 @@ namespace Tsavorite.benchmark
                             }
                             if (r < upsertPercent)
                             {
-                                uContext.Upsert(key, value, Empty.Default);
+                                uContext.Upsert(key, ref pinnedValueSpan, Empty.Default);
                                 ++writes_done;
                                 continue;
                             }
@@ -201,7 +202,7 @@ namespace Tsavorite.benchmark
                             }
                             uContext.Delete(key, Empty.Default);
                             if (di)
-                                uContext.Upsert(key, value, Empty.Default);
+                                uContext.Upsert(key, ref pinnedValueSpan, Empty.Default);
                             ++deletes_done;
                         }
                     }
@@ -239,6 +240,7 @@ namespace Tsavorite.benchmark
             Span<byte> input = stackalloc byte[kValueDataSize];
             Span<byte> output = stackalloc byte[kValueDataSize];
 
+            var pinnedValueSpan = PinnedSpanByte.FromPinnedSpan(value);
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
@@ -283,7 +285,7 @@ namespace Tsavorite.benchmark
                         }
                         if (r < upsertPercent)
                         {
-                            bContext.Upsert(key, value, Empty.Default);
+                            bContext.Upsert(key, ref pinnedValueSpan, Empty.Default);
                             ++writes_done;
                             continue;
                         }
@@ -295,7 +297,7 @@ namespace Tsavorite.benchmark
                         }
                         bContext.Delete(key, Empty.Default);
                         if (di)
-                            bContext.Upsert(key, value, Empty.Default);
+                            bContext.Upsert(key, ref pinnedValueSpan, Empty.Default);
                         ++deletes_done;
                     }
                 }
@@ -438,6 +440,7 @@ namespace Tsavorite.benchmark
             uContext.BeginUnsafe();
 
             Span<byte> value = stackalloc byte[kValueDataSize];
+            var pinnedValueSpan = PinnedSpanByte.FromPinnedSpan(value);
 
             try
             {
@@ -455,7 +458,7 @@ namespace Tsavorite.benchmark
                         }
 
                         // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                        _ = uContext.Upsert(init_keys_[idx], value, Empty.Default);
+                        _ = uContext.Upsert(init_keys_[idx], ref pinnedValueSpan, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -481,6 +484,7 @@ namespace Tsavorite.benchmark
             var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[kValueDataSize];
+            var pinnedValueSpan = PinnedSpanByte.FromPinnedSpan(value);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -496,7 +500,7 @@ namespace Tsavorite.benchmark
                     }
 
                     // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                    _ = bContext.Upsert(init_keys_[idx], value, Empty.Default);
+                    _ = bContext.Upsert(init_keys_[idx], ref pinnedValueSpan, Empty.Default);
                 }
             }
 

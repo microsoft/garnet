@@ -125,7 +125,7 @@ namespace Garnet.server
 
         #region Upserts
         /// <inheritdoc/>
-        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
@@ -133,7 +133,7 @@ namespace Garnet.server
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
             {
-                srcValue.CopyTo(value);
+                input.value.ReadOnlySpan.CopyTo(value);
 
                 return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
             }
@@ -144,16 +144,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, IHeapObject srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
-        => ObjectOperationsNotExpected<bool>();
-
-        /// <inheritdoc/>
-        public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        => LogRecordOperationsNotExpected<bool>();
-
-        /// <inheritdoc/>
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, ReadOnlySpan<byte> newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
@@ -161,7 +152,7 @@ namespace Garnet.server
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
             {
-                newValue.CopyTo(value);
+                input.value.ReadOnlySpan.CopyTo(value);
 
                 return true;
             }
@@ -170,15 +161,6 @@ namespace Garnet.server
                 pin?.Free();
             }
         }
-
-        /// <inheritdoc/>
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, IHeapObject newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
-        => ObjectOperationsNotExpected<bool>();
-
-        /// <inheritdoc/>
-        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        => LogRecordOperationsNotExpected<bool>();
         #endregion Upserts
 
         #region RMWs
@@ -234,30 +216,13 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref VectorInput input)
+        /// <summary>Length of value object, when populated by Upsert using given input</summary>
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref VectorInput input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length + ValueAlignmentBytes };
-
-        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref VectorInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-        => ObjectOperationsNotExpected<RecordFieldInfo>();
-
-        /// <summary>Length of value object, when populated by Upsert using given log record</summary>
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref VectorInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSourceLogRecord : ISourceLogRecord
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length };
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = input.value.Length + ValueAlignmentBytes };
         #endregion Variable Length
 
         #region InitialUpdater
@@ -674,18 +639,9 @@ namespace Garnet.server
 
         #region Post operation callbacks
         /// <inheritdoc/>
-        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
         }
-
-        /// <inheritdoc/>
-        public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, IHeapObject srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
-        => ObjectOperationsNotExpected<bool>();
-
-        /// <inheritdoc/>
-        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        => LogRecordOperationsNotExpected<bool>();
 
         /// <inheritdoc/>
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
@@ -698,7 +654,7 @@ namespace Garnet.server
         => true;
 
         /// <inheritdoc/>
-        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -706,15 +662,6 @@ namespace Garnet.server
             where TEpochAccessor : IEpochAccessor
         {
         }
-
-        /// <inheritdoc/>
-        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TEpochAccessor : IEpochAccessor
-        => ObjectOperationsNotExpected<bool>();
 
         /// <inheritdoc/>
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)

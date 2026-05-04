@@ -68,7 +68,8 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, Empty.Default);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
             _ = bContext.CompletePending(true);
 
@@ -133,7 +134,8 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i + valueAdd };
-                _ = bContext.Upsert(key1, value, Empty.Default);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -172,7 +174,8 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(key1, value, Empty.Default);
+                var __upsertInput = new TestObjectInput { objectValue = value };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             }
             _ = bContext.CompletePending(true);
 

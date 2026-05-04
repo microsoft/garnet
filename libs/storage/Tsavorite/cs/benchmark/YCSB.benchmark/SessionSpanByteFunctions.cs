@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Tsavorite.benchmark
@@ -16,23 +15,8 @@ namespace Tsavorite.benchmark
             return true;
         }
 
-        // Note: Currently, only the ReadOnlySpan<byte> form of Upsert value is used here.
-
-        /// <inheritdoc/>
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration
-            srcValue.CopyTo(logRecord.ValueSpan);
-            return true;
-        }
-
-        /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
-        {
-            // This does not try to set ETag or Expiration
-            srcValue.CopyTo(dstLogRecord.ValueSpan);
-            return true;
-        }
+        // Note: InitialWriter and InPlaceWriter are inherited from SpanByteFunctions<Empty>,
+        // which extracts the value from input.ReadOnlySpan.
 
         /// <inheritdoc/>
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)

@@ -138,7 +138,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -146,7 +147,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 2;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -154,7 +156,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -162,7 +165,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -177,7 +181,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 3;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -231,7 +236,8 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                _ = bContext.Upsert(key, value);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                _ = bContext.Upsert(key, ref __upsertInput);
             }
 
             scanAndVerify(42, useScan: true);
@@ -285,7 +291,8 @@ namespace Tsavorite.test
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i * (tid + 1);
-                    _ = bContext.Upsert(key, value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(key, ref __upsertInput);
                 }
             }
 
@@ -303,7 +310,8 @@ namespace Tsavorite.test
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i;
-                    _ = bContext.Upsert(key, value);
+                    var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                    _ = bContext.Upsert(key, ref __upsertInput);
                 }
             }
 

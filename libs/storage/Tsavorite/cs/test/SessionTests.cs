@@ -61,7 +61,8 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
@@ -91,8 +92,10 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
             var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-            _ = bContext1.Upsert(key1, SpanByte.FromPinnedVariable(ref value1), Empty.Default);
-            _ = bContext2.Upsert(key2, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value1.vfield1, ifield2 = value1.vfield2 };
+            _ = bContext1.Upsert(key1, ref __upsertInput, Empty.Default);
+            __upsertInput = new InputStruct { ifield1 = value2.vfield1, ifield2 = value2.vfield2 };
+            _ = bContext2.Upsert(key2, ref __upsertInput, Empty.Default);
 
             var status = bContext1.Read(key1, ref input, ref output, Empty.Default);
 
@@ -134,7 +137,8 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value.vfield1, ifield2 = value.vfield2 };
+                _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = bContext.Read(key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
@@ -165,7 +169,8 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value1 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                _ = bContext1.Upsert(key1, SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value1.vfield1, ifield2 = value1.vfield2 };
+                _ = bContext1.Upsert(key1, ref __upsertInput, Empty.Default);
                 var status = bContext1.Read(key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
@@ -187,7 +192,8 @@ namespace Tsavorite.test.Session
                 var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
                 var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-                _ = bContext2.Upsert(key2, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+                var __upsertInput = new InputStruct { ifield1 = value2.vfield1, ifield2 = value2.vfield2 };
+                _ = bContext2.Upsert(key2, ref __upsertInput, Empty.Default);
 
                 var status = bContext2.Read(key2, ref input, ref output, Empty.Default);
 
@@ -220,7 +226,8 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 16, kfield2 = 17 };
             var value1 = new ValueStruct { vfield1 = 26, vfield2 = 27 };
 
-            _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+            var __upsertInput = new InputStruct { ifield1 = value1.vfield1, ifield2 = value1.vfield2 };
+            _ = bContext.Upsert(key1, ref __upsertInput, Empty.Default);
             var status = bContext.Read(key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
@@ -241,7 +248,8 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };
 
-            _ = bContext.Upsert(key2, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+            __upsertInput = new InputStruct { ifield1 = value2.vfield1, ifield2 = value2.vfield2 };
+            _ = bContext.Upsert(key2, ref __upsertInput, Empty.Default);
 
             status = bContext.Read(key2, ref input, ref output, Empty.Default);
 

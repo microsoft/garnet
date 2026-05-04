@@ -57,6 +57,16 @@ namespace Garnet.server
         /// </summary>
         readonly UnifiedTransactionalContext unifiedTransactionalContext;
 
+        /// <summary>
+        /// Transactional context for log record copy operations
+        /// </summary>
+        readonly LogRecordTransactionalContext logRecordTransactionalContext;
+
+        /// <summary>
+        /// Transactional context for heap object upsert operations
+        /// </summary>
+        readonly HeapObjectTransactionalContext heapObjectTransactionalContext;
+
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
@@ -110,6 +120,10 @@ namespace Garnet.server
             => objectTransactionalContext;
         internal UnifiedTransactionalContext UnifiedTransactionalContext
             => unifiedTransactionalContext;
+        internal LogRecordTransactionalContext LogRecordTransactionalContext
+            => logRecordTransactionalContext;
+        internal HeapObjectTransactionalContext HeapObjectTransactionalContext
+            => heapObjectTransactionalContext;
 
         bool IsReplaying { get; set; } = false;
 
@@ -147,6 +161,12 @@ namespace Garnet.server
             var unifiedStoreSession = storageSession.unifiedBasicContext.Session;
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+
+            var logRecordSession = storageSession.logRecordBasicContext.Session;
+            logRecordTransactionalContext = logRecordSession.TransactionalContext;
+
+            var heapObjectSession = storageSession.heapObjectBasicContext.Session;
+            heapObjectTransactionalContext = heapObjectSession.TransactionalContext;
 
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
@@ -201,6 +221,8 @@ namespace Garnet.server
                     if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                         objectTransactionalContext.EndTransaction();
                     unifiedTransactionalContext.EndTransaction();
+                    logRecordTransactionalContext.EndTransaction();
+                    heapObjectTransactionalContext.EndTransaction();
                 }
                 finally
                 {
@@ -388,6 +410,8 @@ namespace Garnet.server
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.ResetModified((FixedSpanByteKey)key);
             unifiedTransactionalContext.ResetModified((FixedSpanByteKey)key);
+            logRecordTransactionalContext.ResetModified((FixedSpanByteKey)key);
+            heapObjectTransactionalContext.ResetModified((FixedSpanByteKey)key);
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)
@@ -435,6 +459,8 @@ namespace Garnet.server
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.BeginTransaction();
             unifiedTransactionalContext.BeginTransaction();
+            logRecordTransactionalContext.BeginTransaction();
+            heapObjectTransactionalContext.BeginTransaction();
         }
 
         void LocksAcquired(long txnVersion)
@@ -444,6 +470,8 @@ namespace Garnet.server
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.LocksAcquired(txnVersion);
             unifiedTransactionalContext.LocksAcquired(txnVersion);
+            logRecordTransactionalContext.LocksAcquired(txnVersion);
+            heapObjectTransactionalContext.LocksAcquired(txnVersion);
         }
 
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)

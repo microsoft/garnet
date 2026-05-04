@@ -83,6 +83,20 @@ namespace Tsavorite.test.recovery.sumstore
             return true;
         }
 
+        // Upsert functions
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref UpsertInfo upsertInfo)
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref AdInput input, ref Output output, ref UpsertInfo upsertInfo)
+        {
+            logRecord.ValueSpan.AsRef<NumClicks>() = input.numClicks;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ref AdInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
+
         // RMW functions
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);

@@ -384,7 +384,7 @@ namespace Garnet.server
                     StoreDelete(preparedParameters, stringContext);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(preparedParameters, objectContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
+                    HeapObjectStoreUpsert(preparedParameters, ref replayContext.respServerSession.storageSession.heapObjectBasicContext, storeWrapper.GarnetObjectSerializer);
                     break;
                 case AofEntryType.ObjectStoreRMW:
                     ObjectStoreRMW(preparedParameters, objectContext, ref replayContext.parseState, bufferPtr, bufferLength);
@@ -399,7 +399,7 @@ namespace Garnet.server
                     UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
-                    UnifiedStoreObjectUpsert(preparedParameters, unifiedContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
+                    HeapObjectStoreUpsert(preparedParameters, ref replayContext.respServerSession.storageSession.heapObjectBasicContext, storeWrapper.GarnetObjectSerializer);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
                     UnifiedStoreDelete(preparedParameters, unifiedContext, activeVectorManager, replayContext.respServerSession.storageSession);
@@ -420,10 +420,11 @@ namespace Garnet.server
 
             var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
+            stringInput.parseState.InitializeWithArgument(value);
 
             StringOutput output = default;
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
-            _ = stringContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref stringInput, value, ref output, ref upsertOptions);
+            _ = stringContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref stringInput, ref output, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
@@ -491,18 +492,15 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => stringContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void ObjectStoreUpsert<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
-            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        static void HeapObjectStoreUpsert(PreparedParameters preparedParameters, ref HeapObjectBasicContext heapObjectContext, GarnetObjectSerializer garnetObjectSerializer)
         {
             var curr = preparedParameters.PayloadPtr;
             var valueSpan = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
 
-            var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
+            var heapInput = new HeapObjectInput { heapObject = (IHeapObject)valueObject };
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
-            _ = objectContext.Upsert((FixedSpanByteKey)preparedParameters.Key, valueObject, ref upsertOptions);
-            if (!output.SpanByteAndMemory.IsSpanByte)
-                output.SpanByteAndMemory.Dispose();
+            _ = heapObjectContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref heapInput, ref upsertOptions);
         }
 
         static void ObjectStoreRMW<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
@@ -538,25 +536,11 @@ namespace Garnet.server
 
             var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
+            unifiedInput.parseState.InitializeWithArgument(value);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
-            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref unifiedInput, value, ref output, ref upsertOptions);
-            if (!output.SpanByteAndMemory.IsSpanByte)
-                output.SpanByteAndMemory.Dispose();
-        }
-
-        static void UnifiedStoreObjectUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
-            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var curr = preparedParameters.PayloadPtr;
-
-            var valueSpan = SpanByte.FromLengthPrefixedPinnedPointer(curr);
-            var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
-
-            var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
-            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, valueObject, ref upsertOptions);
+            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref unifiedInput, ref output, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }

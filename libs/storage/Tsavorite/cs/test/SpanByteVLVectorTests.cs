@@ -56,7 +56,8 @@ namespace Tsavorite.test.spanbyte
                 for (int j = 0; j < len; j++)
                     valueSpan[j] = len;
 
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, len)), Empty.Default);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, len)));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), ref __upsertInput, Empty.Default);
             }
 
             // Reset rng to get the same sequence of value lengths
@@ -122,7 +123,8 @@ namespace Tsavorite.test.spanbyte
                 for (int j = 0; j < valueLen; j++)
                     valueSpan[j] = valueLen;
 
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, valueLen)), Empty.Default);
+                var __upsertInput = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, valueLen)));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), ref __upsertInput, Empty.Default);
             }
 
             // Reset rng to get the same sequence of key and value lengths

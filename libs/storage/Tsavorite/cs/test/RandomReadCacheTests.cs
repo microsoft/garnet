@@ -199,7 +199,8 @@ namespace Tsavorite.test.ReadCacheTests
 
                     fixed (byte* keyPtr = key)
                     {
-                        var status = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                        var __upsertInput = PinnedSpanByte.FromPinnedSpan(value);
+                        var status = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref __upsertInput);
 
                         if (status.IsPending)
                         {
