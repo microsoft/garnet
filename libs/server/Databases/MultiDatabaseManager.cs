@@ -206,7 +206,7 @@ namespace Garnet.server
                     // Force async 
                     await Task.Yield();
 
-                    return await TakeDatabasesCheckpointAsync(pausedDbIds, pausedCount, alreadyPaused: true, logger: logger, token: token).ConfigureAwait(false);
+                    return await TakeDatabasesCheckpointAsync(pausedDbIds, pausedCount, alreadyPaused: true, contentLockAlreadyHeld: true, logger: logger, token: token).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -327,7 +327,7 @@ namespace Garnet.server
 
                 if (dbIdsIdx == 0) return;
 
-                await TakeDatabasesCheckpointAsync(dbIdsToCheckpoint, dbIdsIdx, logger: logger, token: token).ConfigureAwait(false);
+                await TakeDatabasesCheckpointAsync(dbIdsToCheckpoint, dbIdsIdx, contentLockAlreadyHeld: true, logger: logger, token: token).ConfigureAwait(false);
             }
             finally
             {
@@ -1004,28 +1004,32 @@ namespace Garnet.server
         /// <param name="dbIds">Buffer of database IDs to checkpoint (only first <paramref name="dbIdsCount"/> entries are read)</param>
         /// <param name="dbIdsCount">Number of databases to checkpoint (first dbIdsCount indexes from dbIds)</param>
         /// <param name="alreadyPaused">If true, the caller has already paused checkpoints for every DB in dbIds[0..dbIdsCount); per-DB resume is the responsibility of this method (or the per-DB helper it hands off to).</param>
+        /// <param name="contentLockAlreadyHeld">If true, the caller already holds <see cref="databasesContentLock"/> as a reader and this method must not acquire or release it.</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if checkpointing already in progress</returns>
-        private async Task<bool> TakeDatabasesCheckpointAsync(int[] dbIds, int dbIdsCount, bool alreadyPaused = false, ILogger logger = null,
-            CancellationToken token = default)
+        private async Task<bool> TakeDatabasesCheckpointAsync(int[] dbIds, int dbIdsCount, bool alreadyPaused = false,
+            bool contentLockAlreadyHeld = false, ILogger logger = null, CancellationToken token = default)
         {
             Debug.Assert(dbIds != null);
             Debug.Assert(dbIdsCount <= dbIds.Length);
 
             var checkpointTasks = new Task[dbIdsCount];
 
-            var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired)
+            if (!contentLockAlreadyHeld)
             {
-                // Resume any pre-paused DB IDs since we can't proceed to hand them off
-                if (alreadyPaused)
+                var lockAcquired = TryGetDatabasesContentReadLock(token);
+                if (!lockAcquired)
                 {
-                    for (var i = 0; i < dbIdsCount; i++)
-                        ResumeCheckpoints(dbIds[i]);
-                }
+                    // Resume any pre-paused DB IDs since we can't proceed to hand them off
+                    if (alreadyPaused)
+                    {
+                        for (var i = 0; i < dbIdsCount; i++)
+                            ResumeCheckpoints(dbIds[i]);
+                    }
 
-                return false;
+                    return false;
+                }
             }
 
             var handedOffCount = 0;
@@ -1066,7 +1070,8 @@ namespace Garnet.server
             }
             finally
             {
-                databasesContentLock.ReadUnlock();
+                if (!contentLockAlreadyHeld)
+                    databasesContentLock.ReadUnlock();
             }
 
             return true;
