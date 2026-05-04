@@ -136,6 +136,9 @@ namespace Garnet.cluster
                     logger?.LogWarning("Migrating {count} RangeIndex key(s) via KEYS path", rangeIndexKeysToMigrate.Count);
                     foreach (var (key, stubBytes) in rangeIndexKeysToMigrate)
                     {
+                        // Sync-over-async: MigrateKeysFromStore is synchronous; TransmitRangeIndexAsync
+                        // uses async file I/O internally but is safe to block here since we're on a
+                        // dedicated migration thread, not a thread pool thread.
                         if (!TransmitRangeIndexAsync(migrateTask, key, stubBytes).GetAwaiter().GetResult())
                         {
                             logger?.LogError("Failed to migrate RangeIndex key via KEYS path");

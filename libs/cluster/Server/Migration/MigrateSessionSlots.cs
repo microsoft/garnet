@@ -122,7 +122,7 @@ namespace Garnet.cluster
                         foreach (var (key, stubBytes) in rangeIndexKeys)
                         {
                             // Note that currently we do not parallelize the migration of RangeIndex keys
-                            if (!TransmitRangeIndexAsync(migrateOperation[0], key, stubBytes).GetAwaiter().GetResult())
+                            if (!await TransmitRangeIndexAsync(migrateOperation[0], key, stubBytes).ConfigureAwait(false))
                             {
                                 logger?.LogError("Failed to migrate RangeIndex key");
                                 return false;
