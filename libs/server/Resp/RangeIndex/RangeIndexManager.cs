@@ -122,17 +122,25 @@ namespace Garnet.server
         private readonly bool removeOutdatedCheckpoints;
 
         /// <summary>
+        /// Whether cluster mode is enabled. When true, purging from OnCheckpoint is deferred
+        /// to CheckpointStore which checks for active readers before deleting.
+        /// </summary>
+        private readonly bool clusterEnabled;
+
+        /// <summary>
         /// Creates a new <see cref="RangeIndexManager"/>.
         /// </summary>
         /// <param name="enabled">Whether range index commands are enabled.</param>
         /// <param name="dataDir">Base directory for deterministic BfTree paths. May be null for memory-only usage.</param>
         /// <param name="removeOutdatedCheckpoints">Whether to purge old checkpoint snapshots when a new one completes.</param>
+        /// <param name="clusterEnabled">Whether cluster mode is enabled.</param>
         /// <param name="logger">Optional logger.</param>
-        public RangeIndexManager(bool enabled, string dataDir = null, bool removeOutdatedCheckpoints = true, ILogger logger = null)
+        public RangeIndexManager(bool enabled, string dataDir = null, bool removeOutdatedCheckpoints = true, bool clusterEnabled = false, ILogger logger = null)
         {
             IsEnabled = enabled;
             this.dataDir = dataDir;
             this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
+            this.clusterEnabled = clusterEnabled;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
         }
@@ -414,13 +422,25 @@ namespace Garnet.server
 
         /// <summary>
         /// Delete BfTree checkpoint snapshot files from prior checkpoints.
-        /// Only acts when <see cref="removeOutdatedCheckpoints"/> is true, matching
-        /// Tsavorite's removeOutdated behavior. Scans all rangeindex subdirectories
-        /// for snapshot.*.bftree files that don't match the current checkpoint token.
+        /// Scans all rangeindex subdirectories for snapshot.*.bftree files that don't
+        /// match <paramref name="currentToken"/>.
         /// </summary>
-        internal void PurgeOldCheckpointSnapshots(Guid currentToken)
+        /// <param name="currentToken">The token to preserve; all other snapshot files are deleted.</param>
+        /// <param name="enforceClusterSafety">
+        /// When <c>true</c>, the caller guarantees no active readers (e.g., CheckpointStore).
+        /// When <c>false</c>, purging is skipped if cluster mode is enabled.
+        /// </param>
+        public void PurgeOldCheckpointSnapshots(Guid currentToken, bool enforceClusterSafety = false)
         {
             if (!removeOutdatedCheckpoints)
+                return;
+
+            // If we are not enforcing clusterSafety then we should return and let
+            // cluster API perform the cleaning.
+            if (!enforceClusterSafety && clusterEnabled)
+                return;
+
+            if (currentToken == default)
                 return;
 
             var currentFileName = $"snapshot.{currentToken:N}.bftree";

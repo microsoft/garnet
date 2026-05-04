@@ -307,10 +307,9 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var removeOutdated = !serverOptions.EnableCluster;
             var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
             var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
-                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
+                removeOutdatedCheckpoints: true, clusterEnabled: serverOptions.EnableCluster, loggerFactory?.CreateLogger("RangeIndexManager"));
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 

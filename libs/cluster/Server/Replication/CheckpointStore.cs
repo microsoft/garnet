@@ -95,6 +95,9 @@ namespace Garnet.cluster
                     }
                 }
 
+                // Purge RangeIndex BfTree snapshots for all tokens except the current one
+                storeWrapper.RangeIndexManager?.PurgeOldCheckpointSnapshots(logToken, enforceClusterSafety: true);
+
                 // Delete index checkpoints
                 foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
                 {
@@ -184,6 +187,9 @@ namespace Garnet.cluster
                 if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
                     break;
                 clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+
+                // Purge RangeIndex BfTree snapshots — bypass cluster safety since readers are already suspended
+                storeWrapper.RangeIndexManager?.PurgeOldCheckpointSnapshots(tail.metadata.storeHlogToken, enforceClusterSafety: true);
 
                 logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 
