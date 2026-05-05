@@ -32,11 +32,11 @@ namespace Garnet.cluster
         readonly ILogger logger;
         bool _disposed;
 
-        private long primary_sync_last_time;
+        private long primary_sync_last_timestamp;
 
-        internal long LastPrimarySyncSeconds => IsRecovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+        internal long LastPrimarySyncSeconds => IsRecovering ? (long)Stopwatch.GetElapsedTime(primary_sync_last_timestamp).TotalSeconds : 0;
 
-        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
+        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_timestamp = Stopwatch.GetTimestamp();
 
         private SingleWriterMultiReaderLock recoverLock;
         private SingleWriterMultiReaderLock recoveryStateChangeLock;

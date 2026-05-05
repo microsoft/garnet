@@ -76,6 +76,24 @@ namespace Garnet.test
         }
 
         [Test]
+        public void UptimeIncreasesAcrossInfoCalls()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            static long ParseUptime(string info) =>
+                long.Parse(info.Split("\r\n").First(x => x.StartsWith("uptime_in_seconds:")).Split(':')[1]);
+
+            var first = ParseUptime(db.Execute("INFO", "SERVER").ToString());
+            ClassicAssert.GreaterOrEqual(first, 0);
+
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+
+            var second = ParseUptime(db.Execute("INFO", "SERVER").ToString());
+            ClassicAssert.Greater(second, first, "uptime_in_seconds should increase between INFO calls");
+        }
+
+        [Test]
         [TestCase("ALL")]
         [TestCase("DEFAULT")]
         [TestCase("EVERYTHING")]
