@@ -1136,13 +1136,15 @@ namespace Tsavorite.core
             var (keyLength, existingValueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
 
             // The sizeInfo's FieldInfo has already been populated. Key size won't change in IPU.
-            sizeInfo.KeyIsInline = Info.KeyIsInline;
+            if (Info.KeyIsInline)
+                sizeInfo.SetKeyIsInline();
 
             // Because this is IPU we are limited in inline value size by the record length less any optional length growth in the sizeInfo.
             // We don't allow non-inline if we have a null objectIdMap. TODO: Need better awareness of actual inline value max length.
             var existingOptionalSize = eTagLen + expirationLen + objectLogPositionLen;
             sizeInfo.MaxInlineValueSize = existingValueLength + fillerLen - (sizeInfo.OptionalSize - existingOptionalSize);
-            sizeInfo.ValueIsInline = objectIdMap is null ? true : !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
+            if (objectIdMap is null || (!sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize))
+                sizeInfo.SetValueIsInline();
             var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record

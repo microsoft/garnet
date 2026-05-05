@@ -14,23 +14,75 @@ namespace Tsavorite.core
     /// </summary>
     public struct RecordSizeInfo
     {
+        // Bit layout for 'word':
+        //   Bit 0:   KeyIsInline
+        //   Bit 1:   ValueIsInline
+        //   Bit 2:   IsRevivifiedRecord
+        //   Bits 3-5: KeyLengthBytes (max value 4)
+        //   Bits 6-8: RecordLengthBytes (max value 4)
+        private const int KeyIsInlineBit = 1 << 0;
+        private const int ValueIsInlineBit = 1 << 1;
+        private const int IsRevivifiedRecordBit = 1 << 2;
+        private const int KeyLengthBytesShift = 3;
+        private const int RecordLengthBytesShift = 6;
+        private const int LengthBytesMask = 0x7;
+
+        /// <summary>Packed field containing KeyIsInline, ValueIsInline, IsRevivifiedRecord, KeyLengthBytes, and RecordLengthBytes.</summary>
+        internal int word;
+
         /// <summary>The value length and whether optional fields are present.</summary>
         public RecordFieldInfo FieldInfo;
 
         /// <summary>Whether the key was within the inline max key length. Set automatically by Tsavorite based on <see cref="RecordFieldInfo.KeySize"/> key size.</summary>
-        public bool KeyIsInline;
+        public readonly bool KeyIsInline
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (word & KeyIsInlineBit) != 0;
+        }
 
         /// <summary>Whether the value was within the inline max value length.</summary>
-        public bool ValueIsInline;
+        public readonly bool ValueIsInline
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (word & ValueIsInlineBit) != 0;
+        }
+
+        /// <summary>Sets <see cref="KeyIsInline"/> to true.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetKeyIsInline() => word |= KeyIsInlineBit;
+
+        /// <summary>Sets <see cref="ValueIsInline"/> to true.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetValueIsInline() => word |= ValueIsInlineBit;
 
         /// <summary>Number of bytes in key length; see <see cref="RecordDataHeader"/>.</summary>
-        public int KeyLengthBytes;
+        public int KeyLengthBytes
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => (word >> KeyLengthBytesShift) & LengthBytesMask;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => word = (word & ~(LengthBytesMask << KeyLengthBytesShift)) | ((value & LengthBytesMask) << KeyLengthBytesShift);
+        }
 
         /// <summary>Number of bytes in entire record length; see <see cref="RecordDataHeader"/>.</summary>
-        public int RecordLengthBytes;
+        public int RecordLengthBytes
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => (word >> RecordLengthBytesShift) & LengthBytesMask;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => word = (word & ~(LengthBytesMask << RecordLengthBytesShift)) | ((value & LengthBytesMask) << RecordLengthBytesShift);
+        }
 
         /// <summary>Whether the record allocation returned a revivified record.</summary>
-        internal bool IsRevivifiedRecord;
+        internal readonly bool IsRevivifiedRecord
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (word & IsRevivifiedRecordBit) != 0;
+        }
+
+        /// <summary>Sets <see cref="IsRevivifiedRecord"/> to true.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetIsRevivifiedRecord() => word |= IsRevivifiedRecordBit;
 
         /// <summary>Whether the value was specified to be an object.</summary>
         public readonly bool ValueIsObject => FieldInfo.ValueIsObject;
@@ -39,7 +91,7 @@ namespace Tsavorite.core
         public readonly bool KeyIsOverflow => !KeyIsInline;
 
         /// <summary>Whether the value is an overflow allocation.</summary>
-        public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
+        public readonly bool ValueIsOverflow => !ValueIsInline && !FieldInfo.ValueIsObject;
 
         /// <summary>Returns the inline length of the key (the amount it will take in the record).</summary>
         public readonly int InlineKeySize => KeyIsInline ? FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
@@ -47,8 +99,8 @@ namespace Tsavorite.core
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly int InlineValueSize => ValueIsInline ? FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
-        public readonly bool RecordIsInline => KeyIsInline && ValueIsInline;
+        /// <summary>Returns whether the entire record (key and value) are inlinethe inline length of the value (no overflow or object).</summary>
+        public readonly bool RecordIsInline => (word & (KeyIsInlineBit | ValueIsInlineBit)) == (KeyIsInlineBit | ValueIsInlineBit);
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSize { readonly get; internal set; }
@@ -61,8 +113,7 @@ namespace Tsavorite.core
         public int AllocatedInlineRecordSize { readonly get; internal set; }
 
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
-        public readonly int ObjectLogPositionSize => objectLogPositionSize;
-        byte objectLogPositionSize;
+        public readonly int ObjectLogPositionSize => RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
         public readonly int OptionalSize => FieldInfo.eTagSize + FieldInfo.expirationSize + ObjectLogPositionSize;
@@ -78,8 +129,6 @@ namespace Tsavorite.core
         {
             if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
                 ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
-
-            objectLogPositionSize = (byte)((KeyIsInline && ValueIsInline) ? 0 : LogRecord.ObjectLogPositionSize);
 
             // Calculate full used record size. Use the full possible RecordLengthBytes initially to reserve space in the record for it;
             // then replace it with the exact size needed and update ActualInlineRecordSize.
