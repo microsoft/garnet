@@ -52,7 +52,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, ref output, ref upsertInfo))
                 return false;

@@ -126,10 +126,13 @@ namespace Tsavorite.core
                     }
 
                     // Track value heap delta across in-place write.
+                    var sizeTracker = hlogBase.logSizeTracker;
                     var ipwPreInline = srcLogRecord.Info.ValueIsInline;
                     var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
 
-                    if (sessionFunctions.InPlaceWriter(ref srcLogRecord, ref input, ref output, ref upsertInfo))
+                    var ipwResult = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref input, ref output, ref upsertInfo);
+                    var ipwDelta = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() - ipwPreHeap : 0L;
+                    if (ipwResult)
                     {
                         if (ipwDelta != 0)
                             sizeTracker.IncrementSize(ipwDelta);
