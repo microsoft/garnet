@@ -16,7 +16,8 @@ namespace Garnet.server
         readonly GarnetLatencyMetricsSession LatencyMetrics;
         readonly ILogger logger = null;
         readonly StoreWrapper storeWrapper;
-        readonly StorageSession storageSession;
+        internal readonly StorageSession storageSession;
+
         readonly ScratchBufferBuilder scratchBufferBuilder;
         readonly ScratchBufferAllocator scratchBufferAllocator;
 
