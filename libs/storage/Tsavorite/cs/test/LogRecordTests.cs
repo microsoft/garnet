@@ -12,7 +12,6 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.LogRecordTests
 {
     using static Utility;
-    using static VarbyteLengthUtility;
 
     /// <summary>
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
@@ -29,7 +28,7 @@ namespace Tsavorite.test.LogRecordTests
 #pragma warning disable IDE1006 // Naming Styles
         const int initialKeyLen = 10;
         const int initialValueLen = 40;
-        const int initialVarbyteSize = MinLengthMetadataBytes;
+        const int initialVarbyteSize = RecordDataHeader.MinHeaderBytes;
         const int initialOptionalSize = sizeof(long) * 2;
 
         const int maxInlineKeySize = 64;

@@ -54,8 +54,6 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
-    using static VarbyteLengthUtility;
-
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
@@ -281,7 +279,7 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             // Records all have a Span<byte> corresponding to a 'long' ii and value, which means one length byte.
-            recordSize = RoundUp(RecordInfo.Size + NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
+            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
