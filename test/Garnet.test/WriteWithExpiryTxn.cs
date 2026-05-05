@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -23,14 +24,18 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        public override unsafe void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            var value = GetNextArg(ref procInput, ref offset);
+            var input = new StringInput(RespCommand.SETEX, ref procInput.parseState, startIdx: offset++, count: 1);
             var expiryMs = GetNextArg(ref procInput, ref offset);
 
-            api.SETEX(key, value, expiryMs);
+            var expiryTicks = DateTimeOffset.UtcNow.Ticks +
+                TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())).Ticks;
+            input.arg1 = expiryTicks;
+
+            api.SET(key, ref input);
             WriteSimpleString(ref output, "SUCCESS");
         }
     }

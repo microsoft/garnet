@@ -31,19 +31,23 @@ namespace Garnet
         /// <summary>
         /// Perform the MSETPX operation
         /// </summary>
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        public override unsafe void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
 
             // Read expiry
             var expiryMs = GetNextArg(ref procInput, ref offset);
+            var expiryTicks = DateTimeOffset.UtcNow.Ticks +
+                TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())).Ticks;
 
             // Read and set key-value pairs with expiry
-            PinnedSpanByte key, value;
+            PinnedSpanByte key;
+            var input = new StringInput(RespCommand.SETEX);
+
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
-                value = GetNextArg(ref procInput, ref offset);
-                api.SETEX(key, value, expiryMs);
+                input.parseState = procInput.parseState.Slice(offset++, 1);
+                api.SETEX(key, ref input, expiryMs);
             }
             WriteSimpleString(ref output, "OK");
         }

@@ -734,7 +734,7 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, long version, int sessionId, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref StringInput input, long version, int sessionId, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
@@ -755,7 +755,6 @@ namespace Garnet.server
                 version,
                 sessionId,
                 key,
-                value,
                 ref input,
                 epochAccessor,
                 out _);

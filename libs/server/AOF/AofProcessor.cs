@@ -404,6 +404,11 @@ namespace Garnet.server
                 case AofEntryType.UnifiedStoreDelete:
                     UnifiedStoreDelete(preparedParameters, unifiedContext, activeVectorManager, replayContext.respServerSession.storageSession);
                     break;
+#if false
+                case AofEntryType.LogRecordUpsert:
+                    LogRecordUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    break;
+#endif
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
@@ -415,12 +420,9 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
-            var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-            curr += value.TotalSize;
 
-            var stringInput = new StringInput { parseState = parseState };
+            var stringInput = new StringInput();
             _ = stringInput.DeserializeFrom(curr);
-            stringInput.parseState.InitializeWithArgument(value);
 
             StringOutput output = default;
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
@@ -531,12 +533,8 @@ namespace Garnet.server
         {
             var curr = preparedParameters.PayloadPtr;
 
-            var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-            curr += value.TotalSize;
-
-            var unifiedInput = new UnifiedInput { parseState = parseState };
+            var unifiedInput = new UnifiedInput();
             _ = unifiedInput.DeserializeFrom(curr);
-            unifiedInput.parseState.InitializeWithArgument(value);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
@@ -544,6 +542,24 @@ namespace Garnet.server
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
+
+#if false
+        static void LogRecordUpsert<TContext>(PreparedParameters preparedParameters, TContext context, ref SessionParseState parseState, byte* outputPtr, int outputLength)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, LogRecordInput, LogRecordOutput, long, LogRecordSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var curr = preparedParameters.PayloadPtr;
+
+            // TODO finish the Serialization
+            var logRecordInput = new LogRecordInput<DiskLogRecord>();
+            _ = logRecordInput.DeserializeFrom(curr);
+
+            var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
+            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
+            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref logRecordInput, ref output, ref upsertOptions);
+            if (!output.SpanByteAndMemory.IsSpanByte)
+                output.SpanByteAndMemory.Dispose();
+        }
+#endif
 
         static void UnifiedStoreRMW<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>

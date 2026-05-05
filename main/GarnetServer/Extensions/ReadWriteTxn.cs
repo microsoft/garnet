@@ -39,8 +39,10 @@ namespace Garnet
             var status = api.GET(key1, out PinnedSpanByte result);
             if (status == GarnetStatus.OK)
             {
-                api.SET(key2, result);
-                api.SET(key3, result);
+                var input = new StringInput(RespCommand.SET);
+                input.parseState.InitializeWithArgument(result);
+                api.SET(key2, ref input);
+                api.SET(key3, ref input);
             }
             WriteSimpleString(ref output, "SUCCESS");
         }

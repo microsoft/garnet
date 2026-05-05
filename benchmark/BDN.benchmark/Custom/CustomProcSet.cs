@@ -34,15 +34,14 @@ namespace BDN.benchmark.CustomProcs
             var setC = GetNextArg(ref procInput, ref offset);
             var setD = GetNextArg(ref procInput, ref offset);
 
-            var valueA = GetNextArg(ref procInput, ref offset);
-            var valueB = GetNextArg(ref procInput, ref offset);
-            var valueC = GetNextArg(ref procInput, ref offset);
-            var valueD = GetNextArg(ref procInput, ref offset);
-
-            _ = api.SET(setA, valueA);
-            _ = api.SET(setB, valueB);
-            _ = api.SET(setC, valueC);
-            _ = api.SET(setD, valueD);
+            var input = new StringInput(RespCommand.SET, ref procInput.parseState, startIdx: offset++, count: 1);
+            _ = api.SET(setA, ref input);
+            input.parseState = procInput.parseState.Slice(offset++, 1);
+            _ = api.SET(setB, ref input);
+            input.parseState = procInput.parseState.Slice(offset++, 1);
+            _ = api.SET(setC, ref input);
+            input.parseState = procInput.parseState.Slice(offset++, 1);
+            _ = api.SET(setD, ref input);
 
             return true;
         }

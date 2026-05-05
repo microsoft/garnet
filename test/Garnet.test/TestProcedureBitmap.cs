@@ -48,7 +48,7 @@ namespace Garnet
             bool result = true;
             BitmapOperation[] bitwiseOps = [BitmapOperation.AND, BitmapOperation.OR, BitmapOperation.XOR];
 
-            //get paramaters
+            //get parameters
             var bitmapA = GetNextArg(ref procInput.parseState, ref offset);
             var offsetArgument = GetNextArg(ref procInput.parseState, ref offset);
             var bitValueArgument = GetNextArg(ref procInput.parseState, ref offset);
@@ -75,7 +75,18 @@ namespace Garnet
             //bitop command
             var src = Int64.MaxValue;
             var data = BitConverter.GetBytes(src);
-            api.SET(bitmapA, data);
+            var parseState = new SessionParseState();
+            parseState.Initialize(count: 1);
+            var setInput = new StringInput(RespCommand.SET);
+            unsafe
+            {
+                fixed (byte* ptr = data)
+                {
+                    parseState.SetArgument(0, PinnedSpanByte.FromPinnedPointer(ptr, data.Length));
+                    setInput.parseState = parseState;
+                    api.SET(bitmapA, ref setInput);
+                }
+            }
 
             //Not operator
             api.StringBitOperation(BitmapOperation.NOT, destinationKeyBitOp, [bitmapA], out long size);
@@ -96,7 +107,15 @@ namespace Garnet
 
             var srcB = Int64.MaxValue - 1234;
             data = BitConverter.GetBytes(srcB);
-            api.SET(bitmapB, data);
+            unsafe
+            {
+                fixed (byte* ptr = data)
+                {
+                    parseState.SetArgument(0, PinnedSpanByte.FromPinnedPointer(ptr, data.Length));
+                    setInput.parseState = parseState;
+                    api.SET(bitmapB, ref setInput);
+                }
+            }
 
             //apply operators
             for (int i = 0; i < bitwiseOps.Length; i++)
@@ -130,7 +149,15 @@ namespace Garnet
 
             //bitfield command
             data = [(byte)'P'];
-            api.SET(bitmapA, data);
+            unsafe
+            {
+                fixed (byte* ptr = data)
+                {
+                    parseState.SetArgument(0, PinnedSpanByte.FromPinnedPointer(ptr, data.Length));
+                    setInput.parseState = parseState;
+                    api.SET(bitmapA, ref setInput);
+                }
+            }
             var listCommands = new List<BitFieldCmdArgs>();
 
             var bitFieldArguments = new BitFieldCmdArgs(RespCommand.GET, ((byte)BitFieldSign.UNSIGNED | 8), 0, 0, (byte)BitFieldOverflow.WRAP);

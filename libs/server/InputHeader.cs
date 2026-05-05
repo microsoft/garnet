@@ -340,20 +340,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Constructor for simple SET with a value
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="value">Value to set</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public StringInput(RespCommand cmd, PinnedSpanByte value, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, flags, arg1)
-        {
-            parseState.InitializeWithArgument(value);
-        }
-
-        /// <summary>
         /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
@@ -380,6 +366,22 @@ namespace Garnet.server
             : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
+        }
+
+        /// <summary>
+        /// Create a new instance of StringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="startIdx">First command argument index in parse state</param>
+        /// <param name="count">Number of command arguments in parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, int count, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState.Slice(startIdx, count);
         }
 
         /// <inheritdoc />

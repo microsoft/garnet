@@ -149,7 +149,9 @@ namespace Garnet.server
                     {
                         var dstKey = keys[0];
                         var dstBitmapSpanByte = PinnedSpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
-                        status = SET(dstKey, dstBitmapSpanByte, ref uc);
+                        var setInput = new StringInput(RespCommand.SET);
+                        setInput.parseState.InitializeWithArgument(dstBitmapSpanByte);  // TODO can we avoid this allocation?
+                        status = SET(dstKey, ref setInput, ref uc);
                     }
                 }
                 else

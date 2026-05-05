@@ -54,8 +54,8 @@ namespace Garnet
             var offset = 0;
 
             var mainStoreKey = GetNextArg(ref procInput, ref offset);
-            var mainStoreValue = GetNextArg(ref procInput, ref offset);
-            api.SET(mainStoreKey, mainStoreValue);
+            var setInput = new StringInput(RespCommand.SET, ref procInput.parseState, startIdx: offset++, count: 1);
+            api.SET(mainStoreKey, ref setInput);
 
             var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             var sortedSet1Entry = GetNextArg(ref procInput, ref offset);

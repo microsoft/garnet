@@ -262,9 +262,9 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
 
-            var status = storageApi.SET(key, value);
+            var input = new StringInput(RespCommand.SET, ref parseState, startIdx: 1, count: 1);
+            var status = storageApi.SET(key, ref input);
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -381,10 +381,8 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var value = parseState.GetArgSliceByRef(2);
-
-            var input = new StringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(key, ref input, value);
+            var input = new StringInput(RespCommand.SETEX, ref parseState, startIdx: 2, count: 1, arg1: valMetadata);
+            _ = storageApi.SET(key, ref input);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -423,7 +421,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
-            var val = parseState.GetArgSliceByRef(1);
 
             var expiry = 0;
             ReadOnlySpan<byte> errorMessage = default;
@@ -529,7 +526,7 @@ namespace Garnet.server
                         case ExistOptions.None:
                             return getValue
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
+                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, ref storageApi);
                         case ExistOptions.NX:
@@ -556,7 +553,7 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, int expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, int expiry, PinnedSpanByte key, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
@@ -567,9 +564,9 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, 0, valMetadata);
+            var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: valMetadata);
 
-            storageApi.SET(key, ref input, val);
+            storageApi.SET(key, ref input);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

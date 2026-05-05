@@ -17,7 +17,7 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
@@ -29,37 +29,9 @@ namespace Garnet.server
                 version,
                 sessionID,
                 key,
-                value,
                 ref input,
                 epochAccessor,
                 out _);
-        }
-
-        /// <summary>
-        /// Logging upsert from
-        /// a. InPlaceWriter
-        /// b. PostInitialWriter
-        /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
-            where TEpochAccessor : IEpochAccessor
-        {
-            if (functionsState.StoredProcMode)
-                return;
-            input.header.flags |= RespInputFlags.Deterministic;
-
-            GarnetObjectSerializer.Serialize(value, out var valueBytes);
-            fixed (byte* valPtr = valueBytes)
-            {
-                functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.ObjectStoreUpsert,
-                    version,
-                    sessionID,
-                    key,
-                    new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
-                    ref input,
-                    epochAccessor,
-                    out _);
-            }
         }
 
         /// <summary>

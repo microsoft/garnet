@@ -86,12 +86,8 @@ namespace Garnet.server
 
         #region SET
         /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value)
-            => storageSession.SET(key, value, ref stringContext);
-
-        /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value)
-            => storageSession.SET(key, ref input, value, ref stringContext);
+        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input)
+            => storageSession.SET(key, ref input, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input)
@@ -109,20 +105,16 @@ namespace Garnet.server
         public GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input)
             => storageSession.DEL_Conditional(key, ref input, ref stringContext);
 
-        /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
-            => storageSession.SET(key, value, ref stringContext);
-
         #endregion
 
         #region SETEX
         /// <inheritdoc />
-        public unsafe GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs)
-            => storageSession.SETEX(key, value, expiryMs, ref stringContext);
+        public unsafe GarnetStatus SETEX(PinnedSpanByte key, ref StringInput input, PinnedSpanByte expiryMs)
+            => storageSession.SETEX(key, ref input, expiryMs, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry)
-            => storageSession.SETEX(key, value, expiry, ref stringContext);
+        public GarnetStatus SETEX(PinnedSpanByte key, ref StringInput input, TimeSpan expiry)
+            => storageSession.SETEX(key, ref input, expiry, ref stringContext);
 
         #endregion
 

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -119,6 +120,7 @@ namespace Garnet.server
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void UpdateExpiration(ref LogRecord logRecord, long expiration)
         {
             if (expiration != 0)

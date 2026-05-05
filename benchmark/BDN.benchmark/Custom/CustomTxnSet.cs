@@ -27,11 +27,10 @@ namespace BDN.benchmark.CustomProcs
         PinnedSpanByte setC;
         PinnedSpanByte setD;
 
-        PinnedSpanByte valueA;
-        PinnedSpanByte valueB;
-        PinnedSpanByte valueC;
-        PinnedSpanByte valueD;
-
+        SessionParseState parseStateA;
+        SessionParseState parseStateB;
+        SessionParseState parseStateC;
+        SessionParseState parseStateD;
         /// <summary>
         ///  CTXNSET key1 key2 key3 key4 value1 value2 value3 value4
         /// </summary>
@@ -47,10 +46,10 @@ namespace BDN.benchmark.CustomProcs
             setC = GetNextArg(ref procInput, ref offset);
             setD = GetNextArg(ref procInput, ref offset);
 
-            valueA = GetNextArg(ref procInput, ref offset);
-            valueB = GetNextArg(ref procInput, ref offset);
-            valueC = GetNextArg(ref procInput, ref offset);
-            valueD = GetNextArg(ref procInput, ref offset);
+            parseStateA = procInput.parseState.Slice(offset++, 1);
+            parseStateB = procInput.parseState.Slice(offset++, 1);
+            parseStateC = procInput.parseState.Slice(offset++, 1);
+            parseStateD = procInput.parseState.Slice(offset++, 1);    
 
             AddKey(setA, LockType.Exclusive, StoreType.Main);
             AddKey(setB, LockType.Exclusive, StoreType.Main);
@@ -62,10 +61,14 @@ namespace BDN.benchmark.CustomProcs
 
         public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            _ = api.SET(setA, valueA);
-            _ = api.SET(setB, valueB);
-            _ = api.SET(setC, valueC);
-            _ = api.SET(setD, valueD);
+            var input = new StringInput(RespCommand.SET, ref parseStateA);
+            _ = api.SET(setA, ref input);
+            input.parseState = parseStateB;
+            _ = api.SET(setB, ref input);
+            input.parseState = parseStateC;
+            _ = api.SET(setC, ref input);
+            input.parseState = parseStateD;
+            _ = api.SET(setD, ref input);
         }
     }
 }

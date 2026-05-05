@@ -95,6 +95,11 @@ namespace Garnet.server
         /// Unified store delete
         /// </summary>
         UnifiedStoreDelete = 0x73,
+
+        /// <summary>
+        /// Log Record upsert (e.g. from Migration)
+        /// </summary>
+        LogRecordUpsert = 0x80,
     }
 
     internal enum AofStoreType : byte

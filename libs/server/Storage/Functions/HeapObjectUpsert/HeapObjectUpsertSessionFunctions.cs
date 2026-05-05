@@ -10,9 +10,8 @@ namespace Garnet.server
     /// Session functions for heap object upsert operations with optional AOF logging.
     /// Used when inserting IHeapObject instances directly into the store.
     /// </summary>
-    internal readonly unsafe partial struct HeapObjectUpsertSessionFunctions : ISessionFunctions<HeapObjectInput, Empty, Empty>
+    internal readonly partial struct HeapObjectUpsertSessionFunctions : ISessionFunctions<HeapObjectInput, Empty, Empty>
     {
-        const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
 
         internal HeapObjectUpsertSessionFunctions(FunctionsState functionsState)
@@ -28,13 +27,16 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref HeapObjectInput input, ref Empty output, ref UpsertInfo upsertInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (functionsState.appendOnlyFile != null)
-                upsertInfo.UserData |= NeedAofLog;
         }
 
         /// <inheritdoc />
         public bool InPlaceWriter(ref LogRecord logRecord, ref HeapObjectInput input, ref Empty output, ref UpsertInfo upsertInfo)
-            => false; // Force copy-to-tail for object replacement
+        {
+            if (logRecord.Info.ValueIsObject)
+                return logRecord.TrySetValueObject(input.heapObject);
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(key: logRecord, ref input) };
+            return logRecord.TrySetValueObjectAndPrepareOptionals(input.heapObject, in sizeInfo);
+        }
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref HeapObjectInput input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
@@ -44,28 +46,6 @@ namespace Garnet.server
 #endif
             where TEpochAccessor : IEpochAccessor
         {
-            if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog)
-                WriteLogUpsert(key.KeyBytes, input, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
-        }
-
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, HeapObjectInput input, long version, int sessionId, TEpochAccessor epochAccessor)
-            where TEpochAccessor : IEpochAccessor
-        {
-            if (functionsState.StoredProcMode)
-                return;
-
-            GarnetObjectSerializer.Serialize((IGarnetObject)input.heapObject, out var valueBytes);
-            fixed (byte* valPtr = valueBytes)
-            {
-                functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.UnifiedStoreObjectUpsert,
-                    version,
-                    sessionId,
-                    key,
-                    new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
-                    epochAccessor,
-                    out _);
-            }
         }
 
         /// <inheritdoc />

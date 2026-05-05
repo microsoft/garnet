@@ -12,8 +12,9 @@ namespace Garnet
         {
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            var value = GetNextArg(ref procInput, ref offset);
-            garnetApi.SET(key, value);
+
+            var input = new StringInput(RespCommand.SET, ref procInput.parseState, startIdx: offset++, count: 1);
+            garnetApi.SET(key, ref input);
 
             // Create an object and set it
             var objKey = GetNextArg(ref procInput, ref offset);

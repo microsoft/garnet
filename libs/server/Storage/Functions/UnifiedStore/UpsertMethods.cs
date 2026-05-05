@@ -43,6 +43,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -51,9 +52,7 @@ namespace Garnet.server
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-            {
-                WriteLogUpsert(key.KeyBytes, ref input, input.parseState.GetArgSliceByRef(0), upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
-            }
+                WriteLogUpsert(key.KeyBytes, ref input, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
     }
 }

@@ -29,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
-        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
+        public readonly ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 
         /// <summary>
         /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
@@ -265,9 +265,7 @@ namespace Garnet.server
             *(bufferPtr + i) = arg;
 
             if (i >= Count)
-            {
                 Count = i + 1;
-            }
         }
 
         /// <summary>

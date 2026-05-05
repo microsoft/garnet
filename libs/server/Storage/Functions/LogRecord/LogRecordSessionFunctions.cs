@@ -61,6 +61,7 @@ namespace Garnet.server
         void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref LogRecordInput<ISourceLogRecord> input, long version, int sessionId, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
+#if false
             if (functionsState.StoredProcMode)
                 return;
 
@@ -70,7 +71,7 @@ namespace Garnet.server
                 fixed (byte* valPtr = valueBytes)
                 {
                     functionsState.appendOnlyFile.Log.Enqueue(
-                        AofEntryType.UnifiedStoreObjectUpsert,
+                        AofEntryType.LogRecordObjectUpsert,
                         version,
                         sessionId,
                         key,
@@ -82,7 +83,7 @@ namespace Garnet.server
             else
             {
                 functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.UnifiedStoreStringUpsert,
+                    AofEntryType.LogRecordStringUpsert,
                     version,
                     sessionId,
                     key,
@@ -90,6 +91,7 @@ namespace Garnet.server
                     epochAccessor,
                     out _);
             }
+#endif
         }
 
         /// <inheritdoc />

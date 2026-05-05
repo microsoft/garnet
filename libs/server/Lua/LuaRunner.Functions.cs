@@ -3211,7 +3211,9 @@ namespace Garnet.server
                     var key = PinnedSpanByte.FromPinnedSpan(keySpan);
                     var value = PinnedSpanByte.FromPinnedSpan(valSpan);
 
-                    _ = api.SET(key, value);
+                    var input = new StringInput(RespCommand.SET);
+                    input.parseState.InitializeWithArgument(value); // TODO can we avoid this allocation?
+                    _ = api.SET(key, ref input);
 
                     state.PushConstantString(constStrs.Ok);
                     return 1;

@@ -114,13 +114,20 @@ namespace Garnet.test.cluster
         {
             var offset = 0;
             var getA = GetNextArg(ref procInput, ref offset);
+
+            var parseStateB = procInput.parseState.Slice(offset, 1);
             var setB = GetNextArg(ref procInput, ref offset);
+            var parseStateC = procInput.parseState.Slice(offset, 1);
             var setC = GetNextArg(ref procInput, ref offset);
 
             _ = api.GET(getA, out PinnedSpanByte _);
-            var status = api.SET(setB, setB);
+
+            var input = new StringInput(RespCommand.SET, ref parseStateB);
+            var status = api.SET(setB, ref input);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
-            status = api.SET(setC, setC);
+
+            input.parseState = parseStateC;
+            status = api.SET(setC, ref input);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
             WriteSimpleString(ref output, "SUCCESS");
         }

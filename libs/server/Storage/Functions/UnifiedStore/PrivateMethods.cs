@@ -12,14 +12,14 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
+    public readonly partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         /// <summary>
         /// Logging upsert from
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
@@ -36,7 +36,6 @@ namespace Garnet.server
                 version,
                 sessionID,
                 key,
-                value,
                 ref input,
                 epochAccessor,
                 out _);

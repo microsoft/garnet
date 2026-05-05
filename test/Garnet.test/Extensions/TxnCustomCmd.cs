@@ -34,9 +34,8 @@ namespace Garnet
             var offset = 0;
 
             var mainStoreKey = GetNextArg(ref procInput, ref offset);
-            var mainStoreValue = GetNextArg(ref procInput, ref offset);
-
-            api.SET(mainStoreKey, mainStoreValue);
+            var input = new StringInput(RespCommand.SET, ref procInput.parseState, startIdx: offset++, count: 1);
+            _ = api.SET(mainStoreKey, ref input);
 
             var myDictKey = GetNextArg(ref procInput, ref offset);
             var myDictField = GetNextArg(ref procInput, ref offset);

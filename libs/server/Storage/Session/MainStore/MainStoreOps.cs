@@ -207,18 +207,9 @@ namespace Garnet.server
             }
         }
 
-        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
+        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new StringInput(RespCommand.SET, value);
-            var status = context.Upsert((FixedSpanByteKey)key, ref input);
-            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
-        }
-
-        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            input.parseState.InitializeWithArgument(value);
             var output = new StringOutput();
             var status = context.Upsert((FixedSpanByteKey)key, ref input, ref output);
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
@@ -345,8 +336,8 @@ namespace Garnet.server
                 for (var i = 0; i < count; i += 2)
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
-                    var srcVal = input.parseState.GetArgSliceByRef(i + 1);
-                    SET(srcKey, srcVal, ref context);
+                    var setInput = new StringInput(RespCommand.SET, ref input.parseState, startIdx: i + 1, count: 1);
+                    _ = SET(srcKey, ref setInput, ref context);
                 }
             }
             finally
@@ -366,37 +357,16 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus SET<THeapObjectContext>(PinnedSpanByte key, ref HeapObjectInput input, ref THeapObjectContext context)
-            where THeapObjectContext : ITsavoriteContext<FixedSpanByteKey, HeapObjectInput, Empty, Empty, HeapObjectUpsertSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            context.Upsert((FixedSpanByteKey)key, ref input);
-            return GarnetStatus.OK;
-        }
+        public unsafe GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte expiryMs, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => SETEX(key, ref input, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), ref context);
 
-        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, Memory<byte> value, ref TStringContext context)   // TODO are memory<byte> overloads needed?
+        public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, ref StringInput input, TimeSpan expiry, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            unsafe
-            {
-                fixed (byte* ptr = value.Span)
-                {
-                    var psb = PinnedSpanByte.FromPinnedPointer(ptr, value.Length);
-                    var input = new StringInput(RespCommand.SET, psb);
-                    context.Upsert((FixedSpanByteKey)key, ref input);
-                }
-            }
-            return GarnetStatus.OK;
-        }
-
-        public unsafe GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), ref context);
-
-        public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var input = new StringInput(RespCommand.SETEX, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
-            return SET(key, ref input, value, ref context);
+            Debug.Assert(input.header.cmd == RespCommand.SETEX, "Input command must be SETEX");
+            input.arg1 = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
+            return SET(key, ref input, ref context);
         }
 
         /// <summary>

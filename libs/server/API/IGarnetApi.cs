@@ -26,12 +26,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value);
-
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value);
+        GarnetStatus SET(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
         /// SET Conditional
@@ -53,11 +48,6 @@ namespace Garnet.server
         /// </summary>
         GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
-
         #endregion
 
         #region SETEX
@@ -65,18 +55,16 @@ namespace Garnet.server
         /// SETEX
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="value">Value</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <returns></returns>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs);
+        GarnetStatus SETEX(PinnedSpanByte key, ref StringInput input, PinnedSpanByte expiryMs);
 
         /// <summary>
         /// SETEX
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="value">Value</param>
         /// <param name="expiry">Expiry</param>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry);
+        GarnetStatus SETEX(PinnedSpanByte key, ref StringInput input, TimeSpan expiry);
 
         #endregion
 

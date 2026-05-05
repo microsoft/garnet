@@ -47,15 +47,13 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count == 0 || parseState.Count % 2 != 0)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
-            }
 
             for (int c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c);
-                var val = parseState.GetArgSliceByRef(c + 1);
-                _ = storageApi.SET(key, val);
+                var input = new StringInput(RespCommand.SET, ref parseState, startIdx: c + 1, count: 1);
+                _ = storageApi.SET(key, ref input);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
