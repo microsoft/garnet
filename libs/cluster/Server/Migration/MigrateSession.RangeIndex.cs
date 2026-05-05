@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -20,9 +19,10 @@ namespace Garnet.cluster
         /// Transmit a single RangeIndex key to the destination node.
         /// Uses <see cref="RangeIndexManager.SnapshotRangeIndexAndCreateReader"/> to obtain an async
         /// migration reader that snapshots and streams the BfTree data.
-        /// Forces a flush and awaits ACK before optionally deleting the source key.
+        /// Forces a flush and awaits ACK. Does not delete the source key — the caller
+        /// is responsible for deletion in the appropriate sketch status phase.
         /// </summary>
-        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation mo, byte[] keyBytes, byte[] stubBytes, bool deleteAfterTransmit = true, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
+        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation mo, byte[] keyBytes, byte[] stubBytes, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
         {
             var rangeIndexManager = clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager;
             var gcs = mo.Client;
@@ -59,18 +59,11 @@ namespace Garnet.cluster
                         }
                     }
 
-                    // Force flush and await ACK before deleting the source key
+                    // Force flush and await ACK
                     if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
                     {
                         logger?.LogError("TransmitRangeIndex: flush failed");
                         return false;
-                    }
-
-                    // Delete the source key now that destination has confirmed receipt
-                    if (deleteAfterTransmit)
-                    {
-                        var pinnedKey = PinnedSpanByte.FromPinnedSpan(keyBytes);
-                        mo.DeleteRangeIndex(pinnedKey);
                     }
 
                     return true;

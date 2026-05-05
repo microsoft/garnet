@@ -113,19 +113,44 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    // Handle migration of discovered RangeIndex keys
+                    // Handle migration of discovered RangeIndex keys with sketch protection.
+                    // Each RI key gets its own sketch cycle so concurrent operations are properly
+                    // blocked during transmit (writes blocked) and delete (reads+writes blocked).
                     var rangeIndexKeys = migrateOperation.SelectMany(static mo => mo.RangeIndexes).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
 
                     if (rangeIndexKeys.Count > 0)
                     {
                         logger?.LogWarning("Migrating {count} RangeIndex keys", rangeIndexKeys.Count);
+                        var mo = migrateOperation[0];
+
                         foreach (var (key, stubBytes) in rangeIndexKeys)
                         {
-                            if (!await TransmitRangeIndexAsync(migrateOperation[0], key, stubBytes).ConfigureAwait(false))
+                            // Add key to sketch so Probe() gates concurrent operations
+                            mo.sketch.Clear();
+                            mo.sketch.SetStatus(SketchStatus.INITIALIZING);
+                            mo.sketch.TryHashAndStore(key);
+
+                            // Block writes during snapshot + transmit
+                            mo.sketch.SetStatus(SketchStatus.TRANSMITTING);
+                            WaitForConfigPropagation();
+
+                            if (!await TransmitRangeIndexAsync(mo, key, stubBytes).ConfigureAwait(false))
                             {
                                 logger?.LogError("Failed to migrate RangeIndex key");
                                 return false;
                             }
+
+                            // Block reads + writes during delete
+                            mo.sketch.SetStatus(SketchStatus.DELETING);
+                            WaitForConfigPropagation();
+
+                            var pinnedKey = PinnedSpanByte.FromPinnedSpan(key);
+                            mo.DeleteRangeIndex(pinnedKey);
+
+                            // Release — concurrent operations will get ASK redirection
+                            mo.sketch.SetStatus(SketchStatus.MIGRATED);
+                            WaitForConfigPropagation();
+                            mo.sketch.Clear();
                         }
                     }
 

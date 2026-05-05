@@ -131,15 +131,16 @@ namespace Garnet.cluster
                 }
 
                 // Migrate RangeIndex keys (snapshot + chunk stream).
-                // Do not delete here — mark for deletion so DeleteKeys() handles them
-                // in the proper DELETING sketch status sequence.
+                // Keys are already in the sketch (added by caller during key enumeration),
+                // so they're protected by the TRANSMITTING status. Mark for deletion so
+                // DeleteKeys() handles them in the DELETING sketch status sequence.
                 if (rangeIndexKeysToMigrate.Count > 0)
                 {
                     logger?.LogWarning("Migrating {count} RangeIndex keys via KEYS path", rangeIndexKeysToMigrate.Count);
 
                     foreach (var (key, stubBytes) in rangeIndexKeysToMigrate)
                     {
-                        if (!TransmitRangeIndexAsync(migrateTask, key, stubBytes, deleteAfterTransmit: false).GetAwaiter().GetResult())
+                        if (!TransmitRangeIndexAsync(migrateTask, key, stubBytes).GetAwaiter().GetResult())
                         {
                             logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
                             return false;
