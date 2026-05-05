@@ -15,9 +15,9 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Pure state-machine deserializer that parses incoming migration chunks for a RangeIndex key.
-    /// Does not perform any I/O — file data bytes are identified by offset and length in the
-    /// input buffer, allowing the caller to write them to disk asynchronously.
+    /// Deserializer that reassembles a RangeIndex key from incoming migration records.
+    /// Accumulates file data, validates an xxHash64 checksum, recovers the native BfTree,
+    /// and publishes the stub to the store.
     ///
     /// <para>Stream format (across one or more chunks):</para>
     /// <list type="bullet">
@@ -31,12 +31,13 @@ namespace Garnet.server
     /// <item><c>WaitingForKeyHeader</c> → parses 4-byte key length</item>
     /// <item><c>ReceivingKeyData</c> → accumulates key bytes (may span chunks)</item>
     /// <item><c>WaitingForFileHeader</c> → parses 8-byte file size</item>
-    /// <item><c>ReceivingFileData</c> → identifies file byte ranges, updates running hash</item>
+    /// <item><c>ReceivingFileData</c> → accumulates file bytes to temp file, updates running hash</item>
     /// <item><c>Complete</c> → trailer parsed, checksum valid, ready for <see cref="Publish"/></item>
     /// <item><c>Error</c> → irrecoverable (invalid protocol or checksum mismatch)</item>
+    /// <item><c>Disposed</c> → resources released, temp file deleted</item>
     /// </list>
     /// </summary>
-    public sealed class RangeIndexChunkedDeserializer
+    public sealed class RangeIndexChunkedDeserializer : IDisposable
     {
         private enum State : byte
         {
@@ -46,8 +47,11 @@ namespace Garnet.server
             ReceivingFileData,
             Complete,
             Error,
+            Disposed,
         }
 
+        private FileStream stream;
+        private readonly string tempPath;
         private readonly RangeIndexManager manager;
         private readonly XxHash64 hasher;
         private long fileBytesRemaining;
@@ -65,36 +69,23 @@ namespace Garnet.server
         /// <summary>The key bytes extracted from the header. Valid only after <see cref="IsComplete"/>.</summary>
         public ReadOnlySpan<byte> Key => finalizerKey;
 
-        /// <summary>Total number of file bytes declared in the stream header.</summary>
-        public long TotalFileBytes { get; private set; }
-
         public RangeIndexChunkedDeserializer(RangeIndexManager manager)
         {
             this.manager = manager;
             hasher = new XxHash64();
             state = State.WaitingForKeyHeader;
+            tempPath = manager.DeriveTempMigrationPath();
         }
 
-        /// <summary>
-        /// Process an incoming record payload. File data bytes are not written by this method;
-        /// instead, their location within <paramref name="data"/> is returned via
-        /// <paramref name="fileDataOffset"/> and <paramref name="fileDataLength"/>.
-        /// The caller is responsible for writing those bytes to disk.
-        /// </summary>
-        /// <param name="data">The incoming chunk data.</param>
-        /// <param name="fileDataOffset">Offset within <paramref name="data"/> where file bytes start (0 if none).</param>
-        /// <param name="fileDataLength">Number of file data bytes to write (0 if none in this chunk).</param>
+        /// <summary>Process an incoming record payload.</summary>
         /// <returns><c>true</c> if valid; <c>false</c> if corruption or invalid data detected.</returns>
-        public bool ProcessChunk(ReadOnlySpan<byte> data, out int fileDataOffset, out int fileDataLength)
+        public bool ProcessChunk(ReadOnlySpan<byte> data)
         {
-            fileDataOffset = 0;
-            fileDataLength = 0;
-            var originalLength = data.Length;
-
             switch (state)
             {
                 case State.Error:
                 case State.Complete:
+                case State.Disposed:
                     return false;
 
                 case State.WaitingForKeyHeader:
@@ -151,7 +142,6 @@ namespace Garnet.server
                     }
 
                     fileBytesRemaining = BinaryPrimitives.ReadInt64LittleEndian(data);
-                    TotalFileBytes = fileBytesRemaining;
                     data = data[sizeof(long)..];
 
                     if (fileBytesRemaining < 0)
@@ -161,22 +151,21 @@ namespace Garnet.server
                     }
 
                     state = State.ReceivingFileData;
+
+                    if (fileBytesRemaining > 0)
+                        stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
                     goto case State.ReceivingFileData;
 
                 case State.ReceivingFileData:
                     if (fileBytesRemaining > 0)
-                    {
-                        var count = (int)Math.Min(data.Length, fileBytesRemaining);
-                        hasher.Append(data[..count]);
-                        fileBytesRemaining -= count;
-
-                        fileDataOffset = originalLength - data.Length;
-                        fileDataLength = count;
-                        data = data[count..];
-                    }
+                        WriteFileBytes(ref data);
 
                     if (fileBytesRemaining == 0 && data.Length > 0)
+                    {
+                        CloseStream();
                         return ParseTrailer(data);
+                    }
 
                     return true;
 
@@ -225,12 +214,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish: move the temp file to the key-hashed working path, recover the native BfTree,
-        /// and insert the stub into the store via RICREATE RMW.
+        /// Publish: rename temp file to key-hashed path, recover native tree,
+        /// publish stub via RICREATE RMW.
         /// </summary>
-        /// <param name="ctx">The string basic context for store operations.</param>
-        /// <param name="tempPath">The temporary file path where the caller wrote the file data.</param>
-        public unsafe bool Publish(ref StringBasicContext ctx, string tempPath)
+        public unsafe bool Publish(ref StringBasicContext ctx)
         {
             if (state != State.Complete)
             {
@@ -301,6 +288,39 @@ namespace Garnet.server
                 manager.Logger?.LogError(ex, "RangeIndexChunkedDeserializer.Publish: failed to recover BfTree");
                 return false;
             }
+        }
+
+        private void WriteFileBytes(ref ReadOnlySpan<byte> data)
+        {
+            var count = (int)Math.Min(data.Length, fileBytesRemaining);
+            var filePart = data[..count];
+            stream.Write(filePart);
+            hasher.Append(filePart);
+            fileBytesRemaining -= count;
+            data = data[count..];
+        }
+
+        private void CloseStream()
+        {
+            if (stream == null) return;
+            stream.Flush();
+            stream.Dispose();
+            stream = null;
+        }
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if (state == State.Disposed) return;
+            state = State.Disposed;
+            CloseStream();
+
+            try
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+            catch { }
         }
     }
 }

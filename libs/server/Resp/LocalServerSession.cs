@@ -19,10 +19,10 @@ namespace Garnet.server
         readonly StorageSession storageSession;
 
         /// <summary>
-        /// The underlying storage session. Internal — used by migration paths that need
+        /// The underlying storage session. Used by migration paths that need
         /// direct access to Tsavorite contexts (e.g. RangeIndex snapshot).
         /// </summary>
-        internal StorageSession StorageSession => storageSession;
+        public StorageSession StorageSession => storageSession;
         readonly ScratchBufferBuilder scratchBufferBuilder;
         readonly ScratchBufferAllocator scratchBufferAllocator;
 

@@ -18,11 +18,11 @@ namespace Garnet.cluster
     {
         /// <summary>
         /// Transmit a single RangeIndex key to the destination node.
-        /// Uses <see cref="RangeIndexManager.CreateMigrationReader"/> to obtain an async
+        /// Uses <see cref="RangeIndexManager.SnapshotRangeIndexAndCreateReader"/> to obtain an async
         /// migration reader that snapshots and streams the BfTree data.
-        /// Forces a flush and awaits ACK before deleting the source key.
+        /// Forces a flush and awaits ACK before optionally deleting the source key.
         /// </summary>
-        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation mo, byte[] keyBytes, byte[] stubBytes, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
+        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation mo, byte[] keyBytes, byte[] stubBytes, bool deleteAfterTransmit = true, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
         {
             var rangeIndexManager = clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager;
             var gcs = mo.Client;
@@ -30,7 +30,7 @@ namespace Garnet.cluster
             RangeIndexMigrationReader reader;
             try
             {
-                reader = rangeIndexManager.CreateMigrationReader(mo.LocalSession, keyBytes, stubBytes, chunkSize);
+                reader = rangeIndexManager.SnapshotRangeIndexAndCreateReader(mo.LocalSession, keyBytes, stubBytes, chunkSize);
             }
             catch (Exception ex)
             {
@@ -67,8 +67,11 @@ namespace Garnet.cluster
                     }
 
                     // Delete the source key now that destination has confirmed receipt
-                    var pinnedKey = PinnedSpanByte.FromPinnedSpan(keyBytes);
-                    mo.DeleteRangeIndex(pinnedKey);
+                    if (deleteAfterTransmit)
+                    {
+                        var pinnedKey = PinnedSpanByte.FromPinnedSpan(keyBytes);
+                        mo.DeleteRangeIndex(pinnedKey);
+                    }
 
                     return true;
                 }

@@ -105,7 +105,7 @@ namespace Garnet.test
         /// </summary>
         private (bool Result, RangeIndexMigrationWriter Writer) ProcessChunkWithWriter(RangeIndexManager manager, ReadOnlySpan<byte> data)
         {
-            var writer = manager.CreateMigrationWriter();
+            var deserializer = new RangeIndexChunkedDeserializer(manager);
             var result = writer.ProcessChunkAsync(data.ToArray()).GetAwaiter().GetResult();
             return (result, writer);
         }
@@ -145,9 +145,9 @@ namespace Garnet.test
 
             // Round-trip through deserializer
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.IsComplete);
             ClassicAssert.IsFalse(deserializer.HasError);
             ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
@@ -173,7 +173,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileSize);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             var chunkCount = 0;
             while (!serializer.IsComplete)
@@ -216,9 +216,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, fileSizeFromPayload);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.IsComplete);
             ClassicAssert.IsFalse(deserializer.HasError);
             ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
@@ -251,9 +251,9 @@ namespace Garnet.test
             payload[fileDataOffset + 10] ^= 0xFF;
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.HasError);
             ClassicAssert.IsFalse(deserializer.IsComplete);
         }
@@ -270,9 +270,9 @@ namespace Garnet.test
             BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(sizeof(int)), -1);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.HasError);
         }
 
@@ -285,9 +285,9 @@ namespace Garnet.test
             var payload = new byte[2]; // Less than sizeof(int)
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.HasError);
         }
 
@@ -303,12 +303,12 @@ namespace Garnet.test
             BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(sizeof(int)), -1);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.HasError);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(new byte[100], out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(new byte[100]));
             ClassicAssert.IsTrue(deserializer.HasError);
         }
 
@@ -331,15 +331,15 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            using var writer = manager.CreateMigrationWriter();
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             while (!serializer.IsComplete)
             {
                 var len = SerializerMoveNext(serializer, buffer, fs);
-                ClassicAssert.IsTrue(writer.ProcessChunkAsync(buffer.AsSpan(0, len).ToArray()).GetAwaiter().GetResult());
+                ClassicAssert.IsTrue(deserializer.ProcessChunk(buffer.AsSpan(0, len).ToArray()));
             }
 
-            ClassicAssert.IsTrue(writer.IsComplete);
+            ClassicAssert.IsTrue(deserializer.IsComplete);
 
             var tmpDir = Path.Combine(testDir, "rangeindex", ".migration-tmp");
             var tmpFiles = Directory.GetFiles(tmpDir, "*.bftree");
@@ -367,7 +367,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, 100);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             while (!serializer.IsComplete)
             {
@@ -386,7 +386,7 @@ namespace Garnet.test
         public void DisposeCleansTempFile()
         {
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var writer = manager.CreateMigrationWriter();
+            var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             // Feed key header + key + file header with fileCount > 0 to create the file stream
             var key = Encoding.UTF8.GetBytes("tmp");
@@ -398,14 +398,14 @@ namespace Garnet.test
             offset += key.Length;
             BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(offset), 100);
             // Remaining 10 bytes are file data (partial)
-            writer.ProcessChunkAsync(payload).GetAwaiter().GetResult();
+            deserializer.ProcessChunk(payload);
 
             var tmpDir = Path.Combine(testDir, "rangeindex", ".migration-tmp");
             var tmpFiles = Directory.GetFiles(tmpDir, "*.bftree");
             ClassicAssert.AreEqual(1, tmpFiles.Length);
             ClassicAssert.IsTrue(File.Exists(tmpFiles[0]));
 
-            writer.Dispose();
+            deserializer.Dispose();
 
             ClassicAssert.IsFalse(File.Exists(tmpFiles[0]));
         }
@@ -458,9 +458,9 @@ namespace Garnet.test
             badStub.CopyTo(payload.AsSpan(offset));
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload, out _, out _));
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
             ClassicAssert.IsTrue(deserializer.HasError);
         }
 
@@ -486,7 +486,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             var chunkCount = 0;
             while (!serializer.IsComplete)
@@ -573,7 +573,7 @@ namespace Garnet.test
             // Retry with adequate buffer — should complete successfully
             var buffer = CreateBuffer();
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             while (!serializer.IsComplete)
             {
@@ -620,7 +620,7 @@ namespace Garnet.test
             // Continue with adequate buffer — should round-trip
             var buffer = CreateBuffer();
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             // Feed the first partial chunk
             ClassicAssert.IsTrue(deserializer.ProcessChunk(smallBuf.AsSpan(0, written).ToArray(), out _, out _));
@@ -672,7 +672,7 @@ namespace Garnet.test
 
             // Round-trip through deserializer
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             ClassicAssert.IsTrue(deserializer.ProcessChunk(buf.AsSpan(0, written).ToArray(), out _, out _));
             ClassicAssert.IsFalse(deserializer.IsComplete);
@@ -719,7 +719,7 @@ namespace Garnet.test
 
             // Round-trip
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             var allPayload = new byte[len1 + len2];
             buffer.AsSpan(0, len1).CopyTo(allPayload); // reuse buffer for chunk 2, so must reconstruct
@@ -727,7 +727,7 @@ namespace Garnet.test
             // Re-run to get clean data
             fs.Seek(0, SeekOrigin.Begin);
             var serializer2 = new RangeIndexChunkedSerializer(key, stub, fileSize);
-            var deserializer2 = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer2 = new RangeIndexChunkedDeserializer(manager);
 
             while (!serializer2.IsComplete)
             {
@@ -775,7 +775,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             while (!serializer.IsComplete)
             {
@@ -902,11 +902,11 @@ namespace Garnet.test
 
             // Round-trip through writer
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            using var writer = manager.CreateMigrationWriter();
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
-            ClassicAssert.IsTrue(writer.ProcessChunkAsync(buffer.AsSpan(0, len).ToArray()).GetAwaiter().GetResult());
-            ClassicAssert.IsTrue(writer.IsComplete);
-            ClassicAssert.IsFalse(writer.HasError);
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(buffer.AsSpan(0, len).ToArray()));
+            ClassicAssert.IsTrue(deserializer.IsComplete);
+            ClassicAssert.IsFalse(deserializer.HasError);
 
             // Verify the temp file contains exactly declaredSize bytes
             var tmpDir = Path.Combine(testDir, "rangeindex", ".migration-tmp");
@@ -948,7 +948,7 @@ namespace Garnet.test
             // Continue with adequate buffer — should complete and round-trip
             var buffer = CreateBuffer();
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             ClassicAssert.IsTrue(deserializer.ProcessChunk(exactBuf.AsSpan(0, written).ToArray(), out _, out _));
 
@@ -983,7 +983,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
 
             var manager = new RangeIndexManager(enabled: true, dataDir: testDir);
-            var deserializer = new RangeIndexChunkedDeserializer(manager);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager);
 
             // Buffer must fit the trailer (largest atomic element):
             // sizeof(ulong) + sizeof(int) + stub.Length
@@ -1007,7 +1007,7 @@ namespace Garnet.test
             ClassicAssert.Greater(chunkCount, 1);
 
             // Feed entire concatenated payload to deserializer at once
-            ClassicAssert.IsTrue(deserializer.ProcessChunk(allChunks.ToArray(), out _, out _));
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(allChunks.ToArray()));
             ClassicAssert.IsTrue(deserializer.IsComplete);
             ClassicAssert.IsFalse(deserializer.HasError);
             ClassicAssert.AreEqual(key, deserializer.Key.ToArray());

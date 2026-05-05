@@ -72,7 +72,7 @@ namespace Garnet.server
         /// <param name="keyBytes">The key bytes of the RangeIndex to serialize.</param>
         /// <param name="stubBytes">The stub bytes for the RangeIndex.</param>
         /// <param name="chunkSize">The chunk size for streaming. Defaults to <see cref="DefaultMigrationChunkSize"/>.</param>
-        public RangeIndexMigrationReader CreateMigrationReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, int chunkSize = DefaultMigrationChunkSize)
+        public RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, int chunkSize = DefaultMigrationChunkSize)
         {
             if (!SnapshotForMigration(localServerSession.StorageSession, keyBytes, out var snapshotPath, out var totalBytes))
                 throw new InvalidOperationException("Failed to snapshot BfTree for migration");
@@ -80,17 +80,6 @@ namespace Garnet.server
             var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes.ToArray(), totalBytes);
             var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
             return new RangeIndexMigrationReader(serializer, fileStream, chunkSize);
-        }
-
-        /// <summary>
-        /// Destination side: create a migration writer that reassembles incoming chunks
-        /// and writes file data to a temporary path.
-        /// </summary>
-        public RangeIndexMigrationWriter CreateMigrationWriter()
-        {
-            var deserializer = new RangeIndexChunkedDeserializer(this);
-            var tempPath = DeriveTempMigrationPath();
-            return new RangeIndexMigrationWriter(deserializer, tempPath);
         }
 
         /// <summary>

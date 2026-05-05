@@ -65,7 +65,8 @@ namespace Garnet.cluster
             this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
-            rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager);
+            var riManager = clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager;
+            rangeIndexMigrationState = riManager != null ? new RangeIndexMigrationReceiveState(riManager) : null;
         }
 
         public void Dispose()
