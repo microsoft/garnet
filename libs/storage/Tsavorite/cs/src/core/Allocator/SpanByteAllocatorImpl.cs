@@ -177,6 +177,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be reused");
+
             // For SpanByteAllocator, we are always inline.
             // Key
             sizeInfo.SetKeyIsInline();

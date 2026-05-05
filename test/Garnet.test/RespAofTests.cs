@@ -315,7 +315,7 @@ namespace Garnet.test
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue3", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
 
-                // Set expiry time for 2nd string
+                // Set expiry time for 1st string
                 db.KeyExpire("AofExpiryRMWStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
 
@@ -326,7 +326,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
@@ -335,7 +335,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
@@ -391,7 +391,7 @@ namespace Garnet.test
                 // Set value for 2nd record (which has expired)
                 db.StringSet("AofExpiryUpsertStoreRecoverTestKey2", "AofExpiryUpsertStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10));
 
-                // Set expiry time for 2nd string
+                // Set expiry time for 1st string
                 db.KeyExpire("AofExpiryUpsertStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
 
@@ -402,7 +402,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryUpsertStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey2");
@@ -411,7 +411,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 

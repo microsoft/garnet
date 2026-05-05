@@ -1132,6 +1132,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void PopulateRecordSizeInfoForIPU(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
+
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             var (keyLength, existingValueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
 

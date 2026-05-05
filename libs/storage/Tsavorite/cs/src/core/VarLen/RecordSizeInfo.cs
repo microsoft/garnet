@@ -61,7 +61,11 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word >> KeyLengthBytesShift) & LengthBytesMask;
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set => word = (word & ~(LengthBytesMask << KeyLengthBytesShift)) | ((value & LengthBytesMask) << KeyLengthBytesShift);
+            set
+            {
+                Debug.Assert(value is <= sizeof(int) and > 0, $"KeyLengthBytes value {value} should be the number of bytes needed to store an int value from 1 to int.MaxValue");
+                word = (word & ~(LengthBytesMask << KeyLengthBytesShift)) | (value << KeyLengthBytesShift);
+            }
         }
 
         /// <summary>Number of bytes in entire record length; see <see cref="RecordDataHeader"/>.</summary>
@@ -70,7 +74,11 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word >> RecordLengthBytesShift) & LengthBytesMask;
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set => word = (word & ~(LengthBytesMask << RecordLengthBytesShift)) | ((value & LengthBytesMask) << RecordLengthBytesShift);
+            set
+            {
+                Debug.Assert(value is <= sizeof(int) and > 0, $"RecordLengthBytes value {value} should be the number of bytes needed to store an int value from 1 to int.MaxValue");
+                word = (word & ~(LengthBytesMask << RecordLengthBytesShift)) | (value << RecordLengthBytesShift);
+            }
         }
 
         /// <summary>Whether the record allocation returned a revivified record.</summary>
@@ -99,7 +107,7 @@ namespace Tsavorite.core
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly int InlineValueSize => ValueIsInline ? FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Returns whether the entire record (key and value) are inlinethe inline length of the value (no overflow or object).</summary>
+        /// <summary>Returns whether both the key and value are inline (no overflow or object).</summary>
         public readonly bool RecordIsInline => (word & (KeyIsInlineBit | ValueIsInlineBit)) == (KeyIsInlineBit | ValueIsInlineBit);
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
@@ -112,7 +120,7 @@ namespace Tsavorite.core
         /// <summary>The inline size of the record rounded up to <see cref="RecordInfo"/> alignment.</summary>
         public int AllocatedInlineRecordSize { readonly get; internal set; }
 
-        /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
+        /// <summary>Size to allocate for the 'long' offset into the Object log if this record will have objects or overflow, else 0.</summary>
         public readonly int ObjectLogPositionSize => RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>

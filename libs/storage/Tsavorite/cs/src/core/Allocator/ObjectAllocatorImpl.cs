@@ -306,6 +306,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
+
             // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
             if (sizeInfo.FieldInfo.KeySize <= maxInlineKeySize)
