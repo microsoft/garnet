@@ -31,6 +31,11 @@ namespace Garnet.cluster
             => aofSyncTasks.Select(x => x.IsConnected ? 1 : 0).Sum() == aofSyncTasks.Length;
 
         /// <summary>
+        /// Gets the primary GarnetClientSession used for checkpoint streaming.
+        /// </summary>
+        public GarnetClientSession PrimaryClient => aofSyncTasks[0].garnetClient;
+
+        /// <summary>
         /// Node-id associated with this AofSyncTask
         /// </summary>
         public string RemoteNodeId => remoteNodeId;

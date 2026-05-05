@@ -355,7 +355,7 @@ namespace Garnet.cluster
             foreach (var rss in replicaSyncSessions)
             {
                 if (rss == null) continue;
-                var replicaNodeId = rss.replicaSyncMetadata.originNodeId;
+                var replicaNodeId = rss.RemoteNodeId;
                 var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
 
                 // If address is null or port is not valid, we cannot create a task

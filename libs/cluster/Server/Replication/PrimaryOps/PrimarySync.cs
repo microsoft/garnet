@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -18,44 +18,88 @@ namespace Garnet.cluster
         readonly ReplicaSyncSessionTaskStore replicaSyncSessionTaskStore;
 
         /// <summary>
-        /// Try attach sync session from replica
+        /// Try attach sync session from replica (unified path for both diskless and disk-based modes).
         /// </summary>
         /// <param name="replicaSyncMetadata"></param>
         /// <returns></returns>
         public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDisklessSyncAsync(SyncMetadata replicaSyncMetadata)
         {
             ReadOnlyMemory<byte> errorMessage = default;
-            if (clusterProvider.serverOptions.ReplicaDisklessSync)
+
+            if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
             {
-                if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
-                {
-                    replicaSyncSession?.Dispose();
-                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
-                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
-                }
+                replicaSyncSession?.Dispose();
+                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
+            }
 
 #if DEBUG
-                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).ConfigureAwait(false);
+            await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).ConfigureAwait(false);
 #endif
 
-                var status = await replicationSyncManager.ReplicationSyncDriverAsync(replicaSyncSession).ConfigureAwait(false);
-                if (status.syncStatus == SyncStatus.FAILED)
-                    errorMessage = Encoding.ASCII.GetBytes(status.error);
-            }
+            var status = await replicationSyncManager.ReplicationSyncDriverAsync(replicaSyncSession).ConfigureAwait(false);
+            if (status.syncStatus == SyncStatus.FAILED)
+                errorMessage = Encoding.ASCII.GetBytes(status.error);
 
             return (true, errorMessage);
         }
 
         /// <summary>
-        /// Begin background replica sync session
+        /// Begin disk-based replica sync session.
+        /// Routes through the unified broadcast coordinator or legacy per-replica path based on configuration.
         /// </summary>
-        /// <param name="replicaNodeId">Node-id of replica that is currently attaching</param>
-        /// <param name="replicaAssignedPrimaryId">Primary-id of replica that is currently attaching</param>
-        /// <param name="replicaCheckpointEntry">Most recent checkpoint entry at replica</param>
-        /// <param name="replicaAofBeginAddress">AOF begin address at replica</param>
-        /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
-        /// <returns></returns>
         public Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedSyncAsync(
+            string replicaNodeId,
+            string replicaAssignedPrimaryId,
+            CheckpointEntry replicaCheckpointEntry,
+            AofAddress replicaAofBeginAddress,
+            AofAddress replicaAofTailAddress)
+        {
+            if (clusterProvider.serverOptions.ReplicaDiskbasedBroadcast)
+                return TryBeginDiskbasedBroadcastSyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
+
+            return TryBeginDiskbasedLegacySyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
+        }
+
+        /// <summary>
+        /// Unified broadcast coordinator path for disk-based sync.
+        /// </summary>
+        async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedBroadcastSyncAsync(
+            string replicaNodeId,
+            string replicaAssignedPrimaryId,
+            CheckpointEntry replicaCheckpointEntry,
+            AofAddress replicaAofBeginAddress,
+            AofAddress replicaAofTailAddress)
+        {
+            ReadOnlyMemory<byte> errorMessage = default;
+
+            if (!replicationSyncManager.AddDiskbasedReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, out var replicaSyncSession))
+            {
+                replicaSyncSession?.Dispose();
+                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
+                return (false, errorMessage);
+            }
+
+#if DEBUG
+            await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).ConfigureAwait(false);
+#endif
+
+            var status = await replicationSyncManager.ReplicationSyncDriverAsync(replicaSyncSession).ConfigureAwait(false);
+            if (status.syncStatus == SyncStatus.FAILED)
+            {
+                errorMessage = Encoding.ASCII.GetBytes(status.error);
+                return (false, errorMessage);
+            }
+
+            errorMessage = CmdStrings.RESP_OK.ToArray();
+            return (true, errorMessage);
+        }
+
+        /// <summary>
+        /// Legacy per-replica disk-based sync path.
+        /// </summary>
+        Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedLegacySyncAsync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,

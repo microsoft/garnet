@@ -21,9 +21,13 @@ namespace Garnet.cluster
     internal sealed class RangeIndexFileTransmitSource : ISnapshotTransmitSource
     {
         readonly FileTransmitSource fileTransmitSource;
-        readonly string keyHashDir;
 
         public ISnapshotDataSource DataSource => fileTransmitSource.DataSource;
+
+        /// <summary>
+        /// The key hash directory name identifying which tree this snapshot belongs to.
+        /// </summary>
+        public string KeyHashDir { get; }
 
         /// <summary>
         /// Creates a new RangeIndexFileTransmitSource.
@@ -34,7 +38,7 @@ namespace Garnet.cluster
         public RangeIndexFileTransmitSource(FileDataSource dataSource, string keyHashDir, ILogger logger = null)
         {
             this.fileTransmitSource = new FileTransmitSource(dataSource, logger);
-            this.keyHashDir = keyHashDir;
+            KeyHashDir = keyHashDir;
         }
 
         /// <inheritdoc/>
@@ -44,7 +48,7 @@ namespace Garnet.cluster
 
             // Send header with key hash directory name so the replica knows which tree this file belongs to.
             // Uses startAddress = -1 to indicate a single-message control payload.
-            var keyHashDirBytes = Encoding.ASCII.GetBytes(keyHashDir);
+            var keyHashDirBytes = Encoding.ASCII.GetBytes(KeyHashDir);
             var headerResp = await gcs.ExecuteClusterSnapshotData(
                 fileTokenBytes, (int)DataSource.Type, -1, keyHashDirBytes)
                 .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);

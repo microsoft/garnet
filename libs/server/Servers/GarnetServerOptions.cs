@@ -339,6 +339,12 @@ namespace Garnet.server
         public bool ReplicaDisklessSync = false;
 
         /// <summary>
+        /// Whether to use the unified broadcast coordinator for disk-based replication.
+        /// When false, uses legacy per-replica checkpoint shipping.
+        /// </summary>
+        public bool ReplicaDiskbasedBroadcast = false;
+
+        /// <summary>
         /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
         /// </summary>
         public int ReplicaDisklessSyncDelay = 5;

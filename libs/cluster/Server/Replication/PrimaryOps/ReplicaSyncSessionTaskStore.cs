@@ -87,9 +87,9 @@ namespace Garnet.cluster
                 for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.replicaNodeId == session.replicaSyncMetadata.originNodeId)
+                    if (s.RemoteNodeId == session.RemoteNodeId)
                     {
-                        logger?.LogError("Error syncSession for {replicaNodeId} already exists", session.replicaNodeId);
+                        logger?.LogError("Error syncSession for {replicaNodeId} already exists", session.RemoteNodeId);
                         return false;
                     }
                 }
@@ -128,7 +128,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.replicaNodeId == retSession.replicaNodeId)
+                    if (s.RemoteNodeId == retSession.RemoteNodeId)
                     {
                         success = false;
                         return false;
@@ -163,7 +163,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.replicaNodeId == remoteNodeId)
+                    if (s.RemoteNodeId == remoteNodeId)
                     {
                         sessions[i] = null;
                         if (i < numSessions - 1)
@@ -203,7 +203,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numSessions; i++)
                 {
                     session = sessions[i];
-                    if (session.replicaNodeId == remoteNodeId)
+                    if (session.RemoteNodeId == remoteNodeId)
                         return true;
                 }
                 return false;

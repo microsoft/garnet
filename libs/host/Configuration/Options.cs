@@ -433,6 +433,10 @@ namespace Garnet
         [Option("repl-diskless-sync", Required = false, HelpText = "Whether diskless replication is enabled or not.")]
         public bool? ReplicaDisklessSync { get; set; }
 
+        [OptionValidation]
+        [Option("repl-diskbased-broadcast", Required = false, HelpText = "Whether to use unified broadcast coordinator for disk-based replication. When false, uses legacy per-replica checkpoint shipping.")]
+        public bool? ReplicaDiskbasedBroadcast { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
@@ -906,6 +910,7 @@ namespace Garnet
                 FastAofTruncate = GetFastAofTruncate(logger),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
+                ReplicaDiskbasedBroadcast = ReplicaDiskbasedBroadcast.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 ReplicaSyncTimeout = ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaSyncTimeout),
                 ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),

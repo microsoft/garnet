@@ -38,6 +38,26 @@ namespace Garnet.cluster
         private readonly AofAddress replicaAofBeginAddress = replicaAofBeginAddress;
         private readonly AofAddress replicaAofTailAddress = replicaAofTailAddress;
 
+        /// <summary>
+        /// Unified remote node identifier used by both diskless and disk-based paths.
+        /// </summary>
+        public string RemoteNodeId => replicaSyncMetadata?.originNodeId ?? replicaNodeId;
+
+        /// <summary>
+        /// Replica AOF begin address (used by disk-based broadcast flow).
+        /// </summary>
+        public AofAddress ReplicaAofBeginAddress => replicaAofBeginAddress;
+
+        /// <summary>
+        /// Replica AOF tail address (used by disk-based broadcast flow).
+        /// </summary>
+        public AofAddress ReplicaAofTailAddress => replicaAofTailAddress;
+
+        /// <summary>
+        /// Replica checkpoint entry (used by disk-based broadcast flow).
+        /// </summary>
+        public CheckpointEntry ReplicaCheckpointEntry => replicaCheckpointEntry;
+
         private readonly CheckpointEntry replicaCheckpointEntry = replicaCheckpointEntry;
 
         private readonly ILogger logger = logger;
