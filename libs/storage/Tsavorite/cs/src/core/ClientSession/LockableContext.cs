@@ -109,7 +109,7 @@ namespace Tsavorite.core
             // We can't start each retry with a full timeout because we might always fail if someone is not unlocking (e.g. another thread hangs
             // somehow while holding a lock, or the current thread has issued two lock calls on two key sets and the second tries to lock one in
             // the first, and so on). So set the timeout high enough to accommodate as many retries as you want.
-            var startTime = DateTime.UtcNow;
+            var startTimestamp = Stopwatch.GetTimestamp();
 
         Retry:
             var prevBucketIndex = -1L;
@@ -136,7 +136,7 @@ namespace Tsavorite.core
                     DoManualUnlock(clientSession, keys[..keyIdx]);
 
                     // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
-                    if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
+                    if (cancellationToken.IsCancellationRequested || Stopwatch.GetElapsedTime(startTimestamp) > timeout)
                         return false;
 
                     // No cancellation and we're within the timeout. We've released our locks so this refresh will let other threads advance
@@ -156,7 +156,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TLockableKey : ILockableKey
         {
-            var startTime = DateTime.UtcNow;
+            var startTimestamp = Stopwatch.GetTimestamp();
             while (true)
             {
                 if (clientSession.store.InternalPromoteLock(key.KeyHash))
@@ -169,7 +169,7 @@ namespace Tsavorite.core
                 }
 
                 // CancellationToken can accompany either of the other two mechanisms
-                if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
+                if (cancellationToken.IsCancellationRequested || Stopwatch.GetElapsedTime(startTimestamp) > timeout)
                     break;  // out of the retry loop
 
                 // Lock failed, must retry
