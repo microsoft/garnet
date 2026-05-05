@@ -53,7 +53,9 @@ namespace Tsavorite.core
 
         internal void CleanupLogCheckpoint()
         {
+            // NOTE: this call deletes the log snapshot files
             checkpointManager.CleanupLogCheckpoint(_hybridLogCheckpointToken);
+            // NOTE: this call clears the segment files
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 

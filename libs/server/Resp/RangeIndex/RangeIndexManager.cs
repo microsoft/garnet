@@ -470,6 +470,7 @@ namespace Garnet.server
                 logger?.LogWarning(ex, "Failed to enumerate old checkpoint snapshots for cleanup");
             }
         }
+
         /// <summary>
         /// Enumerates all RangeIndex checkpoint snapshot files for a given checkpoint token.
         /// Used by the replication layer to discover which BfTree snapshot files need to be
