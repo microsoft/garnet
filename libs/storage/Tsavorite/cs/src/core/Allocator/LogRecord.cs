@@ -342,6 +342,22 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public readonly SpanByteAndMemory ValueSpanByteAndMemory
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (Info.ValueIsObject)
+                    ThrowTsavoriteException("ValueSpanByteAndMemory is not valid for Object values");
+                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                if (Info.ValueIsInline)
+                    return SpanByteAndMemory.FromPinnedPointer((byte*)dataAddress, (int)length);
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
+                return new SpanByteAndMemory(new BorrowedMemoryOwner(overflow.AsMemory()), overflow.Length);
+            }
+        }
+
+        /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;

@@ -47,7 +47,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            logRecord.InfoRef.SetDirtyAndModified();
+            logRecord.InfoRef.SetModified();
             _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, ref output, ref upsertInfo);
         }
 
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         {
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, ref output, ref upsertInfo))
                 return false;
-            logRecord.InfoRef.SetDirtyAndModified();
+            logRecord.InfoRef.SetModified();
             return true;
         }
 
@@ -87,7 +87,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
         {
-            logRecord.InfoRef.SetDirtyAndModified();
+            logRecord.InfoRef.SetModified();
             _clientSession.functions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion InitialUpdater
@@ -107,22 +107,21 @@ namespace Tsavorite.core
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            dstLogRecord.InfoRef.SetDirtyAndModified();
+            dstLogRecord.InfoRef.SetModified();
             return _clientSession.functions.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion CopyUpdater
 
         #region InPlaceUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
             // This wraps the ISessionFunctions call to provide expiration logic.
             if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                logRecord.InfoRef.SetDirtyAndModified();
+                logRecord.InfoRef.SetModified();
 
-                // MarkPage is done in InternalRMW
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 return true;
             }
@@ -178,7 +177,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            logRecord.InfoRef.SetDirtyAndModified();
+            logRecord.InfoRef.SetModified();
             _clientSession.functions.PostInitialDeleter(ref logRecord, ref deleteInfo);
         }
 
@@ -187,7 +186,7 @@ namespace Tsavorite.core
         {
             if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
-            // Tombstone and Dirty/Modified are set by the caller (InternalDelete) AFTER
+            // Tombstone and Modified are set by the caller (InternalDelete) AFTER
             // OnDispose, so that internal heap accounting reads the pre-tombstone value size.
             return true;
         }

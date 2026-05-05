@@ -278,7 +278,8 @@ namespace Garnet.test
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
             bool enableRangeIndexPreview = false,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            string aofPageSize = null
             )
         {
             if (useAzureStorage)
@@ -387,6 +388,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default)
                 opts.IndexMaxMemorySize = indexMaxSize;
+
+            if (!string.IsNullOrEmpty(aofPageSize))
+                opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
@@ -498,7 +502,6 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
@@ -568,7 +571,6 @@ namespace Garnet.test
                     commitFrequencyMs: CommitFrequencyMs,
                     useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
-                    enableIncrementalSnapshots: EnableIncrementalSnapshots,
                     fastCommit: FastCommit,
                     authUsername: authUsername,
                     authPassword: authPassword,
@@ -647,7 +649,6 @@ namespace Garnet.test
             int commitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool disableStorageTier = false,
-            bool enableIncrementalSnapshots = false,
             bool fastCommit = true,
             string authUsername = null,
             string authPassword = null,
@@ -786,7 +787,6 @@ namespace Garnet.test
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
                 UseAofNullDevice = useAofNullDevice,
-                EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,

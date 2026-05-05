@@ -13,6 +13,7 @@
 
 #nullable enable
 using System.Diagnostics;
+using Garnet.common;
 
 namespace System.Threading.Tasks
 {
@@ -38,11 +39,11 @@ namespace System.Threading.Tasks
         {
             if (asyncResult is TaskAsyncResult twar)
             {
-                twar._task.GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(twar._task);
                 return;
             }
 
-            throw new ArgumentNullException();
+            throw new ArgumentNullException(nameof(asyncResult));
         }
 
         /// <summary>Processes an IAsyncResult returned by Begin.</summary>
@@ -51,10 +52,10 @@ namespace System.Threading.Tasks
         {
             if (asyncResult is TaskAsyncResult twar && twar._task is Task<TResult> task)
             {
-                return task.GetAwaiter().GetResult();
+                return AsyncUtils.BlockingWait(task);
             }
 
-            throw new ArgumentNullException();
+            throw new ArgumentNullException(nameof(asyncResult));
         }
 
         /// <summary>Provides a simple IAsyncResult that wraps a Task.</summary>

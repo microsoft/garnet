@@ -91,7 +91,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
+        public Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
         /// Take checkpoint of specified database ID if checkpointing is not in progress
@@ -101,7 +101,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -159,13 +159,13 @@ namespace Garnet.server
         /// <summary>
         /// Do compaction
         /// </summary>
-        public void DoCompaction(CancellationToken token = default, ILogger logger = null);
+        public ValueTask DoCompactionAsync(CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Grows indexes of both main store and object store for all active databases if current size is too small
         /// </summary>
         /// <returns>True if indexes are maxed out</returns>
-        public bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <summary>
         /// Executes a store-wide object collect operation

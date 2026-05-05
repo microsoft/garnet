@@ -50,8 +50,6 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var latchOperation = LatchOperation.None;
-
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
@@ -70,7 +68,8 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID
             };
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
+            // the ephemeral X-lock on the hash bucket is released even if a Post*Operation callback (e.g. AOF append) throws.
             try
             {
                 // Search the entire in-memory region; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
@@ -92,11 +91,11 @@ namespace Tsavorite.core
                 // Check for CPR consistency after checking if source is readcache.
                 if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
-                            goto LatchRelease;
+                            goto Done;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcLogRecord = stackCtx.recSrc.CreateLogRecord();
@@ -127,8 +126,7 @@ namespace Tsavorite.core
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         srcLogRecord.InfoRef.SetTombstone();
-                        srcLogRecord.InfoRef.SetDirtyAndModified();
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        srcLogRecord.InfoRef.SetModified();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -136,13 +134,13 @@ namespace Tsavorite.core
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     if (deleteInfo.Action == DeleteAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     // Could not delete in place for some reason - create new record.
@@ -166,36 +164,29 @@ namespace Tsavorite.core
 
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                goto LatchRelease;
+                goto Done;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
-                EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
-            }
-
-        LatchRelease:
-            {
-                switch (latchOperation)
+                try
                 {
-                    case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        break;
-                    case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
-                        break;
-                    default:
-                        break;
+                    sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
+                }
+                finally
+                {
+                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
             }
+
+        Done:
             return status;
         }
 
-        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // This is the same logic as Upsert; neither goes pending.
-            return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status, ref latchOperation);
+            return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status);
         }
 
         /// <summary>

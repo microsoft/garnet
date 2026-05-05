@@ -30,7 +30,6 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.nextVersion = next.Version + 1;

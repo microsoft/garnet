@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -150,38 +151,37 @@ namespace Garnet.cluster
         /// <param name="nodeid"></param>
         /// <param name="force">If false, checks if node is clean (i.e. is PRIMARY without any assigned nodes) before making changes.</param>
         /// <param name="upgradeLock">If true, allows for a <see cref="RecoveryStatus.ReadRole"/> read lock to be upgraded to <see cref="RecoveryStatus.ClusterReplicate"/>.</param>
-        /// <param name="errorMessage">The ASCII encoded error response if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <param name="logger"></param>
-        public bool TryAddReplica(string nodeid, bool force, bool upgradeLock, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryAddReplicaAsync(string nodeid, bool force, bool upgradeLock, ILogger logger = null)
         {
             Debug.Assert(
                 !upgradeLock || clusterProvider.replicationManager.currentRecoveryStatus == RecoveryStatus.ReadRole,
                 "Lock upgrades are only allowed if caller holds a ReadRole lock"
             );
 
-            errorMessage = default;
+            ReadOnlyMemory<byte> errorMessage = default;
             while (true)
             {
                 var current = CurrentConfig;
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
-                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage));
-                    return false;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF.ToArray();
+                    logger?.LogError($"{nameof(TryAddReplicaAsync)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage.Span));
+                    return (false, errorMessage);
                 }
 
                 if (!force && current.LocalNodeRole != NodeRole.PRIMARY)
                 {
                     logger?.LogError("ERR I am already replica of {localNodePrimaryId}", current.LocalNodePrimaryId);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I am already replica of {current.LocalNodePrimaryId}.");
-                    return false;
+                    return (false, errorMessage);
                 }
 
                 if (!force && current.HasAssignedSlots(1))
                 {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
-                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage));
-                    return false;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS.ToArray();
+                    logger?.LogError($"{nameof(TryAddReplicaAsync)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage.Span));
+                    return (false, errorMessage);
                 }
 
                 var workerId = current.GetWorkerIdFromNodeId(nodeid);
@@ -189,23 +189,23 @@ namespace Garnet.cluster
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
                     logger?.LogError("ERR I don't know about node {nodeid}.", nodeid);
-                    return false;
+                    return (false, errorMessage);
                 }
 
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
                     logger?.LogError("ERR Trying to replicate node ({nodeid}) that is not a primary.", nodeid);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Trying to replicate node ({nodeid}) that is not a primary.");
-                    return false;
+                    return (false, errorMessage);
                 }
 
                 // Transition to recovering state
                 // Only one caller will succeed in becoming a replica for the provided node-id
                 if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock))
                 {
-                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
-                    return false;
+                    logger?.LogError($"{nameof(TryAddReplicaAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK.ToArray();
+                    return (false, errorMessage);
                 }
 
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
@@ -223,11 +223,11 @@ namespace Garnet.cluster
                 }
             }
 
-            clusterProvider.storeWrapper.SuspendPrimaryOnlyTasks().Wait();
+            await clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
             clusterProvider.storeWrapper.StartReplicaTasks();
 
             FlushConfig();
-            return true;
+            return (true, default);
         }
 
         /// <summary>

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -382,16 +383,19 @@ namespace Garnet.server
                 return false;
             }
 
-            // RangeIndex type safety – reject non-RI commands on RI keys
-            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType && !input.header.cmd.IsLegalOnRangeIndex())
+            // RangeIndex type safety – normal string records have RecordType 0; skip all checks in that common case.
+            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
+                // Reject non-RI commands on RI keys
+                if (!input.header.cmd.IsLegalOnRangeIndex())
+                {
+                    rmwInfo.Action = RMWAction.WrongType;
+                    return false;
+                }
             }
-
-            // Reject RI-specific commands on non-RI keys
-            if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType && input.header.cmd.IsRangeIndexCommand())
+            else if (input.header.cmd.IsRangeIndexCommand())
             {
+                // Reject RI-specific commands on non-RI keys
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
             }
@@ -447,6 +451,7 @@ namespace Garnet.server
                     return IPUResult.NotUpdated;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
+                    // Note: SETEXXX may or may not actually have an expiration.
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
@@ -1426,6 +1431,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER

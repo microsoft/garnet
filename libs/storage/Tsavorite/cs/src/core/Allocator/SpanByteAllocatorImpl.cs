@@ -26,12 +26,17 @@ namespace Tsavorite.core
         public override void Reset()
         {
             base.Reset();
+            Initialize();
+        }
+
+        /// <inheritdoc />
+        protected override void FreeAllAllocatedPages()
+        {
             for (int index = 0; index < BufferSize; index++)
             {
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
         }
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>

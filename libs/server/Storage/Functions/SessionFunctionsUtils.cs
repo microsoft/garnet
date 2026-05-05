@@ -94,13 +94,14 @@ namespace Garnet.server
                 ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            RecordSizeInfo sizeInfo = new();
+            RecordSizeInfo sizeInfo;
 
             if (logRecord.Info.ValueIsInline && (expiration == 0 || logRecord.Info.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                 if (!logRecord.TrySetPinnedValueSpan(newValue, valueAddress, ref valueLength))
                     return false;
+                sizeInfo = new();
             }
             else
             {

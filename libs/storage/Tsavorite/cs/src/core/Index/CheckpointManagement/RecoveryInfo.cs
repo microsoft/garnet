@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        public const int CheckpointVersion = 7; // 7 changes objectLogSegmentOffsets to objectLogTail
+        public const int CheckpointVersion = 7;
 
         /// <summary>
         /// HybridLogRecoveryVersion 
@@ -89,13 +89,6 @@ namespace Tsavorite.core
         internal ObjectLogFilePositionInfo snapshotEndObjectLogTail;
 
         /// <summary>
-        /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
-        /// At recovery, this value denotes the delta tail address excluding the metadata record for the checkpoint
-        /// because we create the metadata before writing to the delta file.
-        /// </summary>
-        public long deltaTailAddress;
-
-        /// <summary>
         /// User cookie
         /// </summary>
         public byte[] cookie;
@@ -121,7 +114,6 @@ namespace Tsavorite.core
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
-            deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
             hlogEndObjectLogTail = new();       // Marks as "unset"
@@ -180,9 +172,6 @@ namespace Tsavorite.core
             beginAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            deltaTailAddress = long.Parse(value);
-
-            value = reader.ReadLine();
             beginAddressObjectLogSegment = int.Parse(value);
 
             hlogEndObjectLogTail.Deserialize(reader);
@@ -213,15 +202,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
-        /// <param name="deltaLog"></param>
-        /// <param name = "scanDelta">
-        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
-        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
-        /// </param>
-        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
+        internal void Recover(Guid token, ICheckpointManager checkpointManager)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo)
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token)
                 ?? throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
@@ -232,25 +215,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
-        /// <param name="deltaLog"></param>
         /// <param name="commitCookie"> Any user-specified commit cookie written as part of the checkpoint </param>
-        /// <param name = "scanDelta">
-        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
-        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
-        /// </param>
-        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
-
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo)
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token)
                 ?? throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
-            if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
-            {
-                // Adjust delta tail address to include the metadata record
-                deltaTailAddress = deltaLog.NextAddress;
-            }
             commitCookie = cookie;
         }
 
@@ -277,7 +248,6 @@ namespace Tsavorite.core
                     writer.WriteLine(snapshotFinalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
-                    writer.WriteLine(deltaTailAddress);
 
                     writer.WriteLine(beginAddressObjectLogSegment);
 
@@ -327,7 +297,6 @@ namespace Tsavorite.core
             logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
             logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
             logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
-            logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
         }
     }
 
@@ -336,10 +305,7 @@ namespace Tsavorite.core
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
-        public IDevice deltaFileDevice;
-        public DeltaLog deltaLog;
         public Task flushedTask;
-        public long prevVersion;
         internal CircularDiskWriteBuffer objectLogFlushBuffers;
 
         public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
@@ -352,56 +318,17 @@ namespace Tsavorite.core
         {
             snapshotFileDevice?.Dispose();
             snapshotFileObjectLogDevice?.Dispose();
-            deltaLog?.Dispose();
-            deltaFileDevice?.Dispose();
             objectLogFlushBuffers?.Dispose();
             this = default;
         }
 
-        public HybridLogCheckpointInfo Transfer()
+        public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
-            // Ownership transfer of handles across struct copies
-            var dest = this;
-            dest.snapshotFileDevice = default;
-            dest.snapshotFileObjectLogDevice = default;
-            deltaLog = default;
-            deltaFileDevice = default;
-            return dest;
+            info.Recover(token, checkpointManager);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
-            bool scanDelta = false, long recoverTo = -1)
+        public void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie)
         {
-            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            if (deltaFileDevice is not null)
-            {
-                deltaFileDevice.Initialize(-1);
-                if (deltaFileDevice.GetFileSize(0) > 0)
-                {
-                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                    deltaLog.InitializeForReads();
-                    info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
-                    return;
-                }
-            }
-            info.Recover(token, checkpointManager, null);
-        }
-
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
-            out byte[] commitCookie, bool scanDelta = false, long recoverTo = -1)
-        {
-            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            if (deltaFileDevice is not null)
-            {
-                deltaFileDevice.Initialize(-1);
-                if (deltaFileDevice.GetFileSize(0) > 0)
-                {
-                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                    deltaLog.InitializeForReads();
-                    info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
-                    return;
-                }
-            }
             info.Recover(token, checkpointManager, out commitCookie);
         }
 

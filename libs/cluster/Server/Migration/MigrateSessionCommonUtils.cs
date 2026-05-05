@@ -12,9 +12,9 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendRecord(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
+        private unsafe ValueTask<bool> WriteOrSendRecordAsync(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
         {
             Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces not yet supported");
 
@@ -46,7 +46,7 @@ namespace Garnet.cluster
             // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
             if (status != GarnetStatus.OK)
             {
-                return true;
+                return new(true);
             }
 
             // Map up any namespaces as needed
@@ -54,7 +54,7 @@ namespace Garnet.cluster
 
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
             {
-                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
+                return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
             }
 
             // Complete reads that go pending
@@ -70,7 +70,7 @@ namespace Garnet.cluster
             }
         }
 
-        private bool WriteOrSendRecord(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
+        private unsafe ValueTask<bool> WriteOrSendRecordAsync(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
         {
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
@@ -82,7 +82,7 @@ namespace Garnet.cluster
             // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
             if (status != GarnetStatus.OK)
             {
-                return true;
+                return new(true);
             }
 
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
@@ -91,7 +91,7 @@ namespace Garnet.cluster
 
                 ReadOnlySpan<byte> toWrite = new(ptr, serializedRecordLength);
 
-                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.LogRecord, toWrite);
+                return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, toWrite);
             }
         }
 
@@ -102,24 +102,39 @@ namespace Garnet.cluster
         /// <param name="type"></param>
         /// <param name="span"></param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, MigrationRecordSpanType type, ReadOnlySpan<byte> span)
+        private ValueTask<bool> WriteOrSendRecordSpanAsync(GarnetClientSession gcs, MigrationRecordSpanType type, ReadOnlySpan<byte> span)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
 
             // Try to write serialized record to client buffer
-            while (!gcs.TryWriteRecordSpan(span, type, out var task))
+            if (!gcs.TryWriteRecordSpan(span, type, out var task))
             {
-                // Flush records in the buffer
-                if (!HandleMigrateTaskResponse(task))
-                    return false;
-
-                // Re-initialize cluster migrate command parameters for the next loop iteration
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+                // Flush records in the buffer and retry
+                var handleTask = HandleMigrateTaskResponseAsync(task);
+                return new(RetryAsync(gcs, handleTask, span.ToArray()));
             }
 
-            return true;
+            return new(true);
+
+            async Task<bool> RetryAsync(GarnetClientSession gcs, Task<bool> task, byte[] span)
+            {
+                if (!await task.ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                if (!gcs.TryWriteRecordSpan(span, type, out _))
+                {
+                    logger?.LogWarning($"TryWriteRecordSpan failed on retry");
+                    return false;
+                }
+
+                return true;
+            }
         }
 
         /// <summary>
@@ -127,23 +142,21 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="task"></param>
         /// <returns>True on successful completion of data send, otherwise false</returns>
-        public bool HandleMigrateTaskResponse(Task<string> task)
+        public async Task<bool> HandleMigrateTaskResponseAsync(Task<string> task)
         {
             if (task != null)
             {
                 try
                 {
-                    return task.ContinueWith(resp =>
+                    var resp = await task.WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                    if (!resp.Equals("OK", StringComparison.Ordinal))
                     {
-                        // Check if setslotsrange executed correctly
-                        if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                        {
-                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
-                            Status = MigrateState.FAIL;
-                            return false;
-                        }
-                        return true;
-                    }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                        logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
+                        Status = MigrateState.FAIL;
+                        return false;
+                    }
+                    return true;
                 }
                 catch (Exception ex)
                 {
@@ -152,6 +165,7 @@ namespace Garnet.cluster
                     return false;
                 }
             }
+
             return true;
         }
     }

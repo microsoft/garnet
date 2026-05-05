@@ -38,10 +38,10 @@ namespace Garnet.server
         public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
-        public abstract bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
+        public abstract Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <inheritdoc/>
-        public abstract bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
@@ -66,10 +66,10 @@ namespace Garnet.server
         public abstract AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <inheritdoc/>
-        public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
+        public abstract ValueTask DoCompactionAsync(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public abstract ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract void ExecuteObjectCollection();
@@ -192,18 +192,14 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(db, isFromCheckpoint: true, logger);
+                await DoCompactionAsync(db, isFromCheckpoint: true, logger).ConfigureAwait(false);
                 var lastSaveStoreTailAddress = db.Store.Log.TailAddress;
 
                 var full = db.LastSaveStoreTailAddress == 0 ||
                            lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval;
 
-                var tryIncremental = StoreWrapper.serverOptions.EnableIncrementalSnapshots;
-                if (db.Store.IncrementalSnapshotTailAddress >= StoreWrapper.serverOptions.IncrementalSnapshotLogSizeLimit)
-                    tryIncremental = false;
-
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger).ConfigureAwait(false);
+                await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false);
 
                 return full ? lastSaveStoreTailAddress : null;
             }
@@ -321,15 +317,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to grow store indexes for</param>
         /// <returns>True if both store indexes are maxed out</returns>
-        protected bool GrowIndexesIfNeeded(GarnetDatabase db)
+        protected async ValueTask<bool> GrowIndexesIfNeededAsync(GarnetDatabase db)
         {
             var indexesMaxedOut = true;
 
             if (!DefaultDatabase.StoreIndexMaxedOut)
             {
                 var store = DefaultDatabase.Store;
-                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                        () => store.IndexSize, async () => await store.GrowIndexAsync().ConfigureAwait(false)))
+                if (await GrowIndexIfNeededAsync(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
+                        () => store.IndexSize, () => store.GrowIndexAsync()).ConfigureAwait(false))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -376,14 +372,14 @@ namespace Garnet.server
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
         /// <param name="isFromCheckpoint">True if called from checkpointing, false if called from background task</param>
-        protected void DoCompaction(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
+        protected async ValueTask DoCompactionAsync(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
         {
             try
             {
                 // If periodic compaction is enabled and this is called from checkpointing, skip compaction
                 if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-                DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments, 1,
+                await DoCompactionAsync(db, StoreWrapper.serverOptions.CompactionMaxSegments, 1,
                     StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
             }
             catch (Exception ex)
@@ -405,7 +401,7 @@ namespace Garnet.server
         /// <param name="indexSizeRetriever"></param>
         /// <param name="growAction"></param>
         /// <returns>True if index has reached its max size</returns>
-        protected bool GrowIndexIfNeeded(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        protected async ValueTask<bool> GrowIndexIfNeededAsync(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Func<Task> growAction)
         {
             Logger?.LogDebug(
                 $"IndexAutoGrowTask: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
@@ -417,7 +413,7 @@ namespace Garnet.server
                 Logger?.LogInformation(
                     $"IndexAutoGrowTask: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
                     overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
-                growAction();
+                await growAction().ConfigureAwait(false);
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;
@@ -428,7 +424,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void DoCompaction(GarnetDatabase db, int mainStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
+        private async ValueTask DoCompactionAsync(GarnetDatabase db, int mainStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
         {
             if (compactionType == LogCompactionType.None) return;
 
@@ -455,7 +451,7 @@ namespace Garnet.server
                         storeLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(db);
+                            await CompactionCommitAofAsync(db).ConfigureAwait(false);
                             storeLog.Truncate();
                         }
                         break;
@@ -464,7 +460,7 @@ namespace Garnet.server
                         storeLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(db);
+                            await CompactionCommitAofAsync(db).ConfigureAwait(false);
                             storeLog.Truncate();
                         }
                         break;
@@ -476,7 +472,7 @@ namespace Garnet.server
             }
         }
 
-        private void CompactionCommitAof(GarnetDatabase db)
+        private ValueTask CompactionCommitAofAsync(GarnetDatabase db)
         {
             // If we are the primary, we commit the AOF.
             // If we are the replica, we commit the AOF only if fast commit is disabled
@@ -486,14 +482,17 @@ namespace Garnet.server
             {
                 if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
                 {
-                    if (!StoreWrapper.serverOptions.EnableFastCommit)
-                        db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                    if (!StoreWrapper.serverOptions.EnableFastCommit && db.AppendOnlyFile != null)
+                        return db.AppendOnlyFile.Log.CommitAsync();
                 }
                 else
                 {
-                    db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                    if (db.AppendOnlyFile != null)
+                        return db.AppendOnlyFile.Log.CommitAsync();
                 }
             }
+
+            return default;
         }
 
         /// <summary>
@@ -502,13 +501,12 @@ namespace Garnet.server
         /// <param name="db">Database to checkpoint</param>
         /// <param name="full">True if full checkpoint should be initiated</param>
         /// <param name="checkpointType">Type of checkpoint</param>
-        /// <param name="tryIncremental">Try to store as incremental delta over last snapshot</param>
         /// <param name="logger">Logger</param>
         /// <returns>Task</returns>
         private async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
-            bool tryIncremental, ILogger logger = null)
+            ILogger logger = null)
         {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, dbId = {dbId}", full, checkpointType, db.Id);
 
             var checkpointCoveredAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
             if (db.AppendOnlyFile != null)
@@ -534,11 +532,7 @@ namespace Garnet.server
             }
             else
             {
-                tryIncremental = tryIncremental && db.Store.CanTakeIncrementalCheckpoint(checkpointType, out checkpointResult.token);
-
-                sm = tryIncremental
-                    ? Checkpoint.IncrementalHybridLogOnly(db.Store, checkpointResult.token)
-                    : Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
+                sm = Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
             }
 
             checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);

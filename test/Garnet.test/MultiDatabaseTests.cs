@@ -1188,7 +1188,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverRawStringTest()
+        public async Task MultiDatabaseAofRecoverRawStringTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1214,7 +1214,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2data, value.ToString());
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1240,7 +1240,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverObjectTest()
+        public async Task MultiDatabaseAofRecoverObjectTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1266,7 +1266,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, score.Value);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1292,7 +1292,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofObjectMutationRecoverTest()
+        public async Task MultiDatabaseAofObjectMutationRecoverTestAsync()
         {
             // Verify that object mutation operations (LPOP, HDEL) that empty collections
             // are persisted correctly across multiple databases during AOF recovery
@@ -1314,7 +1314,7 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db1.KeyExists(hashKey));
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();

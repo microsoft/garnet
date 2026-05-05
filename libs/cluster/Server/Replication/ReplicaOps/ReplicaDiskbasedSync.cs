@@ -27,54 +27,66 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="options">Options for the sync.</param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
-        /// <returns>A boolean indicating whether replication initiation was successful.</returns>
-        public bool TryReplicateDiskbasedSync(
+        /// <returns>A boolean indicating whether replication initiation was successful, paired with an error message if not.</returns>
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryReplicateDiskbasedSyncAsync(
             ClusterSession session,
-            ReplicateSyncOptions options,
-            out ReadOnlySpan<byte> errorMessage)
+            ReplicateSyncOptions options)
         {
-            errorMessage = [];
+            ReadOnlyMemory<byte> errorMessage = default;
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
-                    return false;
+                if (options.TryAddReplica)
+                {
+                    var (success, error) = await clusterProvider.clusterManager.TryAddReplicaAsync(options.NodeId, options.Force, options.UpgradeLock, logger: logger).ConfigureAwait(false); ;
+                    if (!success)
+                    {
+                        return (false, error);
+                    }
+                }
 
                 // Create or update timestamp manager for sharded log if needed
                 storeWrapper.appendOnlyFile.CreateOrUpdateKeySequenceManager();
 
                 // Wait for threads to agree
-                session?.UnsafeBumpAndWaitForEpochTransition();
+                if (session != null)
+                {
+                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                }
 
                 // Initiate remote checkpoint retrieval
                 if (options.Background)
                 {
                     logger?.LogInformation("Initiating background checkpoint retrieval");
-                    _ = Task.Run(() => ReplicaSyncAttachTask(options.UpgradeLock));
+                    _ = ReplicaSyncAttachTaskAsync(options.UpgradeLock, forceAsync: true);
                 }
                 else
                 {
                     logger?.LogInformation("Initiating foreground checkpoint retrieval");
-                    var resp = ReplicaSyncAttachTask(options.UpgradeLock).GetAwaiter().GetResult();
+                    var resp = await ReplicaSyncAttachTaskAsync(options.UpgradeLock, forceAsync: false).ConfigureAwait(false);
                     if (resp != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(resp);
-                        return false;
+                        return (false, errorMessage);
                     }
                 }
 
-                return true;
+                return (true, default);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSync)}");
-                return false;
+                logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSyncAsync)}");
+                return (false, errorMessage);
             }
 
-            async Task<string> ReplicaSyncAttachTask(bool downgradeLock)
+            async Task<string> ReplicaSyncAttachTaskAsync(bool downgradeLock, bool forceAsync)
             {
+                if (forceAsync)
+                {
+                    await Task.Yield();
+                }
+
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
                 resetHandler ??= new CancellationTokenSource();
@@ -100,15 +112,15 @@ namespace Garnet.cluster
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                         authUsername: clusterProvider.ClusterUsername,
                         authPassword: clusterProvider.ClusterPassword,
-                        clientName: nameof(TryReplicateDiskbasedSync));
+                        clientName: nameof(TryReplicateDiskbasedSyncAsync));
                     await gcs.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token).ConfigureAwait(false);
 
                     // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
                     // If FastCommit is enabled, we commit during AOF stream processing
-                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    if (!clusterProvider.serverOptions.EnableFastCommit && storeWrapper.appendOnlyFile != null)
                     {
-                        storeWrapper.appendOnlyFile?.Log.Commit();
-                        storeWrapper.appendOnlyFile?.Log.WaitForCommit();
+                        await storeWrapper.appendOnlyFile.Log.CommitAsync().ConfigureAwait(false);
+                        await storeWrapper.appendOnlyFile.Log.WaitForCommitAsync().ConfigureAwait(false);
                     }
 
                     // Reset background replay iterator if this node was a replica
@@ -124,11 +136,11 @@ namespace Garnet.cluster
                     storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
-                    await storeWrapper.SuspendPrimaryOnlyTasks().ConfigureAwait(false);
+                    await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
 
                     // Stop advance time task when reconfiguring node to be replica
                     if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
-                        clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+                        await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -139,7 +151,7 @@ namespace Garnet.cluster
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();
-                    logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTask), cEntry);
+                    logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTaskAsync), cEntry);
 
                     storeWrapper.RecoverAOF();
                     logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);

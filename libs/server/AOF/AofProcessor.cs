@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -226,7 +227,8 @@ namespace Garnet.server
                             {
                                 if (!usingShardedLog)
                                 {
-                                    _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                    // Must block here, cannot move off the thread
+                                    _ = AsyncUtils.BlockingWait(storeWrapper.TakeCheckpointAsync(background: false, logger));
                                 }
                                 else
                                 {
@@ -234,7 +236,7 @@ namespace Garnet.server
                                         virtualSublogIdx,
                                         ptr,
                                         (int)LeaderBarrierType.CHECKPOINT,
-                                        () => storeWrapper.TakeCheckpoint(background: false, logger));
+                                        () => storeWrapper.TakeCheckpointAsync(background: false, logger));
                                 }
                             }
 
@@ -259,7 +261,8 @@ namespace Garnet.server
                                 virtualSublogIdx,
                                 ptr,
                                 (int)LeaderBarrierType.STREAMING_CHECKPOINT,
-                                () => storeWrapper.store.SetVersion(header.storeVersion));
+                                () => { storeWrapper.store.SetVersion(header.storeVersion); return Task.CompletedTask; }
+                            );
                         }
                     }
                     break;
@@ -283,7 +286,8 @@ namespace Garnet.server
                             virtualSublogIdx,
                             ptr,
                             (int)LeaderBarrierType.FLUSH_DB_ALL,
-                            () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
+                            () => { storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1); return Task.CompletedTask; }
+                        );
                     }
                     break;
                 case AofEntryType.FlushDb:
@@ -297,7 +301,8 @@ namespace Garnet.server
                             virtualSublogIdx,
                             ptr,
                             (int)LeaderBarrierType.FLUSH_DB,
-                            () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
+                            () => { storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId); return Task.CompletedTask; }
+                        );
                     }
                     break;
                 case AofEntryType.StoredProcedure:

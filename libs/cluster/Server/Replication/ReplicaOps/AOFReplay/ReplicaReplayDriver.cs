@@ -72,11 +72,11 @@ namespace Garnet.cluster
                 {
                     if (!useChannels)
                     {
-                        _ = Task.Run(async () => await replayTask.FullPageBasedBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
                     }
                     else
                     {
-                        _ = Task.Run(async () => await replayTask.ChannelBasedBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(() => replayTask.ChannelBasedBackgroundReplayAsync());
                     }
                 }
             }
@@ -197,7 +197,7 @@ namespace Garnet.cluster
 
             if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
         }
@@ -269,7 +269,7 @@ namespace Garnet.cluster
 
             if (replicationOffset != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
         }
@@ -293,11 +293,14 @@ namespace Garnet.cluster
             if (replayIterator == null)
             {
                 replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                _ = Task.Run(async () => await BackgroundReplayTask());
+                _ = BackgroundReplayTaskAsync();
             }
 
-            async Task BackgroundReplayTask()
+            async Task BackgroundReplayTaskAsync()
             {
+                // Force async
+                await Task.Yield();
+
                 var readLock = ResumeReplay();
                 try
                 {
@@ -326,7 +329,7 @@ namespace Garnet.cluster
         public void ThrottlePrimary()
         {
             while (serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset) > serverOptions.ReplicationOffsetMaxLag)
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > serverOptions.ReplicationOffsetMaxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();
