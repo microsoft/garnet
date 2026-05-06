@@ -243,32 +243,107 @@ namespace Tsavorite.core
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
-        /// <summary>Reset the hybrid log. WARNING: assumes that threads have drained out at this point.</summary>
+        /// <summary>
+        /// Reset the hybrid log. Safe against concurrent iterators / readers / writers via a
+        /// two-phase epoch cascade that mirrors the normal flush + close paths:
+        ///
+        ///   Phase 1: publish new ReadOnlyAddress synchronously, then under
+        ///            BumpCurrentEpoch — i.e. after writers caching the OLD ReadOnlyAddress
+        ///            have drained — publish SafeReadOnlyAddress and FlushedUntilAddress.
+        ///            Mirrors OnPagesMarkedReadOnly's invariant that "by the time
+        ///            SafeReadOnlyAddress advances, no thread is mutating below it".
+        ///
+        ///   Phase 2: publish new HeadAddress synchronously (now safe — writers have observed
+        ///            the new ReadOnlyAddress, so no writer holds a cached old ReadOnlyAddress
+        ///            that would leave HeadAddress > cached ReadOnlyAddress). Then under
+        ///            BumpCurrentEpoch — i.e. after readers caching the OLD HeadAddress have
+        ///            drained — close pages (advancing SafeHeadAddress and ClosedUntilAddress)
+        ///            and free pages. Mirrors OnPagesClosed's invariant.
+        ///
+        ///   Final:   publish new BeginAddress synchronously. Publishing it last (rather than
+        ///            up front) means an iterator with a stale nextAddress sees
+        ///            currentAddress &gt; OLD BeginAddress and does not snap forward into the
+        ///            just-freed in-memory range — instead the currentAddress &lt; NEW HeadAddress
+        ///            check routes it through LoadPageIfNeeded's disk-frame branch (frame is
+        ///            iterator-owned, disk segment is intact). The invariant
+        ///            BeginAddress &lt;= HeadAddress holds throughout.
+        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public virtual void Reset()
         {
             var newBeginAddress = GetTailAddress();
 
-            // Shift read-only addresses to tail without flushing
+            // To use BumpCurrentEpoch we must be epoch-protected; conversely to wait for the
+            // queued action to drain we must NOT be holding the prior epoch. We toggle the
+            // protection per phase. If the caller arrived already protected, restore at the end.
+            var wasProtected = epoch.ThisInstanceProtected();
+            if (wasProtected)
+                epoch.Suspend();
+
+            // -------- Phase 1: ReadOnly -> wait for writer drain -> SafeReadOnly + FlushedUntil --------
             _ = MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
-            _ = MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
 
-            // Shift head address to tail
-            if (MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            using (var phase1Done = new ManualResetEventSlim(initialState: false))
             {
-                // Close addresses
-                OnPagesClosed(newBeginAddress);
-
-                // Wait for pages to get closed
-                while (ClosedUntilAddress < newBeginAddress)
+                epoch.Resume();
+                try
                 {
-                    _ = Thread.Yield();
-                    if (epoch.ThisInstanceProtected())
-                        epoch.ProtectAndDrain();
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        try
+                        {
+                            _ = MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+                            _ = MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _);
+                        }
+                        finally { phase1Done.Set(); }
+                    });
                 }
+                finally { epoch.Suspend(); }
+                phase1Done.Wait();
             }
 
-            // Update begin address to tail
+            // -------- Phase 2: HeadAddress -> wait for reader drain -> OnPagesClosed + FreeAllPages --------
+            var headShifted = MonotonicUpdate(ref HeadAddress, newBeginAddress, out _);
+
+            using (var phase2Done = new ManualResetEventSlim(initialState: false))
+            {
+                epoch.Resume();
+                try
+                {
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        try
+                        {
+                            if (headShifted)
+                                OnPagesClosed(newBeginAddress);
+
+                            // Wait for ClosedUntilAddress to catch up to newBeginAddress before
+                            // freeing remaining pages. Two scenarios make this necessary:
+                            //   (a) headShifted==true: OnPagesClosed may have returned immediately
+                            //       because another thread already owned OnPagesClosedWorker for our
+                            //       range — that worker is still freeing pages on the other thread.
+                            //   (b) headShifted==false: a concurrent Reset (or other ShiftHeadAddress
+                            //       caller) already advanced HeadAddress past newBeginAddress and its
+                            //       OnPagesClosedWorker may still be running.
+                            // In both cases, calling FreeAllAllocatedPages while the worker is mid-flight
+                            // would race with its FreePage calls and corrupt page state.
+                            while (ClosedUntilAddress < newBeginAddress)
+                                _ = Thread.Yield();
+
+                            FreeAllAllocatedPages();
+                        }
+                        finally { phase2Done.Set(); }
+                    });
+                }
+                finally { epoch.Suspend(); }
+                phase2Done.Wait();
+            }
+
+            // Restore caller's epoch state if they were protected on entry.
+            if (wasProtected)
+                epoch.Resume();
+
+            // -------- Final: publish BeginAddress (see XML doc on Reset for why this happens last) --------
             _ = MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
 
             flushEvent.Initialize();
@@ -280,6 +355,13 @@ namespace Tsavorite.core
             }
             device.Reset();
         }
+
+        /// <summary>
+        /// Free any pages still allocated after <see cref="OnPagesClosed"/> has run. Subclasses
+        /// override to call their per-allocator FreePage. Invoked from inside Reset's
+        /// epoch.BumpCurrentEpoch action so it is safe against concurrent iterators.
+        /// </summary>
+        protected virtual void FreeAllAllocatedPages() { }
 
         /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>.</summary>
         internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() => TruncateUntilAddressBlocking(toAddress));
