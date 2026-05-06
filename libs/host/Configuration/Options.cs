@@ -131,10 +131,6 @@ namespace Garnet
         [Option("no-pubsub", Required = false, HelpText = "Disable pub/sub feature on server.")]
         public bool? DisablePubSub { get; set; }
 
-        [OptionValidation]
-        [Option("incsnap", Required = false, HelpText = "Enable incremental snapshots.")]
-        public bool? EnableIncrementalSnapshots { get; set; }
-
         [MemorySizeValidation]
         [Option("pubsub-pagesize", Required = false, HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
         public string PubSubPageSize { get; set; }
@@ -204,7 +200,7 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
-        [IntRangeValidation(1, 64, isRequired: false)]
+        [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
 
@@ -844,7 +840,6 @@ namespace Garnet
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
-                EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),

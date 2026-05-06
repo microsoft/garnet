@@ -4,7 +4,6 @@
 using System;
 using System.IO;
 using System.Text;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -55,7 +54,6 @@ namespace Garnet.cluster
         {
             var device = retStateType switch
             {
-                CheckpointFileType.STORE_DLOG => GetDeltaLogDevice(fileToken),
                 CheckpointFileType.STORE_INDEX => GetIndexDevice(fileToken),
                 CheckpointFileType.STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
                 CheckpointFileType.STORE_SNAPSHOT_OBJ => GetSnapshotObjectLogDevice(fileToken),
@@ -102,16 +100,12 @@ namespace Garnet.cluster
         /// Retrieve RecoveredSafeAofAddress and RecoveredReplicationId for checkpoint
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="deltaLog"></param>
-        /// <param name="scanDelta"></param>
-        /// <param name="recoverTo"></param>
         /// <param name="recoveredSafeAofAddress"></param>
         /// <param name="recoveredReplicationId"></param>
-        /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public unsafe void GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
+        public unsafe void GetCheckpointCookieMetadata(Guid logToken, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
         {
-            var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo);
+            var metadata = GetLogCheckpointMetadata(logToken);
             var hlri = ConvertMetadata(metadata);
 
             recoveredReplicationId = null;
@@ -144,40 +138,9 @@ namespace Garnet.cluster
             }
         }
 
-        public override byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public override byte[] GetLogCheckpointMetadata(Guid logToken)
         {
-            byte[] metadata = null;
             HybridLogRecoveryInfo hlri;
-            if (deltaLog != null && scanDelta)
-            {
-                // Try to get latest valid metadata from delta-log
-                deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out var type))
-                {
-                    switch (type)
-                    {
-                        case DeltaLogEntryType.DELTA:
-                            // consider only metadata records
-                            continue;
-                        case DeltaLogEntryType.CHECKPOINT_METADATA:
-                            metadata = new byte[entryLength];
-                            unsafe
-                            {
-                                fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
-                            }
-                            hlri = ConvertMetadata(metadata);
-                            if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo)
-                                goto LoopEnd;
-                            continue;
-                        default:
-                            throw new GarnetException("Unexpected entry type");
-                    }
-                LoopEnd:
-                    break;
-                }
-                if (metadata != null) return metadata;
-            }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 

@@ -67,6 +67,22 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Return the replication offset for a specific sublog without copying the full AofAddress struct.
+        /// </summary>
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The replication offset of the specified sublog.</returns>
+        public long GetReplicationOffset(int sublogIdx)
+        {
+            if (!storeWrapper.serverOptions.EnableAOF)
+                return replicationOffset[sublogIdx];
+
+            var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
+            if (role == NodeRole.PRIMARY)
+                return storeWrapper.appendOnlyFile.Log.GetTailAddress(sublogIdx);
+            return replicationOffset[sublogIdx];
+        }
+
         public void SetSublogReplicationOffset(int sublogIdx, long offset)
             => replicationOffset[sublogIdx] = offset;
         public long GetSublogReplicationOffset(int sublogIdx)
@@ -240,7 +256,7 @@ namespace Garnet.cluster
                     return;
                 }
 
-                logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
+                logger?.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
 
                 // At this point we need to hold the lock until this upcoming task completes
                 suppressUnlock = true;
@@ -259,16 +275,16 @@ namespace Garnet.cluster
 
                             if (success)
                             {
-                                logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+                                logger?.LogInformation("Resync to {primaryId} successfully started", primaryId);
                             }
                             else
                             {
-                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
+                                logger?.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
                             }
                         }
                         catch (Exception ex)
                         {
-                            logger.LogError(ex, "Error encountered on replication recovery background task");
+                            logger?.LogError(ex, "Error encountered on replication recovery background task");
                         }
                         finally
                         {

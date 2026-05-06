@@ -315,11 +315,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="streamingSnapshotIteratorFunctions">Iterator functions</param>
         /// <param name="cancellationToken">Caller's cancellation token</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
+        public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType,
             IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions = null, CancellationToken cancellationToken = default)
         {
             IStateMachine stateMachine;
@@ -333,39 +332,15 @@ namespace Tsavorite.core
             }
             else
             {
-                token = _lastSnapshotCheckpoint.info.guid;
-                stateMachine = tryIncremental && InternalCanTakeIncrementalCheckpoint(checkpointType, ref token)
-                    ? Checkpoint.IncrementalHybridLogOnly(this, token)
-                    : stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
+                stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
             }
             return stateMachineDriver.Register(stateMachine, cancellationToken);
-        }
-
-        /// <summary>
-        /// Whether we can take an incremental snapshot checkpoint given current state of the store
-        /// </summary>
-        public bool CanTakeIncrementalCheckpoint(CheckpointType checkpointType, out Guid token)
-        {
-            token = _lastSnapshotCheckpoint.info.guid;
-            return InternalCanTakeIncrementalCheckpoint(checkpointType, ref token);
-        }
-
-        /// <summary>
-        /// Whether we can take an incremental snapshot checkpoint given current state of the store
-        /// </summary>
-        private bool InternalCanTakeIncrementalCheckpoint(CheckpointType checkpointType, ref Guid token)
-        {
-            return checkpointType == CheckpointType.Snapshot
-                    && token != default
-                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
-                    && !hlog.HasObjectLog;
         }
 
         /// <summary>
         /// Take log-only checkpoint
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>
         /// (bool success, Guid token)
@@ -376,9 +351,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
-            bool tryIncremental = false, CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
-            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, cancellationToken: cancellationToken);
+            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, cancellationToken: cancellationToken);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -391,15 +366,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <param name="recoverTo"> specific version requested or -1 for latest version. Tsavorite will recover to the largest version number checkpointed that's smaller than the required version. </param>
         /// <returns>Version we actually recovered to</returns>
-        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
+        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            // Do not recover
-            if (recoverTo == 0)
-                return 0;
-            FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
-            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
+            FindRecoveryInfo(-1, out var recoveredHlcInfo, out var recoveredIcInfo);
+            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion);
         }
 
         /// <summary>
@@ -426,17 +397,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <param name="recoverTo">Specific version requested to recover to, or -1 for latest version. Tsavorite will recover to the largest version number checkpointed that's smaller than the required version.</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Version we actually recovered to</returns>
-        public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
+        public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true,
             CancellationToken cancellationToken = default)
         {
-            // Do not recover
-            if (recoverTo == 0)
-                return ValueTask.FromResult(0L);
-            FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
-            return InternalRecoverAsync(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
+            FindRecoveryInfo(-1, out var recoveredHlcInfo, out var recoveredIcInfo);
+            return InternalRecoverAsync(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, cancellationToken);
         }
 
         /// <summary>
@@ -447,7 +414,7 @@ namespace Tsavorite.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <returns>Version we actually recovered to</returns>
         public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion);
 
         /// <summary>
         /// Asynchronously recover from specific token (blocking operation)
@@ -458,7 +425,7 @@ namespace Tsavorite.core
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Version we actually recovered to</returns>
         public ValueTask<long> RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
-            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
+            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
 
         /// <summary>
         /// Recover from specific index and log token (blocking operation)
@@ -469,7 +436,7 @@ namespace Tsavorite.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <returns>Version we actually recovered to</returns>
         public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+            => InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion);
 
         /// <summary>
         /// Asynchronously recover from specific index and log token (blocking operation)
@@ -481,7 +448,7 @@ namespace Tsavorite.core
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Version we actually recovered to</returns>
         public ValueTask<long> RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
-            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
+            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
 
         /// <summary>
         /// Wait for ongoing checkpoint to complete
@@ -843,7 +810,6 @@ namespace Tsavorite.core
             hlogBase.Dispose();
             readcacheBase?.Dispose();
             LockTable.Dispose();
-            _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();

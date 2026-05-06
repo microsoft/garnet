@@ -38,15 +38,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
-        {
-            if (sessionCtx.phase == Phase.REST)
-                hlog.MarkPage(logicalAddress, sessionCtx.version);
-            else
-                hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-        }
-
         /// <summary>
         /// This is a wrapper for checking the record's version instead of just peeking at the latest record at the tail of the bucket.
         /// By calling with the address of the traced record, we can prevent a different key sharing the same bucket from deceiving 

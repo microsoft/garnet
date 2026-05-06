@@ -13,11 +13,13 @@ namespace Tsavorite.core
     using static LogAddress;
 
     // RecordInfo layout (64 bits total, high to low):
+    //   Unused/Reserved bits (consume from Unused5 upward, so remaining stay contiguous):
+    //      [Unused1][Unused2][Unused3][Unused4][Unused5]
     //   RecordInfo bits:
-    //      [Unused1][Modified][InNewVersion][Unused2][Dirty][Unused3][Sealed][Valid][Tombstone]
-    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline][Unused4][HasFiller]
+    //      [Sealed][Modified][InNewVersion][Valid][Tombstone]
+    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline][HasFiller]
     //   LogAddress bits (where A = address):
-    //      [R][AAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] 
+    //      [R][AAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -29,25 +31,24 @@ namespace Tsavorite.core
         // Other marker bits. Unused* means bits not yet assigned
         const int kIsReadCacheBitOffset = kAddressBits - 1;
         const int kHasFillerBitOffset = kIsReadCacheBitOffset + 1;
-        const int kUnused4BitOffset = kHasFillerBitOffset + 1;
-        const int kKeyIsInlineBitOffset = kUnused4BitOffset + 1;
+        const int kKeyIsInlineBitOffset = kHasFillerBitOffset + 1;
         const int kValueIsInlineBitOffset = kKeyIsInlineBitOffset + 1;
         const int kValueIsObjectBitOffset = kValueIsInlineBitOffset + 1;
         const int kHasETagBitOffset = kValueIsObjectBitOffset + 1;
         const int kHasExpirationBitOffset = kHasETagBitOffset + 1;
         const int kTombstoneBitOffset = kHasExpirationBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
-        const int kSealedBitOffset = kValidBitOffset + 1;
-        const int kUnused3BitOffset = kSealedBitOffset + 1;
-        const int kDirtyBitOffset = kUnused3BitOffset + 1;
-        const int kUnused2BitOffset = kDirtyBitOffset + 1;
-        const int kInNewVersionBitOffset = kUnused2BitOffset + 1;
+        const int kInNewVersionBitOffset = kValidBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        const int kUnused1BitOffset = kModifiedBitOffset + 1;
+        const int kSealedBitOffset = kModifiedBitOffset + 1;
+        const int kUnused5BitOffset = kSealedBitOffset + 1;
+        const int kUnused4BitOffset = kUnused5BitOffset + 1;
+        const int kUnused3BitOffset = kUnused4BitOffset + 1;
+        const int kUnused2BitOffset = kUnused3BitOffset + 1;
+        const int kUnused1BitOffset = kUnused2BitOffset + 1;
 
         internal const long kIsReadCacheBitMask = 1L << kIsReadCacheBitOffset;
         const long kHasFillerBitMask = 1L << kHasFillerBitOffset;
-        const long kUnused4BitMask = 1L << kUnused4BitOffset;
         const long kKeyIsInlineBitMask = 1L << kKeyIsInlineBitOffset;
         const long kValueIsInlineBitMask = 1L << kValueIsInlineBitOffset;
         const long kValueIsObjectBitMask = 1L << kValueIsObjectBitOffset;
@@ -55,12 +56,13 @@ namespace Tsavorite.core
         const long kHasExpirationBitMask = 1L << kHasExpirationBitOffset;
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
-        const long kSealedBitMask = 1L << kSealedBitOffset;
-        const long kUnused3BitMask = 1L << kUnused3BitOffset;
-        const long kDirtyBitMask = 1L << kDirtyBitOffset;
-        const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
+        const long kSealedBitMask = 1L << kSealedBitOffset;
+        const long kUnused5BitMask = 1L << kUnused5BitOffset;
+        const long kUnused4BitMask = 1L << kUnused4BitOffset;
+        const long kUnused3BitMask = 1L << kUnused3BitOffset;
+        const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kUnused1BitMask = 1L << kUnused1BitOffset;
 #pragma warning restore IDE1006 // Naming Styles
 
@@ -106,7 +108,7 @@ namespace Tsavorite.core
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
             // Preserve Key/ValueIsInline as they are always inline for DiskLogRecord. Preserve ValueIsObject to indicate whether a value object should be deserialized
             // or if the value should remain inline (and possibly overflow if copied to a LogRecord).
-            word &= ~(kDirtyBitMask | kSealedBitMask);
+            word &= ~kSealedBitMask;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -213,19 +215,6 @@ namespace Tsavorite.core
             }
         }
 
-        public void ClearDirtyAtomic()
-        {
-            while (true)
-            {
-                var expected_word = word;
-                if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kDirtyBitMask, expected_word))
-                    break;
-                _ = Thread.Yield();
-            }
-        }
-
-        public readonly bool Dirty => (word & kDirtyBitMask) > 0;
-
         public bool Modified
         {
             readonly get => (word & kModifiedBitMask) > 0;
@@ -245,9 +234,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetIsInNewVersion() => word |= kInNewVersionBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetDirtyAndModified() => word |= kDirtyBitMask | kModifiedBitMask;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetDirty() => word |= kDirtyBitMask;
+        public void SetModified() => word |= kModifiedBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalid() => word &= ~kValidBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -363,6 +350,12 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
         }
 
+        internal bool Unused5
+        {
+            readonly get => (word & kUnused5BitMask) != 0;
+            set => word = value ? word | kUnused5BitMask : word & ~kUnused5BitMask;
+        }
+
         internal readonly int GetOptionalSize()
         {
             var size = HasETag ? LogRecord.ETagSize : 0;
@@ -379,8 +372,9 @@ namespace Tsavorite.core
             var keyString = KeyIsInline ? "inl" : "ovf";
             var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, Key::{keyString}, Val::{valString},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Filler {bstr(HasFiller)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}";
+                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, Key::{keyString}, Val::{valString},"
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Filler {bstr(HasFiller)},"
+                 + $" Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}, Un5 {bstr(Unused5)}";
         }
     }
 }

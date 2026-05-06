@@ -198,12 +198,8 @@ namespace Garnet.server
                 var full = db.LastSaveStoreTailAddress == 0 ||
                            lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval;
 
-                var tryIncremental = StoreWrapper.serverOptions.EnableIncrementalSnapshots;
-                if (db.Store.IncrementalSnapshotTailAddress >= StoreWrapper.serverOptions.IncrementalSnapshotLogSizeLimit)
-                    tryIncremental = false;
-
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger).ConfigureAwait(false);
+                await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false);
 
                 return full ? lastSaveStoreTailAddress : null;
             }
@@ -505,13 +501,12 @@ namespace Garnet.server
         /// <param name="db">Database to checkpoint</param>
         /// <param name="full">True if full checkpoint should be initiated</param>
         /// <param name="checkpointType">Type of checkpoint</param>
-        /// <param name="tryIncremental">Try to store as incremental delta over last snapshot</param>
         /// <param name="logger">Logger</param>
         /// <returns>Task</returns>
         private async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
-            bool tryIncremental, ILogger logger = null)
+            ILogger logger = null)
         {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, dbId = {dbId}", full, checkpointType, db.Id);
 
             var checkpointCoveredAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
             if (db.AppendOnlyFile != null)
@@ -537,11 +532,7 @@ namespace Garnet.server
             }
             else
             {
-                tryIncremental = tryIncremental && db.Store.CanTakeIncrementalCheckpoint(checkpointType, out checkpointResult.token);
-
-                sm = tryIncremental
-                    ? Checkpoint.IncrementalHybridLogOnly(db.Store, checkpointResult.token)
-                    : Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
+                sm = Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
             }
 
             checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);

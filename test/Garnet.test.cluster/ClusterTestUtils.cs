@@ -104,7 +104,10 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
         LAST_FAILOVER_STATE,
-        SYNC_DRIVER_COUNT
+        SYNC_DRIVER_COUNT,
+
+        MASTER_HOST,
+        MASTER_PORT,
     }
 
     public enum StoreInfoItem
@@ -181,13 +184,33 @@ namespace Garnet.test.cluster
             }
         }
 
-        public RedisResult NodesV2(IPEndPoint endPoint, ILogger logger = null)
-            => Execute(endPoint, "cluster", ["nodes"], skipLogging: true, logger);
+        public async Task<RedisResult> ExecuteAsync(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null, CommandFlags flags = CommandFlags.None)
+        {
+            if (!skipLogging)
+                logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
+            try
+            {
+                var server = GetServer(endPoint);
+                var resp = await server.ExecuteAsync(cmd, args, flags: flags).ConfigureAwait(false);
+                return resp;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error occured {cmd} {msg}", cmd, ex.Message);
+                return RedisResult.Create((RedisValue)ex.Message);
+            }
+        }
+
+        public Task<RedisResult> NodesV2Async(IPEndPoint endPoint, ILogger logger = null)
+            => ExecuteAsync(endPoint, "cluster", ["nodes"], skipLogging: true, logger);
 
         public string NodesMyself(IPEndPoint endPoint, ClusterInfoTag tag, ILogger logger)
+            => AsyncUtils.BlockingWait(NodesMyselfAsync(endPoint, tag, logger));
+
+        public async Task<string> NodesMyselfAsync(IPEndPoint endPoint, ClusterInfoTag tag, ILogger logger)
         {
             var nodeConfigInfo = string.Empty;
-            var nodeConfigStr = (string)NodesV2(endPoint, logger);
+            var nodeConfigStr = (string)await NodesV2Async(endPoint, logger).ConfigureAwait(false);
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
@@ -199,12 +222,15 @@ namespace Garnet.test.cluster
         }
 
         public string GetLocalNodeId(int nodeIndex, ILogger logger = null)
-            => ClusterNodes(nodeIndex, logger).Nodes.First().NodeId;
+            => AsyncUtils.BlockingWait(GetLocalNodeIdAsync(nodeIndex, logger));
 
-        public string[] NodesMyself(IPEndPoint endPoint, ClusterInfoTag[] tags)
+        public async Task<string> GetLocalNodeIdAsync(int nodeIndex, ILogger logger = null)
+            => (await ClusterNodesAsync(nodeIndex, logger).ConfigureAwait(false)).Nodes.First().NodeId;
+
+        public async Task<string[]> NodesMyselfAsync(IPEndPoint endPoint, ClusterInfoTag[] tags)
         {
             var nodeConfigInfo = new string[tags.Length];
-            var nodeConfigStr = (string)NodesV2(endPoint);
+            var nodeConfigStr = (string)await NodesV2Async(endPoint).ConfigureAwait(false);
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
@@ -219,10 +245,10 @@ namespace Garnet.test.cluster
             return nodeConfigInfo;
         }
 
-        public List<string[]> NodesAll(IPEndPoint endPoint, ClusterInfoTag[] tags, string nodeid = null)
+        public async Task<List<string[]>> NodesAllAsync(IPEndPoint endPoint, ClusterInfoTag[] tags, string nodeid = null)
         {
             var nodeConfigInfo = new List<string[]>();
-            var nodeConfigStr = (string)NodesV2(endPoint);
+            var nodeConfigStr = (string)await NodesV2Async(endPoint).ConfigureAwait(false);
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
@@ -247,14 +273,14 @@ namespace Garnet.test.cluster
         private async Task<bool> WaitForEpochSync(IPEndPoint endPoint)
         {
             var endpoints = GetEndpointsWithout(endPoint);
-            var configInfo = NodesMyself(endPoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH]);
+            var configInfo = await NodesMyselfAsync(endPoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH]).ConfigureAwait(false);
             while (true)
             {
                 await Task.Delay(endpoints.Length * 100).ConfigureAwait(false);
             retry:
                 foreach (var endpoint in endpoints)
                 {
-                    var _configInfo = NodesAll(endpoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH], configInfo[0]);
+                    var _configInfo = await NodesAllAsync(endpoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH], configInfo[0]).ConfigureAwait(false);
                     if (_configInfo[0][0] == configInfo[1])
                         ThrowException($"WaitForEpochSync unexpected node id {_configInfo[0][0]} {configInfo[1]}");
 
@@ -305,17 +331,17 @@ namespace Garnet.test.cluster
             return slotRanges;
         }
 
-        private ClientClusterConfig GetClusterConfig(int primary_count, int node_count, List<(int, int)>[] slotRanges, ILogger logger)
+        private async Task<ClientClusterConfig> GetClusterConfigAsync(int primary_count, int node_count, List<(int, int)>[] slotRanges, ILogger logger)
         {
             ClientClusterConfig clusterConfig = new(node_count);
             var endpoints = GetEndpoints();
             int j = 0;
             for (int i = 0; i < node_count; i++)
             {
-                var nodeid = NodesMyself(endpoints[i], ClusterInfoTag.NODEID, logger: logger);
-                var hostname = NodesMyself(endpoints[i], ClusterInfoTag.ADDRESS, logger: logger).Split(',')[1];
+                var nodeid = await NodesMyselfAsync(endpoints[i], ClusterInfoTag.NODEID, logger: logger).ConfigureAwait(false);
+                var hostname = (await NodesMyselfAsync(endpoints[i], ClusterInfoTag.ADDRESS, logger: logger).ConfigureAwait(false)).Split(',')[1];
                 bool isPrimary = i < primary_count;
-                var primaryId = isPrimary ? string.Empty : NodesMyself(endpoints[j], ClusterInfoTag.NODEID, logger: logger);
+                var primaryId = isPrimary ? string.Empty : await NodesMyselfAsync(endpoints[j], ClusterInfoTag.NODEID, logger: logger).ConfigureAwait(false);
                 j = isPrimary ? 0 : (j + 1) % primary_count;
 
                 clusterConfig.AddWorker(nodeid,
@@ -350,7 +376,7 @@ namespace Garnet.test.cluster
             return true;
         }
 
-        private void WaitForSync(ClientClusterConfig clusterConfig)
+        private async Task WaitForSyncAsync(ClientClusterConfig clusterConfig)
         {
             var expectedConfig = clusterConfig.GetConfigInfo();
             while (true)
@@ -360,7 +386,7 @@ namespace Garnet.test.cluster
                 foreach (var server in servers)
                 {
                     int count = expectedConfig.Count;
-                    var nodes = server.ClusterNodes()?.Nodes;
+                    var nodes = (await server.ClusterNodesAsync().ConfigureAwait(false))?.Nodes;
                     if (nodes != null)
                     {
                         foreach (var node in nodes)
@@ -375,7 +401,7 @@ namespace Garnet.test.cluster
 
                     if (count > 0)
                     {
-                        BackOff(cancellationToken: context.cts.Token);
+                        await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
                         goto retry;
                     }
                 }
@@ -384,6 +410,15 @@ namespace Garnet.test.cluster
         }
 
         public (List<ShardInfo>, List<ushort>) SimpleSetupCluster(
+            int primary_count = -1,
+            int replica_count = -1,
+            bool assignSlots = true,
+            List<(int, int)>[] customSlotRanges = null,
+            ILogger logger = null
+        )
+        => AsyncUtils.BlockingWait(SimpleSetupClusterAsync(primary_count, replica_count, assignSlots, customSlotRanges, logger));
+
+        public async Task<(List<ShardInfo>, List<ushort>)> SimpleSetupClusterAsync(
             int primary_count = -1,
             int replica_count = -1,
             bool assignSlots = true,
@@ -397,7 +432,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(node_count, primary_count + primary_count * replica_count, $"Error primary per replica misconfig mCount: {primary_count}, rCount:{replica_count}");
 
             var slotRanges = customSlotRanges == null ? GetSlotRanges(primary_count) : customSlotRanges;
-            var clusterConfig = GetClusterConfig(primary_count, node_count, slotRanges, logger);
+            var clusterConfig = await GetClusterConfigAsync(primary_count, node_count, slotRanges, logger).ConfigureAwait(false);
 
             var shards = new List<ShardInfo>();
             var slots = new List<ushort>();
@@ -408,7 +443,16 @@ namespace Garnet.test.cluster
                 foreach (var slotRange in slotRanges[i])
                 {
                     var endpoint = endpoints[i];
-                    _ = AddSlotsRange(endpoint, new List<(int, int)> { slotRange }, logger);
+                    var addRes = await AddSlotsRangeAsync(endpoint, new List<(int, int)> { slotRange }, logger).ConfigureAwait(false);
+                    ClassicAssert.AreEqual("OK", (string)addRes);
+
+                    // Check slot assignment worked
+                    var finalSlots = await GetOwnedSlotsFromNodeAsync(endpoint, logger).ConfigureAwait(false);
+                    for (var slot = slotRange.Item1; slot <= slotRange.Item2; slot++)
+                    {
+                        ClassicAssert.IsTrue(finalSlots.Contains(slot), "Assigned slot is not present after adding slot");
+                    }
+
                     slots.AddRange(Enumerable.Range(slotRange.Item1, slotRange.Item2 - slotRange.Item1 + 1).Select(x => (ushort)x));
                     ShardInfo shardInfo = new()
                     {
@@ -431,41 +475,77 @@ namespace Garnet.test.cluster
                 }
             }
 
-            //Set-config-epoch
-            for (var i = 0; i < endpoints.Length; i++)
-                SetConfigEpoch(endpoints[i], i + 1, logger);
+            // Set-config-epoch
+            for (int i = 0; i < endpoints.Length; i++)
+                await SetConfigEpochAsync(endpoints[i], i + 1, logger).ConfigureAwait(false);
 
-            //Initiate meet
-            var _firstEndpoint = endpoints[0];
-            for (var i = 1; i < endpoints.Length; i++)
-                Meet(_firstEndpoint, endpoints[i], logger);
+            // Initiate meets
+            var sendMeetTo = endpoints[0];
+            for (var newNode = 1; newNode < endpoints.Length; newNode++)
+            {
+                var toMeet = endpoints[newNode];
 
-            //WaitForClusterJoin(clusterConfig);
-            //WaitForSync(clusterConfig);
+                await MeetAsync(sendMeetTo, toMeet, logger).ConfigureAwait(false);
 
-            //Assign replicas
+                // Wait for new node to know first node
+                while (true)
+                {
+                    var expectedEntry = $" {sendMeetTo.Address}:{sendMeetTo.Port}@";
+
+                    var knownNodes = await NodesAsync(toMeet, logger).ConfigureAwait(false);
+                    if (knownNodes.Any(x => x.Contains(expectedEntry)))
+                    {
+                        break;
+                    }
+
+                    await BackOffAsync(context.cts.Token);
+                }
+
+                // Wait for other nodes to know new node
+                for (var otherNode = 0; otherNode < newNode; otherNode++)
+                {
+                    var otherEndpoint = endpoints[otherNode];
+
+                    while (true)
+                    {
+                        var expectedEntry = $" {toMeet.Address}:{toMeet.Port}@";
+
+                        var knownNodes = await NodesAsync(otherEndpoint, logger).ConfigureAwait(false);
+                        if (knownNodes.Any(x => x.Contains(expectedEntry)))
+                        {
+                            break;
+                        }
+
+                        await BackOffAsync(context.cts.Token);
+                    }
+                }
+            }
+
+            // Assign replicas
             if (replica_count > 0)
             {
-                int j = 0;
-                for (int i = primary_count; i < endpoints.Length; i++)
+                var j = 0;
+                for (var i = primary_count; i < endpoints.Length; i++)
                 {
-                    var primaryId = GetLocalNodeId(j);
-                    var replicaId = GetLocalNodeId(i);
+                    var primaryId = await GetLocalNodeIdAsync(j).ConfigureAwait(false);
+                    var replicaId = await GetLocalNodeIdAsync(i).ConfigureAwait(false);
 
                     // Wait until replica knows primary
-                    WaitUntilNodeIdIsKnown(i, primaryId, logger);
+                    await WaitUntilNodeIdIsKnownAsync(i, primaryId, logger).ConfigureAwait(false);
 
                     // Wait until primary knows this replica in order for
                     // TryConnectToReplica to succeed for AOF sync
-                    WaitUntilNodeIdIsKnown(j, replicaId, logger);
+                    await WaitUntilNodeIdIsKnownAsync(j, replicaId, logger).ConfigureAwait(false);
 
-                    var primaryEndpoint = endpoints[i];
-                    string resp = (string)ClusterReplicate(primaryEndpoint, primaryId, logger: logger);
+                    // Start replication
+                    var primaryEndpoint = endpoints[j];
+                    var replicaEndpoint = endpoints[i];
+                    var resp = (string)await ClusterReplicateAsync(replicaEndpoint, primaryId, logger: logger).ConfigureAwait(false);
                     {
                         var msg = "";
                         for (int k = 0; k < endpoints.Length; k++)
                         {
-                            var ns = ClusterNodes(k, logger).Nodes;
+                            var ns = (await ClusterNodesAsync(k, logger).ConfigureAwait(false)).Nodes;
 
                             var rawStr = $"[{k}]\n";
                             foreach (var n in ns)
@@ -473,10 +553,54 @@ namespace Garnet.test.cluster
                                 rawStr += "\t" + n.Raw + "\n";
                             }
                             rawStr += $"[{k}]\n";
-                            //logger?.LogError(rawStr);
                             msg += rawStr;
                         }
                         ClassicAssert.AreEqual("OK", resp, msg);
+                    }
+
+                    // Wait for replica to see primary
+                    while (true)
+                    {
+                        var role = await GetReplicationRoleAsync(replicaEndpoint, logger).ConfigureAwait(false);
+                        if (role != "slave")
+                        {
+                            await BackOffAsync(context.cts.Token).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        var primaryDetails = await GetReplicationInfoAsync(replicaEndpoint, [ReplicationInfoItem.MASTER_HOST, ReplicationInfoItem.MASTER_PORT], logger).ConfigureAwait(false);
+                        if (primaryDetails.Count != 2)
+                        {
+                            await BackOffAsync(context.cts.Token).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        var expectedPrimaryEndpoint = $"{primaryEndpoint.Address}:{primaryEndpoint.Port}";
+                        var actualPrimaryEndpoint = $"{primaryDetails[0].Item2}:{primaryDetails[1].Item2}";
+                        ClassicAssert.AreEqual(expectedPrimaryEndpoint, actualPrimaryEndpoint);
+
+                        break;
+                    }
+
+                    // Wait for primary to see replica
+                    while (true)
+                    {
+                        var role = await GetReplicationRoleAsync(primaryEndpoint, logger).ConfigureAwait(false);
+                        if (role != "master")
+                        {
+                            await BackOffAsync(context.cts.Token).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        var replicas = await GetClusterReplicasAsync(primaryEndpoint, logger).ConfigureAwait(false);
+
+                        if (!replicas.Any(c => c.StartsWith($"{replicaId} ")))
+                        {
+                            await BackOffAsync(context.cts.Token).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        break;
                     }
 
                     shards[j].nodes.Add(
@@ -498,12 +622,10 @@ namespace Garnet.test.cluster
                 j = 0;
                 for (int i = 0; i < primary_count; i++)
                 {
-                    WaitForConnectedReplicaCount(i, replica_count, logger);
+                    await WaitForConnectedReplicaCountAsync(i, replica_count, logger).ConfigureAwait(false);
                 }
-
-                //WaitForClusterJoin(clusterConfig, true);
             }
-            WaitForSync(clusterConfig);
+            await WaitForSyncAsync(clusterConfig).ConfigureAwait(false);
             return (shards, slots);
         }
 
@@ -580,7 +702,7 @@ namespace Garnet.test.cluster
         }
     }
 
-    public unsafe partial class ClusterTestUtils
+    public partial class ClusterTestUtils
     {
         static readonly TimeSpan backoff = TimeSpan.FromSeconds(0.1);
         static readonly byte[] bresp_OK = Encoding.ASCII.GetBytes("+OK\r\n");
@@ -626,26 +748,43 @@ namespace Garnet.test.cluster
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
+        public static Task BackOffAsync(TimeSpan timeSpan = default) => BackOffAsync(default, timeSpan);
+
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 Assert.Fail(msg ?? "Cancellation Requested");
+            }
 
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 
-        public void Connect(bool cluster = true, ILogger logger = null)
+        public static Task BackOffAsync(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
-            InitMultiplexer(GetRedisConfig(endpoints), textWriter, logger: logger);
-            if (cluster)
-                this.nodeIds = GetNodeIds(logger: logger);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Assert.Fail(msg ?? "Cancellation Requested");
+            }
+
+            return Task.Delay(timeSpan == default ? backoff : timeSpan);
         }
 
-        private void InitMultiplexer(ConfigurationOptions redisConfig, TextWriter textWriter, bool failAssert = true, ILogger logger = null)
+        public void Connect(bool cluster = true, ILogger logger = null)
+            => AsyncUtils.BlockingWait(ConnectAsync(cluster, logger));
+
+        public async Task ConnectAsync(bool cluster = true, ILogger logger = null)
+        {
+            await InitMultiplexerAsync(GetRedisConfig(endpoints), textWriter, logger: logger);
+            if (cluster)
+                this.nodeIds = await GetNodeIdsAsync(logger: logger).ConfigureAwait(false);
+        }
+
+        private async Task InitMultiplexerAsync(ConfigurationOptions redisConfig, TextWriter textWriter, bool failAssert = true, ILogger logger = null)
         {
             try
             {
-                redis = ConnectionMultiplexer.Connect(redisConfig, null);
+                redis = await ConnectionMultiplexer.ConnectAsync(redisConfig, null);
             }
             catch (Exception ex)
             {
@@ -669,13 +808,16 @@ namespace Garnet.test.cluster
 
         public void Dispose()
         {
-            CloseConnections();
+            AsyncUtils.BlockingWait(CloseConnectionsAsync());
         }
 
-        public void CloseConnections()
+        public async Task CloseConnectionsAsync()
         {
-            redis?.Close(false);
-            redis?.Dispose();
+            if (redis != null)
+            {
+                await redis.CloseAsync(false);
+                await redis.DisposeAsync();
+            }
 
             if (gcsConnections != null)
             {
@@ -685,27 +827,30 @@ namespace Garnet.test.cluster
         }
 
         public string[] GetNodeIds(List<int> nodes = null, ILogger logger = null)
+             => AsyncUtils.BlockingWait(GetNodeIdsAsync(nodes, logger));
+
+        public async Task<string[]> GetNodeIdsAsync(List<int> nodes = null, ILogger logger = null)
         {
             string[] nodeIds = new string[endpoints.Count];
             if (nodes == null)
             {
                 for (int i = 0; i < nodeIds.Length; i++)
-                    nodeIds[i] = NodesMyself((IPEndPoint)endpoints[i], ClusterInfoTag.NODEID, logger: logger);
+                    nodeIds[i] = await NodesMyselfAsync((IPEndPoint)endpoints[i], ClusterInfoTag.NODEID, logger: logger).ConfigureAwait(false);
             }
             else
             {
                 for (int i = 0; i < nodes.Count; i++)
                 {
                     var j = nodes[i];
-                    nodeIds[j] = NodesMyself((IPEndPoint)endpoints[j], ClusterInfoTag.NODEID, logger: logger);
+                    nodeIds[j] = await NodesMyselfAsync((IPEndPoint)endpoints[j], ClusterInfoTag.NODEID, logger: logger).ConfigureAwait(false);
                 }
             }
             return nodeIds;
         }
 
-        public void Reconnect(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
+        public async Task ReconnectAsync(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
         {
-            CloseConnections();
+            await CloseConnectionsAsync().ConfigureAwait(false);
             var endPoints = endpoints;
             if (nodes != null)
             {
@@ -717,8 +862,8 @@ namespace Garnet.test.cluster
                 }
             }
             var connOpts = GetRedisConfig(endPoints);
-            InitMultiplexer(connOpts, textWriter, logger: logger);
-            nodeIds = GetNodeIds(nodes, logger);
+            await InitMultiplexerAsync(connOpts, textWriter, logger: logger).ConfigureAwait(false);
+            nodeIds = await GetNodeIdsAsync(nodes, logger).ConfigureAwait(false);
         }
 
         public EndPointCollection GetEndPoints() => endpoints;
@@ -856,7 +1001,7 @@ namespace Garnet.test.cluster
             return Encoding.ASCII.GetString(data);
         }
 
-        public static ushort HashSlot(byte[] key)
+        public static unsafe ushort HashSlot(byte[] key)
         {
             fixed (byte* ptr = key)
             {
@@ -872,7 +1017,7 @@ namespace Garnet.test.cluster
             return targetNodeIndex;
         }
 
-        public static (int, int) LightReceive(byte* buf, int bytesRead, int opType)
+        public static unsafe (int, int) LightReceive(byte* buf, int bytesRead, int opType)
         {
             string result = null;
             byte* ptr = buf;
@@ -912,7 +1057,7 @@ namespace Garnet.test.cluster
             return (bytesRead, count);
         }
 
-        public static string ParseRespToString(byte[] data, out string[] resultArray)
+        public static unsafe string ParseRespToString(byte[] data, out string[] resultArray)
         {
             resultArray = null;
             string result = null;
@@ -1046,7 +1191,7 @@ namespace Garnet.test.cluster
             return ResponseState.NONE;
         }
 
-        public static LightClientRequest[] CreateLightRequestConnections(int[] Ports)
+        public static unsafe LightClientRequest[] CreateLightRequestConnections(int[] Ports)
         {
             LightClientRequest[] lightClientRequests = new LightClientRequest[Ports.Length];
             for (int i = 0; i < Ports.Length; i++)
@@ -1081,9 +1226,12 @@ namespace Garnet.test.cluster
         }
 
         public string AddSlotsRange(int nodeIndex, List<(int, int)> ranges, ILogger logger)
-            => (string)AddSlotsRange((IPEndPoint)endpoints[nodeIndex], ranges, logger);
+            => AsyncUtils.BlockingWait(AddSlotsRangeAsync(nodeIndex, ranges, logger));
 
-        public RedisResult AddSlotsRange(IPEndPoint endPoint, List<(int, int)> ranges, ILogger logger)
+        public async Task<string> AddSlotsRangeAsync(int nodeIndex, List<(int, int)> ranges, ILogger logger)
+            => (string)await AddSlotsRangeAsync((IPEndPoint)endpoints[nodeIndex], ranges, logger);
+
+        public Task<RedisResult> AddSlotsRangeAsync(IPEndPoint endPoint, List<(int, int)> ranges, ILogger logger)
         {
             ICollection<object> args = new List<object>() { "addslotsrange" };
             foreach (var range in ranges)
@@ -1091,18 +1239,18 @@ namespace Garnet.test.cluster
                 args.Add(range.Item1);
                 args.Add(range.Item2);
             }
-            return Execute(endPoint, "cluster", args, logger: logger);
+            return ExecuteAsync(endPoint, "cluster", args, logger: logger);
         }
 
         public void SetConfigEpoch(int sourceNodeIndex, long epoch, ILogger logger = null)
-            => SetConfigEpoch((IPEndPoint)endpoints[sourceNodeIndex], epoch, logger);
+            => AsyncUtils.BlockingWait(SetConfigEpochAsync((IPEndPoint)endpoints[sourceNodeIndex], epoch, logger));
 
-        public void SetConfigEpoch(IPEndPoint endPoint, long epoch, ILogger logger = null)
+        public async Task SetConfigEpochAsync(IPEndPoint endPoint, long epoch, ILogger logger = null)
         {
             try
             {
                 var server = redis.GetServer(endPoint);
-                var resp = server.Execute("cluster", "set-config-epoch", $"{epoch}");
+                var resp = await server.ExecuteAsync("cluster", "set-config-epoch", $"{epoch}").ConfigureAwait(false);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -1220,14 +1368,14 @@ namespace Garnet.test.cluster
         }
 
         public void Meet(int sourceNodeIndex, int meetNodeIndex, ILogger logger = null)
-            => Meet((IPEndPoint)endpoints[sourceNodeIndex], (IPEndPoint)endpoints[meetNodeIndex], logger);
+            => AsyncUtils.BlockingWait(MeetAsync((IPEndPoint)endpoints[sourceNodeIndex], (IPEndPoint)endpoints[meetNodeIndex], logger));
 
-        public void Meet(IPEndPoint source, IPEndPoint target, ILogger logger = null)
+        public async Task MeetAsync(IPEndPoint source, IPEndPoint target, ILogger logger = null)
         {
             try
             {
                 var server = redis.GetServer(source);
-                var resp = server.Execute("cluster", "meet", $"{target.Address}", $"{target.Port}");
+                var resp = await server.ExecuteAsync("cluster", "meet", $"{target.Address}", $"{target.Port}").ConfigureAwait(false);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -1295,11 +1443,14 @@ namespace Garnet.test.cluster
         }
 
         public List<string> Nodes(IPEndPoint endPoint, ILogger logger)
+            => AsyncUtils.BlockingWait(NodesAsync(endPoint, logger));
+
+        public async Task<List<string>> NodesAsync(IPEndPoint endPoint, ILogger logger)
         {
             try
             {
                 var server = redis.GetServer(endPoint);
-                var strResult = (string)server.Execute("cluster", "nodes");
+                var strResult = (string)await server.ExecuteAsync("cluster", "nodes").ConfigureAwait(false);
                 var data = strResult.Split('\n');
                 List<string> nodeConfig = new();
 
@@ -1425,17 +1576,21 @@ namespace Garnet.test.cluster
         }
 
         public void WaitUntilNodeIdIsKnown(int nodeIndex, string nodeId, ILogger logger = null)
+            => AsyncUtils.BlockingWait(WaitUntilNodeIdIsKnownAsync(nodeIndex, nodeId, logger));
+
+        public async Task WaitUntilNodeIdIsKnownAsync(int nodeIndex, string nodeId, ILogger logger = null)
         {
             while (true)
             {
-                var nodes = ClusterNodes(nodeIndex, logger).Nodes;
+                var nodes = (await ClusterNodesAsync(nodeIndex, logger).ConfigureAwait(false)).Nodes;
 
                 var found = false;
                 foreach (var node in nodes)
                     if (node.NodeId.Equals(nodeId))
                         found = true;
                 if (found) break;
-                BackOff(cancellationToken: context.cts.Token);
+
+                await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
             }
         }
 
@@ -1521,8 +1676,11 @@ namespace Garnet.test.cluster
         }
 
         public List<int> GetOwnedSlotsFromNode(IPEndPoint endPoint, ILogger logger)
+             => AsyncUtils.BlockingWait(GetOwnedSlotsFromNodeAsync(endPoint, logger));
+
+        public async Task<List<int>> GetOwnedSlotsFromNodeAsync(IPEndPoint endPoint, ILogger logger)
         {
-            var nodeConfig = Nodes(endPoint, logger);
+            var nodeConfig = await NodesAsync(endPoint, logger).ConfigureAwait(false);
             var nodeInfo = nodeConfig[0].Split(' ');
 
             var slots = new List<int>();
@@ -2043,15 +2201,15 @@ namespace Garnet.test.cluster
         }
 
         public string ClusterReplicate(int sourceNodeIndex, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
-            => ClusterReplicate((IPEndPoint)endpoints[sourceNodeIndex], primaryNodeId, async: async, failEx: failEx, logger);
+            => AsyncUtils.BlockingWait(ClusterReplicateAsync((IPEndPoint)endpoints[sourceNodeIndex], primaryNodeId, async: async, failEx: failEx, logger));
 
-        public string ClusterReplicate(IPEndPoint endPoint, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
+        public async Task<string> ClusterReplicateAsync(IPEndPoint endPoint, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
         {
             try
             {
                 var server = redis.GetServer(endPoint);
                 List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId, "sync"];
-                var result = (string)server.Execute("cluster", args);
+                var result = (string)(await server.ExecuteAsync("cluster", args).ConfigureAwait(false));
                 ClassicAssert.AreEqual("OK", result);
                 return result;
             }
@@ -2225,9 +2383,12 @@ namespace Garnet.test.cluster
         }
 
         public ClusterConfiguration ClusterNodes(int nodeIndex, ILogger logger = null)
-            => ClusterNodes((IPEndPoint)endpoints[nodeIndex], logger);
+            => AsyncUtils.BlockingWait(ClusterNodesAsync(nodeIndex, logger));
 
-        public ClusterConfiguration ClusterNodes(IPEndPoint endPoint, ILogger logger = null)
+        public Task<ClusterConfiguration> ClusterNodesAsync(int nodeIndex, ILogger logger = null)
+            => ClusterNodesAsync((IPEndPoint)endpoints[nodeIndex], logger);
+
+        public async Task<ClusterConfiguration> ClusterNodesAsync(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
@@ -2771,10 +2932,13 @@ namespace Garnet.test.cluster
             => GetReplicationRole((IPEndPoint)endpoints[nodeIndex], logger);
 
         public string GetReplicationRole(IPEndPoint endPoint, ILogger logger = null)
+            => AsyncUtils.BlockingWait(GetReplicationRoleAsync(endPoint, logger));
+
+        public async Task<string> GetReplicationRoleAsync(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
-                return GetReplicationInfo(endPoint, [ReplicationInfoItem.ROLE], logger)[0].Item2;
+                return (await GetReplicationInfoAsync(endPoint, [ReplicationInfoItem.ROLE], logger).ConfigureAwait(false))[0].Item2;
             }
             catch (Exception ex)
             {
@@ -2841,17 +3005,41 @@ namespace Garnet.test.cluster
         public List<(ReplicationInfoItem, string)> GetReplicationInfo(int nodeIndex, ReplicationInfoItem[] infoItems, ILogger logger = null)
             => GetReplicationInfo((IPEndPoint)endpoints[nodeIndex], infoItems, logger);
 
+        public Task<List<(ReplicationInfoItem, string)>> GetReplicationInfoAsync(int nodeIndex, ReplicationInfoItem[] infoItems, ILogger logger = null)
+            => GetReplicationInfoAsync((IPEndPoint)endpoints[nodeIndex], infoItems, logger);
+
         private List<(ReplicationInfoItem, string)> GetReplicationInfo(IPEndPoint endPoint, ReplicationInfoItem[] infoItems, ILogger logger = null)
+            => AsyncUtils.BlockingWait(GetReplicationInfoAsync(endPoint, infoItems, logger));
+
+        private async Task<List<(ReplicationInfoItem, string)>> GetReplicationInfoAsync(IPEndPoint endPoint, ReplicationInfoItem[] infoItems, ILogger logger = null)
         {
             var server = redis.GetServer(endPoint);
             try
             {
-                var result = server.InfoRawAsync("replication").Result;
+                var result = await server.InfoRawAsync("replication").ConfigureAwait(false);
                 return ProcessReplicationInfo(result, infoItems);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occured; GetReplicationInfo");
+                Assert.Fail(ex.Message);
+            }
+            return null;
+        }
+
+        private async Task<List<string>> GetClusterReplicasAsync(IPEndPoint endpoint, ILogger logger)
+        {
+            var server = redis.GetServer(endpoint);
+            try
+            {
+                var myId = server.ClusterConfiguration.Nodes.Single(n => n.IsMyself).NodeId;
+
+                var result = (string[])await server.ExecuteAsync("CLUSTER", "REPLICAS", myId).ConfigureAwait(false);
+                return result.ToList();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; GetClusterReplicas");
                 Assert.Fail(ex.Message);
             }
             return null;
@@ -2963,6 +3151,14 @@ namespace Garnet.test.cluster
                             break;
                         case ReplicationInfoItem.LAST_FAILOVER_STATE:
                             startsWith = "last_failover_state:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            break;
+                        case ReplicationInfoItem.MASTER_HOST:
+                            startsWith = "master_host:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            break;
+                        case ReplicationInfoItem.MASTER_PORT:
+                            startsWith = "master_port:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             break;
                         default:
@@ -3077,12 +3273,12 @@ namespace Garnet.test.cluster
             logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);
         }
 
-        public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)
+        public async Task WaitForConnectedReplicaCountAsync(int primaryIndex, long minCount, ILogger logger = null)
         {
             while (true)
             {
 
-                var items = GetReplicationInfo(primaryIndex, [ReplicationInfoItem.ROLE, ReplicationInfoItem.CONNECTED_REPLICAS], logger);
+                var items = await GetReplicationInfoAsync(primaryIndex, [ReplicationInfoItem.ROLE, ReplicationInfoItem.CONNECTED_REPLICAS], logger).ConfigureAwait(false);
                 var role = items[0].Item2;
                 ClassicAssert.AreEqual(role, "master");
 
@@ -3097,7 +3293,7 @@ namespace Garnet.test.cluster
                     Assert.Fail(ex.Message);
                 }
 
-                BackOff(cancellationToken: context.cts.Token);
+                await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
             }
         }
 
@@ -3310,9 +3506,9 @@ namespace Garnet.test.cluster
             }
         }
 
-        public ClusterNode GetAnyOtherNode(IPEndPoint endPoint, ILogger logger = null)
+        public async Task<ClusterNode> GetAnyOtherNodeAsync(IPEndPoint endPoint, ILogger logger = null)
         {
-            var config = ClusterNodes(endPoint, logger);
+            var config = await ClusterNodesAsync(endPoint, logger).ConfigureAwait(false);
             foreach (var node in config.Nodes)
             {
                 if (!node.EndPoint.ToIPEndPoint().Equals(endPoint))

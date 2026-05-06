@@ -54,6 +54,12 @@ namespace Garnet.test.cluster
 
         public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
+            // Pull timeout off [CancelAfter] if its specified, otherwise use default
+            if (TestContext.CurrentContext.Test.Properties.ContainsKey("Timeout"))
+            {
+                testTimeoutSeconds = ((int)TestContext.CurrentContext.Test.Properties["Timeout"].First()) / 1_000;
+            }
+
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
@@ -220,7 +226,6 @@ namespace Garnet.test.cluster
         /// <param name="CommitFrequencyMs"></param>
         /// <param name="useAofNullDevice"></param>
         /// <param name="DisableStorageTier"></param>
-        /// <param name="EnableIncrementalSnapshots"></param>
         /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
@@ -272,7 +277,6 @@ namespace Garnet.test.cluster
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
             int timeout = -1,
             bool useTLS = false,
@@ -335,7 +339,6 @@ namespace Garnet.test.cluster
                 useAofNullDevice: useAofNullDevice,
                 DisableStorageTier: DisableStorageTier,
                 OnDemandCheckpoint: OnDemandCheckpoint,
-                EnableIncrementalSnapshots: EnableIncrementalSnapshots,
                 FastCommit: FastCommit,
                 useAcl: useAcl,
                 aclFile: credManager.aclFilePath,
@@ -395,7 +398,6 @@ namespace Garnet.test.cluster
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
         /// <param name="DisableStorageTier"></param>
-        /// <param name="EnableIncrementalSnapshots"></param>
         /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="gossipDelay"></param>
@@ -426,7 +428,6 @@ namespace Garnet.test.cluster
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
             int timeout = -1,
             int gossipDelay = 5,
@@ -464,7 +465,6 @@ namespace Garnet.test.cluster
                 commitFrequencyMs: CommitFrequencyMs,
                 disableStorageTier: DisableStorageTier,
                 onDemandCheckpoint: OnDemandCheckpoint,
-                enableIncrementalSnapshots: EnableIncrementalSnapshots,
                 fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
@@ -546,8 +546,6 @@ namespace Garnet.test.cluster
             int kvpairCount,
             int primaryIndex,
             int[] slotMap = null,
-            bool incrementalSnapshots = false,
-            int ckptNode = 0,
             int randomSeed = -1)
         {
             if (randomSeed != -1) clusterTestUtils.InitRandom(randomSeed);
@@ -572,9 +570,6 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(value, int.Parse(retVal));
 
                 kvPairs.Add(key, int.Parse(retVal));
-
-                if (incrementalSnapshots && i == kvpairCount / 2)
-                    clusterTestUtils.Checkpoint(ckptNode, logger: logger);
             }
         }
 
@@ -621,7 +616,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void PopulatePrimaryRMW(ref Dictionary<string, int> kvPairs, int keyLength, int kvpairCount, int primaryIndex, int addCount, int[] slotMap = null, bool incrementalSnapshots = false, int ckptNode = 0, int randomSeed = -1)
+        public void PopulatePrimaryRMW(ref Dictionary<string, int> kvPairs, int keyLength, int kvpairCount, int primaryIndex, int addCount, int[] slotMap = null, int randomSeed = -1)
         {
             if (randomSeed != -1) clusterTestUtils.InitRandom(randomSeed);
             for (int i = 0; i < kvpairCount; i++)
@@ -641,9 +636,6 @@ namespace Garnet.test.cluster
                     value = clusterTestUtils.IncrBy(primaryIndex, key, randomSeed == -1 ? 1 : clusterTestUtils.r.Next(1, 100));
 
                 kvPairs.Add(key, value);
-
-                if (incrementalSnapshots && i == kvpairCount / 2)
-                    clusterTestUtils.Checkpoint(ckptNode, logger: logger);
             }
         }
 
@@ -799,7 +791,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void AttachAndWaitForSync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
+        public async Task AttachAndWaitForSyncAsync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(primaryIndex, logger);
 
@@ -820,7 +812,7 @@ namespace Garnet.test.cluster
                 clusterTestUtils.WaitForReplicaAofSync(primaryIndex, i, logger);
             }
 
-            clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replicaCount, logger: logger);
+            await clusterTestUtils.WaitForConnectedReplicaCountAsync(0, replicaCount, logger: logger).ConfigureAwait(false);
 
             // Validate data on replicas
             for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)

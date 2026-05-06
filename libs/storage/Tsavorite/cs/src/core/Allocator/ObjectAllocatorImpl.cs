@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -118,12 +117,17 @@ namespace Tsavorite.core
         public override void Reset()
         {
             base.Reset();
+            Initialize();
+        }
+
+        /// <inheritdoc />
+        protected override void FreeAllAllocatedPages()
+        {
             for (var index = 0; index < BufferSize; index++)
             {
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
         }
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
@@ -1217,9 +1221,5 @@ namespace Tsavorite.core
             observer?.OnNext(iter);
         }
 
-        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out Task completedTask, int throttleCheckpointFlushDelayMs)
-        {
-            throw new TsavoriteException("Incremental snapshots not supported with generic allocator");
-        }
     }
 }

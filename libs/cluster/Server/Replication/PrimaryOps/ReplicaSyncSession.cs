@@ -164,14 +164,10 @@ namespace Garnet.cluster
                             await SendFileSegmentsAsync(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, 0, hlog_size.snapshotObjectFileEndAddress).ConfigureAwait(false);
                     }
 
-                    // 4. Send delta log segments
-                    var dlog_size = hlog_size.deltaLogTailAddress;
-                    await SendFileSegmentsAsync(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size).ConfigureAwait(false);
-
-                    // 5.Send index metadata
+                    // 4. Send index metadata
                     await SendCheckpointMetadataAsync(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken).ConfigureAwait(false);
 
-                    // 6. Send snapshot metadata
+                    // 5. Send snapshot metadata
                     await SendCheckpointMetadataAsync(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken).ConfigureAwait(false);
                 }
                 #endregion
@@ -348,7 +344,7 @@ namespace Garnet.cluster
                         switch (fileType)
                         {
                             case CheckpointFileType.STORE_SNAPSHOT:
-                                checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
+                                checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken);
                                 break;
                             case CheckpointFileType.STORE_INDEX:
                                 checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);

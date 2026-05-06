@@ -117,7 +117,7 @@ namespace Garnet.server
         /// Safe truncate AOF until address
         /// </summary>
         /// <param name="truncateUntil"></param>
-        void SafeTruncateAOF(AofAddress truncateUntil);
+        void SafeTruncateAOF(in AofAddress truncateUntil);
 
         /// <summary>
         /// Start cluster operations
