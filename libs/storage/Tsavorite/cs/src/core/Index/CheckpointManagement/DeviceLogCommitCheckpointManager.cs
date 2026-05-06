@@ -186,7 +186,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CleanupIndexCheckpoint(Guid indexToken)
+        public virtual bool PerformInternalCleanup => true;
+
+        /// <inheritdoc />
+        public void CleanupIndexCheckpoint(Guid indexToken)
         {
             if (removeOutdated)
             {
