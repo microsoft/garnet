@@ -71,12 +71,11 @@ namespace Garnet.server
                 var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, storeWrapper);
                 if (!string.IsNullOrEmpty(info))
                 {
-                    WriteVerbatimString(Encoding.ASCII.GetBytes(info));
+                    WriteLargeVerbatimString(Encoding.ASCII.GetBytes(info));
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_EMPTY);
                 }
             }
             return true;

@@ -35,10 +35,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ResetStatsTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ResetStatsTest(RedisProtocol protocol)
         {
             TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var infoResult = db.Execute("INFO").ToString();
@@ -76,12 +78,15 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("ALL")]
-        [TestCase("DEFAULT")]
-        [TestCase("EVERYTHING")]
-        public void InfoSectionOptionsTest(string option)
+        [TestCase("ALL", RedisProtocol.Resp2)]
+        [TestCase("ALL", RedisProtocol.Resp3)]
+        [TestCase("DEFAULT", RedisProtocol.Resp2)]
+        [TestCase("DEFAULT", RedisProtocol.Resp3)]
+        [TestCase("EVERYTHING", RedisProtocol.Resp2)]
+        [TestCase("EVERYTHING", RedisProtocol.Resp3)]
+        public void InfoSectionOptionsTest(string option, RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var infoResult = db.Execute("INFO", option).ToString();
@@ -115,9 +120,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InfoDefaultMatchesNoArgsTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void InfoDefaultMatchesNoArgsTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var infoNoArgs = db.Execute("INFO").ToString();
