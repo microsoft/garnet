@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -33,7 +32,6 @@ namespace Garnet.server
         /// <summary>
         /// Provides a span of bytes representing the underlying addresses array.
         /// </summary>
-        [UnscopedRef]
         public Span<byte> Span
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

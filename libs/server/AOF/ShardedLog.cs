@@ -55,6 +55,7 @@ namespace Garnet.server
 
         public void LockSublogs(ulong logAccessBitmap)
         {
+            SpinWait spinWait = default;
             while (true)
             {
                 var currentLockMap = lockMap;
@@ -62,7 +63,7 @@ namespace Garnet.server
                 // Wait until none of the requested bits are held by another caller
                 if ((currentLockMap & logAccessBitmap) != 0)
                 {
-                    Thread.Yield();
+                    spinWait.SpinOnce();
                     continue;
                 }
 
@@ -70,6 +71,9 @@ namespace Garnet.server
                 var newLockMap = currentLockMap | logAccessBitmap;
                 if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
                     break;
+
+                // CAS failed due to racing update — spin before retrying
+                spinWait.SpinOnce();
             }
         }
 
