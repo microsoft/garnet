@@ -33,9 +33,5 @@ namespace Garnet.cluster
         /// Store Snapshot - Object
         /// </summary>
         STORE_SNAPSHOT_OBJ = 6,
-        /// <summary>
-        /// RangeIndex BfTree snapshot file
-        /// </summary>
-        RINDEX_SNAPSHOT = 7,
     }
 }

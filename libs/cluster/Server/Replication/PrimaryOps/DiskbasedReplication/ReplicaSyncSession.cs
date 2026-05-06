@@ -141,9 +141,6 @@ namespace Garnet.cluster
                     var tsavoriteSnaphotReader = new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                     List<ISnapshotReader> snapshotReaders = [tsavoriteSnaphotReader];
 
-                    if (storeWrapper.serverOptions.EnableRangeIndexPreview)
-                        snapshotReaders.Add(new RangeIndexSnapshotReader(storeWrapper.RangeIndexManager, localEntry.metadata.storeHlogToken, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
-
                     try
                     {
                         using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(snapshotReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);

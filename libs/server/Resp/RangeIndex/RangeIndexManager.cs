@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Hashing;
 using System.Threading;
@@ -61,12 +60,6 @@ namespace Garnet.server
         private readonly string dataDir;
 
         /// <summary>
-        /// Gets the base data directory for RangeIndex file paths.
-        /// Used by the replication layer to construct destination paths on replicas.
-        /// </summary>
-        public string DataDir => dataDir;
-
-        /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
         /// RI operations check this first (one volatile read on hot path); if set, they
         /// check the per-tree <see cref="TreeEntry.SnapshotPending"/> flag.
@@ -122,25 +115,17 @@ namespace Garnet.server
         private readonly bool removeOutdatedCheckpoints;
 
         /// <summary>
-        /// Whether cluster mode is enabled. When true, purging from OnCheckpoint is deferred
-        /// to CheckpointStore which checks for active readers before deleting.
-        /// </summary>
-        private readonly bool clusterEnabled;
-
-        /// <summary>
         /// Creates a new <see cref="RangeIndexManager"/>.
         /// </summary>
         /// <param name="enabled">Whether range index commands are enabled.</param>
         /// <param name="dataDir">Base directory for deterministic BfTree paths. May be null for memory-only usage.</param>
         /// <param name="removeOutdatedCheckpoints">Whether to purge old checkpoint snapshots when a new one completes.</param>
-        /// <param name="clusterEnabled">Whether cluster mode is enabled.</param>
         /// <param name="logger">Optional logger.</param>
-        public RangeIndexManager(bool enabled, string dataDir = null, bool removeOutdatedCheckpoints = true, bool clusterEnabled = false, ILogger logger = null)
+        public RangeIndexManager(bool enabled, string dataDir = null, bool removeOutdatedCheckpoints = true, ILogger logger = null)
         {
             IsEnabled = enabled;
             this.dataDir = dataDir;
             this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
-            this.clusterEnabled = clusterEnabled;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
         }
@@ -422,25 +407,13 @@ namespace Garnet.server
 
         /// <summary>
         /// Delete BfTree checkpoint snapshot files from prior checkpoints.
-        /// Scans all rangeindex subdirectories for snapshot.*.bftree files that don't
-        /// match <paramref name="currentToken"/>.
+        /// Only acts when <see cref="removeOutdatedCheckpoints"/> is true, matching
+        /// Tsavorite's removeOutdated behavior. Scans all rangeindex subdirectories
+        /// for snapshot.*.bftree files that don't match the current checkpoint token.
         /// </summary>
-        /// <param name="currentToken">The token to preserve; all other snapshot files are deleted.</param>
-        /// <param name="enforceClusterSafety">
-        /// When <c>true</c>, the caller guarantees no active readers (e.g., CheckpointStore).
-        /// When <c>false</c>, purging is skipped if cluster mode is enabled.
-        /// </param>
-        public void PurgeOldCheckpointSnapshots(Guid currentToken, bool enforceClusterSafety = false)
+        internal void PurgeOldCheckpointSnapshots(Guid currentToken)
         {
             if (!removeOutdatedCheckpoints)
-                return;
-
-            // If we are not enforcing clusterSafety then we should return and let
-            // cluster API perform the cleaning.
-            if (!enforceClusterSafety && clusterEnabled)
-                return;
-
-            if (currentToken == default)
                 return;
 
             var currentFileName = $"snapshot.{currentToken:N}.bftree";
@@ -468,36 +441,6 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Failed to enumerate old checkpoint snapshots for cleanup");
-            }
-        }
-
-        /// <summary>
-        /// Enumerates all RangeIndex checkpoint snapshot files for a given checkpoint token.
-        /// Used by the replication layer to discover which BfTree snapshot files need to be
-        /// shipped to replicas during disk-based checkpoint synchronization.
-        /// </summary>
-        /// <param name="checkpointToken">The checkpoint token identifying the snapshot files.</param>
-        /// <returns>
-        /// An enumerable of tuples containing:
-        /// - keyHashDir: The key hash subdirectory name (32-char hex string).
-        /// - filePath: The full path to the snapshot file.
-        /// - fileSize: The size of the snapshot file in bytes.
-        /// </returns>
-        public IEnumerable<(string keyHashDir, string filePath, long fileSize)> EnumerateCheckpointSnapshotFiles(Guid checkpointToken)
-        {
-            var snapshotFileName = $"snapshot.{checkpointToken:N}.bftree";
-            var rangeIndexDir = Path.Combine(dataDir ?? string.Empty, "rangeindex");
-            if (!Directory.Exists(rangeIndexDir))
-                yield break;
-
-            foreach (var keyHashSubDir in Directory.EnumerateDirectories(rangeIndexDir))
-            {
-                var snapshotPath = Path.Combine(keyHashSubDir, snapshotFileName);
-                if (!File.Exists(snapshotPath))
-                    continue;
-
-                var fileInfo = new FileInfo(snapshotPath);
-                yield return (Path.GetFileName(keyHashSubDir), snapshotPath, fileInfo.Length);
             }
         }
     }
