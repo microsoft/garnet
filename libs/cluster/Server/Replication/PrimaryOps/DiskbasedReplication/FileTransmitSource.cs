@@ -13,7 +13,7 @@ namespace Garnet.cluster
 {
     /// <summary>
     /// Transmits checkpoint file segments over the network using chunked reads from its owned <see cref="FileDataSource"/>.
-    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
+    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSnapshotData"/>
     /// followed by an empty end-of-transmission packet.
     /// </summary>
     internal sealed class FileTransmitSource : ISnapshotTransmitSource
