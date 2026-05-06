@@ -57,8 +57,16 @@ namespace Garnet.server
         {
             while (true)
             {
-                Thread.Yield();
                 var currentLockMap = lockMap;
+
+                // Wait until none of the requested bits are held by another caller
+                if ((currentLockMap & logAccessBitmap) != 0)
+                {
+                    Thread.Yield();
+                    continue;
+                }
+
+                // Atomically set our bits
                 var newLockMap = currentLockMap | logAccessBitmap;
                 if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
                     break;
