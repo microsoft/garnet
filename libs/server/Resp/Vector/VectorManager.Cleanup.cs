@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -82,12 +83,37 @@ namespace Garnet.server
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
+        // Pause / resume coordination for the cleanup task vs concurrent Reset.
+        //
+        // Cluster re-attach paths (ReplicaDisklessSync / ReplicaDiskbasedSync) call
+        // storeWrapper.Reset() which tears down and rebuilds the main-store allocator.
+        // The cleanup task's iterator path is safe (Tsavorite's Initializing flag causes
+        // it to terminate cleanly). However the cleanup task ALSO does post-iterate RMWs
+        // on metadata records (ClearDeleteInProgress / UpdateContextMetadata) — those
+        // RMWs are NOT Reset-resilient and can dereference freed pagePointers and AVE.
+        //
+        // The pause/resume API serializes the entire cleanup-iteration (iterate + RMWs)
+        // with Reset by holding cleanupGate around the whole loop body, restoring Reset's
+        // documented "store is quiesced" contract.
+        //
+        // SemaphoreSlim used as an async-friendly mutex (initialCount=1, maxCount=1):
+        // the cleanup loop takes it around each iteration; PauseCleanupAsync takes it
+        // and holds until ResumeCleanup releases. Drops still enqueue items into
+        // cleanupTaskChannel during a pause — the cleanup task wakes, awaits the gate
+        // until the pause is lifted, then processes the backlog.
+        //
+        // Contract: PauseCleanupAsync callers MUST balance every successful invocation
+        // with ResumeCleanup, ideally in a finally block. A held pause at Dispose time
+        // would deadlock shutdown.
+        private readonly SemaphoreSlim cleanupGate = new(initialCount: 1, maxCount: 1);
+
         private async Task RunCleanupTaskAsync()
         {
             // Each drop index will queue a null object here
             // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
             await foreach (var ignored in cleanupTaskChannel.Reader.ReadAllAsync())
             {
+                await cleanupGate.WaitAsync().ConfigureAwait(false);
                 try
                 {
                     HashSet<ulong> needCleanup;
@@ -157,8 +183,39 @@ namespace Garnet.server
                 {
                     logger?.LogError(e, "Failure during background cleanup of deleted vector sets, implies storage leak");
                 }
+                finally
+                {
+                    _ = cleanupGate.Release();
+                }
             }
         }
+
+        /// <summary>
+        /// Block any new cleanup-task iteration from starting and wait for the current one
+        /// (if any) to finish. Callers (e.g., cluster re-attach paths) MUST balance every
+        /// invocation with <see cref="ResumeCleanup"/>, ideally in a finally block.
+        ///
+        /// While paused, drops still enqueue items into <see cref="cleanupTaskChannel"/>;
+        /// the cleanup task wakes, awaits the gate until the pause is lifted, then
+        /// processes the backlog — so no work is lost.
+        ///
+        /// Use this before invoking <see cref="StoreWrapper.Reset"/> on a running store, to
+        /// avoid the cleanup-task scan iterator racing with the allocator teardown.
+        ///
+        /// The optional <paramref name="cancellationToken"/> aborts the wait if the cleanup
+        /// task is mid-iteration over a large keyspace and the caller (e.g., cluster
+        /// re-attach) needs to give up. If cancellation throws <see cref="OperationCanceledException"/>,
+        /// the gate was NOT acquired and the caller MUST NOT call <see cref="ResumeCleanup"/>.
+        /// </summary>
+        public Task PauseCleanupAsync(CancellationToken cancellationToken = default)
+            => cleanupGate.WaitAsync(cancellationToken);
+
+        /// <summary>
+        /// Lift the pause acquired by <see cref="PauseCleanupAsync"/>. Queued cleanup
+        /// events resume processing immediately. Must be called exactly once per
+        /// successful PauseCleanupAsync — typically from a finally block.
+        /// </summary>
+        public void ResumeCleanup() => cleanupGate.Release();
 
         /// <summary>
         /// Called in response to <see cref="TryMarkDeleteInProgress"/> or <see cref="ClearDeleteInProgress"/> to update metadata in Tsavorite.

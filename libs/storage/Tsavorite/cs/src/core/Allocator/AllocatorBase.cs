@@ -142,6 +142,23 @@ namespace Tsavorite.core
         /// </summary>
         long OngoingCloseUntilAddress;
 
+        /// <summary>
+        /// True while <see cref="Reset"/> is rebuilding allocator state (page free + per-allocator
+        /// <see cref="Initialize"/>). Operations that want to be resilient to a concurrent Reset
+        /// can observe this flag (after acquiring epoch protection) and bail out — Reset is a
+        /// wholesale wipe, so any pre-Reset work or cached state is no longer meaningful. Scan
+        /// iterators do exactly this: they terminate the iteration (return false from
+        /// <c>GetNext</c>) when this flag is set.
+        ///
+        /// IMPORTANT: this flag is opt-in defense. Tsavorite's hot-path RMW / Read / Upsert /
+        /// Delete do NOT consult it (cost on the hot path), so they remain unsafe to call
+        /// concurrently with Reset and can dereference freed pages mid-Initialize. Callers of
+        /// Reset must still quiesce all non-iterator operations on the store (per Reset's
+        /// docstring contract). For Garnet, <c>VectorManager.PauseCleanupAsync</c> serializes
+        /// the cleanup task — including its post-iterate RMWs — with Reset.
+        /// </summary>
+        internal volatile bool Initializing;
+
         /// <inheritdoc/>
         public override string ToString() => BaseToString();
 
@@ -244,8 +261,23 @@ namespace Tsavorite.core
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
         /// <summary>
-        /// Reset the hybrid log. Safe against concurrent iterators / readers / writers via a
-        /// two-phase epoch cascade that mirrors the normal flush + close paths:
+        /// Reset the hybrid log to empty.
+        ///
+        /// Concurrent-safety contract:
+        ///   * SCAN ITERATORS are safe end-to-end. The two-phase epoch cascade below
+        ///     (PR #1765) protects the page-free section, and the <see cref="Initializing"/>
+        ///     flag (set across this whole method including the per-allocator
+        ///     <see cref="Initialize"/> rewind) lets iterators terminate cleanly during the
+        ///     post-Phase-2 non-monotonic Initialize that would otherwise expose freed
+        ///     pagePointers.
+        ///   * RMW / Read / Upsert / Delete are NOT safe — Tsavorite's hot paths do not
+        ///     consult <see cref="Initializing"/>. They can race with Initialize and
+        ///     dereference freed pages. Callers MUST quiesce all non-iterator operations
+        ///     on the store before invoking Reset (per the original docstring contract).
+        ///     For Garnet, <c>VectorManager.PauseCleanupAsync</c> serializes the cleanup
+        ///     task — including its post-iterate RMWs — with Reset.
+        ///
+        /// Phase breakdown (executed by <see cref="ResetCore"/>):
         ///
         ///   Phase 1: publish new ReadOnlyAddress synchronously, then under
         ///            BumpCurrentEpoch — i.e. after writers caching the OLD ReadOnlyAddress
@@ -267,9 +299,39 @@ namespace Tsavorite.core
         ///            check routes it through LoadPageIfNeeded's disk-frame branch (frame is
         ///            iterator-owned, disk segment is intact). The invariant
         ///            BeginAddress &lt;= HeadAddress holds throughout.
+        ///
+        /// Then per-allocator <see cref="Initialize"/> runs (re-allocates pages 0/1, rewinds
+        /// addresses to FirstValidAddress). The whole sequence is wrapped in
+        /// <c>Initializing = true / false</c> so iterators that opt in to checking the flag
+        /// terminate during the rewind window.
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public virtual void Reset()
+        public void Reset()
+        {
+            // Gate Initializing-aware operations (e.g., scan iterators) for the entire
+            // reset+initialize sequence. Cleared in finally so a throw cannot leave them
+            // permanently terminating their next call.
+            Initializing = true;
+            try
+            {
+                ResetCore();
+
+                // Per-allocator Initialize re-allocates pages 0/1, resets all addresses to
+                // FirstValidAddress, and resets TailPageOffset. This non-monotonically rewinds
+                // multiple fields and is unsafe for concurrent operations — that's exactly
+                // what the Initializing flag guards iterator-aware callers against.
+                Initialize();
+            }
+            finally
+            {
+                // Volatile.Write semantics (the field is volatile) ensure all our state
+                // mutations are visible BEFORE callers observe Initializing == false.
+                Initializing = false;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ResetCore()
         {
             var newBeginAddress = GetTailAddress();
 
