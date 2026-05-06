@@ -825,7 +825,7 @@ namespace Garnet.test.cluster
 
             // Populate with more iterations to accumulate multiple hlog segments and trigger segment cleanup
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true, iter: 10));
-            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primaryIndex, primary_count, replica_count, disableObjects));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSyncAsync(primaryIndex, primary_count, replica_count, disableObjects));
 
             var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
             if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(timeout)))

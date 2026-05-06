@@ -3,9 +3,7 @@
 
 using System;
 using System.Threading;
-#if DEBUG
 using Garnet.common;
-#endif
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
