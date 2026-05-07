@@ -88,6 +88,8 @@ public sealed class GlobalUnhandledExceptionHandling
 
         static void DumpTests()
         {
+            if (Garnet.test.AllureTestBase.RunningTests.Count == 0)
+                return;
             var sb = new StringBuilder();
             _ = sb.AppendLine("*** CURRENTLY RUNNING TESTS ***:");
             foreach (var key in Garnet.test.AllureTestBase.RunningTests.Keys)

@@ -182,16 +182,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be reused");
+
             // For SpanByteAllocator, we are always inline.
             // Key
-            sizeInfo.KeyIsInline = true;
+            sizeInfo.SetKeyIsInline();
             var keySize = sizeInfo.FieldInfo.KeySize;
             if (keySize > 1 << LogSettings.kMaxStringSizeBits)
                 throw new TsavoriteException($"Max inline key size is {1 << LogSettings.kMaxStringSizeBits}");
 
             // Value
             sizeInfo.MaxInlineValueSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
-            sizeInfo.ValueIsInline = true;
+            sizeInfo.SetValueIsInline();
             var valueSize = sizeInfo.FieldInfo.ValueSize;
 
             // Record

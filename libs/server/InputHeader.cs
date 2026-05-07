@@ -61,6 +61,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RespInputHeader(RespCommand cmd, RespInputFlags flags = 0)
         {
             this.cmd = cmd;
@@ -72,6 +73,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="type">Object type</param>
         /// <param name="flags">Flags</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RespInputHeader(GarnetObjectType type, RespInputFlags flags = 0)
         {
             this.type = type;
