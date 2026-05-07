@@ -47,6 +47,16 @@ namespace Garnet.server
             /// Equivalent to <see cref="RespServerSession.SendAndReset()"/>.
             /// </summary>
             void SendAndReset();
+
+            /// <summary>
+            /// Equivalent to <see cref="RespServerSession.WriteError(ReadOnlySpan{byte})"/>.
+            /// </summary>
+            void WriteError(ReadOnlySpan<byte> error);
+
+            /// <summary>
+            /// Equivalent to <see cref="RespServerSession.WriteDirect(ReadOnlySpan{byte})"/>.
+            /// </summary>
+            void WriteDirect(ReadOnlySpan<byte> data);
         }
 
         /// <summary>
@@ -77,6 +87,14 @@ namespace Garnet.server
             /// <inheritdoc />
             public void SendAndReset()
             => session.SendAndReset();
+
+            /// <inheritdoc />
+            public void WriteError(ReadOnlySpan<byte> error)
+            => session.WriteError(error);
+
+            /// <inheritdoc />
+            public void WriteDirect(ReadOnlySpan<byte> data)
+            => session.WriteDirect(data);
         }
 
         /// <summary>
@@ -142,6 +160,24 @@ namespace Garnet.server
                 origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = origin + scratchSpace.Length;
                 curHead = origin + len;
+            }
+
+            /// <inheritdoc />
+            public void WriteError(ReadOnlySpan<byte> error)
+            {
+                while (!RespWriteUtils.TryWriteError(error, ref BufferCur, BufferEnd))
+                {
+                    SendAndReset();
+                }
+            }
+
+            /// <inheritdoc />
+            public void WriteDirect(ReadOnlySpan<byte> data)
+            {
+                while (!RespWriteUtils.TryWriteDirect(data, ref BufferCur, BufferEnd))
+                {
+                    SendAndReset();
+                }
             }
         }
 
@@ -1156,8 +1192,7 @@ namespace Garnet.server
                             err = "Internal Lua Error"u8;
                         }
 
-                        while (!RespWriteUtils.TryWriteError(err, ref outerSession.dcurr, outerSession.dend))
-                            outerSession.SendAndReset();
+                        outerSession.WriteError(err);
 
                         return;
                     }
@@ -1503,8 +1538,7 @@ namespace Garnet.server
 
                     if (state.StackTop == 0)
                     {
-                        while (!RespWriteUtils.TryWriteError("ERR An error occurred while invoking a Lua script"u8, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
+                        resp.WriteError("ERR An error occurred while invoking a Lua script"u8);
 
                         return;
                     }
@@ -1516,22 +1550,18 @@ namespace Garnet.server
                         if (errBuf.Length >= 4 && MemoryMarshal.Read<int>("ERR "u8) == Unsafe.As<byte, int>(ref MemoryMarshal.GetReference(errBuf)))
                         {
                             // Response came back with a ERR, already - just pass it along
-                            while (!RespWriteUtils.TryWriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                            resp.WriteError(errBuf);
                         }
                         else
                         {
                             // Otherwise, this is probably a Lua error - and those aren't very descriptive
                             // So slap some more information in
 
-                            while (!RespWriteUtils.TryWriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                            resp.WriteDirect("-ERR Lua encountered an error: "u8);
 
-                            while (!RespWriteUtils.TryWriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                            resp.WriteDirect(errBuf);
 
-                            while (!RespWriteUtils.TryWriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                            resp.WriteDirect("\r\n"u8);
                         }
 
                         state.Pop(1);
@@ -1542,8 +1572,7 @@ namespace Garnet.server
                     {
                         logger?.LogError("Got an unexpected number of values back from a pcall error {callRes}", callRes);
 
-                        while (!RespWriteUtils.TryWriteError("ERR Unexpected error response"u8, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
+                        resp.WriteError("ERR Unexpected error response"u8);
 
                         state.ClearStack();
 
@@ -1648,8 +1677,7 @@ namespace Garnet.server
                 state.PushConstantString(err);
                 state.KnownStringToBuffer(1, out var errBuff);
 
-                while (!RespWriteUtils.TryWriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                resp.WriteError(errBuff);
 
                 return;
             }
@@ -1945,7 +1973,7 @@ namespace Garnet.server
             }
 
             // Write out $-1\r\n (the RESP2 null) and (optionally) pop the null value off the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteResp2Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteResp2Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
             {
                 var fitInBuffer = true;
 
@@ -1973,7 +2001,7 @@ namespace Garnet.server
             }
 
             // Write out _\r\n (the RESP3 null) and (optionally) pop the null value off the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteResp3Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteResp3Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
             {
                 var fitInBuffer = true;
 
@@ -2001,7 +2029,7 @@ namespace Garnet.server
             }
 
             // Writes the number on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteNumber(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteNumber(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
 
@@ -2033,7 +2061,7 @@ namespace Garnet.server
             }
 
             // Writes the string on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteString(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteString(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
 
@@ -2107,7 +2135,7 @@ namespace Garnet.server
             }
 
             // Writes the boolean on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteResp3Boolean(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteResp3Boolean(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Boolean, "Boolean was not on top of stack");
 
@@ -2154,7 +2182,7 @@ namespace Garnet.server
             }
 
             // Writes the number on the top of the stack as a double, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteDouble(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteDouble(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
 
@@ -2183,7 +2211,7 @@ namespace Garnet.server
             }
 
             // Write a table on the top of the stack as a map, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteMap(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteMap(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
@@ -2268,7 +2296,7 @@ namespace Garnet.server
             }
 
             // Convert a table to an array, where each key-value pair is converted to 2 entries, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteMapToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteMapToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
@@ -2352,7 +2380,7 @@ namespace Garnet.server
             }
 
             // Write a table on the top of the stack as a set, removes it from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteSet(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteSet(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
@@ -2428,7 +2456,7 @@ namespace Garnet.server
 
             // Write a table on the top of the stack as an array that contains only the keys of the
             // table, then remove the table from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteSetToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteSetToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
@@ -2505,7 +2533,7 @@ namespace Garnet.server
             }
 
             // Writes the string on the top of the stack out as an error, removes the string from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteError(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteError(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var errBuff);
 
@@ -2532,7 +2560,7 @@ namespace Garnet.server
             }
 
             // Writes the table on the top of the stack out as an array, removed table from the stack, returning true if all fit in the current send buffer
-            static unsafe bool TryWriteTableToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
+            static bool TryWriteTableToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 // Redis does not respect metatables, so RAW access is ok here
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");

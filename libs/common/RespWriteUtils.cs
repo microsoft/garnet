@@ -824,13 +824,18 @@ namespace Garnet.common
         public static void WriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
-            RespWriteUtils.TryWriteArrayLength(2, ref curr, end);
-            RespWriteUtils.TryWriteInt64(etag, ref curr, end);
+            var res = TryWriteArrayLength(2, ref curr, end);
+            Debug.Assert(res, "Caller should have ensured buffer is sufficiently large");
+
+            res = TryWriteInt64(etag, ref curr, end);
+            Debug.Assert(res, "Caller should have ensured buffer is sufficiently large");
 
             if (writeDirect)
-                RespWriteUtils.TryWriteDirect(value, ref curr, end);
+                res = TryWriteDirect(value, ref curr, end);
             else
-                RespWriteUtils.TryWriteBulkString(value, ref curr, end);
+                res = TryWriteBulkString(value, ref curr, end);
+
+            Debug.Assert(res, "Caller should have ensured buffer is sufficiently large");
         }
 
         /// <summary>

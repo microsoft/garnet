@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -105,8 +104,7 @@ namespace Garnet.server
                 session.storageSession.incr_session_notfound();
 
                 // Not found, write a null out
-                while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
-                    session.SendAndReset();
+                session.WriteNull();
             }
         }
     }
@@ -167,8 +165,7 @@ namespace Garnet.server
             {
                 if (pendingNullWrite)
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
-                        session.SendAndReset();
+                    session.WriteNull();
                 }
                 else
                 {
@@ -324,8 +321,7 @@ namespace Garnet.server
                         else
                         {
                             // Did not find it, was probably synchronous but we couldn't handle it until now
-                            while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
-                                session.SendAndReset();
+                            session.WriteNull();
                         }
                     }
                 }

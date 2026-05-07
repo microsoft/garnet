@@ -3084,8 +3084,7 @@ namespace Garnet.server
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             if (!state.TryPushBuffer(source.Span))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                resp.WriteError(CmdStrings.LUA_out_of_memory);
 
                 return 0;
             }
@@ -3105,8 +3104,7 @@ namespace Garnet.server
                 if (!state.TryRef(out functionRegistryIndex))
                 {
                     // Uh-oh, couldn't save the function under the registry
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
+                    resp.WriteError(CmdStrings.LUA_out_of_memory);
 
                     return 0;
                 }
@@ -3125,8 +3123,7 @@ namespace Garnet.server
                     errStr = "Compilation error, cause unknown";
                 }
 
-                while (!RespWriteUtils.TryWriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                resp.WriteError(Encoding.UTF8.GetBytes(errStr));
             }
 
             return 0;

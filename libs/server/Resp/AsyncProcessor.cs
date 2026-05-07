@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -103,8 +102,7 @@ namespace Garnet.server
                                 var o = completedOutputs.Current.Output;
 
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
-                                while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
-                                    SendAndReset();
+                                WritePushLength(3);
                                 WriteBulkString(CmdStrings.async);
                                 WriteInt32AsBulkString((int)completedOutputs.Current.Context);
                                 if (completedOutputs.Current.Status.Found)

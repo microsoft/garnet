@@ -19,7 +19,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe void ProcessOutput(SpanByteAndMemory output)
+        internal void ProcessOutput(SpanByteAndMemory output)
         {
             if (!output.IsSpanByte)
                 SendAndReset(output.Memory, output.Length);
@@ -28,42 +28,42 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteAsciiBulkString(ReadOnlySpan<char> message)
+        internal void WriteAsciiBulkString(ReadOnlySpan<char> message)
         {
             while (!RespWriteUtils.TryWriteAsciiBulkString(message, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteAsciiDirect(ReadOnlySpan<char> message)
+        internal void WriteAsciiDirect(ReadOnlySpan<char> message)
         {
             while (!RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteArrayLength(int len)
+        internal void WriteArrayLength(int len)
         {
             while (!RespWriteUtils.TryWriteArrayLength(len, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteArrayItem(long recordsExpired)
+        internal void WriteArrayItem(long recordsExpired)
         {
             while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteBulkString(scoped ReadOnlySpan<byte> message)
+        internal void WriteBulkString(scoped ReadOnlySpan<byte> message)
         {
             while (!RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
+        internal void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
         {
             while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
                 SendAndReset();
@@ -75,14 +75,14 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDirect(scoped ReadOnlySpan<byte> span)
+        internal void WriteDirect(scoped ReadOnlySpan<byte> span)
         {
             while (!RespWriteUtils.TryWriteDirect(span, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDoubleNumeric(double value)
+        internal void WriteDoubleNumeric(double value)
         {
             if (respProtocolVersion >= 3)
             {
@@ -97,14 +97,14 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteEmptyArray()
+        internal void WriteEmptyArray()
         {
             while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteEmptySet()
+        internal void WriteEmptySet()
         {
             if (respProtocolVersion >= 3)
             {
@@ -118,14 +118,14 @@ namespace Garnet.server
             }
         }
 
-        private void WriteError(scoped ReadOnlySpan<byte> errorString)
+        internal void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
             commandErrorWritten = true;
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
                 SendAndReset();
         }
 
-        private void WriteError(ReadOnlySpan<char> errorString)
+        internal void WriteError(ReadOnlySpan<char> errorString)
         {
             commandErrorWritten = true;
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
@@ -133,42 +133,42 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteInt32(int value)
+        internal void WriteInt32(int value)
         {
             while (!RespWriteUtils.TryWriteInt32(value, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteInt32AsBulkString(int value)
+        internal void WriteInt32AsBulkString(int value)
         {
             while (!RespWriteUtils.TryWriteInt32AsBulkString(value, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteInt64(long value)
+        internal void WriteInt64(long value)
         {
             while (!RespWriteUtils.TryWriteInt64(value, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteInt64AsBulkString(long value)
+        internal void WriteInt64AsBulkString(long value)
         {
             while (!RespWriteUtils.TryWriteInt64AsBulkString(value, ref dcurr, dend, out _))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes)
+        internal void WriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes)
         {
             while (!RespWriteUtils.TryWriteIntegerFromBytes(integerBytes, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteMapLength(int count)
+        internal void WriteMapLength(int count)
         {
             if (respProtocolVersion >= 3)
             {
@@ -183,21 +183,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteZero()
+        internal void WriteZero()
         {
             while (!RespWriteUtils.TryWriteZero(ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteOne()
+        internal void WriteOne()
         {
             while (!RespWriteUtils.TryWriteOne(ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteNull()
+        internal void WriteNull()
         {
             if (respProtocolVersion >= 3)
             {
@@ -212,7 +212,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteNullArray()
+        internal void WriteNullArray()
         {
             if (respProtocolVersion >= 3)
             {
@@ -227,7 +227,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WritePushLength(int count)
+        internal void WritePushLength(int count)
         {
             if (respProtocolVersion >= 3)
             {
@@ -242,7 +242,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteSetLength(int count)
+        internal void WriteSetLength(int count)
         {
             if (respProtocolVersion >= 3)
             {
@@ -257,14 +257,14 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteSimpleString(scoped ReadOnlySpan<byte> simpleString)
+        internal void WriteSimpleString(scoped ReadOnlySpan<byte> simpleString)
         {
             while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteSimpleString(ReadOnlySpan<char> simpleString)
+        internal void WriteSimpleString(ReadOnlySpan<char> simpleString)
         {
             while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref dcurr, dend))
                 SendAndReset();
@@ -272,14 +272,14 @@ namespace Garnet.server
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteUtf8BulkString(ReadOnlySpan<char> chars)
+        internal void WriteUtf8BulkString(ReadOnlySpan<char> chars)
         {
             while (!RespWriteUtils.TryWriteUtf8BulkString(chars, ref dcurr, dend))
                 SendAndReset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        internal void WriteVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
         {
             if (respProtocolVersion >= 3)
             {
