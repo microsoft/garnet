@@ -298,7 +298,7 @@ namespace Garnet.server
                 Unsafe.WriteUnaligned(dcurr, MemoryMarshal.Read<ushort>("\r\n"u8));
                 dcurr += 2;
 
-                // Write oute <ext>:
+                // Write out <ext>:
                 WriteDirectLarge(ext);
                 if ((int)(dend - dcurr) < 1)
                 {
