@@ -199,7 +199,7 @@ namespace Garnet.server
 
             if (rentedBuffer is not null)
             {
-                WriteDirectLarge(buffer.Slice(0, totalLength));
+                WriteLargeDirect(buffer.Slice(0, totalLength));
                 ArrayPool<byte>.Shared.Return(rentedBuffer);
             }
             else

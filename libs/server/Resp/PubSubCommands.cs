@@ -29,8 +29,8 @@ namespace Garnet.server
                 WriteBulkString("message"u8);
 
                 // Write key and value to the network
-                WriteDirectLargeRespString(key.ReadOnlySpan);
-                WriteDirectLargeRespString(value.ReadOnlySpan);
+                WriteLargeDirectRespString(key.ReadOnlySpan);
+                WriteLargeDirectRespString(value.ReadOnlySpan);
 
                 // Flush the publish message for this subscriber
                 if (dcurr > networkSender.GetResponseObjectHead())
@@ -58,9 +58,9 @@ namespace Garnet.server
                 WriteBulkString("pmessage"u8);
 
                 // Write pattern, key, and value to the network
-                WriteDirectLargeRespString(pattern.ReadOnlySpan);
-                WriteDirectLargeRespString(key.ReadOnlySpan);
-                WriteDirectLargeRespString(value.ReadOnlySpan);
+                WriteLargeDirectRespString(pattern.ReadOnlySpan);
+                WriteLargeDirectRespString(key.ReadOnlySpan);
+                WriteLargeDirectRespString(value.ReadOnlySpan);
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());

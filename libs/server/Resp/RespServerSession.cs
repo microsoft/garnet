@@ -1337,7 +1337,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDirectLarge(ReadOnlySpan<byte> src)
+        private void WriteLargeDirect(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write
             while (src.Length > 0)

@@ -344,7 +344,7 @@ namespace Garnet.server
             // Write the keys matching the pattern
             for (int i = 0; i < keys.Count; i++)
             {
-                WriteDirectLargeRespString(keys[i]);
+                WriteLargeDirectRespString(keys[i]);
             }
         }
 
@@ -362,7 +362,7 @@ namespace Garnet.server
             }
 
             var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            WriteDirectLargeRespString(message);
+            WriteLargeDirectRespString(message);
             return true;
         }
 

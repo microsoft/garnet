@@ -1231,7 +1231,7 @@ namespace Garnet.server
             }
 
             var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            WriteDirectLargeRespString(message);
+            WriteLargeDirectRespString(message);
             return true;
         }
 

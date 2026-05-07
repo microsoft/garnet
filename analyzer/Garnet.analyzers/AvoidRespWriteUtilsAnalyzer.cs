@@ -32,16 +32,16 @@ namespace Garnet.analyzers
             context.EnableConcurrentExecution();
 
             context.RegisterCompilationStartAction(
-                static compilationAction =>
+                static compilationStartContext =>
                 {
-                    var respWriteUtilsType = compilationAction.Compilation.GetTypeByMetadataName("Garnet.common.RespWriteUtils");
-                    var respServerSessionType = compilationAction.Compilation.GetTypeByMetadataName("Garnet.server.RespServerSession");
+                    var respWriteUtilsType = compilationStartContext.Compilation.GetTypeByMetadataName("Garnet.common.RespWriteUtils");
+                    var respServerSessionType = compilationStartContext.Compilation.GetTypeByMetadataName("Garnet.server.RespServerSession");
 
                     if (respWriteUtilsType is not null && respServerSessionType is not null)
                     {
                         var suggestionLookup = BuildLookup(respWriteUtilsType, respServerSessionType);
 
-                        compilationAction.RegisterSyntaxNodeAction(syntaxNodeContext => AnalyzeCaller(syntaxNodeContext, respWriteUtilsType, suggestionLookup), SyntaxKind.InvocationExpression);
+                        compilationStartContext.RegisterSyntaxNodeAction(syntaxNodeContext => AnalyzeCaller(syntaxNodeContext, respWriteUtilsType, suggestionLookup), SyntaxKind.InvocationExpression);
                     }
                 }
             );

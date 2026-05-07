@@ -84,6 +84,12 @@ namespace Garnet.server
                     WriteAsciiBulkString(entry.Command.ToString());
                     for (int i = 0; i < sps.Count; i++)
                     {
+                        // Hack added for demonstration
+                        WriteAsciiBulkString("hello world");
+                        WriteBulkString("hello world"u8);
+                        // End hack
+
+                        // Already existing
                         WriteAsciiBulkString(sps.GetString(i));
                     }
                 }
