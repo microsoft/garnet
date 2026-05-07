@@ -133,9 +133,9 @@ namespace Garnet.cluster
             {
                 currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
             }
-            catch (InvalidDataException ex)
+            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
             {
-                logger?.LogWarning(ex, "Incompatible replication history format on disk, reinitializing fresh state");
+                logger?.LogWarning(ex, "Corrupt or incompatible replication history on disk, reinitializing fresh state");
                 InitializeReplicationHistory(storeWrapper.serverOptions.AofPhysicalSublogCount);
             }
         }
