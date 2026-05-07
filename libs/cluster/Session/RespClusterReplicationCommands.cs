@@ -345,7 +345,7 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (parseState.Count != 4)
+            if (parseState.Count != 5)
             {
                 invalidParameters = true;
                 return true;
@@ -362,6 +362,9 @@ namespace Garnet.cluster
             }
 
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
+
+            // segmentId (parseState index 4) is parsed for backward compatibility but not used;
+            // disk-based replication now uses the SNAPSHOT_DATA command path instead.
 
             var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;

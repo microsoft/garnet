@@ -181,13 +181,14 @@ namespace Garnet.client
         /// <param name="fileType"></param>
         /// <param name="startAddress"></param>
         /// <param name="data"></param>
+        /// <param name="segmentId"></param>
         /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointFileSegment"/>
-        public Task<string> ExecuteClusterSendCheckpointFileSegment(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)
+        public Task<string> ExecuteClusterSendCheckpointFileSegment(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data, int segmentId = -1)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
-            int arraySize = 6;
+            int arraySize = 7;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -238,6 +239,14 @@ namespace Garnet.client
 
             //6
             while (!RespWriteUtils.TryWriteBulkString(data, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //7
+            while (!RespWriteUtils.TryWriteArrayItem(segmentId, ref curr, end))
             {
                 Flush();
                 curr = offset;
