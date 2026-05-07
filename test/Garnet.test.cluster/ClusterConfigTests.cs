@@ -210,5 +210,35 @@ namespace Garnet.test.cluster
         {
             Assert.That(ClusterConfig.TryPeekVersion([], out _), Is.False);
         }
+
+        [Test, Order(7)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ReplicationHistoryVersionRoundTripTest()
+        {
+            var history = new ReplicationHistory(1);
+            var bytes = history.ToByteArray();
+
+            // Verify version byte is present at position 0
+            Assert.That(bytes[0], Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
+
+            // Round-trip should succeed and preserve fields
+            var restored = ReplicationHistory.FromByteArray(bytes);
+            Assert.That(restored.PrimaryReplId, Is.EqualTo(history.PrimaryReplId));
+            Assert.That(restored.PrimaryReplId2, Is.EqualTo(history.PrimaryReplId2));
+        }
+
+        [Test, Order(8)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ReplicationHistoryVersionMismatchThrowsTest()
+        {
+            var history = new ReplicationHistory(1);
+            var bytes = history.ToByteArray();
+
+            // Corrupt the version byte
+            bytes[0] = (byte)(ReplicationHistory.ReplicationHistoryVersion + 1);
+
+            // Deserialization should throw
+            Assert.Throws<System.IO.InvalidDataException>(() => ReplicationHistory.FromByteArray(bytes));
+        }
     }
 }
