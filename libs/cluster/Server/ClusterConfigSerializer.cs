@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Text;
 
 namespace Garnet.cluster
 {
@@ -34,7 +33,7 @@ namespace Garnet.cluster
         public byte[] ToByteArray()
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms, Encoding.ASCII);
+            var writer = new BinaryWriter(ms);
 
             // Write magic prefix and serialization format version
             writer.Write(ClusterConfigMagic);

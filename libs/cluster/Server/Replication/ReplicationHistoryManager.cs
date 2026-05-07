@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -55,7 +54,7 @@ namespace Garnet.cluster
         public byte[] ToByteArray()
         {
             using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms, Encoding.ASCII);
+            using var writer = new BinaryWriter(ms);
 
             writer.Write(ReplicationHistoryMagic);
             writer.Write(ReplicationHistoryVersion);
