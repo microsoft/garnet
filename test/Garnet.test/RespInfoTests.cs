@@ -34,7 +34,6 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        [Test]
         [TestCase(RedisProtocol.Resp2)]
         [TestCase(RedisProtocol.Resp3)]
         public void ResetStatsTest(RedisProtocol protocol)
@@ -77,7 +76,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_found to be one after sending one successful request");
         }
 
-        [Test]
         [TestCase("ALL", RedisProtocol.Resp2)]
         [TestCase("ALL", RedisProtocol.Resp3)]
         [TestCase("DEFAULT", RedisProtocol.Resp2)]
@@ -119,7 +117,6 @@ namespace Garnet.test
             ClassicAssert.IsFalse(infoResult.Contains("# Commandstats"), $"INFO {option} should not contain Commandstats section");
         }
 
-        [Test]
         [TestCase(RedisProtocol.Resp2)]
         [TestCase(RedisProtocol.Resp3)]
         public void InfoDefaultMatchesNoArgsTest(RedisProtocol protocol)
