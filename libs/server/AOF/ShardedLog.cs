@@ -60,19 +60,15 @@ namespace Garnet.server
             {
                 var currentLockMap = lockMap;
 
-                // Wait until none of the requested bits are held by another caller
-                if ((currentLockMap & logAccessBitmap) != 0)
+                // Attempt CAS only if none of the requested bits are held
+                if ((currentLockMap & logAccessBitmap) == 0)
                 {
-                    spinWait.SpinOnce();
-                    continue;
+                    var newLockMap = currentLockMap | logAccessBitmap;
+                    if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
+                        break;
                 }
 
-                // Atomically set our bits
-                var newLockMap = currentLockMap | logAccessBitmap;
-                if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
-                    break;
-
-                // CAS failed due to racing update — spin before retrying
+                // Bits held by another caller or CAS failed — spin before retrying
                 spinWait.SpinOnce();
             }
         }
