@@ -20,8 +20,15 @@ namespace Garnet.cluster
         public const byte ReplicationHistoryVersion = 1;
 
         /// <summary>
-        /// Magic bytes written at the start of serialized ReplicationHistory payloads ("GR").
-        /// Used to distinguish versioned payloads from the legacy format (which starts with a 7-bit encoded string length).
+        /// Magic prefix "GR" (Garnet Replication) written at the start of serialized ReplicationHistory payloads.
+        /// <para>
+        /// This prefix provides backwards compatibility with the legacy (pre-versioned) serialization format.
+        /// Legacy payloads begin with a 7-bit length-prefixed string (the <c>primary_replid</c>), whose first
+        /// byte is 0x28 (40 decimal, the length of a hex node ID). The magic byte 'G' (0x47) can never appear
+        /// as the first byte of a valid legacy payload, so a versioned payload is always distinguishable from
+        /// an old one. Without this prefix, a single version byte would be ambiguous with legacy string lengths,
+        /// leading to silent corruption during disk recovery.
+        /// </para>
         /// </summary>
         static readonly byte[] ReplicationHistoryMagic = [(byte)'G', (byte)'R'];
 
