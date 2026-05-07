@@ -199,8 +199,7 @@ namespace Garnet.server
 
             // Returns an array where each element is a 0 if the script does not exist, and a 1 if it does
 
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(parseState.Count);
 
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
@@ -217,8 +216,7 @@ namespace Garnet.server
                     exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(exists);
             }
 
             return true;
@@ -265,8 +263,7 @@ namespace Garnet.server
                 }
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -324,8 +321,7 @@ namespace Garnet.server
                     }
                 }
 
-                while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(digest);
             }
 
             return true;

@@ -113,8 +113,7 @@ namespace Garnet.server
 
             if (status is GarnetStatus.NOTFOUND)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
 
@@ -249,8 +248,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_OK);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
@@ -292,8 +290,7 @@ namespace Garnet.server
             {
                 // Integer reply: 1 if key was renamed to newkey.
                 // Integer reply: 0 if newkey already exists.
-                while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(result);
             }
             else
             {
@@ -363,8 +360,7 @@ namespace Garnet.server
                     exists++;
             }
 
-            while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(exists);
 
             return true;
         }
@@ -456,13 +452,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
             }
 
             return true;
@@ -487,13 +481,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
             }
             return true;
         }
@@ -528,8 +520,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
             }
             return true;
         }
@@ -564,8 +555,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
             }
             return true;
         }

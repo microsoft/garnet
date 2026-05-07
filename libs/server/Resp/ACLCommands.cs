@@ -64,13 +64,11 @@ namespace Garnet.server
 
             var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
             var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
-            while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(userHandles.Count);
 
             foreach (var userHandle in userHandles)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(userHandle.Value.User.DescribeUser());
             }
 
             return true;
@@ -93,13 +91,11 @@ namespace Garnet.server
 
             var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
             var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
-            while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(users.Count);
 
             foreach (var user in users)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(user.Key);
             }
 
             return true;
@@ -125,8 +121,7 @@ namespace Garnet.server
 
             foreach (var category in categories)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(category, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(category);
             }
 
             return true;
@@ -204,8 +199,7 @@ namespace Garnet.server
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -253,8 +247,7 @@ namespace Garnet.server
             }
 
             // Return the number of successful deletes
-            while (!RespWriteUtils.TryWriteInt32(successfulDeletes, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(successfulDeletes);
 
             return true;
         }
@@ -313,8 +306,7 @@ namespace Garnet.server
                 logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
                 storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
 
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_OK);
             }
             catch (ACLException exception)
             {
@@ -361,8 +353,7 @@ namespace Garnet.server
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -446,32 +437,25 @@ namespace Garnet.server
             {
                 WriteMapLength(3);
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString("flags");
 
                 WriteSetLength(1);
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(user.IsEnabled ? "on" : "off");
 
                 var passwords = user.Passwords;
-                while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString("passwords");
 
-                while (!RespWriteUtils.TryWriteArrayLength(passwords.Count, ref dcurr, dend))
-                    SendAndReset();
+                WriteArrayLength(passwords.Count);
 
                 foreach (var password in passwords)
                 {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString($"#{password.ToString()}", ref dcurr, dend))
-                        SendAndReset();
+                    WriteAsciiBulkString($"#{password.ToString()}");
                 }
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString("commands");
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(user.GetEnabledCommandsDescription());
             }
 
             return true;

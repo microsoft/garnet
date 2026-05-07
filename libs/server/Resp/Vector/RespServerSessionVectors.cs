@@ -393,8 +393,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
-                                SendAndReset();
+                            WriteInt32(1);
                         }
                     }
                     else if (result == VectorManagerResult.Duplicate)
@@ -406,8 +405,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                                SendAndReset();
+                            WriteInt32(0);
                         }
                     }
                     else if (result == VectorManagerResult.BadParams)
@@ -788,8 +786,7 @@ namespace Garnet.server
                     {
                         // Vector Set does not exist
 
-                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
+                        WriteEmptyArray();
                     }
                     else if (res == GarnetStatus.OK)
                     {
@@ -838,8 +835,7 @@ namespace Garnet.server
                                     arrayItemCount += outputCount;
                                 }
 
-                                while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
-                                    SendAndReset();
+                                WriteArrayLength(arrayItemCount);
 
                                 for (var resultIndex = 0; resultIndex < totalFound; resultIndex++)
                                 {
@@ -889,8 +885,7 @@ namespace Garnet.server
                                         continue;
                                     }
 
-                                    while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
-                                        SendAndReset();
+                                    WriteBulkString(elementData);
 
                                     if (withScores.Value)
                                     {
@@ -911,8 +906,7 @@ namespace Garnet.server
                                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                                        while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
-                                            SendAndReset();
+                                        WriteBulkString(attr);
                                     }
                                     else if (!remaininingAttributes.IsEmpty)
                                     {
@@ -1009,8 +1003,7 @@ namespace Garnet.server
                 {
                     var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
 
-                    while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(distanceSpan.Length);
 
                     for (var i = 0; i < distanceSpan.Length; i++)
                     {
@@ -1028,8 +1021,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteEmptyArray();
                 }
 
                 return true;
@@ -1053,8 +1045,7 @@ namespace Garnet.server
 
             // TODO: implement!
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -1089,8 +1080,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt32(dimensions, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(dimensions);
             }
 
             return true;
@@ -1229,8 +1219,7 @@ namespace Garnet.server
 
             // TODO: implement!
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -1245,8 +1234,7 @@ namespace Garnet.server
 
             // TODO: implement!
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -1261,8 +1249,7 @@ namespace Garnet.server
 
             // TODO: implement!
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -1295,8 +1282,7 @@ namespace Garnet.server
             {
                 var resp = res == GarnetStatus.OK ? 1 : 0;
 
-                while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(resp);
             }
 
             return true;
@@ -1312,8 +1298,7 @@ namespace Garnet.server
 
             // TODO: implement!
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }

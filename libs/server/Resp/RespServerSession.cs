@@ -1075,8 +1075,7 @@ namespace Garnet.server
                     return AbortWithWrongNumberOfArguments("client|id");
                 }
 
-                while (!RespWriteUtils.TryWriteInt64(Id, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt64(Id);
 
                 return true;
             }

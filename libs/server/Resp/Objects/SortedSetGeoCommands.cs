@@ -183,8 +183,7 @@ namespace Garnet.server
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
-                            while (!RespWriteUtils.TryWriteArrayLength(inputCount, ref dcurr, dend))
-                                SendAndReset();
+                            WriteArrayLength(inputCount);
                             for (var i = 0; i < inputCount; i++)
                             {
                                 WriteNullArray();
@@ -296,8 +295,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteEmptyArray();
                     break;
 
                 case GarnetStatus.WRONGTYPE:

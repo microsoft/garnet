@@ -77,12 +77,9 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(2);
+                    WriteInt32AsBulkString(0);
+                    WriteEmptyArray();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))

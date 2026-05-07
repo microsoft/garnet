@@ -21,13 +21,11 @@ namespace Garnet.server
             }
 
             List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(latencyCommands.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(latencyCommands.Count);
 
             foreach (string command in latencyCommands)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString(command);
             }
 
             return true;
@@ -72,8 +70,7 @@ namespace Garnet.server
             {
                 var garnetLatencyMetrics = storeWrapper.monitor?.GlobalMetrics.globalLatencyMetrics;
                 string response = garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n";
-                while (!RespWriteUtils.TryWriteAsciiDirect(response, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiDirect(response);
             }
 
             return true;
@@ -122,8 +119,7 @@ namespace Garnet.server
                         storeWrapper.monitor.resetLatencyMetrics[e] = true;
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(events.Count, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(events.Count);
             }
 
             return true;

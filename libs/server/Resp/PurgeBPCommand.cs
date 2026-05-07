@@ -80,8 +80,7 @@ namespace Garnet.server
                 if (success)
                 {
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
-                    while (!RespWriteUtils.TryWriteSimpleString(managerType.ToReadOnlySpan(), ref dcurr, dend))
-                        SendAndReset();
+                    WriteSimpleString(managerType.ToReadOnlySpan());
                 }
             }
             catch (Exception ex)

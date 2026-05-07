@@ -49,13 +49,11 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
             }
             return true;
         }
@@ -86,8 +84,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt64(cardinality, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt64(cardinality);
             }
 
             return true;
@@ -119,8 +116,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_OK);
             }
             return true;
         }

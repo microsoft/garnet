@@ -106,10 +106,8 @@ namespace Garnet.server
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
                                 while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
                                     SendAndReset();
-                                while (!RespWriteUtils.TryWriteBulkString(CmdStrings.async, ref dcurr, dend))
-                                    SendAndReset();
-                                while (!RespWriteUtils.TryWriteInt32AsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
-                                    SendAndReset();
+                                WriteBulkString(CmdStrings.async);
+                                WriteInt32AsBulkString((int)completedOutputs.Current.Context);
                                 if (completedOutputs.Current.Status.Found)
                                 {
                                     Debug.Assert(!o.IsSpanByte);

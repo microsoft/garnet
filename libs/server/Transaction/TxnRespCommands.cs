@@ -31,8 +31,7 @@ namespace Garnet.server
             //Keep track of ptr for key verification when cluster mode is enabled
             txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
             return true;
         }
 
@@ -73,8 +72,7 @@ namespace Garnet.server
 
                 if (startTxn)
                 {
-                    while (!RespWriteUtils.TryWriteArrayLength(txnManager.operationCntTxn, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(txnManager.operationCntTxn);
                 }
                 else
                 {
@@ -178,8 +176,7 @@ namespace Garnet.server
 
             txnManager.LockKeys(commandInfo);
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_QUEUED);
 
             txnManager.operationCntTxn++;
             return true;
@@ -194,8 +191,7 @@ namespace Garnet.server
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI);
             }
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
             txnManager.Reset(false);
             return true;
         }
@@ -227,8 +223,7 @@ namespace Garnet.server
                 txnManager.Watch(toWatch, type);
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
 
             return true;
         }
@@ -260,8 +255,7 @@ namespace Garnet.server
             {
                 txnManager.watchContainer.Reset();
             }
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_OK);
             return true;
         }
 

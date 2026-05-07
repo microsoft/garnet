@@ -103,8 +103,7 @@ namespace Garnet.server
 
             int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(keysDeleted);
 
             return true;
         }

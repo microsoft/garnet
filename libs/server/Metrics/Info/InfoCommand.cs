@@ -61,8 +61,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.monitor != null)
                     storeWrapper.monitor.resetEventFlags[InfoMetricsType.STATS] = true;
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteDirect(CmdStrings.RESP_OK);
             }
             else
             {
@@ -75,8 +74,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_EMPTY);
                 }
             }
             return true;
@@ -86,12 +84,10 @@ namespace Garnet.server
         private void GetHelpMessage()
         {
             List<string> sectionsHelp = InfoHelp.GetInfoTypeHelpMessage();
-            while (!RespWriteUtils.TryWriteArrayLength(sectionsHelp.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(sectionsHelp.Count);
             foreach (var sectionInfo in sectionsHelp)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(sectionInfo, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(sectionInfo);
             }
         }
     }

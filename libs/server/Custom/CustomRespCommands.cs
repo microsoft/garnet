@@ -35,8 +35,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_OK);
             }
             else
             {
@@ -72,8 +71,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_OK);
             }
             else
             {
@@ -106,8 +104,7 @@ namespace Garnet.server
                 if (output.Memory != null)
                     SendAndReset(output.Memory, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_OK);
             }
             else
             {
@@ -119,8 +116,7 @@ namespace Garnet.server
                     if (output.Memory != null)
                         SendAndReset(output.Memory, output.Length);
                     else
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
+                        WriteDirect(CmdStrings.RESP_OK);
                 }
                 else
                 {
@@ -164,8 +160,7 @@ namespace Garnet.server
                         if (output.SpanByteAndMemory.Memory != null)
                             SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDirect(CmdStrings.RESP_OK);
                         break;
                 }
             }
@@ -180,8 +175,7 @@ namespace Garnet.server
                         if (output.SpanByteAndMemory.Memory != null)
                             SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDirect(CmdStrings.RESP_OK);
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(output.SpanByteAndMemory.Memory == null);
