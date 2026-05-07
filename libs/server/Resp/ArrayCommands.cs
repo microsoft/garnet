@@ -221,7 +221,7 @@ namespace Garnet.server
                 // Write the keys matching the pattern
                 foreach (var item in keys)
                 {
-                    WriteBulkString(item);
+                    WriteLargeBulkString(item);
                 }
             }
             else
@@ -321,7 +321,7 @@ namespace Garnet.server
             }
             else
             {
-                WriteSimpleString("none"u8);
+                WriteSimpleString(CmdStrings.none);
             }
 
             return true;
@@ -344,7 +344,7 @@ namespace Garnet.server
             // Write the keys matching the pattern
             for (int i = 0; i < keys.Count; i++)
             {
-                WriteLargeDirectRespString(keys[i]);
+                WriteLargeBulkString(keys[i]);
             }
         }
 
@@ -362,7 +362,7 @@ namespace Garnet.server
             }
 
             var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            WriteLargeDirectRespString(message);
+            WriteLargeBulkString(message);
             return true;
         }
 

@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -35,6 +37,16 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteEnumAsBulkString<TEnum>(TEnum value)
+            where TEnum : struct, Enum
+        {
+            var asStr = value.ToString();
+            while (!RespWriteUtils.TryWriteAsciiBulkString(asStr, ref dcurr, dend))
+                SendAndReset();
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteAsciiDirect(ReadOnlySpan<char> message)
         {
             while (!RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
@@ -63,7 +75,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void WriteLargeDirectRespString(ReadOnlySpan<byte> message)
+        internal void WriteLargeBulkString(ReadOnlySpan<byte> message)
         {
             while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
                 SendAndReset();
@@ -72,6 +84,29 @@ namespace Garnet.server
 
             while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                 SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteLargeBulkString(ReadOnlySpan<char> message)
+        {
+            var buff = ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(message));
+            try
+            {
+                var written = Encoding.UTF8.GetBytes(message, buff);
+                var asBytes = buff.AsSpan()[..written];
+
+                while (!RespWriteUtils.TryWriteBulkStringLength(asBytes, ref dcurr, dend))
+                    SendAndReset();
+
+                WriteLargeDirect(asBytes);
+
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                    SendAndReset();
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buff);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -123,6 +158,37 @@ namespace Garnet.server
             commandErrorWritten = true;
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        internal void WriteLargeError(scoped ReadOnlySpan<byte> errorString)
+        {
+            commandErrorWritten = true;
+
+            if ((int)(dend - dcurr) == 0)
+                SendAndReset();
+
+            *dcurr++ = (byte)'-';
+
+            WriteLargeDirect(errorString);
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
+
+        internal void WriteLargeError(scoped ReadOnlySpan<char> errorString)
+        {
+            var buff = ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(errorString));
+            try
+            {
+                var written = Encoding.UTF8.GetBytes(errorString, buff);
+                var asBytes = buff.AsSpan()[..written];
+
+                WriteLargeError(asBytes);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buff);
+            }
         }
 
         internal void WriteError(ReadOnlySpan<char> errorString)

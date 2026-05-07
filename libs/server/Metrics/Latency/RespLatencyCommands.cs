@@ -63,7 +63,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                WriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP");
+                WriteLargeError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP");
             }
             else
             {
@@ -107,7 +107,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                WriteError($"ERR Invalid type {invalidEvent}");
+                WriteLargeError($"ERR Invalid type {invalidEvent}");
             }
             else
             {

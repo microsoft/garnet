@@ -102,7 +102,7 @@ namespace Garnet.server
                             break;
 
                         default:
-                            WriteError($"ERR Unsupported option {parseState.GetString(1)}");
+                            WriteLargeError($"ERR Unsupported option {parseState.GetString(1)}");
                             return true;
                     }
                 }
@@ -553,7 +553,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                WriteError(errorMessage);
+                WriteLargeError(errorMessage);
                 return true;
             }
 
@@ -770,7 +770,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    WriteBulkString(output.ReadOnlySpan);
+                    WriteLargeBulkString(output.ReadOnlySpan);
                     break;
                 case GarnetStatus.WRONGTYPE:
                 default:
@@ -994,7 +994,7 @@ namespace Garnet.server
             {
                 var subCommand = parseState.GetString(0);
                 var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCommand, nameof(RespCommand.COMMAND));
-                WriteError(errorMsg);
+                WriteLargeError(errorMsg);
             }
             else
             {
@@ -1172,7 +1172,7 @@ namespace Garnet.server
 
             foreach (var key in keys)
             {
-                WriteBulkString(key.Span);
+                WriteLargeBulkString(key.Span);
             }
 
             return true;
@@ -1209,14 +1209,14 @@ namespace Garnet.server
             {
                 WriteArrayLength(2);
 
-                WriteBulkString(keysAndFlags[i].Item1.Span);
+                WriteLargeBulkString(keysAndFlags[i].Item1.Span);
 
                 var flags = EnumUtils.GetEnumDescriptions(keysAndFlags[i].Item2);
                 WriteSetLength(flags.Length);
 
                 foreach (var flag in flags)
                 {
-                    WriteBulkString(Encoding.ASCII.GetBytes(flag));
+                    WriteLargeBulkString(Encoding.ASCII.GetBytes(flag));
                 }
             }
 
@@ -1231,7 +1231,7 @@ namespace Garnet.server
             }
 
             var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            WriteLargeDirectRespString(message);
+            WriteLargeBulkString(message);
             return true;
         }
 
@@ -1306,7 +1306,7 @@ namespace Garnet.server
 
             if (errorMsg != default)
             {
-                WriteError(errorMsg);
+                WriteLargeError(errorMsg);
 
                 return true;
             }
@@ -1357,7 +1357,7 @@ namespace Garnet.server
             // NOTE: Some authenticators cannot accept username/password pairs
             if (!_authenticator.CanAuthenticate)
             {
-                WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8);
+                WriteError(CmdStrings.ERR_Client_sent_AUTH_no_pass);
                 return true;
             }
 
@@ -1554,7 +1554,7 @@ namespace Garnet.server
                     WriteAsciiBulkString(helloResult[i].Item2.ToString());
                 }
             }
-            WriteAsciiBulkString("modules");
+            WriteBulkString(CmdStrings.modules);
             WriteEmptyArray();
         }
 

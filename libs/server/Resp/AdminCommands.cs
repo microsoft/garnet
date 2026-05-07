@@ -511,7 +511,7 @@ namespace Garnet.server
             }
             else
             {
-                WriteError(errorMsg);
+                WriteLargeError(errorMsg);
             }
 
             return true;
@@ -550,7 +550,7 @@ namespace Garnet.server
             {
                 if (!errorMsg.IsEmpty)
                 {
-                    WriteError(errorMsg);
+                    WriteLargeError(errorMsg);
                 }
 
                 return true;
@@ -572,7 +572,7 @@ namespace Garnet.server
 
             if (!errorMsg.IsEmpty)
             {
-                WriteError(errorMsg);
+                WriteLargeError(errorMsg);
             }
 
             return true;
@@ -602,7 +602,7 @@ namespace Garnet.server
             // Have to block as we're on network thread
             _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
 
-            WriteSimpleString("AOF file committed"u8);
+            WriteSimpleString(CmdStrings.AOF_file_committed);
 
             return true;
         }
@@ -624,7 +624,7 @@ namespace Garnet.server
             }
 
             GC.Collect(generation, GCCollectionMode.Forced, true);
-            WriteSimpleString("GC completed"u8);
+            WriteSimpleString(CmdStrings.GC_completed);
 
             return true;
         }
@@ -722,7 +722,7 @@ namespace Garnet.server
                                                                               nameof(RespCommand.DEBUG));
                 }
 
-                WriteError(parseState.GetString(1));
+                WriteLargeError(parseState.GetArgSliceByRef(1).Span);
                 return true;
             }
 
@@ -764,7 +764,7 @@ namespace Garnet.server
                 return true;
             }
 
-            WriteError(string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG)));
+            WriteLargeError(string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG)));
             return true;
         }
 
@@ -779,7 +779,7 @@ namespace Garnet.server
             {
                 WriteArrayLength(3);
 
-                WriteAsciiBulkString("master");
+                WriteBulkString(CmdStrings.master);
 
                 WriteInt32(0);
 
@@ -793,7 +793,7 @@ namespace Garnet.server
 
                     WriteArrayLength(3);
 
-                    WriteAsciiBulkString("master");
+                    WriteBulkString(CmdStrings.master);
 
                     WriteInt64(replication_offset);
 
@@ -813,7 +813,7 @@ namespace Garnet.server
 
                     WriteArrayLength(5);
 
-                    WriteAsciiBulkString("slave");
+                    WriteBulkString(CmdStrings.slave);
 
                     WriteAsciiBulkString(role.address);
 
@@ -970,7 +970,7 @@ namespace Garnet.server
 
             if (success)
             {
-                WriteSimpleString("Background saving started"u8);
+                WriteSimpleString(CmdStrings.Background_saving_started);
             }
             else
             {

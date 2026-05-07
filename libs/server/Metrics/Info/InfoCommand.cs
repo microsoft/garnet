@@ -48,7 +48,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                WriteError($"ERR Invalid section {invalidSection}. Try INFO HELP");
+                WriteLargeError($"ERR Invalid section {invalidSection}. Try INFO HELP");
                 return true;
             }
 
@@ -86,7 +86,7 @@ namespace Garnet.server
             WriteArrayLength(sectionsHelp.Count);
             foreach (var sectionInfo in sectionsHelp)
             {
-                WriteAsciiBulkString(sectionInfo);
+                WriteLargeBulkString(sectionInfo);
             }
         }
     }

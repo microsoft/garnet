@@ -72,14 +72,14 @@ namespace Garnet.server
                         break;
                     default:
                         success = false;
-                        WriteError($"ERR Could not purge {managerType}.");
+                        WriteLargeError($"ERR Could not purge {managerType}.");
                         break;
                 }
 
                 if (success)
                 {
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
-                    WriteSimpleString(managerType.ToReadOnlySpan());
+                    WriteEnumAsBulkString(managerType);
                 }
             }
             catch (Exception ex)

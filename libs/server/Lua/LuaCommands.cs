@@ -319,7 +319,7 @@ namespace Garnet.server
                     }
                 }
 
-                WriteBulkString(digest);
+                WriteLargeBulkString(digest);
             }
 
             return true;

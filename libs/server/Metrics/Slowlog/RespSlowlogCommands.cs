@@ -71,7 +71,7 @@ namespace Garnet.server
                 if (entry.Arguments == null)
                 {
                     WriteArrayLength(1);
-                    WriteAsciiBulkString(entry.Command.ToString());
+                    WriteEnumAsBulkString(entry.Command);
                 }
                 else
                 {
@@ -81,16 +81,10 @@ namespace Garnet.server
                         sps.DeserializeFrom(ptr);
                     }
                     WriteArrayLength(sps.Count + 1);
-                    WriteAsciiBulkString(entry.Command.ToString());
+                    WriteEnumAsBulkString(entry.Command);
                     for (int i = 0; i < sps.Count; i++)
                     {
-                        // Hack added for demonstration
-                        WriteAsciiBulkString("hello world");
-                        WriteBulkString("hello world"u8);
-                        // End hack
-
-                        // Already existing
-                        WriteAsciiBulkString(sps.GetString(i));
+                        WriteLargeBulkString(sps.GetArgSliceByRef(i).Span);
                     }
                 }
                 WriteAsciiBulkString(entry.ClientIpPort);

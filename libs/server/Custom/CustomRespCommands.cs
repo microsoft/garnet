@@ -44,7 +44,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    WriteError($"ERR Transaction failed.");
+                    WriteError(CmdStrings.ERR_transaction_failed);
             }
             LatencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
 
@@ -77,7 +77,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    WriteError("ERR Command failed.");
+                    WriteError(CmdStrings.ERR_command_failed);
             }
         }
 

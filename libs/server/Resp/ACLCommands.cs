@@ -64,7 +64,7 @@ namespace Garnet.server
 
             foreach (var userHandle in userHandles)
             {
-                WriteAsciiBulkString(userHandle.Value.User.DescribeUser());
+                WriteLargeBulkString(userHandle.Value.User.DescribeUser());
             }
 
             return true;
@@ -91,7 +91,7 @@ namespace Garnet.server
 
             foreach (var user in users)
             {
-                WriteAsciiBulkString(user.Key);
+                WriteLargeBulkString(user.Key);
             }
 
             return true;
@@ -117,7 +117,7 @@ namespace Garnet.server
 
             foreach (var category in categories)
             {
-                WriteAsciiBulkString(category);
+                WriteLargeBulkString(category);
             }
 
             return true;
@@ -266,7 +266,7 @@ namespace Garnet.server
             // Return the name of the currently authenticated user.
             Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
 
-            WriteAsciiBulkString(aclAuthenticator.GetUserHandle().User.Name);
+            WriteLargeBulkString(aclAuthenticator.GetUserHandle().User.Name);
 
             return true;
         }
@@ -379,7 +379,7 @@ namespace Garnet.server
                 length = (int)(bits / 4) + (bits % 4 == 0 ? 0 : 1);
             }
 
-            WriteAsciiBulkString(System.Security.Cryptography.RandomNumberGenerator.GetHexString(length, true));
+            WriteLargeBulkString(System.Security.Cryptography.RandomNumberGenerator.GetHexString(length, true));
             return true;
         }
 
@@ -428,25 +428,32 @@ namespace Garnet.server
             {
                 WriteMapLength(3);
 
-                WriteAsciiBulkString("flags");
+                WriteBulkString(CmdStrings.flags);
 
                 WriteSetLength(1);
 
-                WriteAsciiBulkString(user.IsEnabled ? "on" : "off");
+                if (user.IsEnabled)
+                {
+                    WriteBulkString(CmdStrings.on);
+                }
+                else
+                {
+                    WriteBulkString(CmdStrings.off);
+                }
 
                 var passwords = user.Passwords;
-                WriteAsciiBulkString("passwords");
+                WriteBulkString(CmdStrings.passwords);
 
                 WriteArrayLength(passwords.Count);
 
                 foreach (var password in passwords)
                 {
-                    WriteAsciiBulkString($"#{password.ToString()}");
+                    WriteLargeBulkString($"#{password.ToString()}");
                 }
 
-                WriteAsciiBulkString("commands");
+                WriteBulkString(CmdStrings.commands);
 
-                WriteAsciiBulkString(user.GetEnabledCommandsDescription());
+                WriteLargeBulkString(user.GetEnabledCommandsDescription());
             }
 
             return true;

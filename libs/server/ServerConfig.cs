@@ -233,7 +233,7 @@ namespace Garnet.server
             }
             else
             {
-                WriteError(sbErrorMsg.ToString());
+                WriteLargeError(sbErrorMsg.ToString());
             }
 
             return true;

@@ -44,14 +44,14 @@ namespace Garnet.server
             // Restore is only implemented for string type
             if (valueSpan[0] != 0x00)
             {
-                WriteError("ERR RESTORE currently only supports string types");
+                WriteError(CmdStrings.ERR_RESTORE_currently_only_supports);
                 return true;
             }
 
             // check if length of value is at least 10
             if (valueSpan.Length < 10)
             {
-                WriteError("ERR DUMP payload version or checksum are wrong");
+                WriteError(CmdStrings.ERR_DUMP_payload_version_or_checksum_wrong);
                 return true;
             }
 
@@ -62,7 +62,7 @@ namespace Garnet.server
 
             if (rdbVersion > RDB_VERSION)
             {
-                WriteError("ERR DUMP payload version or checksum are wrong");
+                WriteError(CmdStrings.ERR_DUMP_payload_version_or_checksum_wrong);
                 return true;
             }
 
@@ -75,14 +75,14 @@ namespace Garnet.server
 
             if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
             {
-                WriteError("ERR DUMP payload version or checksum are wrong");
+                WriteError(CmdStrings.ERR_DUMP_payload_version_or_checksum_wrong);
                 return true;
             }
 
             // decode the length of payload
             if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart))
             {
-                WriteError("ERR DUMP payload length format is invalid");
+                WriteError(CmdStrings.ERR_DUMP_payload_length_format_invalid);
                 return true;
             }
 
@@ -142,7 +142,7 @@ namespace Garnet.server
 
             if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
             {
-                WriteError("ERR DUMP payload length is invalid");
+                WriteError(CmdStrings.ERR_DUMP_payload_length_is_invalid);
                 return true;
             }
 
@@ -418,7 +418,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        WriteError("ERR NX and XX, GT or LT options at the same time are not compatible");
+                        WriteError(CmdStrings.ERR_NX_and_XX_GT_or_LT_not_compatible);
                     }
                 }
             }

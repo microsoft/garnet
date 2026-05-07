@@ -30,12 +30,11 @@ namespace Garnet.analyzers
         /// <inheritdoc/>
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = [UseLargeOverridesWithVariableSizeResponses, AddLargeOverridesForVariableSizeResponses, MoveOutputConstantsToCmdStrings, UseExistingConstantInCmdStrings];
 
-#pragma warning disable RS1026
         /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
         {
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.ReportDiagnostics | GeneratedCodeAnalysisFlags.Analyze);
-            //context.EnableConcurrentExecution();
+            context.EnableConcurrentExecution();
 
             context.RegisterCompilationStartAction(
                 static compilationStartContext =>
@@ -291,7 +290,7 @@ namespace Garnet.analyzers
             // If the first argument isn't a constant, ignore it
             string literalStr;
             var arg0 = invoke.ArgumentList.Arguments[0];
-            if (arg0.Expression is LiteralExpressionSyntax literal)
+            if (arg0.Expression is LiteralExpressionSyntax literal && literal.Kind() is SyntaxKind.StringLiteralExpression or SyntaxKind.Utf8StringLiteralExpression)
             {
                 literalStr = literal.Token.Text;
             }

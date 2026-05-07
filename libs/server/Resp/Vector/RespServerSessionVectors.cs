@@ -351,19 +351,19 @@ namespace Garnet.server
                 // Note that this goes away in store v2
                 if (values.Length > maximumVectorSetValueBytes)
                 {
-                    WriteError("ERR Vector exceed configured page size"u8);
+                    WriteError(CmdStrings.ERR_Vector_exceeded_configured_page_size);
                     return true;
                 }
 
                 if (attributes.Value.Length > maximumVectorSetValueBytes)
                 {
-                    WriteError("ERR Attribute exceed configured page size"u8);
+                    WriteError(CmdStrings.ERR_Vector_exceeded_configured_page_size);
                     return true;
                 }
 
                 if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
                 {
-                    WriteError("ERR Unsupported quantization type"u8);
+                    WriteError(CmdStrings.ERR_Unsupported_quantization_type);
                     return true;
                 }
 
@@ -792,7 +792,7 @@ namespace Garnet.server
                     {
                         if (vectorRes == VectorManagerResult.MissingElement)
                         {
-                            WriteError("Element not in Vector Set"u8);
+                            WriteError(CmdStrings.ERR_Element_not_in_Vector_Set);
                         }
                         else if (vectorRes == VectorManagerResult.OK)
                         {
@@ -884,7 +884,7 @@ namespace Garnet.server
                                         continue;
                                     }
 
-                                    WriteBulkString(elementData);
+                                    WriteLargeBulkString(elementData);
 
                                     if (withScores.Value)
                                     {
@@ -905,7 +905,7 @@ namespace Garnet.server
                                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                                        WriteBulkString(attr);
+                                        WriteLargeBulkString(attr);
                                     }
                                     else if (!remaininingAttributes.IsEmpty)
                                     {
@@ -1066,7 +1066,7 @@ namespace Garnet.server
 
             if (res == GarnetStatus.NOTFOUND)
             {
-                WriteError("ERR Key not found"u8);
+                WriteError(CmdStrings.ERR_Key_not_found);
             }
             else if (res == GarnetStatus.WRONGTYPE)
             {
@@ -1128,7 +1128,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteSimpleString(attributesOutput.AsReadOnlySpan());
+                WriteLargeBulkString(attributesOutput.AsReadOnlySpan());
                 return true;
             }
             finally
@@ -1190,19 +1190,19 @@ namespace Garnet.server
             };
 
             WriteArrayLength(14);
-            WriteSimpleString("quant-type"u8);
-            WriteSimpleString(quantTypeSpan);
-            WriteSimpleString("distance-metric"u8);
-            WriteSimpleString(distanceMetricTypeSpan);
-            WriteSimpleString("input-vector-dimensions"u8);
+            WriteSimpleString(CmdStrings.quant_type);
+            WriteLargeBulkString(quantTypeSpan);
+            WriteSimpleString(CmdStrings.distance_metric);
+            WriteLargeBulkString(distanceMetricTypeSpan);
+            WriteSimpleString(CmdStrings.input_vector_dimensions);
             WriteInt32AsBulkString((int)vectorDimensions);
-            WriteSimpleString("reduced-dimensions"u8);
+            WriteSimpleString(CmdStrings.reduced_dimensions);
             WriteInt32AsBulkString((int)reducedDimensions);
-            WriteSimpleString("build-exploration-factor"u8);
+            WriteSimpleString(CmdStrings.build_exploration_factor);
             WriteInt32AsBulkString((int)buildExplorationFactor);
-            WriteSimpleString("num-links"u8);
+            WriteSimpleString(CmdStrings.num_links);
             WriteInt32AsBulkString((int)numLinks);
-            WriteSimpleString("size"u8);
+            WriteSimpleString(CmdStrings.size);
             WriteInt64AsBulkString(size);
             return true;
         }
@@ -1306,7 +1306,7 @@ namespace Garnet.server
             // TODO: We could _finish_ the delete here... though if we do that we should do it for ALL commands, not just Vector Set commands
             //       That's more intrusive, and is more of a V2 thing... so lets just give a workaround for now
 
-            WriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8);
+            WriteError(CmdStrings.ERR_Vector_Set_partially_deleted);
 
             return true;
         }
@@ -1314,7 +1314,7 @@ namespace Garnet.server
         private bool AbortVectorSetWrongType()
         {
             // Matches Redis behavior - doesn't indicate the type involved
-            WriteError("WRONGTYPE Operation against a key holding the wrong kind of value"u8);
+            WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
 
             return true;
         }
