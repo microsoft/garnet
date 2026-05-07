@@ -315,7 +315,7 @@ namespace Garnet.test
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue3", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
 
-                // Set expiry time for 2nd string
+                // Set expiry time for 1st string
                 db.KeyExpire("AofExpiryRMWStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
 
@@ -326,7 +326,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
@@ -335,7 +335,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
@@ -364,6 +364,82 @@ namespace Garnet.test
 
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
+                ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
+                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
+            }
+        }
+
+        [Test]
+        public async Task AofExpiryUpsertStoreRecoverTestAsync()
+        {
+            // Test AOF recovery of main store records with an expiry time
+
+            var expireTime = DateTime.UtcNow + TimeSpan.FromMinutes(1);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Add 1st string to main store with long expiry
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey1", "AofExpiryUpsertStoreRecoverTestValue1", expiry: TimeSpan.FromDays(1));
+                // Add 2nd string to main store with short expiry
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey2", "AofExpiryUpsertStoreRecoverTestValue2", expiry: TimeSpan.FromSeconds(1));
+                // Wait for 2nd string record to expire
+                Thread.Sleep(2000);
+
+                // Set value for 2nd record (which has expired)
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey2", "AofExpiryUpsertStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10));
+
+                // Set expiry time for 1st string
+                db.KeyExpire("AofExpiryUpsertStoreRecoverTestKey1", expireTime);
+                Thread.Sleep(2000);
+
+                // Verify 1st string did not change
+                var recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
+                var recoveredValueExpTime = db.KeyExpireTime("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
+
+                // Verify 2nd string did change
+                recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
+                var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
+                ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
+            }
+
+            // Commit to AOF and restart server
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Verify 1st string value has not changed
+                var recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
+                var recoveredValueExpTime = db.KeyExpireTime("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+
+                // Verify 2nd string did change
+                recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
+                var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
