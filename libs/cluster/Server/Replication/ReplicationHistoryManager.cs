@@ -30,7 +30,7 @@ namespace Garnet.cluster
         /// leading to silent corruption during disk recovery.
         /// </para>
         /// </summary>
-        static readonly byte[] ReplicationHistoryMagic = [(byte)'G', (byte)'R'];
+        static ReadOnlySpan<byte> ReplicationHistoryMagic => "GR"u8;
 
         public string PrimaryReplId => primary_replid;
         string primary_replid;
@@ -63,7 +63,8 @@ namespace Garnet.cluster
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
 
-            writer.Write(ReplicationHistoryMagic);
+            writer.Write(ReplicationHistoryMagic[0]);
+            writer.Write(ReplicationHistoryMagic[1]);
             writer.Write(ReplicationHistoryVersion);
             writer.Write(primary_replid);
             writer.Write(primary_replid2);

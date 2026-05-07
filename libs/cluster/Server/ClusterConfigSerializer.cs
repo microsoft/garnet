@@ -36,7 +36,8 @@ namespace Garnet.cluster
             var writer = new BinaryWriter(ms);
 
             // Write magic prefix and serialization format version
-            writer.Write(ClusterConfigMagic);
+            writer.Write(ClusterConfigMagic[0]);
+            writer.Write(ClusterConfigMagic[1]);
             writer.Write(ClusterConfigVersion);
 
             SerializeSlotMap(ref ms, ref writer);

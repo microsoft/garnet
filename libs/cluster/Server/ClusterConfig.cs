@@ -57,7 +57,7 @@ namespace Garnet.cluster
         /// <c>segmentCount</c> whose low byte happens to equal 1, leading to silent corruption.
         /// </para>
         /// </summary>
-        static readonly byte[] ClusterConfigMagic = [(byte)'G', (byte)'C'];
+        static ReadOnlySpan<byte> ClusterConfigMagic => "GC"u8;
 
         /// <summary>
         /// 
