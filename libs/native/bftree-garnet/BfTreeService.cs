@@ -505,7 +505,7 @@ namespace Garnet.server.BfTreeInterop
         /// Used by RangeIndex's <c>OnFlush</c> path which has direct access to the stub's TreeHandle but not
         /// the managed <see cref="BfTreeService"/> instance.
         /// <para>Mirrors instance <see cref="SnapshotToFile"/>: invokes <c>bftree_snapshot(handle)</c> to drain
-        /// the circular buffer to the data file, then <see cref="System.IO.File.Copy"/> from
+        /// the circular buffer to the data file, then <c>System.IO.File.Copy</c> from
         /// <paramref name="dataPath"/> to <paramref name="targetPath"/>.</para>
         /// </summary>
         /// <param name="handle">Native BfTree pointer (from the stub's <c>TreeHandle</c>).</param>

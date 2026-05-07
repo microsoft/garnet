@@ -133,7 +133,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Update TreeHandle after lazy restore from a flush or checkpoint snapshot file.
-        /// Called by <see cref="RestoreTreeFromFlush"/> after recovering the native BfTree.
+        /// Called by <see cref="RestoreTree"/> after recovering the native BfTree.
         /// </summary>
         /// <param name="newTreeHandle">The native pointer of the newly restored BfTree.</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
@@ -177,14 +177,17 @@ namespace Garnet.server
             ref readonly var stub = ref ReadIndex(valueSpan);
 
             if (stub.TreeHandle == nint.Zero && !deleteFiles)
+            {
+                // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
+                _ = liveIndexes.TryRemove(KeyId(key), out _);
                 return;
+            }
 
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
-                if (stub.TreeHandle != nint.Zero)
-                    UnregisterIndex(stub.TreeHandle);
+                _ = UnregisterIndex(key);
 
                 if (deleteFiles && stub.StorageBackend == (byte)StorageBackendType.Disk)
                     DeleteTreeFiles(key);
@@ -196,25 +199,30 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Delete BfTree data files for a key. Removes the entire key directory
-        /// (<c>{dataDir}/rangeindex/{hash}/</c>) containing <c>data.bftree</c>,
-        /// <c>flush.bftree</c>, and any <c>snapshot.*.bftree</c> files.
+        /// Delete BfTree data files for a key under the flat layout. Removes:
+        /// <c>{logRoot}/&lt;hash&gt;.data.bftree</c>, <c>&lt;hash&gt;.data.bftree.tmp</c>,
+        /// and all <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files.
+        /// Per-checkpoint snapshots are NOT deleted here — Tsavorite removes them when their
+        /// parent token directory is purged.
         /// Called after a DEL/UNLINK removes the key from the main store.
         /// </summary>
-        /// <param name="key">The raw key bytes used to derive the deterministic directory path.</param>
         private void DeleteTreeFiles(ReadOnlySpan<byte> key)
         {
+            if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
+                return;
+
             try
             {
-                var keyDir = Path.Combine(dataDir, "rangeindex", HashKeyToDirectoryName(key));
-                if (Directory.Exists(keyDir))
+                var hashPrefix = HashKeyToPrefix(key);
+                foreach (var path in Directory.EnumerateFiles(riLogRoot, hashPrefix + ".*"))
                 {
-                    Directory.Delete(keyDir, recursive: true);
+                    try { File.Delete(path); }
+                    catch (Exception ex) { logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", path); }
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed to delete BfTree data files for deleted RangeIndex key");
+                logger?.LogWarning(ex, "DeleteTreeFiles: enumeration failed for key");
             }
         }
 
@@ -261,9 +269,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Set the Recovered flag and zero TreeHandle on a stub loaded from a checkpoint snapshot.
-        /// At restore time, this flag tells <see cref="RestoreTreeFromFlush"/> to use the
-        /// checkpoint snapshot file (via <see cref="recoveredCheckpointToken"/>) instead of the
-        /// flush snapshot file.
+        /// Used by <c>OnRecoverySnapshotRead</c> to mark stubs whose state is the snapshot
+        /// rather than any post-recovery flush file.
         /// </summary>
         /// <param name="valueSpan">The store value span containing the stub from the checkpoint snapshot.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

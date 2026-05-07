@@ -2,14 +2,15 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server.BfTreeInterop;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Record lifecycle triggers for Garnet's unified store. Implements <see cref="IRecordTriggers"/>
-    /// to handle per-record cleanup on delete, eviction, flush, and disk read for
-    /// BfTree stubs (RangeIndex).
+    /// to handle per-record cleanup on delete, eviction, flush, copy-to-tail, log truncation,
+    /// and disk read for BfTree stubs (RangeIndex).
     /// </summary>
     public readonly struct GarnetRecordTriggers : IRecordTriggers
     {
@@ -45,6 +46,12 @@ namespace Garnet.server
         public bool CallOnDiskRead => rangeIndexManager != null;
 
         /// <inheritdoc/>
+        public bool CallPostCopyToTail => rangeIndexManager != null;
+
+        /// <inheritdoc/>
+        public bool CallOnTruncate => rangeIndexManager != null;
+
+        /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
             // Free BfTree and delete data files on key deletion.
@@ -57,14 +64,48 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly void OnFlush(ref LogRecord logRecord)
+        public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
         {
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (rangeIndexManager is null
+                || logRecord.Info.ValueIsObject
+                || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
+                return;
+
+            ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
+            var hashPrefix = RangeIndexManager.HashKeyToPrefix(logRecord.Key);
+            var dataPath = rangeIndexManager.LogDataPath(hashPrefix);
+            var flushPath = rangeIndexManager.LogFlushPath(hashPrefix, logicalAddress);
+
+            if (stub.StorageBackend == (byte)StorageBackendType.Memory)
             {
-                rangeIndexManager?.SnapshotTreeForFlush(logRecord.Key, logRecord.ValueSpan);
+                // Memory-only trees: not yet supported by the native library for snapshot-to-file.
+                // Set FlagFlushed so the next access triggers RIPROMOTE; data will be lost on restore.
                 RangeIndexManager.SetFlushedFlag(logRecord.ValueSpan);
+                return;
             }
+
+            try
+            {
+                if (stub.TreeHandle != nint.Zero)
+                {
+                    // Live tree active on data.bftree — snapshot via the native handle.
+                    BfTreeService.SnapshotToFileByPtr(stub.TreeHandle, dataPath, flushPath);
+                }
+                else
+                {
+                    // No live tree. data.bftree is the only correct source (Invariant 1+5):
+                    // pre-staged by PostCopyToTail-cold / RIPROMOTE-cold / OnRecoverySnapshotRead.
+                    if (System.IO.File.Exists(dataPath))
+                        System.IO.File.Copy(dataPath, flushPath, overwrite: false);
+                }
+            }
+            catch (Exception)
+            {
+                // Surface as fatal — checkpoint will fail and state machine driver handles it.
+                throw;
+            }
+
+            RangeIndexManager.SetFlushedFlag(logRecord.ValueSpan);
         }
 
         /// <inheritdoc/>
@@ -81,6 +122,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnDiskRead(ref LogRecord logRecord)
         {
+            // Invalidate stale TreeHandle bytes on records loaded from disk.
+            // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
             if (!logRecord.Info.ValueIsObject
                 && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
@@ -97,11 +140,16 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
-            {
-                RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
-            }
+            // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
+            // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
+            // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
+            if (rangeIndexManager is null
+                || logRecord.Info.ValueIsObject
+                || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
+                return;
+
+            RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
+            rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
         }
 
         /// <inheritdoc/>
@@ -120,9 +168,59 @@ namespace Garnet.server
                     rangeIndexManager.ClearCheckpointBarrier();
                     break;
                 case CheckpointTrigger.CheckpointCompleted:
-                    rangeIndexManager.PurgeOldCheckpointSnapshots(checkpointToken);
+                    // No action — Tsavorite's checkpoint manager removes per-token snapshot dirs
+                    // when removeOutdated is true; per-flush snapshots are cleaned by OnTruncate.
                     break;
             }
+        }
+
+        /// <inheritdoc/>
+        public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                              ref LogRecord dstLogRecord, long dstLogicalAddress)
+            where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        {
+            // Only act on RangeIndex records.
+            if (rangeIndexManager is null
+                || dstLogRecord.Info.ValueIsObject
+                || dstLogRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
+                return;
+
+            var srcSpan = srcLogRecord.ValueSpan;
+            var dstSpan = dstLogRecord.ValueSpan;
+            ref readonly var srcStub = ref RangeIndexManager.ReadIndex(srcSpan);
+            var srcHandle = srcStub.TreeHandle;
+
+            if (srcHandle != nint.Zero)
+            {
+                // Live transfer: src had an active tree; dst inherited TreeHandle via byte-copy.
+                // liveIndexes entry already exists for this key. Clear src.TreeHandle so a later
+                // OnEvict on src does not free the tree the dst now owns.
+                // NOTE: srcLogRecord.ValueSpan is the source's value span; the source record is
+                //       still in the chain (TryCopyToTail does not unlink/seal the source). Mutating
+                //       it in place is safe because the source is logically superseded by dst.
+                RangeIndexManager.ClearTreeHandle(srcSpan);
+            }
+            else
+            {
+                // Disk source (post-eviction or post-OnDiskRead-invalidate): pre-stage data.bftree
+                // from <srcAddr:x16>.flush.bftree (atomic via .tmp + File.Move), and register a
+                // pending entry so the next checkpoint captures dst's content.
+                if (srcLogicalAddress != Tsavorite.core.LogAddress.kInvalidAddress)
+                    rangeIndexManager.PreStageAndRegisterPending(dstLogRecord.Key, srcLogicalAddress);
+            }
+
+            // Dst is a freshly copied record at the tail. Clear FlagFlushed so subsequent reads
+            // don't loop through PromoteToTail again.
+            RangeIndexManager.ClearFlushedFlag(dstSpan);
+        }
+
+        /// <inheritdoc/>
+        public readonly void OnTruncate(long newBeginAddress)
+        {
+            rangeIndexManager?.OnTruncateImpl(newBeginAddress);
         }
     }
 }

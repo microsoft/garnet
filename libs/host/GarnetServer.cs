@@ -308,8 +308,21 @@ namespace Garnet
             CustomCommandManager customCommandManager)
         {
             var removeOutdated = !serverOptions.EnableCluster;
-            var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
-            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
+
+            // Two-roots layout for RangeIndex files:
+            //  riLogRoot — log-tied (working file + per-flush snapshots), co-located with hlog.
+            //              Falls back through LogDir → CheckpointDir → cwd, mirroring Tsavorite's
+            //              CheckpointBaseDirectory chain so RangeIndex works without storage tier.
+            //  cprDir    — checkpoint-tied (per-token snapshots live under <token>/rangeindex/),
+            //              alongside Tsavorite's cpr-checkpoints/<token>/info.dat etc.
+            var logRootBase = serverOptions.LogDir
+                              ?? serverOptions.CheckpointDir
+                              ?? Directory.GetCurrentDirectory();
+            var riLogRoot = Path.Combine(logRootBase ?? string.Empty, "Store", "rangeindex");
+            var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(dbId), "cpr-checkpoints");
+
+            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview,
+                riLogRoot: riLogRoot, cprDir: cprDir,
                 removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);

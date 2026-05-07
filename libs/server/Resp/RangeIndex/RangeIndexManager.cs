@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
 using System.Runtime.CompilerServices;
@@ -21,15 +22,27 @@ namespace Garnet.server
     ///
     /// <para>Architecture: Each RangeIndex key in the store holds a <see cref="RangeIndexStub"/>
     /// containing BfTree configuration metadata and a native pointer to the live BfTree instance.
-    /// The manager tracks all live BfTree instances, coordinates checkpoint/flush/eviction
-    /// snapshots, and handles lazy restore from disk.</para>
+    /// The manager tracks all live BfTree instances (keyed by Guid = XxHash128 of the key bytes —
+    /// same scheme as the file-name prefix), coordinates checkpoint/flush/eviction snapshots,
+    /// and handles lazy restore from disk.</para>
+    ///
+    /// <para>File layout (flat under two roots):</para>
+    /// <list type="bullet">
+    /// <item><b>Log root</b> (<c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex/</c>) — working
+    /// files (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+    /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).</item>
+    /// <item><b>Checkpoint root</b> (<c>{CheckpointDir}/Store/checkpoints[_dbId]/cpr-checkpoints/&lt;token&gt;/rangeindex/</c>) —
+    /// per-checkpoint snapshots (<c>&lt;hash&gt;.bftree</c>); deleted automatically when
+    /// Tsavorite removes the parent token directory.</item>
+    /// </list>
     ///
     /// <para>Concurrency: Data operations (RI.SET, RI.GET, RI.DEL) acquire a shared lock
     /// via <see cref="ReadRangeIndex"/>; lifecycle operations (DEL key, eviction, checkpoint)
     /// acquire an exclusive lock. See <c>RangeIndexManager.Locking.cs</c> for details.</para>
     ///
-    /// <para>Persistence: Stubs survive via Tsavorite's normal log persistence. BfTree data
-    /// files are snapshotted independently on flush/checkpoint and lazily restored on access.</para>
+    /// <para>liveIndexes access discipline: <see cref="liveIndexes"/> is consulted on the hot
+    /// path ONLY for checkpoint coordination (<see cref="WaitForTreeCheckpoint"/>). All other
+    /// hot-path code uses the stub's <c>TreeHandle</c> directly.</para>
     /// </summary>
     public sealed partial class RangeIndexManager : IDisposable
     {
@@ -46,31 +59,45 @@ namespace Garnet.server
         /// <summary>Whether range index commands are enabled.</summary>
         public bool IsEnabled { get; }
 
-        /// <summary>Gets the number of live (registered) BfTree indexes.</summary>
+        /// <summary>Gets the number of live (registered) BfTree indexes (activated + pending).</summary>
         internal int LiveIndexCount => liveIndexes.Count;
 
         /// <summary>
-        /// Tracks live BfTreeService instances keyed by their native tree pointer.
+        /// Tracks BfTree entries (activated + pending), keyed by <see cref="KeyId"/> = a Guid
+        /// derived from the key bytes via <c>XxHash128</c>. Same hash scheme used to derive the
+        /// on-disk filename prefix; collision risk is the same as for filename collisions
+        /// (cryptographically negligible).
         /// </summary>
-        private readonly ConcurrentDictionary<nint, TreeEntry> liveIndexes = new();
+        private readonly ConcurrentDictionary<Guid, TreeEntry> liveIndexes = new();
 
         private readonly ILogger logger;
 
         /// <summary>
-        /// Base directory for deterministic BfTree data file paths.
+        /// Log-tied root directory (without trailing separator). Holds the working file
+        /// (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+        /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
-        private readonly string dataDir;
+        private readonly string riLogRoot;
+
+        /// <summary>
+        /// Checkpoint-tied parent directory (the Tsavorite <c>cpr-checkpoints/</c> directory).
+        /// Per-checkpoint snapshots live under <c>{cprDir}/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</c>.
+        /// May be null if checkpointing is not enabled.
+        /// </summary>
+        private readonly string cprDir;
 
         /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
         /// RI operations check this first (one volatile read on hot path); if set, they
-        /// check the per-tree <see cref="TreeEntry.SnapshotPending"/> flag.
+        /// look up by <see cref="KeyId"/> and check the per-tree
+        /// <see cref="TreeEntry.SnapshotPending"/> flag.
         /// </summary>
         private volatile bool checkpointInProgress;
 
         /// <summary>
-        /// Checkpoint token from the last recovery. Used by the restore path to
-        /// locate the correct checkpoint snapshot file for recovered stubs.
+        /// Checkpoint token from the last recovery. Used by
+        /// <see cref="RebuildFromSnapshotIfPending"/> to locate the correct checkpoint
+        /// snapshot file for above-FUA stubs recovered from snapshot.
         /// </summary>
         private Guid recoveredCheckpointToken;
 
@@ -80,14 +107,17 @@ namespace Garnet.server
         /// </summary>
         internal sealed class TreeEntry
         {
-            /// <summary>The managed BfTree wrapper owning the native tree pointer.</summary>
-            public readonly BfTreeService Tree;
+            /// <summary>The managed BfTree wrapper owning the native tree pointer.
+            /// <c>null</c> for a "pending" entry — data.bftree on disk has correct content
+            /// but no native BfTree has been opened yet (awaiting <c>RestoreTree</c> activation).</summary>
+            public BfTreeService Tree;
 
             /// <summary>Hash of the Garnet key, used for lock striping.</summary>
             public readonly long KeyHash;
 
-            /// <summary>Directory for snapshot files, derived from the key hash via <see cref="HashKeyToDirectoryName"/>.</summary>
-            public readonly string KeyDir;
+            /// <summary>32-character lowercase-hex prefix derived from the key (XxHash128 → Guid("N")).
+            /// Used to construct file paths under both roots.</summary>
+            public readonly string HashPrefix;
 
             /// <summary>
             /// 1 while this tree is being snapshotted for checkpoint, 0 otherwise.
@@ -96,23 +126,19 @@ namespace Garnet.server
             /// </summary>
             public int SnapshotPending;
 
-            /// <summary>
-            /// Creates a new tree entry.
-            /// </summary>
-            /// <param name="tree">The BfTree instance.</param>
-            /// <param name="keyHash">Hash of the Garnet key for lock striping.</param>
-            /// <param name="keyDir">Base directory for this tree's snapshot files.</param>
-            public TreeEntry(BfTreeService tree, long keyHash, string keyDir)
+            public TreeEntry(BfTreeService tree, long keyHash, string hashPrefix)
             {
                 Tree = tree;
                 KeyHash = keyHash;
-                KeyDir = keyDir;
+                HashPrefix = hashPrefix;
             }
         }
 
         /// <summary>
-        /// Whether to remove old BfTree checkpoint snapshots when a new checkpoint completes,
-        /// matching Tsavorite's removeOutdated behavior.
+        /// Whether to remove old BfTree per-flush snapshots when their addresses fall below the new
+        /// log BeginAddress. Per-checkpoint snapshots are removed by Tsavorite's checkpoint manager
+        /// when it deletes the parent token directory; this flag controls only the per-flush cleanup
+        /// performed by <see cref="OnTruncateImpl"/>.
         /// </summary>
         private readonly bool removeOutdatedCheckpoints;
 
@@ -120,17 +146,71 @@ namespace Garnet.server
         /// Creates a new <see cref="RangeIndexManager"/>.
         /// </summary>
         /// <param name="enabled">Whether range index commands are enabled.</param>
-        /// <param name="dataDir">Base directory for deterministic BfTree paths. May be null for memory-only usage.</param>
-        /// <param name="removeOutdatedCheckpoints">Whether to purge old checkpoint snapshots when a new one completes.</param>
+        /// <param name="riLogRoot">Log-tied root directory for working/flush files (e.g.
+        /// <c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex</c>). May be null/empty for
+        /// memory-only test scenarios; disk-backed trees will fail to open in that case.</param>
+        /// <param name="cprDir">Tsavorite <c>cpr-checkpoints/</c> directory; per-checkpoint snapshots
+        /// live under <c>{cprDir}/&lt;token&gt;/rangeindex/</c>. May be null if no checkpointing.</param>
+        /// <param name="removeOutdatedCheckpoints">Whether <see cref="OnTruncateImpl"/> should delete
+        /// per-flush snapshots whose address is below the new BeginAddress.</param>
         /// <param name="logger">Optional logger.</param>
-        public RangeIndexManager(bool enabled, string dataDir = null, bool removeOutdatedCheckpoints = true, ILogger logger = null)
+        public RangeIndexManager(bool enabled, string riLogRoot = null, string cprDir = null,
+            bool removeOutdatedCheckpoints = true, ILogger logger = null)
         {
             IsEnabled = enabled;
-            this.dataDir = dataDir;
+            this.riLogRoot = riLogRoot;
+            this.cprDir = cprDir;
             this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
+
+            if (enabled && !string.IsNullOrEmpty(riLogRoot))
+            {
+                try { Directory.CreateDirectory(riLogRoot); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Failed to create RI log root: {Path}", riLogRoot); }
+            }
         }
+
+        /// <summary>
+        /// Compute the unambiguous identity of a RangeIndex key as a 128-bit Guid.
+        /// Same scheme used to derive the on-disk filename prefix
+        /// (<see cref="HashKeyToPrefix"/>). The cryptographically negligible collision risk
+        /// is the same risk we accept for filename collisions.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static Guid KeyId(ReadOnlySpan<byte> keyBytes) => new(XxHash128.Hash(keyBytes));
+
+        /// <summary>
+        /// Hash key bytes to a 32-character lowercase-hex filename prefix using XxHash128.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static string HashKeyToPrefix(ReadOnlySpan<byte> keyBytes)
+            => new Guid(XxHash128.Hash(keyBytes)).ToString("N");
+
+        // -- Path helpers --
+
+        /// <summary>{logRoot}/&lt;hash&gt;.data.bftree</summary>
+        internal string LogDataPath(string hashPrefix)
+            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree");
+
+        /// <summary>{logRoot}/&lt;hash&gt;.data.bftree.tmp</summary>
+        internal string LogTmpPath(string hashPrefix)
+            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree.tmp");
+
+        /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
+        internal string LogFlushPath(string hashPrefix, long logicalAddress)
+            => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
+
+        /// <summary>{cprDir}/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</summary>
+        internal string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
+            => Path.Combine(cprDir ?? string.Empty, checkpointToken.ToString(), "rangeindex", hashPrefix + ".bftree");
+
+        /// <summary>The directory holding per-checkpoint RI snapshots for a given token.</summary>
+        internal string CheckpointSnapshotDir(Guid checkpointToken)
+            => Path.Combine(cprDir ?? string.Empty, checkpointToken.ToString(), "rangeindex");
+
+        // -- Convenience helpers used outside this class (RangeIndexOps via raw key) --
+        internal string LogDataPathFor(ReadOnlySpan<byte> keyBytes) => LogDataPath(HashKeyToPrefix(keyBytes));
 
         /// <summary>
         /// Creates a new BfTree instance via the native interop layer.
@@ -148,7 +228,7 @@ namespace Garnet.server
             string filePath = null;
             if (storageBackend == StorageBackendType.Disk)
             {
-                filePath = DeriveWorkingPath(keyBytes);
+                filePath = LogDataPathFor(keyBytes);
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             }
 
@@ -165,31 +245,18 @@ namespace Garnet.server
         /// <summary>
         /// Compute the leaf page size from the max record size when not explicitly specified.
         /// </summary>
-        /// <param name="maxRecordSize">The configured maximum record size in bytes.</param>
-        /// <returns>
-        /// A power-of-two page size:
-        /// <list type="bullet">
-        /// <item>For <paramref name="maxRecordSize"/> ≤ 2 KB → 4 KB</item>
-        /// <item>For larger values → 2.5× record size rounded to next power of 2, capped at 32 KB</item>
-        /// </list>
-        /// </returns>
         internal static uint ComputeLeafPageSize(uint maxRecordSize)
         {
             if (maxRecordSize <= 2048)
                 return 4096;
 
-            // 2.5x, capped at 32KB
             var target = (uint)(maxRecordSize * 2.5);
             if (target > 32768)
                 target = 32768;
 
-            // Round up to next power of 2
             return RoundUpToPowerOf2(target);
         }
 
-        /// <summary>
-        /// Rounds up to the next power of 2 using the standard bit-manipulation algorithm.
-        /// </summary>
         private static uint RoundUpToPowerOf2(uint v)
         {
             v--;
@@ -204,143 +271,173 @@ namespace Garnet.server
 
         /// <summary>
         /// Register a BfTreeService in the live index dictionary after successful creation or restore.
-        /// Cold path — called once per RI.CREATE or lazy restore.
+        /// Cold path — called once per RI.CREATE or activation (RestoreTree).
         /// </summary>
-        /// <param name="bfTree">The BfTree instance to register.</param>
-        /// <param name="keyHash">Hash of the Garnet key, used for lock striping.</param>
-        /// <param name="keyBytes">Raw key bytes, used to derive the snapshot directory name.</param>
         internal void RegisterIndex(BfTreeService bfTree, long keyHash, ReadOnlySpan<byte> keyBytes)
         {
-            var keyDir = Path.Combine(dataDir ?? string.Empty, "rangeindex", HashKeyToDirectoryName(keyBytes));
-            liveIndexes[bfTree.NativePtr] = new TreeEntry(bfTree, keyHash, keyDir);
+            var hashPrefix = HashKeyToPrefix(keyBytes);
+            var keyId = KeyId(keyBytes);
+            var newEntry = new TreeEntry(bfTree, keyHash, hashPrefix);
+            // Activate-or-add: if a pending entry already exists, upgrade it; else add new.
+            liveIndexes.AddOrUpdate(keyId, newEntry, (_, existing) =>
+            {
+                if (existing.Tree is null)
+                {
+                    existing.Tree = bfTree;
+                    return existing;
+                }
+                // Already activated by a racing thread — caller should dispose the duplicate.
+                return existing;
+            });
+            // If we lost the race (existing.Tree non-null), dispose our duplicate.
+            if (liveIndexes.TryGetValue(keyId, out var winner) && !ReferenceEquals(winner.Tree, bfTree))
+            {
+                try { bfTree.Dispose(); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
+            }
         }
 
         /// <summary>
-        /// Unregister and dispose a BfTreeService. The caller must already hold
-        /// an exclusive lock for the corresponding key hash.
+        /// Register a "pending" entry: data.bftree on disk has correct content (just pre-staged) but
+        /// no native BfTree has been opened yet. Activated by a later <see cref="RegisterIndex"/> call
+        /// from <c>RestoreTree</c>.
         /// </summary>
-        /// <param name="treePtr">Native tree pointer used as the dictionary key.</param>
-        /// <returns><c>true</c> if the index was found and disposed; <c>false</c> if not registered.</returns>
-        internal bool UnregisterIndex(nint treePtr)
+        internal void RegisterPending(ReadOnlySpan<byte> keyBytes, long keyHash)
         {
-            if (liveIndexes.TryRemove(treePtr, out var entry))
+            var hashPrefix = HashKeyToPrefix(keyBytes);
+            var keyId = KeyId(keyBytes);
+            var pending = new TreeEntry(tree: null, keyHash, hashPrefix);
+            // Add only if no entry exists; if one exists (activated or pending), leave it alone.
+            _ = liveIndexes.TryAdd(keyId, pending);
+        }
+
+        /// <summary>
+        /// Unregister the entry for a key. Disposes the native tree if present and the entry
+        /// is owned by this manager. The caller must already hold the exclusive lock for this key.
+        /// </summary>
+        /// <returns><c>true</c> if an entry was found and removed.</returns>
+        internal bool UnregisterIndex(ReadOnlySpan<byte> keyBytes)
+        {
+            var keyId = KeyId(keyBytes);
+            if (liveIndexes.TryRemove(keyId, out var entry))
             {
-                entry.Tree.Dispose();
+                try { entry.Tree?.Dispose(); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose BfTree on unregister"); }
                 return true;
             }
             return false;
         }
-
-        /// <summary>
-        /// Returns <c>true</c> if the given tree handle is registered as a live (in-memory) index.
-        /// A tree handle of <see cref="nint.Zero"/> always returns <c>false</c>.
-        /// </summary>
-        /// <param name="treeHandle">The native pointer stored in the stub's <c>TreeHandle</c> field.</param>
-        /// <returns><c>true</c> if the tree is live and registered; <c>false</c> otherwise.</returns>
-        internal bool IsTreeLive(nint treeHandle)
-            => treeHandle != nint.Zero && liveIndexes.ContainsKey(treeHandle);
 
         /// <inheritdoc/>
         public void Dispose()
         {
             foreach (var kvp in liveIndexes)
             {
-                try
-                {
-                    kvp.Value.Tree.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "Failed to dispose BfTree with native pointer {Ptr}", kvp.Key);
-                }
+                try { kvp.Value.Tree?.Dispose(); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose BfTree {Hash}", kvp.Value.HashPrefix); }
             }
             liveIndexes.Clear();
         }
 
         /// <summary>
-        /// Snapshot a BfTree's data to its flush path. Called from <see cref="GarnetRecordTriggers.OnFlush"/>
-        /// during page flush so the tree data is persisted before the page is evicted.
-        /// Acquires the exclusive lock to serialize with checkpoint snapshots and prevent
-        /// concurrent native bftree_snapshot calls on the same tree.
-        /// Failure is fatal — the exception propagates to the state machine driver.
+        /// Atomically pre-stage <c>data.bftree</c> from <c>&lt;srcAddr:x16&gt;.flush.bftree</c>
+        /// (atomic via .tmp + File.Move) and register a pending entry in
+        /// <see cref="liveIndexes"/> so a subsequent checkpoint will capture it via
+        /// <see cref="SnapshotAllTreesForCheckpoint"/>.
+        ///
+        /// <para>Called from RIPROMOTE PostCopyUpdater (cold case: src.TreeHandle == 0) and
+        /// from <c>PostCopyToTail</c> (compaction with disk source).</para>
         /// </summary>
-        internal void SnapshotTreeForFlush(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan)
+        internal void PreStageAndRegisterPending(ReadOnlySpan<byte> keyBytes, long srcFlushAddress)
         {
-            ref readonly var stub = ref ReadIndex(valueSpan);
-            if (stub.TreeHandle == nint.Zero)
+            if (string.IsNullOrEmpty(riLogRoot))
                 return;
 
-            // Memory-only trees cannot be snapshotted (not yet supported by native library).
-            // They remain live via TreeHandle but data will be lost on eviction.
-            if (stub.StorageBackend == (byte)StorageBackendType.Memory)
+            var hashPrefix = HashKeyToPrefix(keyBytes);
+            var snapshotPath = LogFlushPath(hashPrefix, srcFlushAddress);
+            if (!File.Exists(snapshotPath))
+            {
+                logger?.LogWarning("PreStageAndRegisterPending: source flush file missing: {Path}", snapshotPath);
                 return;
+            }
 
-            if (!liveIndexes.TryGetValue(stub.TreeHandle, out var entry))
-                return;
+            var dataPath = LogDataPath(hashPrefix);
+            var tmpPath = LogTmpPath(hashPrefix);
 
-            rangeIndexLocks.AcquireExclusiveLock(entry.KeyHash, out var lockToken);
             try
             {
-                var flushPath = DeriveFlushPath(key);
-                Directory.CreateDirectory(Path.GetDirectoryName(flushPath)!);
-                entry.Tree.SnapshotToFile(flushPath);
+                Directory.CreateDirectory(riLogRoot);
+                File.Copy(snapshotPath, tmpPath, overwrite: true);
+                File.Move(tmpPath, dataPath, overwrite: true);
             }
-            finally
+            catch (Exception ex)
             {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy/move failed for {Hash}", hashPrefix);
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                return;
             }
+
+            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
+            var keyId = KeyId(keyBytes);
+            _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
         }
 
         /// <summary>
-        /// Derive the deterministic working path for a disk-backed BfTree.
-        /// Format: {dataDir}/rangeindex/{key_hash}/data.bftree
+        /// Pre-stage <c>data.bftree</c> from <c>cpr-checkpoints/&lt;recoveredCheckpointToken&gt;/rangeindex/&lt;hash&gt;.bftree</c>
+        /// during recovery. Called from <c>OnRecoverySnapshotRead</c> for above-FUA-at-checkpoint stubs
+        /// (snapshot file may be deleted post-recovery, so this MUST run during recovery).
+        /// Registers a pending entry so any first checkpoint after recovery captures the key correctly.
         /// </summary>
-        internal string DeriveWorkingPath(ReadOnlySpan<byte> keyBytes)
-            => Path.Combine(dataDir ?? string.Empty, "rangeindex", HashKeyToDirectoryName(keyBytes), "data.bftree");
-
-        /// <summary>
-        /// Derive the deterministic flush snapshot path for a BfTree.
-        /// Format: {dataDir}/rangeindex/{key_hash}/flush.bftree
-        /// </summary>
-        internal string DeriveFlushPath(ReadOnlySpan<byte> keyBytes)
-            => Path.Combine(dataDir ?? string.Empty, "rangeindex", HashKeyToDirectoryName(keyBytes), "flush.bftree");
-
-        /// <summary>
-        /// Hash key bytes to a directory name using XxHash128, formatted as a 32-char hex string.
-        /// </summary>
-        internal static string HashKeyToDirectoryName(ReadOnlySpan<byte> keyBytes)
+        internal void RebuildFromSnapshotIfPending(ReadOnlySpan<byte> keyBytes)
         {
-            var hash = XxHash128.Hash(keyBytes);
-            return new Guid(hash).ToString("N");
+            if (string.IsNullOrEmpty(riLogRoot) || string.IsNullOrEmpty(cprDir) || recoveredCheckpointToken == Guid.Empty)
+                return;
+
+            var hashPrefix = HashKeyToPrefix(keyBytes);
+            var snapshotPath = CheckpointSnapshotPath(hashPrefix, recoveredCheckpointToken);
+            if (!File.Exists(snapshotPath))
+            {
+                // Below-FUA stubs have no checkpoint snapshot; RIPROMOTE PostCopyUpdater handles
+                // them lazily via the per-flush snapshot file on first access.
+                logger?.LogDebug("OnRecoverySnapshotRead: snapshot absent for {Hash} — RIPROMOTE will handle lazily", hashPrefix);
+                return;
+            }
+
+            var dataPath = LogDataPath(hashPrefix);
+            var tmpPath = LogTmpPath(hashPrefix);
+
+            try
+            {
+                Directory.CreateDirectory(riLogRoot);
+                File.Copy(snapshotPath, tmpPath, overwrite: true);
+                File.Move(tmpPath, dataPath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "RebuildFromSnapshotIfPending: copy/move failed for {Hash}", hashPrefix);
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                return;
+            }
+
+            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
+            var keyId = KeyId(keyBytes);
+            _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
         }
 
         /// <summary>
-        /// Derive the deterministic checkpoint snapshot path for a BfTree.
-        /// Format: {dataDir}/rangeindex/{key_hash}/snapshot.{token:N}.bftree
+        /// Store the recovered checkpoint token for use by
+        /// <see cref="RebuildFromSnapshotIfPending"/>.
         /// </summary>
-        internal string DeriveCheckpointPath(ReadOnlySpan<byte> keyBytes, Guid checkpointToken)
-            => Path.Combine(dataDir ?? string.Empty, "rangeindex", HashKeyToDirectoryName(keyBytes),
-                $"snapshot.{checkpointToken:N}.bftree");
-
-        /// <summary>
-        /// Store the recovered checkpoint token for lazy restore of snapshot-recovered stubs.
-        /// </summary>
-        internal void SetRecoveredCheckpointToken(Guid token)
-        {
-            recoveredCheckpointToken = token;
-        }
+        internal void SetRecoveredCheckpointToken(Guid token) => recoveredCheckpointToken = token;
 
         /// <summary>
         /// Set the checkpoint barrier. Called at version shift (PREPARE → IN_PROGRESS).
-        /// Marks all live trees as snapshot-pending, then sets the global flag.
+        /// Marks all entries (activated + pending) as snapshot-pending, then sets the global flag.
         /// </summary>
         internal void SetCheckpointBarrier(Guid checkpointToken)
         {
-            // Mark all current trees as pending snapshot
             foreach (var kvp in liveIndexes)
                 Volatile.Write(ref kvp.Value.SnapshotPending, 1);
-
-            // Set global flag (RI operations check this first)
             checkpointInProgress = true;
         }
 
@@ -349,36 +446,34 @@ namespace Garnet.server
         /// </summary>
         internal void ClearCheckpointBarrier()
         {
-            // Clear global flag
             checkpointInProgress = false;
-
-            // Clear any remaining per-tree flags (safety: handles trees added during checkpoint)
             foreach (var kvp in liveIndexes)
                 Volatile.Write(ref kvp.Value.SnapshotPending, 0);
         }
 
         /// <summary>
-        /// Snapshot all live BfTrees for a checkpoint. Called at WAIT_FLUSH after all v threads
-        /// have completed. Takes exclusive lock per tree, snapshots, clears per-tree flag.
-        /// The global flag is cleared after all trees are done.
+        /// Snapshot all live BfTrees for a checkpoint. Called at FlushBegin.
+        /// Activated entries → <c>Tree.SnapshotToFile</c>. Pending entries (Tree=null) →
+        /// <c>File.Copy(data.bftree → snapshot path)</c>.
         /// Failure is fatal — the exception propagates to the state machine driver.
         /// </summary>
         internal void SnapshotAllTreesForCheckpoint(Guid checkpointToken)
         {
             try
             {
+                if (string.IsNullOrEmpty(cprDir))
+                    return;
+
+                var snapshotDir = CheckpointSnapshotDir(checkpointToken);
+
                 foreach (var kvp in liveIndexes)
                 {
                     var entry = kvp.Value;
 
-                    // Only snapshot trees that were live at barrier time (SnapshotPending=1).
-                    // Trees restored or created in v+1 have SnapshotPending=0 and are skipped —
-                    // on recovery they fall back to flush.bftree which has v-state data.
                     if (Volatile.Read(ref entry.SnapshotPending) == 0)
                         continue;
 
-                    // Memory-only trees cannot be snapshotted
-                    if (entry.Tree.StorageBackend == StorageBackendType.Memory)
+                    if (entry.Tree?.StorageBackend == StorageBackendType.Memory)
                     {
                         Volatile.Write(ref entry.SnapshotPending, 0);
                         continue;
@@ -387,14 +482,26 @@ namespace Garnet.server
                     rangeIndexLocks.AcquireExclusiveLock(entry.KeyHash, out var lockToken);
                     try
                     {
-                        var checkpointPath = Path.Combine(entry.KeyDir, $"snapshot.{checkpointToken:N}.bftree");
-                        Directory.CreateDirectory(entry.KeyDir);
-                        entry.Tree.SnapshotToFile(checkpointPath);
+                        Directory.CreateDirectory(snapshotDir);
+                        var checkpointPath = CheckpointSnapshotPath(entry.HashPrefix, checkpointToken);
+
+                        if (entry.Tree is not null)
+                        {
+                            entry.Tree.SnapshotToFile(checkpointPath);
+                        }
+                        else
+                        {
+                            // Pending entry: data.bftree is the only correct source — guaranteed
+                            // pre-staged by PreStageAndRegisterPending or RebuildFromSnapshotIfPending.
+                            var dataPath = LogDataPath(entry.HashPrefix);
+                            if (File.Exists(dataPath))
+                                File.Copy(dataPath, checkpointPath, overwrite: true);
+                            else
+                                logger?.LogWarning("SnapshotAllTreesForCheckpoint: data.bftree missing for pending {Hash}", entry.HashPrefix);
+                        }
                     }
                     finally
                     {
-                        // Clear per-tree flag before releasing lock so waiting RI ops
-                        // proceed only after snapshot is complete
                         Volatile.Write(ref entry.SnapshotPending, 0);
                         rangeIndexLocks.ReleaseExclusiveLock(lockToken);
                     }
@@ -402,47 +509,60 @@ namespace Garnet.server
             }
             finally
             {
-                // Always clear global barrier, even if iteration failed
                 ClearCheckpointBarrier();
             }
         }
 
         /// <summary>
-        /// Delete BfTree checkpoint snapshot files from prior checkpoints.
-        /// Only acts when <see cref="removeOutdatedCheckpoints"/> is true, matching
-        /// Tsavorite's removeOutdated behavior. Scans all rangeindex subdirectories
-        /// for snapshot.*.bftree files that don't match the current checkpoint token.
+        /// On log truncation, delete per-flush snapshot files in the log root whose address is
+        /// strictly less than <paramref name="newBeginAddress"/>, plus any orphaned <c>.tmp</c>
+        /// files. Per-checkpoint snapshots are NOT touched here — Tsavorite's checkpoint manager
+        /// removes them when it deletes the parent token directory.
         /// </summary>
-        internal void PurgeOldCheckpointSnapshots(Guid currentToken)
+        internal void OnTruncateImpl(long newBeginAddress)
         {
-            if (!removeOutdatedCheckpoints)
+            if (!removeOutdatedCheckpoints || string.IsNullOrEmpty(riLogRoot))
                 return;
-
-            var currentFileName = $"snapshot.{currentToken:N}.bftree";
-            var rangeIndexDir = Path.Combine(dataDir ?? string.Empty, "rangeindex");
-            if (!Directory.Exists(rangeIndexDir))
+            if (!Directory.Exists(riLogRoot))
                 return;
 
             try
             {
-                foreach (var snapshotFile in Directory.EnumerateFiles(rangeIndexDir, "snapshot.*.bftree", SearchOption.AllDirectories))
+                foreach (var path in Directory.EnumerateFiles(riLogRoot))
                 {
-                    if (!Path.GetFileName(snapshotFile).Equals(currentFileName, StringComparison.Ordinal))
+                    var name = Path.GetFileName(path);
+
+                    if (name.EndsWith(".data.bftree.tmp", StringComparison.Ordinal))
                     {
-                        try
-                        {
-                            File.Delete(snapshotFile);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogWarning(ex, "Failed to delete old checkpoint snapshot: {Path}", snapshotFile);
-                        }
+                        TryDelete(path);
+                        continue;
                     }
+
+                    if (!name.EndsWith(".flush.bftree", StringComparison.Ordinal))
+                        continue;
+
+                    // Pattern: <hash>.<addr:x16>.flush.bftree
+                    // hash is 32 hex chars, then '.', then 16 hex chars (addr), then ".flush.bftree".
+                    if (name.Length != 32 + 1 + 16 + ".flush.bftree".Length)
+                        continue;
+
+                    var addrSegment = name.AsSpan(33, 16);
+                    if (!long.TryParse(addrSegment, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var addr))
+                        continue;
+
+                    if (addr < newBeginAddress)
+                        TryDelete(path);
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed to enumerate old checkpoint snapshots for cleanup");
+                logger?.LogWarning(ex, "OnTruncate: enumeration failed under {Root}", riLogRoot);
+            }
+
+            void TryDelete(string p)
+            {
+                try { File.Delete(p); }
+                catch (Exception ex) { logger?.LogWarning(ex, "OnTruncate: failed to delete {Path}", p); }
             }
         }
 

@@ -653,7 +653,7 @@ namespace Garnet.server
 
                 ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
                 treeHandle = stub.TreeHandle;
-                isLive = functionsState.rangeIndexManager.IsTreeLive(stub.TreeHandle);
+                isLive = stub.TreeHandle != nint.Zero;
                 isFlushed = stub.IsFlushed;
                 isRecovered = stub.IsRecovered;
                 result = RangeIndexResult.OK;
