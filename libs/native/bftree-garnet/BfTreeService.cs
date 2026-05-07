@@ -501,7 +501,35 @@ namespace Garnet.server.BfTreeInterop
         }
 
         /// <summary>
-        /// Snapshot the BfTree to a specified target file for flush persistence.
+        /// Snapshot a disk-backed BfTree to a target file, given only its native handle (no managed wrapper).
+        /// Used by RangeIndex's <c>OnFlush</c> path which has direct access to the stub's TreeHandle but not
+        /// the managed <see cref="BfTreeService"/> instance.
+        /// <para>Mirrors instance <see cref="SnapshotToFile"/>: invokes <c>bftree_snapshot(handle)</c> to drain
+        /// the circular buffer to the data file, then <see cref="System.IO.File.Copy"/> from
+        /// <paramref name="dataPath"/> to <paramref name="targetPath"/>.</para>
+        /// </summary>
+        /// <param name="handle">Native BfTree pointer (from the stub's <c>TreeHandle</c>).</param>
+        /// <param name="dataPath">Path of the live working file used by the BfTree
+        /// (e.g. <c>{root}/&lt;hash&gt;.data.bftree</c>).</param>
+        /// <param name="targetPath">Destination path for the snapshot copy.</param>
+        public static void SnapshotToFileByPtr(nint handle, string dataPath, string targetPath)
+        {
+            if (handle == nint.Zero)
+                throw new ArgumentException("Native handle is null.", nameof(handle));
+            if (string.IsNullOrEmpty(dataPath))
+                throw new ArgumentException("dataPath is required.", nameof(dataPath));
+            if (string.IsNullOrEmpty(targetPath))
+                throw new ArgumentException("targetPath is required.", nameof(targetPath));
+
+            int result = NativeBfTreeMethods.bftree_snapshot(handle);
+            if (result != 0)
+                throw new InvalidOperationException("Failed to snapshot disk-backed BfTree before file copy.");
+
+            System.IO.File.Copy(dataPath, targetPath, overwrite: true);
+        }
+
+        /// <summary>
+        /// Snapshot a BfTree to a specified target file for flush persistence.
         /// For disk-backed trees: performs in-place snapshot, then copies the data file to <paramref name="targetPath"/>.
         /// For memory-only trees: serializes directly to <paramref name="targetPath"/>.
         /// </summary>
