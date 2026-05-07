@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -86,6 +87,7 @@ namespace Garnet.server
 
         internal static bool CheckExpiry(IGarnetObject src) => src.Expiration < DateTimeOffset.UtcNow.Ticks;
 
+        [SuppressMessage("Correctness", "GARNET0001", Justification = "Manually managing a buffer, has to use RespWriteUtils directly")]
         static void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {
             byte* curr = dst.SpanByte.ToPointer();

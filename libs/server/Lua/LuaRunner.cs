@@ -162,6 +162,8 @@ namespace Garnet.server
                 curHead = origin + len;
             }
 
+#pragma warning disable GARNET0001 // These methods manually manage a buffer, so must directly use RespWriteUtils
+
             /// <inheritdoc />
             public void WriteError(ReadOnlySpan<byte> error)
             {
@@ -179,6 +181,7 @@ namespace Garnet.server
                     SendAndReset();
                 }
             }
+#pragma warning restore GARNET0001
         }
 
         private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
@@ -504,8 +507,7 @@ namespace Garnet.server
                 var res = state.PCall(0, 0);
                 if (res != LuaStatus.OK)
                 {
-                    while (!RespWriteUtils.TryWriteError("Internal Lua Error"u8, ref session.dcurr, session.dend))
-                        session.SendAndReset();
+                    session.WriteError("Internal Lua Error"u8);
 
                     return false;
                 }
@@ -1972,6 +1974,8 @@ namespace Garnet.server
                 return true;
             }
 
+#pragma warning disable GARNET0001 // These methods have to track extra state, and so can directly use RespWriteUtils
+
             // Write out $-1\r\n (the RESP2 null) and (optionally) pop the null value off the stack, returning true if all fit in the current send buffer
             static bool TryWriteResp2Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
             {
@@ -2627,6 +2631,7 @@ namespace Garnet.server
                 errConstStrIndex = -1;
                 return fitInBuffer;
             }
+#pragma warning restore GARNET0001
         }
 
         /// <summary>

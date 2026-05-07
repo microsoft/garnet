@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -648,6 +649,7 @@ namespace Garnet.server
             resp.CopyTo(dst.Memory.Memory.Span);
         }
 
+        [SuppressMessage("Correctness", "GARNET0001", Justification = "Manually managing a buffer, has to use RespWriteUtils directly")]
         void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {
             byte* curr = dst.SpanByte.ToPointer();

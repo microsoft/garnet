@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#pragma warning disable GARNET0001 // This manually manages a buffer, so calls to RespWriteUtils are fine
+
 using System;
 using System.Buffers;
 using System.Collections.Generic;
