@@ -172,8 +172,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                while (!RespWriteUtils.TryWriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8);
                 return true;
             }
 
@@ -210,8 +209,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                while (!RespWriteUtils.TryWriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8);
                 return true;
             }
 
@@ -278,8 +276,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.TryWriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8);
             }
 
             if (numActiveChannels == 0)
@@ -349,8 +346,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.TryWriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8);
             }
 
             if (numActiveChannels == 0)

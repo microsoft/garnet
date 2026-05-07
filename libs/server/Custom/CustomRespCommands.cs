@@ -44,8 +44,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteError($"ERR Transaction failed.", ref dcurr, dend))
-                        SendAndReset();
+                    WriteError($"ERR Transaction failed.");
             }
             LatencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
 

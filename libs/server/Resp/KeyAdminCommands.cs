@@ -44,16 +44,14 @@ namespace Garnet.server
             // Restore is only implemented for string type
             if (valueSpan[0] != 0x00)
             {
-                while (!RespWriteUtils.TryWriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR RESTORE currently only supports string types");
                 return true;
             }
 
             // check if length of value is at least 10
             if (valueSpan.Length < 10)
             {
-                while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR DUMP payload version or checksum are wrong");
                 return true;
             }
 
@@ -64,8 +62,7 @@ namespace Garnet.server
 
             if (rdbVersion > RDB_VERSION)
             {
-                while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR DUMP payload version or checksum are wrong");
                 return true;
             }
 
@@ -78,16 +75,14 @@ namespace Garnet.server
 
             if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
             {
-                while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR DUMP payload version or checksum are wrong");
                 return true;
             }
 
             // decode the length of payload
             if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart))
             {
-                while (!RespWriteUtils.TryWriteError("ERR DUMP payload length format is invalid", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR DUMP payload length format is invalid");
                 return true;
             }
 
@@ -117,8 +112,7 @@ namespace Garnet.server
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_BUSSYKEY);
 
             return true;
         }
@@ -148,8 +142,7 @@ namespace Garnet.server
 
             if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
             {
-                while (!RespWriteUtils.TryWriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR DUMP payload length is invalid");
                 return true;
             }
 
@@ -251,8 +244,7 @@ namespace Garnet.server
                     WriteDirect(CmdStrings.RESP_OK);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY);
                     break;
             }
             return true;
@@ -294,8 +286,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY);
             }
 
             return true;
@@ -427,10 +418,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteError(
-                                   "ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr,
-                                   dend))
-                            SendAndReset();
+                        WriteError("ERR NX and XX, GT or LT options at the same time are not compatible");
                     }
                 }
             }

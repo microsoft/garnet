@@ -50,8 +50,7 @@ namespace Garnet.server
         {
             unsafe
             {
-                while (!RespWriteUtils.TryWriteError($"ASYNC {asyncStarted}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ASYNC {asyncStarted}");
             }
 
             if (++asyncStarted == 1) // first async operation on the session, create the IO continuation processor

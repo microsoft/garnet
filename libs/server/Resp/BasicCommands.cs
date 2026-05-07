@@ -102,8 +102,7 @@ namespace Garnet.server
                             break;
 
                         default:
-                            while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
-                                SendAndReset();
+                            WriteError($"ERR Unsupported option {parseState.GetString(1)}");
                             return true;
                     }
                 }
@@ -554,8 +553,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMessage);
                 return true;
             }
 
@@ -601,8 +599,7 @@ namespace Garnet.server
                     break;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
             return true;
         }
 
@@ -857,8 +854,7 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
                 return true;
             }
 
@@ -998,8 +994,7 @@ namespace Garnet.server
             {
                 var subCommand = parseState.GetString(0);
                 var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCommand, nameof(RespCommand.COMMAND));
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
             else
             {
@@ -1311,8 +1306,7 @@ namespace Garnet.server
 
             if (errorMsg != default)
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
 
                 return true;
             }
@@ -1363,8 +1357,7 @@ namespace Garnet.server
             // NOTE: Some authenticators cannot accept username/password pairs
             if (!_authenticator.CanAuthenticate)
             {
-                while (!RespWriteUtils.TryWriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8);
                 return true;
             }
 
@@ -1377,13 +1370,11 @@ namespace Garnet.server
             {
                 if (username.IsEmpty)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD);
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD);
                 }
             }
             return true;
@@ -1482,8 +1473,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_SYNTAX_ERROR);
 
                 return true;
             }
@@ -1624,8 +1614,7 @@ namespace Garnet.server
 
             if (syntaxError)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_SYNTAX_ERROR);
                 return;
             }
 

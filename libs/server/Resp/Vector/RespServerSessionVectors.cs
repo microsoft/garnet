@@ -792,8 +792,7 @@ namespace Garnet.server
                     {
                         if (vectorRes == VectorManagerResult.MissingElement)
                         {
-                            while (!RespWriteUtils.TryWriteError("Element not in Vector Set"u8, ref dcurr, dend))
-                                SendAndReset();
+                            WriteError("Element not in Vector Set"u8);
                         }
                         else if (vectorRes == VectorManagerResult.OK)
                         {
@@ -1067,8 +1066,7 @@ namespace Garnet.server
 
             if (res == GarnetStatus.NOTFOUND)
             {
-                while (!RespWriteUtils.TryWriteError("ERR Key not found"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR Key not found"u8);
             }
             else if (res == GarnetStatus.WRONGTYPE)
             {
@@ -1308,8 +1306,7 @@ namespace Garnet.server
             // TODO: We could _finish_ the delete here... though if we do that we should do it for ALL commands, not just Vector Set commands
             //       That's more intrusive, and is more of a V2 thing... so lets just give a workaround for now
 
-            while (!RespWriteUtils.TryWriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8, ref dcurr, dend))
-                SendAndReset();
+            WriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8);
 
             return true;
         }
@@ -1317,8 +1314,7 @@ namespace Garnet.server
         private bool AbortVectorSetWrongType()
         {
             // Matches Redis behavior - doesn't indicate the type involved
-            while (!RespWriteUtils.TryWriteError("WRONGTYPE Operation against a key holding the wrong kind of value"u8, ref dcurr, dend))
-                SendAndReset();
+            WriteError("WRONGTYPE Operation against a key holding the wrong kind of value"u8);
 
             return true;
         }

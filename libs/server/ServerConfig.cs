@@ -233,8 +233,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(sbErrorMsg.ToString());
             }
 
             return true;

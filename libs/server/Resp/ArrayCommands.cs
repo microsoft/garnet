@@ -133,8 +133,7 @@ namespace Garnet.server
             {
                 // Should never reach here
                 Debug.Fail("Database SELECT should have succeeded.");
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SELECT_UNSUCCESSFUL, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_SELECT_UNSUCCESSFUL);
             }
 
             return true;
@@ -182,8 +181,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED);
             }
 
             return true;
@@ -270,8 +268,7 @@ namespace Garnet.server
                     // Validate count
                     if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                         return true;
                     }
                 }

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
@@ -30,16 +29,14 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.AuthSettings is not AclAuthenticationSettings)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED);
                 return false;
             }
 
             var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
             if (aclAuthenticationSettings.AclConfigurationFile == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_FILE_DISABLED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_FILE_DISABLED);
                 return false;
             }
 
@@ -192,8 +189,7 @@ namespace Garnet.server
             catch (ACLException exception)
             {
                 // Abort command execution
-                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {exception.Message}");
 
                 return true;
             }
@@ -239,8 +235,7 @@ namespace Garnet.server
                 logger?.LogDebug("ACLException: {message}", exception.Message);
 
                 // Abort command execution
-                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {exception.Message}");
 
                 return true;
             }
@@ -309,8 +304,7 @@ namespace Garnet.server
             }
             catch (ACLException exception)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {exception.Message}");
             }
 
             return true;
@@ -346,8 +340,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "ACL SAVE faulted");
-                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {ex.Message}");
 
                 return true;
             }
@@ -422,8 +415,7 @@ namespace Garnet.server
             catch (ACLException exception)
             {
                 // Abort command execution
-                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {exception.Message}");
 
                 return true;
             }

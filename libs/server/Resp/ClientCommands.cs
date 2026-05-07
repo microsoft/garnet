@@ -233,8 +233,7 @@ namespace Garnet.server
                         }
                     }
 
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT);
 
                     return true;
                 }
@@ -625,8 +624,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET);
             }
 
             return true;

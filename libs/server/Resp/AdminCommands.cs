@@ -32,8 +32,7 @@ namespace Garnet.server
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_NOAUTH);
             }
 
             var cmdFound = true;
@@ -86,8 +85,7 @@ namespace Garnet.server
                 return;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
         }
 
         /// <summary>
@@ -176,8 +174,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR));
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
 
             return true;
         }
@@ -514,8 +511,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;
@@ -654,8 +650,7 @@ namespace Garnet.server
                     WriteDirect(CmdStrings.RESP_OK);
                     break;
                 default:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS);
                     break;
             }
 
@@ -683,8 +678,7 @@ namespace Garnet.server
                     WriteDirect(CmdStrings.RESP_OK);
                     break;
                 default:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS);
                     break;
             }
 
@@ -862,8 +856,7 @@ namespace Garnet.server
 
             if (!success)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS);
             }
             else
             {
@@ -981,8 +974,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS);
             }
 
             return true;
@@ -993,23 +985,20 @@ namespace Garnet.server
             dbId = -1;
             if (!parseState.TryGetInt(tokenIdx, out dbId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return false;
             }
 
             if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow DBID specification
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE);
                 return false;
             }
 
             if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
                 return false;
             }
 

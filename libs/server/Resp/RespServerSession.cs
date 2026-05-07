@@ -490,8 +490,7 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
-                while (!RespWriteUtils.TryWriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Protocol Error: {ex.Message}");
 
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
@@ -508,8 +507,7 @@ namespace Garnet.server
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
                 {
-                    while (!RespWriteUtils.TryWriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
-                        SendAndReset();
+                    WriteError($"ERR Garnet Exception: {ex.Message}");
                 }
 
                 // Send message and dispose the network sender to end the session
@@ -650,13 +648,11 @@ namespace Garnet.server
                     {
                         if (noScriptPassed)
                         {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                                SendAndReset();
+                            WriteError(CmdStrings.RESP_ERR_NOAUTH);
                         }
                         else
                         {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
-                                SendAndReset();
+                            WriteError(CmdStrings.RESP_ERR_NOSCRIPT);
                         }
 
                         // Track rejected command (ACL or script permission failure)
@@ -1162,8 +1158,7 @@ namespace Garnet.server
             if ((arity > 0 && count != arity - 1) ||
                 (arity < 0 && count < -arity - 1))
             {
-                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
 
                 return false;
             }
