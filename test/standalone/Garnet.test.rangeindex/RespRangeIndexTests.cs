@@ -2067,8 +2067,8 @@ namespace Garnet.test
 
         /// <summary>
         /// Verifies that DEL on a disk-backed RangeIndex cleans up BfTree data files on disk.
-        /// After RI.CREATE with DISK backend, a data.bftree file should exist. After DEL,
-        /// the entire key directory (containing data.bftree) should be removed.
+        /// After RI.CREATE with DISK backend, a &lt;hash&gt;.data.bftree file should exist under
+        /// the riLogRoot. After DEL, all <c>&lt;hash&gt;.*</c> files for that key should be removed.
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteTest()
@@ -2080,20 +2080,21 @@ namespace Garnet.test
             db.Execute("RI.CREATE", "cleanup", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
             db.Execute("RI.SET", "cleanup", "key1", "val1");
 
-            // Verify the rangeindex directory exists with data.bftree
-            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
-            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist after RI.CREATE");
-            var keyDirs = Directory.GetDirectories(rangeIndexDir);
-            ClassicAssert.AreEqual(1, keyDirs.Length, "should have exactly one key directory");
-            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should exist");
+            // Verify the riLogRoot exists with at least one <hash>.data.bftree file
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot directory should exist after RI.CREATE");
+            var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(1, dataFiles.Length, "should have exactly one data.bftree file");
 
             // Delete the range index
             var delResult = db.KeyDelete("cleanup");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify the key directory has been cleaned up
-            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
-            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL");
+            // Verify all <hash>.* files for this key are cleaned up
+            dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
+            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree files should be deleted after DEL");
+            var flushFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
+            ClassicAssert.AreEqual(0, flushFiles.Length, "flush.bftree files should be deleted after DEL");
         }
 
         /// <summary>
@@ -2120,8 +2121,8 @@ namespace Garnet.test
             db.Execute("RI.SET", "evictdel", "key1", "val1");
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live after creation");
 
-            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
-            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist");
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot should exist");
 
             // Fill the log with string keys to push RI stub below HeadAddress and trigger eviction
             for (var i = 0; i < 200; i++)
@@ -2131,9 +2132,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "tree should have been freed by eviction");
 
             // Files should still exist after eviction (preserved for lazy restore)
-            var keyDirs = Directory.GetDirectories(rangeIndexDir);
-            ClassicAssert.AreEqual(1, keyDirs.Length, "key directory should survive eviction");
-            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should survive eviction");
+            var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(1, dataFiles.Length, "data.bftree file should survive eviction");
 
             // Lazy restore brings the record back in-memory (DEL requires the record
             // to be in-memory; the unified Delete path does not trigger lazy restore).
@@ -2146,9 +2146,11 @@ namespace Garnet.test
             var delResult = db.KeyDelete("evictdel");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify the key directory has been cleaned up
-            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
-            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL on previously-evicted key");
+            // Verify all <hash>.* files for this key have been cleaned up
+            dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
+            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree should be deleted after DEL on previously-evicted key");
+            var flushFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
+            ClassicAssert.AreEqual(0, flushFiles.Length, "flush.bftree files should be deleted after DEL on previously-evicted key");
         }
     }
 }

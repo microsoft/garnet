@@ -138,7 +138,7 @@ namespace Tsavorite.test
             public readonly bool CallOnDiskRead => tracker?.CallOnDiskReadFlag ?? false;
             public readonly bool CallOnEvict => tracker?.CallOnEvictFlag ?? false;
 
-            public readonly void OnFlush(ref LogRecord logRecord)
+            public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
             {
                 if (tracker is null) return;
                 _ = Interlocked.Increment(ref tracker.FlushCount);
