@@ -23,12 +23,6 @@ namespace Tsavorite.core
 
         internal int OverflowPageCount => freePagePool.Count;
 
-        public override void Reset()
-        {
-            base.Reset();
-            Initialize();
-        }
-
         /// <inheritdoc />
         protected override void FreeAllAllocatedPages()
         {
