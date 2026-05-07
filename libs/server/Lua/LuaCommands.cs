@@ -357,7 +357,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
-                WriteError("ERR " + ex.Message);
+                WriteError(ex);
 
                 // Exceptions shouldn't happen, so if they did the runner is probably in a bad state
                 return false;

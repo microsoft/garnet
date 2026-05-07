@@ -85,7 +85,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
-                WriteError($"ERR {ex.Message}");
+                WriteError(ex);
                 return true;
             }
 

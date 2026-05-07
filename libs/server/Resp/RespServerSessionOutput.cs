@@ -132,6 +132,21 @@ namespace Garnet.server
                 SendAndReset();
         }
 
+        internal void WriteError(Exception ex)
+        {
+            commandErrorWritten = true;
+            while (!RespWriteUtils.TryWriteDirect("-ERR "u8, ref dcurr, dend))
+                SendAndReset();
+
+            var msg = ex.Message;
+            var msgBytes = System.Text.Encoding.UTF8.GetBytes(msg);
+            while (!RespWriteUtils.TryWriteDirect(msgBytes, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteInt32(int value)
         {

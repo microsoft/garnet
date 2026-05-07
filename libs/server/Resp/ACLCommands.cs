@@ -189,7 +189,7 @@ namespace Garnet.server
             catch (ACLException exception)
             {
                 // Abort command execution
-                WriteError($"ERR {exception.Message}");
+                WriteError(exception);
 
                 return true;
             }
@@ -235,7 +235,7 @@ namespace Garnet.server
                 logger?.LogDebug("ACLException: {message}", exception.Message);
 
                 // Abort command execution
-                WriteError($"ERR {exception.Message}");
+                WriteError(exception);
 
                 return true;
             }
@@ -304,7 +304,7 @@ namespace Garnet.server
             }
             catch (ACLException exception)
             {
-                WriteError($"ERR {exception.Message}");
+                WriteError(exception);
             }
 
             return true;
@@ -340,7 +340,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "ACL SAVE faulted");
-                WriteError($"ERR {ex.Message}");
+                WriteError(ex);
 
                 return true;
             }
@@ -415,7 +415,7 @@ namespace Garnet.server
             catch (ACLException exception)
             {
                 // Abort command execution
-                WriteError($"ERR {exception.Message}");
+                WriteError(exception);
 
                 return true;
             }
