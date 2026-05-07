@@ -62,6 +62,9 @@ namespace Garnet.cluster
             // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
             iter?.Dispose();
 
+            // Dispose the GarnetClientSession to release network resources
+            garnetClient?.Dispose();
+
             // Finally, dispose the cts
             cts?.Dispose();
         }
@@ -123,7 +126,6 @@ namespace Garnet.cluster
             }
             finally
             {
-                garnetClient.Dispose();
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, previousAddress);
 

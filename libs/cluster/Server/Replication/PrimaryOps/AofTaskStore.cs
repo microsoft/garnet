@@ -282,7 +282,7 @@ namespace Garnet.cluster
                     {
                         var t = tasks[i];
                         Debug.Assert(t != null);
-                        if (t.remoteNodeId == rss.replicaNodeId)
+                        if (t.remoteNodeId == rss.replicaSyncMetadata.originNodeId)
                         {
                             tasks[i] = rss.AofSyncTask;
                             t.Dispose();
