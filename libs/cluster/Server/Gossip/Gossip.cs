@@ -192,6 +192,8 @@ namespace Garnet.cluster
                     if (!ClusterConfig.TryPeekVersion(respArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
                     {
                         logger?.LogWarning("MEET response has incompatible config version: {version}", version);
+                        if (created) gsn?.Dispose();
+                        gossipStats.UpdateMeetRequestsFailed();
                     }
                     else
                     {
