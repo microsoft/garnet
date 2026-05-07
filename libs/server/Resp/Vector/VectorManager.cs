@@ -281,10 +281,15 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
-            // Wait for any in progress cleanup to finish
+            // Wait for any in progress cleanup to finish. PauseCleanupAsync callers MUST
+            // have called ResumeCleanup before reaching here, otherwise the cleanup task
+            // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
             cleanupTaskChannel.Writer.Complete();
             AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
             AsyncUtils.BlockingWait(cleanupTask);
+
+            // Cleanup task has fully drained, so nothing else can take this gate.
+            cleanupGate.Dispose();
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
