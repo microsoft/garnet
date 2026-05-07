@@ -12,18 +12,18 @@ namespace Garnet.cluster
         /// Peek the serialization version from a config byte array without full deserialization.
         /// </summary>
         /// <param name="data">Serialized cluster config payload.</param>
-        /// <param name="version">The version byte found after the magic prefix.</param>
-        /// <returns>True if the payload contains a valid magic prefix and version byte; false otherwise.</returns>
-        public static bool TryPeekVersion(ReadOnlySpan<byte> data, out byte version)
+        /// <param name="version">The version int found after the magic prefix.</param>
+        /// <returns>True if the payload contains a valid magic prefix and version int; false otherwise.</returns>
+        public static bool TryPeekVersion(ReadOnlySpan<byte> data, out int version)
         {
-            if (data.Length < ClusterConfigMagic.Length + 1
+            if (data.Length < ClusterConfigMagic.Length + sizeof(int)
                 || data[0] != ClusterConfigMagic[0]
                 || data[1] != ClusterConfigMagic[1])
             {
                 version = 0;
                 return false;
             }
-            version = data[ClusterConfigMagic.Length];
+            version = BitConverter.ToInt32(data.Slice(ClusterConfigMagic.Length, sizeof(int)));
             return true;
         }
 
@@ -134,13 +134,13 @@ namespace Garnet.cluster
             var reader = new BinaryReader(ms);
 
             // Read and validate magic prefix
-            if (other.Length < ClusterConfigMagic.Length + 1
+            if (other.Length < ClusterConfigMagic.Length + sizeof(int)
                 || reader.ReadByte() != ClusterConfigMagic[0]
                 || reader.ReadByte() != ClusterConfigMagic[1])
                 throw new InvalidDataException("Invalid ClusterConfig payload: missing or unrecognized magic prefix");
 
             // Read and validate serialization format version
-            var version = reader.ReadByte();
+            var version = reader.ReadInt32();
             if (version != ClusterConfigVersion)
                 throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
 

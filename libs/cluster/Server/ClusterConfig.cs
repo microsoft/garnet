@@ -44,7 +44,7 @@ namespace Garnet.cluster
         /// Version of the cluster config serialization format.
         /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const byte ClusterConfigVersion = 1;
+        public const int ClusterConfigVersion = 1;
 
         /// <summary>
         /// Magic prefix "GC" (Garnet Config) written at the start of serialized ClusterConfig payloads.
@@ -53,7 +53,7 @@ namespace Garnet.cluster
         /// Legacy payloads begin with a UInt16 <c>segmentCount</c> (range 1–16384). Reading the two magic bytes
         /// as a little-endian UInt16 yields 0x4347 = 18243, which exceeds the maximum valid <c>segmentCount</c>,
         /// so a versioned payload can never be mistaken for a legacy one and vice versa.
-        /// Without this prefix, a single version byte (e.g. 0x01) would be ambiguous with a legacy
+        /// Without this prefix, a version value would be ambiguous with a legacy
         /// <c>segmentCount</c> whose low byte happens to equal 1, leading to silent corruption.
         /// </para>
         /// </summary>

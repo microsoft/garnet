@@ -17,7 +17,7 @@ namespace Garnet.cluster
         /// Version of the replication history serialization format.
         /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const byte ReplicationHistoryVersion = 1;
+        public const int ReplicationHistoryVersion = 1;
 
         /// <summary>
         /// Magic prefix "GR" (Garnet Replication) written at the start of serialized ReplicationHistory payloads.
@@ -26,7 +26,7 @@ namespace Garnet.cluster
         /// Legacy payloads begin with a 7-bit length-prefixed string (the <c>primary_replid</c>), whose first
         /// byte is 0x28 (40 decimal, the length of a hex node ID). The magic byte 'G' (0x47) can never appear
         /// as the first byte of a valid legacy payload, so a versioned payload is always distinguishable from
-        /// an old one. Without this prefix, a single version byte would be ambiguous with legacy string lengths,
+        /// an old one. Without this prefix, a version value would be ambiguous with legacy string lengths,
         /// leading to silent corruption during disk recovery.
         /// </para>
         /// </summary>
@@ -81,12 +81,12 @@ namespace Garnet.cluster
             using var reader = new BinaryReader(ms);
 
             // Read and validate magic prefix
-            if (data.Length < ReplicationHistoryMagic.Length + 1
+            if (data.Length < ReplicationHistoryMagic.Length + sizeof(int)
                 || reader.ReadByte() != ReplicationHistoryMagic[0]
                 || reader.ReadByte() != ReplicationHistoryMagic[1])
                 throw new InvalidDataException("Invalid ReplicationHistory payload: missing or unrecognized magic prefix");
 
-            var version = reader.ReadByte();
+            var version = reader.ReadInt32();
             if (version != ReplicationHistoryVersion)
                 throw new InvalidDataException($"Incompatible ReplicationHistory version: expected {ReplicationHistoryVersion}, got {version}");
 

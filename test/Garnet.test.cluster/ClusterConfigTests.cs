@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -173,7 +174,7 @@ namespace Garnet.test.cluster
 
             var configBytes = config.ToByteArray();
 
-            // Verify magic prefix and version byte
+            // Verify magic prefix and version int
             Assert.That(configBytes[0], Is.EqualTo((byte)'G'));
             Assert.That(configBytes[1], Is.EqualTo((byte)'C'));
             Assert.That(ClusterConfig.TryPeekVersion(configBytes, out var version), Is.True);
@@ -199,8 +200,8 @@ namespace Garnet.test.cluster
 
             var configBytes = config.ToByteArray();
 
-            // Corrupt the version byte (at index 2, after 2-byte magic prefix)
-            configBytes[2] = (byte)(ClusterConfig.ClusterConfigVersion + 1);
+            // Corrupt the version int (at index 2, after 2-byte magic prefix)
+            BitConverter.TryWriteBytes(configBytes.AsSpan(2), ClusterConfig.ClusterConfigVersion + 1);
 
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ClusterConfig.FromByteArray(configBytes));
@@ -231,10 +232,10 @@ namespace Garnet.test.cluster
             var history = new ReplicationHistory(1);
             var bytes = history.ToByteArray();
 
-            // Verify magic prefix and version byte
+            // Verify magic prefix and version int
             Assert.That(bytes[0], Is.EqualTo((byte)'G'));
             Assert.That(bytes[1], Is.EqualTo((byte)'R'));
-            Assert.That(bytes[2], Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
+            Assert.That(BitConverter.ToInt32(bytes, 2), Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
 
             // Round-trip should succeed and preserve fields
             var restored = ReplicationHistory.FromByteArray(bytes);
@@ -249,8 +250,8 @@ namespace Garnet.test.cluster
             var history = new ReplicationHistory(1);
             var bytes = history.ToByteArray();
 
-            // Corrupt the version byte (at index 2, after 2-byte magic prefix)
-            bytes[2] = (byte)(ReplicationHistory.ReplicationHistoryVersion + 1);
+            // Corrupt the version int (at index 2, after 2-byte magic prefix)
+            BitConverter.TryWriteBytes(bytes.AsSpan(2), ReplicationHistory.ReplicationHistoryVersion + 1);
 
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ReplicationHistory.FromByteArray(bytes));
