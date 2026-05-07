@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -2151,6 +2152,148 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree should be deleted after DEL on previously-evicted key");
             var flushFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
             ClassicAssert.AreEqual(0, flushFiles.Length, "flush.bftree files should be deleted after DEL on previously-evicted key");
+        }
+
+        // ============================================================================
+        // BfTree compaction-lifecycle tests
+        // ============================================================================
+
+        /// <summary>
+        /// Helper: count the number of <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files in
+        /// the riLogRoot — used by tests that verify per-flush-file lifecycle.
+        /// </summary>
+        private static int CountFlushFiles()
+        {
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            if (!Directory.Exists(riLogRoot)) return 0;
+            return Directory.GetFiles(riLogRoot, "*.flush.bftree").Length;
+        }
+
+        /// <summary>
+        /// Defect 1 reproduction at the file-system level: verify that taking a checkpoint after
+        /// a flush, then mutating + re-flushing, does NOT overwrite the original per-flush snapshot.
+        ///
+        /// <para>Pre-fix behavior: a single deterministic <c>flush.bftree</c> per key was overwritten
+        /// on every flush, so a recover-to-prior-checkpoint would silently see post-checkpoint
+        /// state.</para>
+        ///
+        /// <para>Post-fix behavior: address-tagged <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>
+        /// files are immutable — the second flush creates a NEW file at a different addr instead
+        /// of overwriting.</para>
+        ///
+        /// <para>This test verifies the on-disk invariant directly (cleaner than trying to recover
+        /// to a specific token via the public Garnet API).</para>
+        /// </summary>
+        [Test]
+        public void RIFlushFilesAreImmutablePerAddressTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
+                lowMemory: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // v1 state: create disk-backed RI and insert one field. Use long enough field/value
+                // to satisfy MINRECORD=8.
+                db.Execute("RI.CREATE", "defect1key", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "defect1key", "field-x", "value-v1");
+
+                // Force flush so the v1 stub is on a flushed page (creates <hash>.<A1>.flush.bftree).
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Snapshot the flush file count and capture the v1 file content.
+                var afterV1 = ListFlushFiles();
+                ClassicAssert.GreaterOrEqual(afterV1.Count, 1, "at least one flush file after v1 flush");
+                var v1FileContents = new System.Collections.Generic.Dictionary<string, byte[]>();
+                foreach (var f in afterV1) v1FileContents[f] = File.ReadAllBytes(f);
+
+                // Promote (read forces RIPROMOTE on flushed stub) and mutate to v2.
+                ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "defect1key", "field-x"));
+                db.Execute("RI.SET", "defect1key", "field-x", "value-v2");
+
+                // Force another flush — must create a NEW <hash>.<A2>.flush.bftree at a distinct addr.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Verify: each pre-existing v1 file STILL exists with byte-identical content.
+                foreach (var (path, originalBytes) in v1FileContents)
+                {
+                    ClassicAssert.IsTrue(File.Exists(path),
+                        $"per-flush snapshot file {Path.GetFileName(path)} must remain after subsequent flush");
+                    var currentBytes = File.ReadAllBytes(path);
+                    ClassicAssert.AreEqual(originalBytes.Length, currentBytes.Length,
+                        $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (size differs)");
+                    CollectionAssert.AreEqual(originalBytes, currentBytes,
+                        $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (content differs). " +
+                        "This is the Defect 1 invariant: <addr>.flush.bftree files are immutable.");
+                }
+
+                // Verify: at least one new flush file was created post-v2 (proving second flush
+                // didn't just overwrite the v1 file in place).
+                var afterV2 = ListFlushFiles();
+                ClassicAssert.Greater(afterV2.Count, afterV1.Count,
+                    "Second flush must create a NEW per-flush file (not overwrite the v1 file). " +
+                    $"Before: {afterV1.Count}, after: {afterV2.Count}");
+            }
+
+            // Helper closure
+            static System.Collections.Generic.List<string> ListFlushFiles()
+            {
+                var dir = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+                if (!Directory.Exists(dir)) return new System.Collections.Generic.List<string>();
+                return Directory.GetFiles(dir, "*.flush.bftree").ToList();
+            }
+        }
+
+        /// <summary>
+        /// Verifies that <c>OnTruncate</c> deletes orphaned <c>.tmp</c> files in the riLogRoot
+        /// (proving the trigger fires after device truncation completes).
+        /// </summary>
+        [Test]
+        public void RIOnTruncateRemovesOrphanTmpFilesTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
+                lowMemory: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Create RI so that riLogRoot exists. Field/value must satisfy MINRECORD=8.
+                db.Execute("RI.CREATE", "trunctest", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "trunctest", "field-1", "value-1");
+            }
+
+            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot should exist");
+
+            // Drop a bogus .tmp file (simulating a crash mid-pre-stage).
+            var bogusTmp = Path.Combine(riLogRoot, "deadbeefdeadbeefdeadbeefdeadbeef.data.bftree.tmp");
+            File.WriteAllBytes(bogusTmp, new byte[16]);
+            ClassicAssert.IsTrue(File.Exists(bogusTmp), "test setup: bogus tmp file should exist");
+
+            // Force a Shift past the head — fires OnTruncate.
+            store.Log.ShiftBeginAddress(store.Log.HeadAddress, truncateLog: true);
+
+            // OnTruncate runs on Task.Run; wait briefly.
+            for (int wait = 0; wait < 100; wait++)
+            {
+                if (!File.Exists(bogusTmp)) break;
+                Thread.Sleep(50);
+            }
+
+            ClassicAssert.IsFalse(File.Exists(bogusTmp),
+                "OnTruncate must delete orphan .data.bftree.tmp files (proving trigger fires post-truncate)");
         }
     }
 }
