@@ -13,16 +13,18 @@ namespace Garnet.cluster
         /// Peek the serialization version from a config byte array without full deserialization.
         /// </summary>
         /// <param name="data">Serialized cluster config payload.</param>
-        /// <param name="version">The version byte found at the start of the payload.</param>
-        /// <returns>True if the payload is long enough to contain a version byte; false otherwise.</returns>
+        /// <param name="version">The version byte found after the magic prefix.</param>
+        /// <returns>True if the payload contains a valid magic prefix and version byte; false otherwise.</returns>
         public static bool TryPeekVersion(ReadOnlySpan<byte> data, out byte version)
         {
-            if (data.Length < 1)
+            if (data.Length < ClusterConfigMagic.Length + 1
+                || data[0] != ClusterConfigMagic[0]
+                || data[1] != ClusterConfigMagic[1])
             {
                 version = 0;
                 return false;
             }
-            version = data[0];
+            version = data[ClusterConfigMagic.Length];
             return true;
         }
 
@@ -34,7 +36,8 @@ namespace Garnet.cluster
             var ms = new MemoryStream();
             var writer = new BinaryWriter(ms, Encoding.ASCII);
 
-            // Write serialization format version as first byte
+            // Write magic prefix and serialization format version
+            writer.Write(ClusterConfigMagic);
             writer.Write(ClusterConfigVersion);
 
             SerializeSlotMap(ref ms, ref writer);
@@ -129,6 +132,12 @@ namespace Garnet.cluster
         {
             var ms = new MemoryStream(other);
             var reader = new BinaryReader(ms);
+
+            // Read and validate magic prefix
+            if (other.Length < ClusterConfigMagic.Length + 1
+                || reader.ReadByte() != ClusterConfigMagic[0]
+                || reader.ReadByte() != ClusterConfigMagic[1])
+                throw new InvalidDataException("Invalid ClusterConfig payload: missing or unrecognized magic prefix");
 
             // Read and validate serialization format version
             var version = reader.ReadByte();

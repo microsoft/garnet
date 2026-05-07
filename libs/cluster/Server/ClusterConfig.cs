@@ -47,6 +47,14 @@ namespace Garnet.cluster
         public const byte ClusterConfigVersion = 1;
 
         /// <summary>
+        /// Magic bytes written at the start of serialized ClusterConfig payloads ("GC").
+        /// Used to distinguish versioned payloads from legacy format (which starts with a UInt16 segmentCount).
+        /// The value 0x4743 as little-endian UInt16 is 18243, which exceeds the maximum possible segmentCount (16384),
+        /// so it can never collide with a valid legacy payload.
+        /// </summary>
+        static readonly byte[] ClusterConfigMagic = [(byte)'G', (byte)'C'];
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="slot"></param>

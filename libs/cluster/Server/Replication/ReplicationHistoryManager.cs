@@ -20,6 +20,12 @@ namespace Garnet.cluster
         /// </summary>
         public const byte ReplicationHistoryVersion = 1;
 
+        /// <summary>
+        /// Magic bytes written at the start of serialized ReplicationHistory payloads ("GR").
+        /// Used to distinguish versioned payloads from the legacy format (which starts with a 7-bit encoded string length).
+        /// </summary>
+        static readonly byte[] ReplicationHistoryMagic = [(byte)'G', (byte)'R'];
+
         public string PrimaryReplId => primary_replid;
         string primary_replid;
         public string PrimaryReplId2 => primary_replid2;
@@ -51,6 +57,7 @@ namespace Garnet.cluster
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms, Encoding.ASCII);
 
+            writer.Write(ReplicationHistoryMagic);
             writer.Write(ReplicationHistoryVersion);
             writer.Write(primary_replid);
             writer.Write(primary_replid2);
@@ -65,6 +72,12 @@ namespace Garnet.cluster
         {
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
+
+            // Read and validate magic prefix
+            if (data.Length < ReplicationHistoryMagic.Length + 1
+                || reader.ReadByte() != ReplicationHistoryMagic[0]
+                || reader.ReadByte() != ReplicationHistoryMagic[1])
+                throw new InvalidDataException("Invalid ReplicationHistory payload: missing or unrecognized magic prefix");
 
             var version = reader.ReadByte();
             if (version != ReplicationHistoryVersion)
