@@ -20,8 +20,7 @@ namespace Garnet.server
         {
             if (_authenticator is null or not GarnetACLAuthenticator)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED);
                 return false;
             }
             return true;
@@ -117,7 +116,7 @@ namespace Garnet.server
                 return true;
 
             var categories = ACLParser.ListCategories();
-            RespWriteUtils.TryWriteArrayLength(categories.Count, ref dcurr, dend);
+            WriteArrayLength(categories.Count);
 
             foreach (var category in categories)
             {

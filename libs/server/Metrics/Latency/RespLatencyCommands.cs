@@ -63,8 +63,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP");
             }
             else
             {
@@ -108,8 +107,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Invalid type {invalidEvent}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Invalid type {invalidEvent}");
             }
             else
             {

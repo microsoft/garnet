@@ -49,6 +49,13 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteArrayItem(long recordsExpired)
+        {
+            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteBulkString(scoped ReadOnlySpan<byte> message)
         {
             while (!RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))

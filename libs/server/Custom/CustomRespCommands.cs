@@ -78,8 +78,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteError($"ERR Command failed.", ref dcurr, dend))
-                        SendAndReset();
+                    WriteError("ERR Command failed.");
             }
         }
 
@@ -153,8 +152,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                     default:
                         if (output.SpanByteAndMemory.Memory != null)
@@ -182,8 +180,7 @@ namespace Garnet.server
                         WriteNull();
                         break;
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                 }
             }

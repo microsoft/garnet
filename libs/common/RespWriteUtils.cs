@@ -94,6 +94,9 @@ namespace Garnet.common
             return true;
         }
 
+        /// <summary>
+        /// Writes an array length
+        /// </summary>
         public static bool TryWriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
         {
             numDigits = NumUtils.CountDigits(len);

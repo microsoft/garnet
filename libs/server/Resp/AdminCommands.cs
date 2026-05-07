@@ -905,12 +905,8 @@ namespace Garnet.server
             int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
 
             WriteArrayLength(2);
-
-            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
-                SendAndReset();
-
-            while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayItem(recordsExpired);
+            WriteArrayItem(recordsScanned);
 
             return true;
         }
