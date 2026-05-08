@@ -245,18 +245,31 @@ namespace Garnet.server
         /// <summary>
         /// Compute the leaf page size from the max record size when not explicitly specified.
         /// </summary>
+        /// <param name="maxRecordSize">The configured maximum record size in bytes.</param>
+        /// <returns>
+        /// A power-of-two page size:
+        /// <list type="bullet">
+        /// <item>For <paramref name="maxRecordSize"/> ≤ 2 KB → 4 KB</item>
+        /// <item>For larger values → 2.5× record size rounded to next power of 2, capped at 32 KB</item>
+        /// </list>
+        /// </returns>
         internal static uint ComputeLeafPageSize(uint maxRecordSize)
         {
             if (maxRecordSize <= 2048)
                 return 4096;
 
+            // 2.5x, capped at 32KB
             var target = (uint)(maxRecordSize * 2.5);
             if (target > 32768)
                 target = 32768;
 
+            // Round up to next power of 2
             return RoundUpToPowerOf2(target);
         }
 
+        /// <summary>
+        /// Rounds up to the next power of 2 using the standard bit-manipulation algorithm.
+        /// </summary>
         private static uint RoundUpToPowerOf2(uint v)
         {
             v--;
