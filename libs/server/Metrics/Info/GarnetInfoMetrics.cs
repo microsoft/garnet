@@ -48,7 +48,7 @@ namespace Garnet.server
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
-            var uptime = TimeSpan.FromTicks(DateTimeOffset.UtcNow.Ticks - storeWrapper.startupTime);
+            var uptime = Stopwatch.GetElapsedTime(storeWrapper.startupTimestamp);
             serverInfo =
             [
                 new("garnet_version", storeWrapper.version),
