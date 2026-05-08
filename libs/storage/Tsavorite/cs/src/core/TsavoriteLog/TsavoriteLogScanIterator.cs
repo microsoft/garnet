@@ -236,7 +236,9 @@ namespace Tsavorite.core
                 bool isCommitRecord;
                 try
                 {
-                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress, out nextAddress, out isCommitRecord, out _);
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord, out _);
                     if (!hasNext)
                     {
                         entry = default;
@@ -731,27 +733,17 @@ namespace Tsavorite.core
 
                 var _headAddress = allocator.HeadAddress;
 
-                var _currentPage = allocator.GetPage(currentAddress);
-
-                // Get offset and ensure we're past page header.
-                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
-                if (_currentOffset < PageHeader.Size)
-                    currentAddress += PageHeader.Size - _currentOffset;
-
                 // Fast forward to memory in case we are flushing to a null device
                 if (allocator.IsNullDevice && currentAddress < _headAddress)
                 {
-                    _ = Utility.MonotonicUpdate(ref nextAddress, _headAddress, out _);
+                    Utility.MonotonicUpdate(ref nextAddress, _headAddress, out _);
                     currentAddress = nextAddress;
                     outNextAddress = currentAddress;
-
-                    // Re-get offset and ensure we're past page header.
-                    _currentOffset = allocator.GetOffsetOnPage(currentAddress);
-                    if (_currentOffset < PageHeader.Size)
-                        currentAddress += PageHeader.Size - _currentOffset;
                 }
 
+                var _currentPage = allocator.GetPage(currentAddress);
                 var _currentFrame = _currentPage % frameSize;
+                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
 
                 if (disposed)
                     return false;
@@ -806,15 +798,14 @@ namespace Tsavorite.core
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
                 {
-                    // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page (skipping its PageHeader). 
-                    var nextStart = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress)) + PageHeader.Size;
+                    // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
+                    var nextStart = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
                         var pageOffset = allocator.GetOffsetOnPage(currentAddress);
 
-                        // If zeroed out field is at page start after the first page, we encountered an uninitialized page and should signal up.
-                        // For the first page, we'll wrap around to see if we're past endAddress.
-                        if (pageOffset <= PageHeader.Size && _currentPage > 0)
+                        // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
+                        if (pageOffset == 0)
                             throw new TsavoriteException("Uninitialized page found during scan at page " + allocator.GetPage(currentAddress));
                     }
                     continue;
