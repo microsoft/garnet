@@ -71,11 +71,23 @@ namespace Garnet.server
             /// <summary>Flag bit indicating the stub was recovered from a checkpoint snapshot file.</summary>
             internal const byte FlagRecovered = 2;
 
+            /// <summary>Flag bit indicating ownership has been transferred to a newer record (compaction
+            /// PostCopyToTail or RIPROMOTE PostCopyUpdater set this on the source record so a later
+            /// <see cref="GarnetRecordTriggers.OnEvict"/> on the stale source does NOT remove the
+            /// liveIndexes entry that now belongs to the newer destination, and so a later
+            /// <see cref="GarnetRecordTriggers.OnFlush"/> on the stale source does NOT snapshot a
+            /// stale view of <c>data.bftree</c>).</summary>
+            internal const byte FlagTransferred = 4;
+
             /// <summary>Returns true if the stub has been flushed and needs promotion to tail.</summary>
             internal readonly bool IsFlushed => (Flags & FlagFlushed) != 0;
 
             /// <summary>Returns true if the stub was recovered from a checkpoint snapshot.</summary>
             internal readonly bool IsRecovered => (Flags & FlagRecovered) != 0;
+
+            /// <summary>Returns true if ownership has been transferred to a newer record at the tail
+            /// (so OnEvict/OnFlush on this stale source must be no-ops).</summary>
+            internal readonly bool IsTransferred => (Flags & FlagTransferred) != 0;
 
             /// <summary>Serialization phase for checkpoint coordination.</summary>
             [FieldOffset(34)]
@@ -161,6 +173,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Set the <see cref="RangeIndexStub.FlagTransferred"/> bit on a stub span. Called by
+        /// PostCopyToTail (compaction) and RIPROMOTE PostCopyUpdater on the SOURCE record after
+        /// ownership is transferred to a new tail destination. This guarantees a later
+        /// <see cref="GarnetRecordTriggers.OnEvict"/> on the stale source no-ops (does not remove
+        /// the liveIndexes entry that now belongs to the destination), and a later
+        /// <see cref="GarnetRecordTriggers.OnFlush"/> on the stale source no-ops (does not
+        /// snapshot a now-stale view of <c>data.bftree</c>).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void SetTransferredFlag(Span<byte> valueSpan)
+        {
+            ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
+                ref MemoryMarshal.GetReference(valueSpan));
+            stub.Flags |= RangeIndexStub.FlagTransferred;
+        }
+
+        /// <summary>
         /// Dispose the BfTree under an exclusive lock, preventing concurrent RI data
         /// operations and checkpoint snapshots from accessing the tree during disposal.
         /// Used by <see cref="GarnetRecordTriggers.OnDispose"/> (delete) and
@@ -179,6 +208,16 @@ namespace Garnet.server
         internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, bool deleteFiles)
         {
             ref readonly var stub = ref ReadIndex(valueSpan);
+
+            // Stale-source eviction (OnEvict) on a record whose ownership was transferred to a
+            // newer tail record: no-op. The liveIndexes entry now belongs to the destination
+            // record; removing it here would lose the newer record's tree (live transfer) or
+            // pending entry (cold transfer). FlagTransferred is set by PostCopyToTail and RIPROMOTE
+            // PostCopyUpdater on the source after a successful CAS.
+            // For DEL/UNLINK (deleteFiles=true), we still proceed — the user explicitly asked to
+            // delete this key, and the tombstone path supersedes any newer record as well.
+            if (stub.IsTransferred && !deleteFiles)
+                return;
 
             if (stub.TreeHandle == nint.Zero && !deleteFiles)
             {

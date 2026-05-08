@@ -1431,6 +1431,9 @@ namespace Garnet.server
             //    checkpoint captures dst's content. Cleanly handles steady-state cold-restore, recovery
             //    Scenario D (below-FUA-at-checkpoint stub recovered), and any other path that promotes
             //    a flushed stub with TreeHandle == 0.
+            //  • In BOTH branches: set src.FlagTransferred so a later OnEvict on the stale source does
+            //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the new
+            //    pending entry), and a later OnFlush on the stale source does not snapshot a stale view.
             if (cmd == RespCommand.RIPROMOTE)
             {
                 var srcSpan = srcLogRecord.ValueSpan;
@@ -1449,6 +1452,8 @@ namespace Garnet.server
                         rim.PreStageAndRegisterPending(dstLogRecord.Key, rmwInfo.SourceAddress);
                     }
                 }
+
+                RangeIndexManager.SetTransferredFlag(srcSpan);
             }
 
             return true;

@@ -380,7 +380,18 @@ namespace Garnet.server
             var snapshotPath = LogFlushPath(hashPrefix, srcFlushAddress);
             if (!File.Exists(snapshotPath))
             {
-                logger?.LogWarning("PreStageAndRegisterPending: source flush file missing: {Path}", snapshotPath);
+                // Per Invariant 2 (Per-flush snapshot invariant), the per-flush file must exist
+                // for any FlagFlushed=1 stub at addr >= BeginAddress. If it's missing here, the
+                // invariant has been violated (likely a race with a concurrent OnTruncate, or
+                // external file deletion). Log loudly as ERROR — recovering from any other source
+                // file would risk restoring the wrong tree version. Leave the destination record
+                // with TreeHandle=0 and no pending entry; the next RestoreTree will return NOTFOUND
+                // for the affected key, surfacing the data loss explicitly rather than silently
+                // restoring incorrect data.
+                logger?.LogError("PreStageAndRegisterPending: invariant violation — source flush file missing: {Path}. " +
+                    "The destination record at the tail will have no pending entry; subsequent RestoreTree " +
+                    "will return NOTFOUND for the affected key. NOT falling back to any other flush file " +
+                    "to avoid restoring an incorrect tree version.", snapshotPath);
                 return;
             }
 
@@ -401,7 +412,9 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy/register failed for {Hash}", hashPrefix);
+                logger?.LogError(ex, "PreStageAndRegisterPending: copy/register failed for {Hash}; " +
+                    "destination record will have no pending entry; subsequent RestoreTree will return NOTFOUND",
+                    hashPrefix);
             }
             finally
             {
@@ -460,6 +473,23 @@ namespace Garnet.server
         /// <see cref="RebuildFromSnapshotIfPending"/>.
         /// </summary>
         internal void SetRecoveredCheckpointToken(Guid token) => recoveredCheckpointToken = token;
+
+        /// <summary>
+        /// Log an OnFlush invariant violation: <see cref="RangeIndexStub.TreeHandle"/> was zero
+        /// (no live tree) but the working file <c>data.bftree</c> was missing. Per Invariant 5
+        /// (Pending entry invariant), every above-FUA stub with TreeHandle=0 must have a pending
+        /// entry in <see cref="liveIndexes"/> and a pre-staged <c>data.bftree</c> on disk; if
+        /// <c>data.bftree</c> is missing, something has corrupted that invariant (e.g. a prior
+        /// pre-stage failure, or external file deletion). The caller (<see cref="GarnetRecordTriggers.OnFlush"/>)
+        /// must NOT set <see cref="RangeIndexStub.FlagFlushed"/> in this case — that would put the
+        /// record into an unrestorable state where RIPROMOTE-cold would also fail and the key
+        /// would be permanently broken.
+        /// </summary>
+        internal void LogOnFlushInvariantViolation(string hashPrefix, long logicalAddress)
+        {
+            logger?.LogError("OnFlush: invariant violation — TreeHandle=0 but data.bftree missing for {Hash} at addr 0x{Addr:x16}; skipping FlagFlushed (record will route through RestoreTree which will return NOTFOUND for the affected key)",
+                hashPrefix, logicalAddress);
+        }
 
         /// <summary>
         /// Set the checkpoint barrier. Called at version shift (PREPARE → IN_PROGRESS).
@@ -552,10 +582,15 @@ namespace Garnet.server
         /// catches orphans from any legacy or future atomic-rename code paths).
         /// Per-checkpoint snapshots are NOT touched here — Tsavorite's checkpoint manager
         /// removes them when it deletes the parent token directory.
+        ///
+        /// <para>Per-flush files are LOG-tied (their lifetime tracks log addresses), not
+        /// checkpoint-tied — they are safe to delete once Tsavorite's BeginAddress passes their
+        /// address, regardless of <see cref="removeOutdatedCheckpoints"/>. This is independent
+        /// of cluster mode.</para>
         /// </summary>
         internal void OnTruncateImpl(long newBeginAddress)
         {
-            if (!removeOutdatedCheckpoints || string.IsNullOrEmpty(riLogRoot))
+            if (string.IsNullOrEmpty(riLogRoot))
                 return;
             if (!Directory.Exists(riLogRoot))
                 return;

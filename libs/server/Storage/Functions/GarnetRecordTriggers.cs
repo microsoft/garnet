@@ -72,6 +72,14 @@ namespace Garnet.server
                 return;
 
             ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
+
+            // Stale source whose ownership was transferred to a newer record at the tail: no-op.
+            // The destination owns the tree; snapshotting from this stale source would either be a
+            // no-op (TreeHandle was cleared) or capture a stale view of data.bftree (which the
+            // destination is now actively mutating).
+            if (stub.IsTransferred)
+                return;
+
             var hashPrefix = RangeIndexManager.HashKeyToPrefix(logRecord.Key);
             var dataPath = rangeIndexManager.LogDataPath(hashPrefix);
             var flushPath = rangeIndexManager.LogFlushPath(hashPrefix, logicalAddress);
@@ -95,8 +103,17 @@ namespace Garnet.server
                 {
                     // No live tree. data.bftree is the only correct source (Invariant 1+5):
                     // pre-staged by PostCopyToTail-cold / RIPROMOTE-cold / OnRecoverySnapshotRead.
-                    if (System.IO.File.Exists(dataPath))
-                        System.IO.File.Copy(dataPath, flushPath, overwrite: false);
+                    // If data.bftree is missing, this violates Invariant 5 — log loudly and DO NOT
+                    // set FlagFlushed (otherwise next RIPROMOTE-cold would silently produce an
+                    // unrestorable record). The next access will see TreeHandle=0/FlagFlushed=0
+                    // and route through RestoreTree, which will fail with a clear NOTFOUND for the
+                    // affected key while leaving the record otherwise consistent.
+                    if (!System.IO.File.Exists(dataPath))
+                    {
+                        rangeIndexManager.LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
+                        return;
+                    }
+                    System.IO.File.Copy(dataPath, flushPath, overwrite: false);
                 }
             }
             catch (Exception)
@@ -211,6 +228,11 @@ namespace Garnet.server
                 if (srcLogicalAddress != Tsavorite.core.LogAddress.kInvalidAddress)
                     rangeIndexManager.PreStageAndRegisterPending(dstLogRecord.Key, srcLogicalAddress);
             }
+
+            // Mark src as transferred-out so a later OnEvict/OnFlush on the stale source does not
+            // remove the liveIndexes entry now owned by dst (live case) or by the pending
+            // registration (cold case), and does not snapshot a stale view.
+            RangeIndexManager.SetTransferredFlag(srcSpan);
 
             // Dst is a freshly copied record at the tail. Clear FlagFlushed so subsequent reads
             // don't loop through PromoteToTail again.
