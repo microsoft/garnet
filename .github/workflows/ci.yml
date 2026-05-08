@@ -136,6 +136,13 @@ jobs:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
           restore-keys: nuget-${{ runner.os }}-
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # Garnet's only Cargo workspace is the bftree native binding; the repo root has no
+          # Cargo.toml, so the action's default `cache-workspaces: ". -> target"` causes
+          # rust-cache's `cargo metadata` to fail with "could not find Cargo.toml" (exit 101).
+          cache-workspaces: libs/native/bftree-garnet
       - name: Install dependencies
         run: dotnet restore
       - name: Run tests ${{ matrix.test }}
