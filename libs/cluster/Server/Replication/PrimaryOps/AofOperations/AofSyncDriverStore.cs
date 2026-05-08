@@ -21,26 +21,18 @@ namespace Garnet.cluster
             readonly int physicalSublogIdx = physicalSublogIdx;
             readonly AofSyncDriverStore store = store;
 
-            internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
+            internal void SafeTailPageShiftCallback(long oldTailAddress, long newTailAddress)
             {
-                var oldPage = oldTailAddress >> store.logPageSizeBits;
-                var newPage = newTailAddress >> store.logPageSizeBits;
-
-                // Call truncate only once per page
-                if (oldPage != newPage)
-                {
-                    // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
-                    // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
-                    var truncateUntilAddress = store.clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressAbove(physicalSublogIdx, newTailAddress, numPagesAbove: 2);
-                    if (truncateUntilAddress > 0)
-                        _ = store.SafeTruncateAof(truncateUntilAddress, physicalSublogIdx);
-                }
+                // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
+                // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
+                var truncateUntilAddress = store.clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressAbove(physicalSublogIdx, newTailAddress, numPagesAbove: 2);
+                if (truncateUntilAddress > 0)
+                    _ = store.SafeTruncateAof(truncateUntilAddress, physicalSublogIdx);
             }
         }
 
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
-        readonly int logPageSizeBits, logPageSizeMask;
 
         AofSyncDriver[] syncDrivers;
         int numDrivers;
@@ -58,15 +50,12 @@ namespace Garnet.cluster
             numDrivers = 0;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
-                logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-                var logPageSize = 1 << logPageSizeBits;
-                logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     for (var i = 0; i < clusterProvider.serverOptions.AofPhysicalSublogCount; i++)
                     {
                         var logShiftTailCallback = new LogShiftTailCallback(i, this);
-                        clusterProvider.storeWrapper.appendOnlyFile.Log.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
+                        clusterProvider.storeWrapper.appendOnlyFile.Log.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailPageShiftCallback);
                     }
                 }
             }

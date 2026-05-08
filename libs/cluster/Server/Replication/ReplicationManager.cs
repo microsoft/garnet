@@ -689,7 +689,7 @@ namespace Garnet.cluster
                                     else
                                         converged = false;
                                 }
-                                await Task.Delay(storeWrapper.serverOptions.AofReplicationRefreshFrequencyMs, token).ConfigureAwait(false);
+                                await Task.Delay(storeWrapper.serverOptions.AofTailWitnessFreqMs, token).ConfigureAwait(false);
                             }
                         }
                     }
