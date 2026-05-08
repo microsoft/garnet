@@ -95,7 +95,7 @@ namespace Garnet.server
         /// <summary>
         /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>
         /// </summary>
-        internal const byte AofHeaderTypeMask = 0b1100;
+        internal const byte AofHeaderTypeMask = 0b0011;
 
         /// <summary>
         /// Bit in <see cref="flags"/> that indicates that the record is chunked
