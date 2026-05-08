@@ -317,7 +317,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                WriteSimpleString(typeName);
+                WriteLargeSimpleString(typeName);
             }
             else
             {

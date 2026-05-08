@@ -25,7 +25,7 @@ namespace Garnet.server
 
             foreach (string command in latencyCommands)
             {
-                WriteSimpleString(command);
+                WriteLargeSimpleString(command);
             }
 
             return true;
@@ -69,7 +69,7 @@ namespace Garnet.server
             {
                 var garnetLatencyMetrics = storeWrapper.monitor?.GlobalMetrics.globalLatencyMetrics;
                 string response = garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n";
-                WriteAsciiDirect(response);
+                WriteLargeAsciiDirect(response);
             }
 
             return true;

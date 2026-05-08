@@ -759,7 +759,7 @@ namespace Garnet.server
                 WriteArrayLength(help.Length);
                 foreach (var line in help)
                 {
-                    WriteSimpleString(line);
+                    WriteLargeSimpleString(line);
                 }
                 return true;
             }

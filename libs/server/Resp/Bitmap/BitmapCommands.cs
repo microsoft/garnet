@@ -340,7 +340,7 @@ namespace Garnet.server
             else if (status == GarnetStatus.NOTFOUND)
             {
                 var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
-                WriteDirect(resp);
+                WriteLargeDirect(resp);
             }
 
             return true;

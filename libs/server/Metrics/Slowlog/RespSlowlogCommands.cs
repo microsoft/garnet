@@ -27,7 +27,7 @@ namespace Garnet.server
 
             foreach (string command in slowLogCommands)
             {
-                WriteSimpleString(command);
+                WriteLargeSimpleString(command);
             }
 
             return true;
@@ -87,8 +87,8 @@ namespace Garnet.server
                         WriteLargeBulkString(sps.GetArgSliceByRef(i).Span);
                     }
                 }
-                WriteAsciiBulkString(entry.ClientIpPort);
-                WriteAsciiBulkString(entry.ClientName);
+                WriteLargeAsciiBulkString(entry.ClientIpPort);
+                WriteLargeAsciiBulkString(entry.ClientName);
             }
             return true;
         }

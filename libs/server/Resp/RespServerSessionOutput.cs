@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -49,8 +51,30 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteAsciiDirect(ReadOnlySpan<char> message)
         {
+            Debug.Assert(!message.ContainsAnyExceptInRange((char)0, (char)128), "Only ASCII data allowed");
+
             while (!RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteLargeAsciiDirect(ReadOnlySpan<char> message)
+        {
+            Debug.Assert(!message.ContainsAnyExceptInRange((char)0, (char)128), "Only ASCII data allowed");
+
+            var buff = ArrayPool<byte>.Shared.Rent(message.Length);
+            try
+            {
+                var written = Encoding.ASCII.GetBytes(message, buff);
+
+                var asSpan = buff.AsSpan()[..written];
+
+                WriteLargeDirect(asSpan);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buff);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -351,6 +375,32 @@ namespace Garnet.server
                 SendAndReset();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteLargeSimpleString(ReadOnlySpan<char> simpleString)
+        {
+            if ((int)(dend - dcurr) < 1)
+            {
+                SendAndReset();
+            }
+
+            *dcurr = (byte)'+';
+
+            var buff = ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(simpleString));
+            try
+            {
+                var written = Encoding.UTF8.GetBytes(simpleString, buff);
+                var asSpan = buff.AsSpan()[..written];
+
+                WriteLargeDirect(asSpan);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buff);
+            }
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteUtf8BulkString(ReadOnlySpan<char> chars)

@@ -93,7 +93,7 @@ namespace Garnet.server
                         return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
                     }
 
-                    WriteDirect(parameterValue);
+                    WriteLargeDirect(parameterValue);
                 }
             }
             else
