@@ -87,7 +87,7 @@ namespace Garnet.server
             if (stub.StorageBackend == (byte)StorageBackendType.Memory)
             {
                 // Memory-only trees: not yet supported by the native library for snapshot-to-file.
-                // Set FlagFlushed so the next access triggers RIPROMOTE; data will be lost on restore.
+                // Set IsFlushed so the next access triggers RIPROMOTE; data will be lost on restore.
                 RangeIndexManager.SetFlushedFlag(logRecord.ValueSpan);
                 return;
             }
@@ -101,13 +101,14 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // No live tree. data.bftree is the only correct source (Invariant 1+5):
-                    // pre-staged by PostCopyToTail-cold / RIPROMOTE-cold / OnRecoverySnapshotRead.
-                    // If data.bftree is missing, this violates Invariant 5 — log loudly and DO NOT
-                    // set FlagFlushed (otherwise next RIPROMOTE-cold would silently produce an
-                    // unrestorable record). The next access will see TreeHandle=0/FlagFlushed=0
-                    // and route through RestoreTree, which will fail with a clear NOTFOUND for the
-                    // affected key while leaving the record otherwise consistent.
+                    // No live tree. data.bftree is the only correct source: it is pre-staged by
+                    // PostCopyToTail-cold / RIPROMOTE-cold / OnRecoverySnapshotRead. If data.bftree
+                    // is missing here, the per-flush snapshot invariant has been violated — log
+                    // loudly and DO NOT set IsFlushed (otherwise the next RIPROMOTE-cold would
+                    // silently produce an unrestorable record). The next access will see
+                    // TreeHandle=0 / IsFlushed=false and route through RestoreTree, which will
+                    // surface a clear NOTFOUND for the affected key while leaving the record
+                    // otherwise consistent.
                     if (!System.IO.File.Exists(dataPath))
                     {
                         rangeIndexManager.LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
@@ -234,7 +235,7 @@ namespace Garnet.server
             // registration (cold case), and does not snapshot a stale view.
             RangeIndexManager.SetTransferredFlag(srcSpan);
 
-            // Dst is a freshly copied record at the tail. Clear FlagFlushed so subsequent reads
+            // Dst is a freshly copied record at the tail. Clear IsFlushed so subsequent reads
             // don't loop through PromoteToTail again.
             RangeIndexManager.ClearFlushedFlag(dstSpan);
         }

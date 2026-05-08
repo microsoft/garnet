@@ -94,7 +94,7 @@ namespace Garnet.server
         /// <item><b>Checkpoint in progress</b>: If the tree is being snapshotted, releases
         /// the lock, waits for snapshot completion, and retries.</item>
         /// <item><b>Flushed stub</b>: If the stub has been flushed to the read-only region
-        /// (FlagFlushed set), promotes the stub to the tail via RMW and retries.</item>
+        /// (IsFlushed set), promotes the stub to the tail via RMW and retries.</item>
         /// <item><b>Null TreeHandle</b>: If the tree was evicted to disk (TreeHandle == 0),
         /// triggers lazy restore from the flush/checkpoint snapshot file and retries.</item>
         /// </list>

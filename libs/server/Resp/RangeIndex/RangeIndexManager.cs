@@ -368,7 +368,7 @@ namespace Garnet.server
         /// exclusive lock serializes against any reader that would open <c>data.bftree</c>, and
         /// against other concurrent <c>PreStageAndRegisterPending</c> calls for the same key.
         /// A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
-        /// (above-FUA stub) or the next RIPROMOTE-cold (FlagFlushed=1 stub) re-pre-stages and
+        /// (above-FUA stub) or the next RIPROMOTE-cold (IsFlushed=true stub) re-pre-stages and
         /// overwrites any partial file before <c>RestoreTree</c> can observe it.</para>
         /// </summary>
         internal void PreStageAndRegisterPending(ReadOnlySpan<byte> keyBytes, long srcFlushAddress)
@@ -381,7 +381,7 @@ namespace Garnet.server
             if (!File.Exists(snapshotPath))
             {
                 // Per Invariant 2 (Per-flush snapshot invariant), the per-flush file must exist
-                // for any FlagFlushed=1 stub at addr >= BeginAddress. If it's missing here, the
+                // for any IsFlushed=true stub at addr >= BeginAddress. If it's missing here, the
                 // invariant has been violated (likely a race with a concurrent OnTruncate, or
                 // external file deletion). Log loudly as ERROR — recovering from any other source
                 // file would risk restoring the wrong tree version. Leave the destination record

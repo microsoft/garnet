@@ -2230,19 +2230,15 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Defect 1 reproduction at the file-system level: verify that taking a checkpoint after
-        /// a flush, then mutating + re-flushing, does NOT overwrite the original per-flush snapshot.
+        /// Verifies the per-flush snapshot file immutability invariant: a
+        /// <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> file, once written, is never overwritten.
+        /// Subsequent flushes for the same key produce a NEW file at a distinct address,
+        /// so historical per-flush state is preserved for recovery to older checkpoints.
         ///
-        /// <para>Pre-fix behavior: a single deterministic <c>flush.bftree</c> per key was overwritten
-        /// on every flush, so a recover-to-prior-checkpoint would silently see post-checkpoint
-        /// state.</para>
-        ///
-        /// <para>Post-fix behavior: address-tagged <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>
-        /// files are immutable — the second flush creates a NEW file at a different addr instead
-        /// of overwriting.</para>
-        ///
-        /// <para>This test verifies the on-disk invariant directly (cleaner than trying to recover
-        /// to a specific token via the public Garnet API).</para>
+        /// <para>Steps: create a disk-backed RI, set v1, flush (creates file at A1), capture
+        /// bytes; promote + set v2, flush (must create a new file at A2); assert that the
+        /// A1 file still exists with byte-identical content AND the post-v2 file count is
+        /// strictly greater than post-v1.</para>
         /// </summary>
         [Test]
         public void RIFlushFilesAreImmutablePerAddressTest()
@@ -2261,8 +2257,8 @@ namespace Garnet.test
 
                 // v1 state: create disk-backed RI and insert one field. Use long enough field/value
                 // to satisfy MINRECORD=8.
-                db.Execute("RI.CREATE", "defect1key", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
-                db.Execute("RI.SET", "defect1key", "field-x", "value-v1");
+                db.Execute("RI.CREATE", "flushtestkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "flushtestkey", "field-x", "value-v1");
 
                 // Force flush so the v1 stub is on a flushed page (creates <hash>.<A1>.flush.bftree).
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -2274,8 +2270,8 @@ namespace Garnet.test
                 foreach (var f in afterV1) v1FileContents[f] = File.ReadAllBytes(f);
 
                 // Promote (read forces RIPROMOTE on flushed stub) and mutate to v2.
-                ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "defect1key", "field-x"));
-                db.Execute("RI.SET", "defect1key", "field-x", "value-v2");
+                ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "flushtestkey", "field-x"));
+                db.Execute("RI.SET", "flushtestkey", "field-x", "value-v2");
 
                 // Force another flush — must create a NEW <hash>.<A2>.flush.bftree at a distinct addr.
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -2290,7 +2286,7 @@ namespace Garnet.test
                         $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (size differs)");
                     CollectionAssert.AreEqual(originalBytes, currentBytes,
                         $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (content differs). " +
-                        "This is the Defect 1 invariant: <addr>.flush.bftree files are immutable.");
+                        "Per-flush <addr>.flush.bftree files are immutable.");
                 }
 
                 // Verify: at least one new flush file was created post-v2 (proving second flush
@@ -2311,28 +2307,27 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Regression test for the GPT-5.5-flagged blocker: eviction of a stale source record after
-        /// transfer (PostCopyToTail-live or RIPROMOTE-live) must NOT remove the liveIndexes entry
-        /// that now belongs to the destination record.
+        /// Verifies that <c>DisposeTreeUnderLock</c> with <c>deleteFiles: false</c> (eviction
+        /// path) NO-OPS when the source stub has <c>IsTransferred=true</c>, even when its
+        /// <c>TreeHandle</c> is zero. After <c>PostCopyToTail</c> (compaction) or RIPROMOTE
+        /// PostCopyUpdater transfers ownership to a destination at the tail, the source
+        /// record's stub carries <c>IsTransferred=true</c>; the corresponding liveIndexes
+        /// entry now belongs to the destination, so a later <c>OnEvict</c> on the stale
+        /// source must NOT remove that entry — doing so would lose checkpoint coverage and
+        /// DEL-time native-tree disposal.
         ///
-        /// <para>The bug: pre-fix, both transfer paths cleared <c>src.TreeHandle=0</c> on the source
-        /// record. A later <c>OnEvict</c> on src would observe <c>TreeHandle==0</c>, hit the early
-        /// branch in <c>DisposeTreeUnderLock</c>, and remove the liveIndexes entry that now belongs
-        /// to the destination — losing checkpoint coverage and DEL-time native-tree disposal.</para>
-        ///
-        /// <para>The fix: both transfer paths set <c>IsTransferred</c> on src. <c>DisposeTreeUnderLock</c>
-        /// checks this flag first and no-ops when set (the entry belongs to a newer record).</para>
-        ///
-        /// <para>This test exercises the fix at the unit level by:</para>
+        /// <para>Test mechanics:</para>
         /// <list type="number">
-        /// <item>Constructing a 35-byte stub with IsTransferred=true, TreeHandle=0.</item>
-        /// <item>Pre-populating liveIndexes with an "owning" entry for the test key.</item>
-        /// <item>Calling <c>DisposeTreeUnderLock(key, stub, deleteFiles: false)</c>.</item>
-        /// <item>Asserting the entry SURVIVED (count unchanged).</item>
+        /// <item>Construct a 35-byte stub representing the stale source (IsTransferred=true,
+        /// TreeHandle=0).</item>
+        /// <item>Call <c>DisposeTreeUnderLock(key, stub, deleteFiles: false)</c>.</item>
+        /// <item>Assert the liveIndexes entry SURVIVED (count unchanged).</item>
         /// </list>
         ///
-        /// <para>Without the IsTransferred check (pre-fix), the call would remove the entry and
-        /// the assertion would fail.</para>
+        /// <para>Discriminating contrast: a stub with <c>IsTransferred=false</c> and
+        /// <c>TreeHandle=0</c> (a pure pending entry being evicted before activation) DOES
+        /// get its liveIndexes entry removed by the same call — proving the
+        /// <c>IsTransferred</c> check is what makes the no-op precise.</para>
         /// </summary>
         [Test]
         public void RIDisposeTreeUnderLockNoOpsOnTransferredSourceTest()
@@ -2351,8 +2346,8 @@ namespace Garnet.test
 
             // Construct a stub representing a "stale source" (IsTransferred=true, TreeHandle=0)
             // with the SAME key as the live entry. This models the byte state of a source record
-            // after PostCopyToTail-live or RIPROMOTE-live: src.TreeHandle was cleared and
-            // src.IsTransferred was set.
+            // after PostCopyToTail-live or RIPROMOTE-live has cleared TreeHandle and set
+            // IsTransferred on the source.
             var staleStub = new byte[RangeIndexManager.IndexSizeBytes];
             // Stub layout: [0..7]=TreeHandle (zero), [33]=flags byte (Transferred bit = 1<<2 = 4)
             staleStub[33] = 4;
@@ -2364,22 +2359,21 @@ namespace Garnet.test
             ClassicAssert.IsFalse(stubRef.IsFlushed, "test setup: IsFlushed should be false");
 
             // Call DisposeTreeUnderLock as OnEvict would, with deleteFiles=false (eviction path).
-            // With IsTransferred=true, this should no-op — NOT remove the entry that belongs to
+            // With IsTransferred=true, this must no-op — NOT remove the entry that belongs to
             // the live record at the tail.
             var keyBytes = System.Text.Encoding.ASCII.GetBytes("transtest");
             rim.DisposeTreeUnderLock(keyBytes, staleStub, deleteFiles: false);
 
             ClassicAssert.AreEqual(1, rim.LiveIndexCount,
-                "DisposeTreeUnderLock on a stale (IsTransferred=true) source must NOT remove the live entry. " +
-                "Pre-fix: src.TreeHandle was cleared without IsTransferred, so this DisposeTreeUnderLock " +
-                "would erroneously remove the entry that belongs to dst.");
+                "DisposeTreeUnderLock on a stale (IsTransferred=true) source must NOT remove the live entry " +
+                "that now belongs to the destination at the tail.");
 
             // Live tree should still be functional.
             ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "transtest", "field-x"));
 
-            // For comparison: a stub WITHOUT IsTransferred (pure pending entry, e.g. evicted
-            // before activation) WOULD remove the entry. This proves the discriminating power
-            // of the IsTransferred check.
+            // Discriminating contrast: a stub WITHOUT IsTransferred (pure pending entry, e.g.
+            // evicted before activation) WOULD remove the entry. This proves the discriminating
+            // power of the IsTransferred check.
             var pendingStub = new byte[RangeIndexManager.IndexSizeBytes];
             // IsTransferred=0, TreeHandle=0 — looks like a pending entry being evicted.
             // Use a DIFFERENT key for this part to avoid disturbing the live entry above.

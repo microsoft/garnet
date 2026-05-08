@@ -185,7 +185,7 @@ namespace Garnet.server
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(valueSpan));
             stub.TreeHandle = newTreeHandle;
 
-            // Clear FlagRecovered so that future eviction cycles use the flush snapshot
+            // Clear IsRecovered so that future eviction cycles use the flush snapshot
             // (which reflects post-recovery writes) instead of the stale checkpoint snapshot.
             stub.IsRecovered = false;
         }
@@ -242,7 +242,7 @@ namespace Garnet.server
             // Stale-source eviction (OnEvict) on a record whose ownership was transferred to a
             // newer tail record: no-op. The liveIndexes entry now belongs to the destination
             // record; removing it here would lose the newer record's tree (live transfer) or
-            // pending entry (cold transfer). FlagTransferred is set by PostCopyToTail and RIPROMOTE
+            // pending entry (cold transfer). IsTransferred is set by PostCopyToTail and RIPROMOTE
             // PostCopyUpdater on the source after a successful CAS.
             // For DEL/UNLINK (deleteFiles=true), we still proceed — the user explicitly asked to
             // delete this key, and the tombstone path supersedes any newer record as well.
@@ -279,7 +279,7 @@ namespace Garnet.server
         /// LOG-tied (their lifetime tracks log addresses, not key existence) and may still be
         /// required to recover an OLDER checkpoint that was taken BEFORE the DEL — at recovery
         /// time the recovered main log would still contain a stub at some addr A_old with
-        /// FlagFlushed=1, and RIPROMOTE-cold would need to find <c>&lt;hash&gt;.&lt;A_old&gt;.flush.bftree</c>
+        /// IsFlushed=true, and RIPROMOTE-cold would need to find <c>&lt;hash&gt;.&lt;A_old&gt;.flush.bftree</c>
         /// to restore the pre-delete tree state. Per-flush files are reclaimed by
         /// <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes their address —
         /// at which point no checkpoint can recover the pre-delete state anyway.</para>
