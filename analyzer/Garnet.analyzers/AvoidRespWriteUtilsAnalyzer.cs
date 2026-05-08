@@ -63,7 +63,7 @@ namespace Garnet.analyzers
                         continue;
                     }
 
-                    tryWriteMethods.Add(member.Name);
+                    _ = tryWriteMethods.Add(member.Name);
                 }
 
                 var lookup = new Dictionary<string, string>();
