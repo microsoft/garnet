@@ -228,7 +228,7 @@ namespace Garnet.server
                                 if (!usingShardedLog)
                                 {
                                     // Must block here, cannot move off the thread
-                                    _ = AsyncUtils.BlockingWait(storeWrapper.TakeCheckpointAsync(background: false, logger));
+                                    _ = AsyncUtils.BlockingWait(storeWrapper.TakeCheckpointAsync(background: false, logger: logger));
                                 }
                                 else
                                 {
@@ -236,7 +236,7 @@ namespace Garnet.server
                                         virtualSublogIdx,
                                         ptr,
                                         (int)LeaderBarrierType.CHECKPOINT,
-                                        () => storeWrapper.TakeCheckpointAsync(background: false, logger));
+                                        () => storeWrapper.TakeCheckpointAsync(background: false, logger: logger));
                                 }
                             }
 

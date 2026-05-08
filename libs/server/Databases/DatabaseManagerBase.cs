@@ -38,10 +38,7 @@ namespace Garnet.server
         public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
-        public abstract Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default);
-
-        /// <inheritdoc/>
-        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
