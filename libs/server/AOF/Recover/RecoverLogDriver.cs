@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -82,9 +83,11 @@ namespace Garnet.server
                     if (payloadLength > 0)
                     {
                         var entryPtr = ptr + entryLength;
-                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, out var entrySequenceNumber))
+                        var entryLogAddress = currentAddress + (ptr - record);
+                        Debug.Assert(entryLogAddress > 0, "Entry log address must be positive");
+                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, entryLogAddress, out var entrySequenceNumber))
                         {
-                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _);
+                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, entryLogAddress);
                         }
                         else
                         {
@@ -174,12 +177,14 @@ namespace Garnet.server
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
+                                var entryLogAddress = currentAddress + (ptr - record);
+                                Debug.Assert(entryLogAddress > 0, "Entry log address must be positive");
                                 // Check if entry is assigned for processing to this replay task and
                                 // the sequence number is bellow the threshold to ensure prefix consistency
-                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, out var sequenceNumber) &&
+                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out var sequenceNumber) &&
                                     (untilSequenceNumber == -1 || sequenceNumber <= untilSequenceNumber))
                                 {
-                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, entryLogAddress);
                                     maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 }
                                 entryLength += TsavoriteLog.UnsafeAlign(payloadLength);

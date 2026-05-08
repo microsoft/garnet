@@ -66,7 +66,9 @@ namespace Garnet.server
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: long.MaxValue);
             CreateOrUpdateKeySequenceManager();
-            if (serverOptions.MultiLogEnabled)
+            // Only create sequence number generator for multi-physical-log (sharded) mode.
+            // Single-physical-log + multi-replay uses log addresses instead.
+            if (serverOptions.AofPhysicalSublogCount > 1)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
             Log = new(this, serverOptions, logSettings, logger);
@@ -108,9 +110,13 @@ namespace Garnet.server
         /// <summary>
         /// Reset sequence number generator.
         /// NOTE: We need to update starting offset when recovering or failing over to ensure time moves forward.
+        /// Only applicable for multi-physical-log (sharded) mode.
         /// </summary>
         public void ResetSequenceNumberGenerator()
         {
+            // Only reset for multi-physical-log mode; single-physical-log uses log addresses
+            if (serverOptions.AofPhysicalSublogCount <= 1)
+                return;
             if (!serverOptions.MultiLogEnabled)
                 return;
             var physicalSublogMaxReplayedSequenceNumber = readConsistencyManager.GetPhysicalSublogMaxReplayedSequenceNumber();

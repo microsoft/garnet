@@ -18,6 +18,7 @@ namespace Garnet.cluster
     {
         public byte* entryPtr;
         public int payloadLength;
+        public long entryAddress;
     }
 
     internal sealed class ReplicaReplayTask(
@@ -91,9 +92,10 @@ namespace Garnet.cluster
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
-                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
+                                var entryLogAddress = currentAddress + (ptr - record);
+                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out var sequenceNumber))
                                 {
-                                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, entryLogAddress);
                                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                                     // point when we take a checkpoint at the checkpoint end marker
                                     if (isCheckpointStart)
@@ -156,7 +158,7 @@ namespace Garnet.cluster
                 {
                     unsafe
                     {
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart);
+                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart, record.entryAddress);
 
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker

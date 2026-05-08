@@ -20,12 +20,12 @@ namespace Garnet.server
 
     interface IPreprocessKey
     {
-        public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters);
+        public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long entryAddress, out PreparedParameters preparedParameters);
     }
 
     struct SingleLogPreprocessKey : IPreprocessKey
     {
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long entryAddress, out PreparedParameters preparedParameters)
         {
             var keyPtr = entryPtr + sizeof(AofHeader);
             preparedParameters = new()
@@ -37,11 +37,33 @@ namespace Garnet.server
         }
     }
 
+    struct SinglePhysicalLogPreprocessKey : IPreprocessKey
+    {
+        public GarnetAppendOnlyFile appendOnlyFile;
+
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long entryAddress, out PreparedParameters preparedParameters)
+        {
+            // Single physical log + multi-replay: entries use BasicHeader, ordering via log address
+            var keyPtr = entryPtr + sizeof(AofHeader);
+            preparedParameters = new()
+            {
+                Key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr)
+            };
+            preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
+            preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
+            Debug.Assert(entryAddress > 0, "Entry address must be positive for single-physical-log consistency updates");
+            appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(
+                virtualSublogIdx,
+                preparedParameters.KeyHash,
+                entryAddress);
+        }
+    }
+
     struct ShardedLogPreprocessKey : IPreprocessKey
     {
         public GarnetAppendOnlyFile appendOnlyFile;
 
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long entryAddress, out PreparedParameters preparedParameters)
         {
             var shardedHeader = *(AofShardedHeader*)entryPtr;
             var keyPtr = entryPtr + sizeof(AofShardedHeader);
@@ -89,7 +111,9 @@ namespace Garnet.server
 
         readonly ILogger logger;
         readonly bool usingShardedLog;
+        readonly bool usingSinglePhysicalLogMultiReplay;
         SingleLogPreprocessKey singleLogPreprocessKey;
+        SinglePhysicalLogPreprocessKey singlePhysicalLogPreprocessKey;
         ShardedLogPreprocessKey shardedLogPreprocessKey;
 
         /// <summary>
@@ -107,8 +131,11 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
-            if (usingShardedLog)
+            this.usingSinglePhysicalLogMultiReplay = storeWrapper.serverOptions.AofPhysicalSublogCount == 1 && storeWrapper.serverOptions.AofReplayTaskCount > 1;
+            if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
                 this.shardedLogPreprocessKey = new ShardedLogPreprocessKey() { appendOnlyFile = storeWrapper.appendOnlyFile };
+            else if (usingSinglePhysicalLogMultiReplay)
+                this.singlePhysicalLogPreprocessKey = new SinglePhysicalLogPreprocessKey() { appendOnlyFile = storeWrapper.appendOnlyFile };
             else
                 this.singleLogPreprocessKey = new SingleLogPreprocessKey();
             this.obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
@@ -162,6 +189,40 @@ namespace Garnet.server
             => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
+        /// Extracts sequence number and participant count from a transaction header entry.
+        /// For single-physical-log + multi-replay, uses entry address; for multi-physical-log, uses embedded sequence number.
+        /// </summary>
+        unsafe void GetSynchronizedOperationParams(byte* ptr, long entryAddress, out long sequenceNumber, out short participantCount)
+        {
+            var headerType = (AofHeaderType)(*(AofHeader*)ptr).padding;
+            switch (headerType)
+            {
+                case AofHeaderType.SingleLogTransactionHeader:
+                    sequenceNumber = entryAddress;
+                    participantCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
+                    break;
+                case AofHeaderType.TransactionHeader:
+                    var txnHeader = *(AofTransactionHeader*)ptr;
+                    sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
+                    participantCount = txnHeader.participantCount;
+                    break;
+                default:
+                    // For non-transaction headers (BasicHeader, ShardedHeader), use entryAddress/seqNum
+                    if (headerType == AofHeaderType.BasicHeader)
+                    {
+                        sequenceNumber = entryAddress;
+                        participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
+                    }
+                    else
+                    {
+                        sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
+                        participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
         /// Process AOF record internal
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
@@ -170,10 +231,10 @@ namespace Garnet.server
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
-        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        /// <param name="entryAddress"></param>
+        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart, long entryAddress = 0)
         {
             var header = *(AofHeader*)ptr;
-            var shardedHeader = default(AofShardedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
 
@@ -186,7 +247,7 @@ namespace Garnet.server
             }
 
             // Handle transactions
-            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, ptr, length, asReplica))
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, ptr, length, asReplica, entryAddress))
                 return;
 
             switch (header.opType)
@@ -207,8 +268,9 @@ namespace Garnet.server
 
                     if (usingShardedLog)
                     {
-                        shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
+                        // For single-physical-log + multi-replay, use entry address; otherwise use embedded sequence number
+                        var checkpointSequenceNumber = usingSinglePhysicalLogMultiReplay ? entryAddress : (*(AofShardedHeader*)ptr).sequenceNumber;
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, checkpointSequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -232,9 +294,11 @@ namespace Garnet.server
                                 }
                                 else
                                 {
+                                    GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
                                     aofReplayCoordinator.ProcessSynchronizedOperation(
                                         virtualSublogIdx,
-                                        ptr,
+                                        seqNum,
+                                        partCount,
                                         (int)LeaderBarrierType.CHECKPOINT,
                                         () => storeWrapper.TakeCheckpointAsync(background: false, logger: logger));
                                 }
@@ -257,9 +321,11 @@ namespace Garnet.server
                         }
                         else
                         {
-                            aofReplayCoordinator.ProcessSynchronizedOperation(
+                        GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
                                 virtualSublogIdx,
-                                ptr,
+                                seqNum,
+                                partCount,
                                 (int)LeaderBarrierType.STREAMING_CHECKPOINT,
                                 () => { storeWrapper.store.SetVersion(header.storeVersion); return Task.CompletedTask; }
                             );
@@ -271,8 +337,9 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (usingShardedLog)
                     {
-                        shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
+                        // For single-physical-log + multi-replay, use entry address; otherwise use embedded sequence number
+                        var streamingSequenceNumber = usingSinglePhysicalLogMultiReplay ? entryAddress : (*(AofShardedHeader*)ptr).sequenceNumber;
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, streamingSequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -282,9 +349,11 @@ namespace Garnet.server
                     }
                     else
                     {
+                        GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
                         aofReplayCoordinator.ProcessSynchronizedOperation(
                             virtualSublogIdx,
-                            ptr,
+                            seqNum,
+                            partCount,
                             (int)LeaderBarrierType.FLUSH_DB_ALL,
                             () => { storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog); return Task.CompletedTask; }
                         );
@@ -297,19 +366,21 @@ namespace Garnet.server
                     }
                     else
                     {
+                        GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
                         aofReplayCoordinator.ProcessSynchronizedOperation(
                             virtualSublogIdx,
-                            ptr,
+                            seqNum,
+                            partCount,
                             (int)LeaderBarrierType.FLUSH_DB,
                             () => { storeWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: header.databaseId); return Task.CompletedTask; }
                         );
                     }
                     break;
                 case AofEntryType.StoredProcedure:
-                    aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr);
+                    aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr, entryAddress);
                     break;
                 case AofEntryType.TxnCommit:
-                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica);
+                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica, entryAddress);
                     break;
                 default:
                     _ = ReplayOpDispatch(
@@ -321,7 +392,8 @@ namespace Garnet.server
                         replayContext.UnifiedBasicContext,
                         ptr,
                         length,
-                        asReplica);
+                        asReplica,
+                        entryAddress);
                     break;
             }
         }
@@ -335,15 +407,18 @@ namespace Garnet.server
                 TUnifiedContext unifiedContext,
                 byte* entryPtr,
                 int length,
-                bool asReplica)
+                bool asReplica,
+                long entryAddress = 0)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            if (usingShardedLog)
-                return ReplayOp(virtualSublogIdx, header, replayContext, shardedLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica);
+            if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                return ReplayOp(virtualSublogIdx, header, replayContext, shardedLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica, entryAddress);
+            else if (usingSinglePhysicalLogMultiReplay)
+                return ReplayOp(virtualSublogIdx, header, replayContext, singlePhysicalLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica, entryAddress);
             else
-                return ReplayOp(virtualSublogIdx, header, replayContext, singleLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica);
+                return ReplayOp(virtualSublogIdx, header, replayContext, singleLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica, entryAddress);
         }
 
         private bool ReplayOp<TPreprocessKey, TStringContext, TObjectContext, TUnifiedContext>(
@@ -356,7 +431,8 @@ namespace Garnet.server
                 TUnifiedContext unifiedContext,
                 byte* entryPtr,
                 int length,
-                bool asReplica)
+                bool asReplica,
+                long entryAddress)
             where TPreprocessKey : IPreprocessKey
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
@@ -376,7 +452,7 @@ namespace Garnet.server
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-            preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
+            preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, entryAddress, out var preparedParameters);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -627,26 +703,37 @@ namespace Garnet.server
         /// </summary>
         /// <param name="ptr"></param>
         /// <param name="replayTaskIdx"></param>
+        /// <param name="entryAddress">Log address of the entry, used as ordering value for single-physical-log mode</param>
         /// <param name="sequenceNumber"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool CanReplay(byte* ptr, int replayTaskIdx, out long sequenceNumber)
+        public bool CanReplay(byte* ptr, int replayTaskIdx, long entryAddress, out long sequenceNumber)
         {
             var header = *(AofHeader*)ptr;
             var replayHeaderType = header.HeaderType;
             sequenceNumber = 0L;
             switch (replayHeaderType)
             {
-                // Check if should replay entry by inspecting key
+                // Single-physical-log + multi-replay: BasicHeader entries, use entry address for ordering
+                case AofHeaderType.BasicHeader:
+                    sequenceNumber = entryAddress;
+                    var basicCurr = AofHeader.SkipHeader(ptr);
+                    var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
+                    return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
+                // Multi-physical-log: ShardedHeader entries with embedded sequence number
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     sequenceNumber = shardedHeader.sequenceNumber;
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    var _replayTaskIdx = storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
-                    return replayTaskIdx == _replayTaskIdx;
-                // If no key to inspect, check bit vector for participating replay tasks in the transaction
-                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
+                    return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
+                // Single-physical-log + multi-replay: transaction header without sequence number
+                case AofHeaderType.SingleLogTransactionHeader:
+                    var singleLogTxnHeader = *(AofSingleLogTransactionHeader*)ptr;
+                    sequenceNumber = entryAddress;
+                    var singleLogBitVector = BitVector.CopyFrom(new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                    return singleLogBitVector.IsSet(replayTaskIdx);
+                // Multi-physical-log: transaction header with embedded sequence number
                 case AofHeaderType.TransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
                     sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
@@ -670,16 +757,19 @@ namespace Garnet.server
             var replayHeaderType = header.HeaderType;
             switch (replayHeaderType)
             {
-                // Check if should replay entry by inspecting key
+                // Single-physical-log + multi-replay: BasicHeader entries
+                case AofHeaderType.BasicHeader:
+                    var basicCurr = AofHeader.SkipHeader(ptr);
+                    var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
+                    return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
+                // Multi-physical-log: ShardedHeader entries
                 case AofHeaderType.ShardedHeader:
-                    var shardedHeader = *(AofShardedHeader*)ptr;
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    var _replayTaskIdx = storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
-                    return _replayTaskIdx;
-                // If no key to inspect, check bit vector for participating replay tasks in the transaction
-                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
+                    return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
+                // Transaction headers (both types) don't have a single key for task assignment
                 case AofHeaderType.TransactionHeader:
+                case AofHeaderType.SingleLogTransactionHeader:
                     return -1;
                 default:
                     throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
@@ -687,15 +777,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Determines whether the specified log entry should be skipped during replay based on its sequence number.
+        /// Determines whether the specified log entry should be skipped during replay based on its sequence number or address.
         /// </summary>
-        /// <param name="ptr">A pointer to the start of the log entry header in memory. Must point to a valid header structure.</param>
-        /// <param name="untilSequenceNumber">The sequence number threshold. Entries with a sequence number greater than this value will be skipped.
+        /// <param name="ptr">A pointer to the start of the log entry header in memory.</param>
+        /// <param name="untilSequenceNumber">The sequence number/address threshold. Entries beyond this value will be skipped.
         /// Specify -1 to skip all entries.</param>
-        /// <param name="entrySequenceNumber">When this method returns, contains the sequence number of the current log entry, or -1 if unavailable.</param>
+        /// <param name="entryAddress">Log address of the entry, used for single-physical-log mode.</param>
+        /// <param name="entrySequenceNumber">When this method returns, contains the sequence number/address of the current log entry, or -1 if unavailable.</param>
         /// <returns>true if the log entry should be skipped; otherwise, false.</returns>
         /// <exception cref="GarnetException">Thrown if the log entry header type is not supported.</exception>
-        public bool SkipReplay(byte* ptr, long untilSequenceNumber, out long entrySequenceNumber)
+        public bool SkipReplay(byte* ptr, long untilSequenceNumber, long entryAddress, out long entrySequenceNumber)
         {
             entrySequenceNumber = -1;
             if (untilSequenceNumber == -1)
@@ -704,6 +795,12 @@ namespace Garnet.server
             var replayHeaderType = header.HeaderType;
             switch (replayHeaderType)
             {
+                // Single-physical-log + multi-replay: use entry address
+                case AofHeaderType.BasicHeader:
+                case AofHeaderType.SingleLogTransactionHeader:
+                    entrySequenceNumber = entryAddress;
+                    return entryAddress > untilSequenceNumber;
+                // Multi-physical-log: use embedded sequence number
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     entrySequenceNumber = shardedHeader.sequenceNumber;

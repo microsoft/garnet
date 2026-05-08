@@ -45,6 +45,35 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Used for single-physical-log with multi-replay to carry transaction participant info
+    /// without embedding a sequence number (log addresses are used instead).
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
+    unsafe struct AofSingleLogTransactionHeader
+    {
+        public const int TotalSize = AofHeader.TotalSize + 2 + AofTransactionHeader.ReplayTaskAccessVectorBytes;
+
+        /// <summary>
+        /// Basic AOF header
+        /// </summary>
+        [FieldOffset(0)]
+        public AofHeader basicHeader;
+
+        /// <summary>
+        /// Used for synchronizing virtual sublog replay
+        /// NOTE: This stores the total number of replay tasks that participate in a given transaction.
+        /// </summary>
+        [FieldOffset(AofHeader.TotalSize)]
+        public short participantCount;
+
+        /// <summary>
+        /// Used to track replay task participating in the txn
+        /// </summary>
+        [FieldOffset(AofHeader.TotalSize + 2)]
+        public fixed byte replayTaskAccessVector[AofTransactionHeader.ReplayTaskAccessVectorBytes];
+    }
+
+    /// <summary>
     /// Used for sharded log to add a k
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
@@ -80,6 +109,7 @@ namespace Garnet.server
                 AofHeaderType.BasicHeader => entryPtr + TotalSize,
                 AofHeaderType.ShardedHeader => entryPtr + AofShardedHeader.TotalSize,
                 AofHeaderType.TransactionHeader => entryPtr + AofTransactionHeader.TotalSize,
+                AofHeaderType.SingleLogTransactionHeader => entryPtr + AofSingleLogTransactionHeader.TotalSize,
                 _ => throw new GarnetException($"Type not supported {headerType}"),
             };
         }
