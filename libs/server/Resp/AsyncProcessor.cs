@@ -102,8 +102,7 @@ namespace Garnet.server
                                 var o = completedOutputs.Current.Output;
 
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
-                                WritePushLength(3);
-                                WriteBulkString(CmdStrings.async);
+                                WriteDirect(CmdStrings.RESP_Push3_async);
                                 WriteInt32AsBulkString((int)completedOutputs.Current.Context);
                                 if (completedOutputs.Current.Status.Found)
                                 {

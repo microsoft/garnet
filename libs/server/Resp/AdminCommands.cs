@@ -777,13 +777,7 @@ namespace Garnet.server
 
             if (!storeWrapper.serverOptions.EnableCluster)
             {
-                WriteArrayLength(3);
-
-                WriteBulkString(CmdStrings.master);
-
-                WriteInt32(0);
-
-                WriteEmptyArray();
+                WriteDirect(CmdStrings.RESP_Array3_master_0_EmptyArray);
             }
             else
             {
@@ -791,9 +785,7 @@ namespace Garnet.server
                 {
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
-                    WriteArrayLength(3);
-
-                    WriteBulkString(CmdStrings.master);
+                    WriteDirect(CmdStrings.RESP_Array3_master);
 
                     WriteInt64(replication_offset);
 
@@ -811,9 +803,7 @@ namespace Garnet.server
                 {
                     var role = storeWrapper.clusterProvider.GetReplicaInfo();
 
-                    WriteArrayLength(5);
-
-                    WriteBulkString(CmdStrings.slave);
+                    WriteDirect(CmdStrings.RESP_Array5_slave);
 
                     WriteLargeAsciiBulkString(role.address);
 

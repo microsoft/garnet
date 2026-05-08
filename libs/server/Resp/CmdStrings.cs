@@ -574,5 +574,26 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> num_links => "num_links"u8;
         public static ReadOnlySpan<byte> size => "size"u8;
         public static ReadOnlySpan<byte> ERR_Vector_Set_partially_deleted => "ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8;
+        public static ReadOnlySpan<byte> RESP_Map3_flags_Set1 => "%3\r\n$5\r\nflags\r\n~1\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array6_flags_Array1 => "*6\r\n$5\r\nflags\r\n*1\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_master_0_EmptyArray => "*3\r\n$6\r\nmaster\r\n:0\r\n*0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_master => "*3\r\n$6\r\nmaster\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array5_slave => "*5\r\n$5\r\nslave\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array2_0String_EmptyArray => "*2\r\n$1\r\n0\r\n*0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Push3_async => ">3\r\n$5\r\nasync\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_modules_EmptyArray => "$7\r\nmodules\r\n*0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Push3_messages => ">3\r\n$8\r\nmessages\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_messages => "*3\r\n$8\r\nmessages\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Push4_pmessages => ">4\r\n$9\r\npmessages\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array4_pmessages => "*4\r\n$9\r\npmessages\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_psubscribe => "*3\r\n$10\r\npsubscribe\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_unsubscribe => "*3\r\n$11\r\nunsubscribe\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_unsubscribe_null3 => "*3\r\n$11\r\nunsubscribe\r\n_\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_unsubscribe_null2 => "*3\r\n$11\r\nunsubscribe\r\n$-1\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_punsubscribe => "*3\r\n$12\r\npunsubscribe\r\n"u8;
+
+        public static ReadOnlySpan<byte> RESP_Array3_punsubscribe_null3_0 => "*3\r\n$12\r\npunsubscribe\r\n_\r\n:0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array3_punsubscribe_null2_0 => "*3\r\n$12\r\npunsubscribe\r\n$-1\r\n:0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_Array14_quant_type => "*14\r\n$10\r\nquant_type\r\n"u8;
     }
 }

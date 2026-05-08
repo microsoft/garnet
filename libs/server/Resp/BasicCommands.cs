@@ -1554,8 +1554,7 @@ namespace Garnet.server
                     WriteLargeAsciiBulkString(helloResult[i].Item2.ToString());
                 }
             }
-            WriteBulkString(CmdStrings.modules);
-            WriteEmptyArray();
+            WriteDirect(CmdStrings.RESP_modules_EmptyArray);
         }
 
         /// <summary>

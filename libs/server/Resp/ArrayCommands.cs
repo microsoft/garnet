@@ -284,13 +284,10 @@ namespace Garnet.server
             // Prepare values for output
             if (keys.Count == 0)
             {
-                WriteArrayLength(2);
-
-                // Number of keys "0"
-                WriteInt32AsBulkString(0);
-
-                // Empty array
-                WriteEmptyArray();
+                // 2 element array
+                //  - Number of keys = "0"
+                //  - Empty array
+                WriteDirect(CmdStrings.RESP_Array2_0String_EmptyArray);
             }
             else
             {

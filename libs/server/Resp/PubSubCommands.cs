@@ -24,9 +24,14 @@ namespace Garnet.server
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
-                WritePushLength(3);
-
-                WriteBulkString(CmdStrings.message);
+                if (respProtocolVersion == 3)
+                {
+                    WriteDirect(CmdStrings.RESP_Push3_messages);
+                }
+                else
+                {
+                    WriteDirect(CmdStrings.RESP_Array3_messages);
+                }
 
                 // Write key and value to the network
                 WriteLargeBulkString(key.ReadOnlySpan);
@@ -53,9 +58,14 @@ namespace Garnet.server
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
-                WritePushLength(4);
-
-                WriteBulkString(CmdStrings.pmessage);
+                if(respProtocolVersion == 3)
+                {
+                    WriteDirect(CmdStrings.RESP_Push4_pmessages);
+                }
+                else
+                {
+                    WriteDirect(CmdStrings.RESP_Array4_pmessages);
+                }
 
                 // Write pattern, key, and value to the network
                 WriteLargeBulkString(pattern.ReadOnlySpan);
@@ -196,9 +206,7 @@ namespace Garnet.server
                 if (disabledBroker)
                     continue;
 
-                WriteArrayLength(3);
-
-                WriteBulkString(CmdStrings.psubscribe);
+                WriteDirect(CmdStrings.RESP_Array3_psubscribe);
                 WriteLargeBulkString(key.ReadOnlySpan);
 
                 if (subscribeBroker.PatternSubscribe(key, this))
@@ -231,9 +239,7 @@ namespace Garnet.server
                 var channels = subscribeBroker.ListAllSubscriptions(this);
                 foreach (var channel in channels)
                 {
-                    WriteArrayLength(3);
-                    WriteBulkString(CmdStrings.unsubscribe);
-
+                    WriteDirect(CmdStrings.RESP_Array3_unsubscribe);
                     WriteLargeBulkString(channel.ReadOnlySpan);
 
                     if (subscribeBroker.Unsubscribe(channel, this))
@@ -243,10 +249,14 @@ namespace Garnet.server
 
                 if (channels.Count == 0)
                 {
-                    WriteArrayLength(3);
-                    WriteBulkString(CmdStrings.unsubscribe);
-
-                    WriteNull();
+                    if(respProtocolVersion == 3)
+                    {
+                        WriteDirect(CmdStrings.RESP_Array3_unsubscribe_null3);
+                    }
+                    else
+                    {
+                        WriteDirect(CmdStrings.RESP_Array3_unsubscribe_null2);
+                    }
 
                     WriteInt32(numActiveChannels);
                 }
@@ -263,8 +273,7 @@ namespace Garnet.server
 
                 if (subscribeBroker != null)
                 {
-                    WriteArrayLength(3);
-                    WriteBulkString(CmdStrings.unsubscribe);
+                    WriteDirect(CmdStrings.RESP_Array3_unsubscribe);
                     WriteLargeBulkString(key.ReadOnlySpan);
 
                     if (subscribeBroker.Unsubscribe(new ByteArrayWrapper(key), this))
@@ -299,8 +308,7 @@ namespace Garnet.server
                 List<ByteArrayWrapper> channels = subscribeBroker.ListAllPatternSubscriptions(this);
                 foreach (var channel in channels)
                 {
-                    WriteArrayLength(3);
-                    WriteBulkString(CmdStrings.punsubscribe);
+                    WriteDirect(CmdStrings.RESP_Array3_punsubscribe);
 
                     WriteLargeBulkString(channel.ReadOnlySpan);
 
@@ -312,13 +320,14 @@ namespace Garnet.server
 
                 if (channels.Count == 0)
                 {
-                    WriteArrayLength(3);
-
-                    WriteBulkString(CmdStrings.punsubscribe);
-
-                    WriteNull();
-
-                    WriteInt32(0);
+                    if(respProtocolVersion == 3)
+                    {
+                        WriteDirect(CmdStrings.RESP_Array3_punsubscribe_null3_0);
+                    }
+                    else
+                    {
+                        WriteDirect(CmdStrings.RESP_Array3_punsubscribe_null2_0);
+                    }
                 }
 
                 if (numActiveChannels == 0)
@@ -333,8 +342,7 @@ namespace Garnet.server
 
                 if (subscribeBroker != null)
                 {
-                    WriteArrayLength(3);
-                    WriteBulkString(CmdStrings.punsubscribe);
+                    WriteDirect(CmdStrings.RESP_Array3_punsubscribe);
                     WriteLargeBulkString(key.ReadOnlySpan);
 
                     if (subscribeBroker.PatternUnsubscribe(new ByteArrayWrapper(key), this))

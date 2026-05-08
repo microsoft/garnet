@@ -426,11 +426,14 @@ namespace Garnet.server
             }
             else
             {
-                WriteMapLength(3);
-
-                WriteBulkString(CmdStrings.flags);
-
-                WriteSetLength(1);
+                if(respProtocolVersion == 3)
+                {
+                    WriteDirect(CmdStrings.RESP_Map3_flags_Set1);
+                }
+                else
+                {
+                    WriteDirect(CmdStrings.RESP_Array6_flags_Array1);
+                }
 
                 if (user.IsEnabled)
                 {

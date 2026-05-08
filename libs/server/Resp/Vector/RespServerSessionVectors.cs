@@ -1189,8 +1189,7 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteArrayLength(14);
-            WriteSimpleString(CmdStrings.quant_type);
+            WriteDirect(CmdStrings.RESP_Array14_quant_type);
             WriteLargeBulkString(quantTypeSpan);
             WriteSimpleString(CmdStrings.distance_metric);
             WriteLargeBulkString(distanceMetricTypeSpan);
