@@ -140,7 +140,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, CancellationToken token = default, ILogger logger = null)
         {
             if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
 
@@ -191,7 +191,7 @@ namespace Garnet.server
                 throw;
             }
 
-            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, logger, token);
+            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
 
             if (background)
                 return Task.FromResult(true);
@@ -200,7 +200,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, CancellationToken token = default, ILogger logger = null)
         {
             Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
 
@@ -227,7 +227,7 @@ namespace Garnet.server
 
             // Reuse the shared runner. multiDbLockHeld=false because per-DB BGSAVE doesn't take the
             // multi-DB-checkpointing mutex (multiple per-DB BGSAVEs on different DBs are legal).
-            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, 1, multiDbLockHeld: false, logger, token);
+            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, 1, multiDbLockHeld: false, token, logger);
 
             if (background)
                 return Task.FromResult(true);
@@ -310,7 +310,7 @@ namespace Garnet.server
 
                 if (pausedDbId < 0) return;
 
-                await RunPausedCheckpointAsync(databasesMapSnapshot[pausedDbId], pausedDbId, logger, token).ConfigureAwait(false);
+                await RunPausedCheckpointAsync(databasesMapSnapshot[pausedDbId], pausedDbId, token, logger).ConfigureAwait(false);
             }
             finally
             {
@@ -987,7 +987,7 @@ namespace Garnet.server
         /// pause-locked every DB in <paramref name="pausedDbIds"/>[0..<paramref name="pausedCount"/>).
         /// </summary>
         private async Task<bool> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
-            bool multiDbLockHeld, ILogger logger, CancellationToken token)
+            bool multiDbLockHeld, CancellationToken token, ILogger logger)
         {
             try
             {
@@ -1002,7 +1002,7 @@ namespace Garnet.server
                 {
                     for (var i = 0; i < pausedCount; i++)
                     {
-                        checkpointTasks[i] = RunPausedCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i], logger, token);
+                        checkpointTasks[i] = RunPausedCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i], token, logger);
                         handedOffCount = i + 1;
                     }
 
@@ -1034,7 +1034,7 @@ namespace Garnet.server
         /// Run a single pre-paused per-DB checkpoint and resume the per-DB checkpoint lock.
         /// Caller must have already pause-locked <paramref name="dbId"/> via <see cref="TryPauseCheckpoints(int)"/>.
         /// </summary>
-        private async Task RunPausedCheckpointAsync(GarnetDatabase db, int dbId, ILogger logger, CancellationToken token)
+        private async Task RunPausedCheckpointAsync(GarnetDatabase db, int dbId, CancellationToken token, ILogger logger)
         {
             try
             {

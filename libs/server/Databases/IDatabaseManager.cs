@@ -88,20 +88,20 @@ namespace Garnet.server
         /// Take checkpoint of all active databases if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default);
+        public Task<bool> TakeCheckpointAsync(bool background, CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Take checkpoint of specified database ID if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="dbId">ID of database to checkpoint</param>
-        /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId, CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
