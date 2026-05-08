@@ -2909,7 +2909,7 @@ namespace Garnet.server
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
-                    WriteError(specificErrorMessage);
+                    WriteLargeError(specificErrorMessage);
                 }
                 else
                 {

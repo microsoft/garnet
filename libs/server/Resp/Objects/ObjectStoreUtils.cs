@@ -46,7 +46,7 @@ namespace Garnet.server
         private bool AbortWithErrorMessage(ReadOnlySpan<byte> errorMessage)
         {
             // Print error message to result stream
-            WriteError(errorMessage);
+            WriteLargeError(errorMessage);
 
             return true;
         }

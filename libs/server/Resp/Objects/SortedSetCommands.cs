@@ -474,7 +474,7 @@ namespace Garnet.server
                         WriteArrayLength(2);
 
                         // Write key
-                        WriteBulkString(poppedKey.ReadOnlySpan);
+                        WriteLargeBulkString(poppedKey.ReadOnlySpan);
 
                         // Write array of member-score pairs
                         WriteArrayLength(pairs.Length);
@@ -482,7 +482,7 @@ namespace Garnet.server
                         foreach (var (member, score) in pairs)
                         {
                             WriteArrayLength(2);
-                            WriteBulkString(member.ReadOnlySpan);
+                            WriteLargeBulkString(member.ReadOnlySpan);
 
                             if (respProtocolVersion >= 3)
                             {
@@ -490,7 +490,7 @@ namespace Garnet.server
                             }
                             else
                             {
-                                WriteBulkString(score.ReadOnlySpan);
+                                WriteLargeBulkString(score.ReadOnlySpan);
                             }
                         }
                     }
@@ -935,7 +935,7 @@ namespace Garnet.server
                                 if (respProtocolVersion >= 3 && includeWithScores)
                                     WriteArrayLength(2);
 
-                                WriteBulkString(element);
+                                WriteLargeBulkString(element);
 
                                 if (includeWithScores)
                                 {
@@ -1101,7 +1101,7 @@ namespace Garnet.server
                             WriteArrayLength(2);
                         }
 
-                        WriteBulkString(element);
+                        WriteLargeBulkString(element);
 
                         if (includeWithScores)
                         {
@@ -1381,7 +1381,7 @@ namespace Garnet.server
                             WriteArrayLength(2);
                         }
 
-                        WriteBulkString(element);
+                        WriteLargeBulkString(element);
 
                         if (includeWithScores)
                         {
@@ -1536,9 +1536,9 @@ namespace Garnet.server
             {
                 WriteArrayLength(3);
 
-                WriteBulkString(result.Key);
+                WriteLargeBulkString(result.Key);
 
-                WriteBulkString(result.Item);
+                WriteLargeBulkString(result.Item);
 
                 WriteDoubleNumeric(result.Score);
             }
@@ -1645,14 +1645,14 @@ namespace Garnet.server
             // Write array with 2 elements: key and array of member-score pairs
             WriteArrayLength(2);
 
-            WriteBulkString(result.Key);
+            WriteLargeBulkString(result.Key);
 
             WriteArrayLength(result.Items.Length);
 
             for (var i = 0; i < result.Items.Length; ++i)
             {
                 WriteArrayLength(2);
-                WriteBulkString(result.Items[i]);
+                WriteLargeBulkString(result.Items[i]);
                 WriteDoubleNumeric(result.Scores[i]);
             }
 

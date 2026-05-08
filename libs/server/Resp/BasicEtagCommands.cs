@@ -207,7 +207,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                WriteError(errorMessage);
+                WriteLargeError(errorMessage);
                 return true;
             }
 

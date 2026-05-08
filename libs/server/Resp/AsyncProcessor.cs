@@ -49,7 +49,7 @@ namespace Garnet.server
         {
             unsafe
             {
-                WriteError($"ASYNC {asyncStarted}");
+                WriteLargeError($"ASYNC {asyncStarted}");
             }
 
             if (++asyncStarted == 1) // first async operation on the session, create the IO continuation processor

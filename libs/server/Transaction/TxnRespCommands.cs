@@ -126,7 +126,7 @@ namespace Garnet.server
                 if (invalidNumArgs)
                 {
                     var err = string.Format(CmdStrings.GenericErrWrongNumArgs, RespCommandsInfo.GetRespCommandName(cmd));
-                    WriteError(err);
+                    WriteLargeError(err);
                     txnManager.Abort();
                     return true;
                 }
@@ -150,7 +150,7 @@ namespace Garnet.server
 
                 if (abort)
                 {
-                    WriteError(errMsg);
+                    WriteLargeError(errMsg);
                     txnManager.Abort();
                     return true;
                 }
@@ -158,7 +158,7 @@ namespace Garnet.server
 
             if (cmd == RespCommand.DEBUG && !CanRunDebug())
             {
-                WriteError(System.Text.Encoding.ASCII.GetBytes(string.Format(
+                WriteLargeError(System.Text.Encoding.ASCII.GetBytes(string.Format(
                            CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command")));
 
                 txnManager.Abort();
@@ -287,7 +287,7 @@ namespace Garnet.server
             if ((arity > 0 && count != arity) || (arity < 0 && count < -arity))
             {
                 var expectedParams = arity > 0 ? arity - 1 : -arity - 1;
-                WriteError(string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1));
+                WriteLargeError(string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1));
             }
             else
                 TryTransactionProc((byte)txId, proc, 1);

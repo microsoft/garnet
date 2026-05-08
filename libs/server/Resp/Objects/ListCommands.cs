@@ -255,13 +255,13 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     WriteArrayLength(2);
 
-                    WriteBulkString(key.Span);
+                    WriteLargeBulkString(key.Span);
 
                     WriteArrayLength(elements.Length);
 
                     foreach (var element in elements)
                     {
-                        WriteBulkString(element.Span);
+                        WriteLargeBulkString(element.Span);
                     }
 
                     break;
@@ -321,9 +321,9 @@ namespace Garnet.server
             {
                 WriteArrayLength(2);
 
-                WriteBulkString(new Span<byte>(result.Key));
+                WriteLargeBulkString(new Span<byte>(result.Key));
 
-                WriteBulkString(new Span<byte>(result.Item));
+                WriteLargeBulkString(new Span<byte>(result.Item));
             }
 
             return true;
@@ -423,7 +423,7 @@ namespace Garnet.server
             }
             else
             {
-                WriteBulkString(new Span<byte>(result.Item));
+                WriteLargeBulkString(result.Item);
             }
 
             return true;
@@ -753,7 +753,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        WriteBulkString(node);
+                        WriteLargeBulkString(node);
                     }
                     else
                     {
@@ -794,7 +794,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        WriteBulkString(node);
+                        WriteLargeBulkString(node);
                     }
                     else
                     {
@@ -974,14 +974,14 @@ namespace Garnet.server
 
             WriteArrayLength(2);
 
-            WriteBulkString(result.Key);
+            WriteLargeBulkString(result.Key);
 
             var elements = result.Items;
             WriteArrayLength(elements.Length);
 
             foreach (var element in elements)
             {
-                WriteBulkString(element);
+                WriteLargeBulkString(element);
             }
 
             return true;

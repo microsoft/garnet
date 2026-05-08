@@ -490,7 +490,7 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
-                WriteError($"ERR Protocol Error: {ex.Message}");
+                WriteLargeError($"ERR Protocol Error: {ex.Message}");
 
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
@@ -507,7 +507,7 @@ namespace Garnet.server
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
                 {
-                    WriteError($"ERR Garnet Exception: {ex.Message}");
+                    WriteLargeError($"ERR Garnet Exception: {ex.Message}");
                 }
 
                 // Send message and dispose the network sender to end the session
@@ -1158,7 +1158,7 @@ namespace Garnet.server
             if ((arity > 0 && count != arity - 1) ||
                 (arity < 0 && count < -arity - 1))
             {
-                WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
+                WriteLargeError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
 
                 return false;
             }

@@ -87,7 +87,7 @@ namespace Garnet.server
 
                         foreach (var item in result)
                         {
-                            WriteBulkString(item);
+                            WriteLargeBulkString(item);
                         }
                     }
                     else
@@ -238,7 +238,7 @@ namespace Garnet.server
 
                     foreach (var item in result)
                     {
-                        WriteBulkString(item);
+                        WriteLargeBulkString(item);
                     }
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -691,7 +691,7 @@ namespace Garnet.server
 
                         foreach (var item in output)
                         {
-                            WriteBulkString(item);
+                            WriteLargeBulkString(item);
                         }
                     }
                     break;
