@@ -2311,52 +2311,6 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that <c>OnTruncate</c> deletes orphaned <c>.tmp</c> files in the riLogRoot
-        /// (proving the trigger fires after device truncation completes).
-        /// </summary>
-        [Test]
-        public void RIOnTruncateRemovesOrphanTmpFilesTest()
-        {
-            server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
-                lowMemory: true);
-            server.Start();
-
-            var store = server.Provider.StoreWrapper.store;
-            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
-
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
-            {
-                var db = redis.GetDatabase(0);
-
-                // Create RI so that riLogRoot exists. Field/value must satisfy MINRECORD=8.
-                db.Execute("RI.CREATE", "trunctest", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
-                db.Execute("RI.SET", "trunctest", "field-1", "value-1");
-            }
-
-            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot should exist");
-
-            // Drop a bogus .tmp file (simulating a crash mid-pre-stage).
-            var bogusTmp = Path.Combine(riLogRoot, "deadbeefdeadbeefdeadbeefdeadbeef.data.bftree.tmp");
-            File.WriteAllBytes(bogusTmp, new byte[16]);
-            ClassicAssert.IsTrue(File.Exists(bogusTmp), "test setup: bogus tmp file should exist");
-
-            // Force a Shift past the head — fires OnTruncate.
-            store.Log.ShiftBeginAddress(store.Log.HeadAddress, truncateLog: true);
-
-            // OnTruncate runs on Task.Run; wait briefly.
-            for (int wait = 0; wait < 100; wait++)
-            {
-                if (!File.Exists(bogusTmp)) break;
-                Thread.Sleep(50);
-            }
-
-            ClassicAssert.IsFalse(File.Exists(bogusTmp),
-                "OnTruncate must delete orphan .data.bftree.tmp files (proving trigger fires post-truncate)");
-        }
-
-        /// <summary>
         /// Regression test for the GPT-5.5-flagged blocker: eviction of a stale source record after
         /// transfer (PostCopyToTail-live or RIPROMOTE-live) must NOT remove the liveIndexes entry
         /// that now belongs to the destination record.

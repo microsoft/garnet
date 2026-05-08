@@ -223,8 +223,8 @@ namespace Garnet.server
             else
             {
                 // Disk source (post-eviction or post-OnDiskRead-invalidate): pre-stage data.bftree
-                // from <srcAddr:x16>.flush.bftree (atomic via .tmp + File.Move), and register a
-                // pending entry so the next checkpoint captures dst's content.
+                // from <srcAddr:x16>.flush.bftree, and register a pending entry so the next
+                // checkpoint captures dst's content.
                 if (srcLogicalAddress != Tsavorite.core.LogAddress.kInvalidAddress)
                     rangeIndexManager.PreStageAndRegisterPending(dstLogRecord.Key, srcLogicalAddress);
             }

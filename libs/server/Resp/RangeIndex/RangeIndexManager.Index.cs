@@ -197,14 +197,12 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">The raw key bytes (used to compute the key hash for lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
-        /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete any on-disk
-        /// <c>&lt;hash&gt;.*</c> files in the riLogRoot — including <c>data.bftree</c>,
-        /// <c>data.bftree.tmp</c>, and all <c>&lt;addr&gt;.flush.bftree</c> files. Performed
-        /// regardless of <see cref="RangeIndexStub.StorageBackend"/> (the underlying
-        /// <see cref="DeleteTreeFiles"/> is idempotent, and we want to defensively reclaim any
-        /// files that exist regardless of the current backend value, e.g. files a memory-backed
-        /// stub may have inherited from a prior incarnation or from future memory-snapshot
-        /// support). When <c>false</c> (eviction), files are preserved for lazy restore.</param>
+        /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete the working
+        /// <c>&lt;hash&gt;.data.bftree</c> file in the riLogRoot. Per-flush snapshot files
+        /// (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>) are deliberately preserved here — see
+        /// <see cref="DeleteTreeFiles"/> for rationale. Performed regardless of
+        /// <see cref="RangeIndexStub.StorageBackend"/> (idempotent). When <c>false</c> (eviction),
+        /// files are preserved for lazy restore.</param>
         internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, bool deleteFiles)
         {
             ref readonly var stub = ref ReadIndex(valueSpan);
@@ -242,9 +240,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Delete the working files for a deleted RangeIndex key under the flat layout. Removes
-        /// only <c>{logRoot}/&lt;hash&gt;.data.bftree</c> and any orphan
-        /// <c>&lt;hash&gt;.data.bftree.tmp</c>.
+        /// Delete the working file for a deleted RangeIndex key under the flat layout. Removes
+        /// only <c>{logRoot}/&lt;hash&gt;.data.bftree</c>.
         ///
         /// <para>Does NOT delete <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files: those are
         /// LOG-tied (their lifetime tracks log addresses, not key existence) and may still be
@@ -266,21 +263,15 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
                 return;
 
-            var hashPrefix = HashKeyToPrefix(key);
-            TryDelete(LogDataPath(hashPrefix));
-            TryDelete(Path.Combine(riLogRoot, hashPrefix + ".data.bftree.tmp"));
-
-            void TryDelete(string p)
+            var dataPath = LogDataPath(HashKeyToPrefix(key));
+            try
             {
-                try
-                {
-                    if (File.Exists(p))
-                        File.Delete(p);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", p);
-                }
+                if (File.Exists(dataPath))
+                    File.Delete(dataPath);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", dataPath);
             }
         }
 

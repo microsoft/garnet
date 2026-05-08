@@ -428,9 +428,7 @@ namespace Garnet.server
         /// (snapshot file may be deleted post-recovery, so this MUST run during recovery).
         /// Registers a pending entry so any first checkpoint after recovery captures the key correctly.
         ///
-        /// <para>Note: a direct <c>File.Copy(overwrite: true)</c> is used instead of the atomic
-        /// <c>.tmp</c> + <c>File.Move</c> pattern (cf. <see cref="PreStageAndRegisterPending"/>):
-        /// recovery is single-threaded with no concurrent readers, and a crash mid-copy is
+        /// <para>Recovery is single-threaded with no concurrent readers, and a crash mid-copy is
         /// self-healing — the next recovery attempt re-fires <c>OnRecoverySnapshotRead</c> for
         /// the same stub and fully overwrites any partial file before any <c>RestoreTree</c>
         /// can observe it.</para>
@@ -576,10 +574,7 @@ namespace Garnet.server
 
         /// <summary>
         /// On log truncation, delete per-flush snapshot files in the log root whose address is
-        /// strictly less than <paramref name="newBeginAddress"/>. Also defensively cleans any
-        /// stale <c>.data.bftree.tmp</c> files (current code paths use direct
-        /// <c>System.IO.File.Copy</c> so no <c>.tmp</c> files are produced; this cleanup
-        /// catches orphans from any legacy or future atomic-rename code paths).
+        /// strictly less than <paramref name="newBeginAddress"/>.
         /// Per-checkpoint snapshots are NOT touched here — Tsavorite's checkpoint manager
         /// removes them when it deletes the parent token directory.
         ///
@@ -600,13 +595,6 @@ namespace Garnet.server
                 foreach (var path in Directory.EnumerateFiles(riLogRoot))
                 {
                     var name = Path.GetFileName(path);
-
-                    // Defensive: clean up any stale .tmp orphan from legacy code paths.
-                    if (name.EndsWith(".data.bftree.tmp", StringComparison.Ordinal))
-                    {
-                        TryDelete(path);
-                        continue;
-                    }
 
                     if (!name.EndsWith(".flush.bftree", StringComparison.Ordinal))
                         continue;
