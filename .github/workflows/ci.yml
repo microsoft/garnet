@@ -84,7 +84,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -109,10 +109,19 @@ jobs:
           try {
               $types = $asm.GetTypes()
           } catch [System.Reflection.ReflectionTypeLoadException] {
-              # Keep only successfully loaded types, skip nulls
               $types = $_.Exception.Types | Where-Object { $_ -ne $null }
           }
           $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
+          if (-not $allureBase) {
+            # AllureTestBase may be in a referenced assembly (e.g., child test projects referencing a base test project)
+            foreach ($refAsm in $asm.GetReferencedAssemblies()) {
+              try {
+                $loaded = [System.Reflection.Assembly]::Load($refAsm)
+                $allureBase = $loaded.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+                if ($allureBase) { break }
+              } catch { }
+            }
+          }
 
           $bad = @()
           foreach ($t in $types) {

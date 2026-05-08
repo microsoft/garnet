@@ -78,6 +78,10 @@
   <Folder Name="/test/">
     <Project Path="test/Garnet.fuzz/Garnet.fuzz.csproj" />
     <Project Path="test/Garnet.test.cluster/Garnet.test.cluster.csproj" />
+    <Project Path="test/Garnet.test.cluster.migrate/Garnet.test.cluster.migrate.csproj" />
+    <Project Path="test/Garnet.test.cluster.replication/Garnet.test.cluster.replication.csproj" />
+    <Project Path="test/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
+    <Project Path="test/Garnet.test.cluster.multilog/Garnet.test.cluster.multilog.csproj" />
     <Project Path="test/Garnet.test/Garnet.test.csproj" />
   </Folder>
 </Solution>

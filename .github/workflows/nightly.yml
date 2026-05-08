@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test' ]
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]

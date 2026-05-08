@@ -9,7 +9,7 @@ using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
-    sealed class ClusterDelRmw : CustomTransactionProcedure
+    public sealed class ClusterDelRmw : CustomTransactionProcedure
     {
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
