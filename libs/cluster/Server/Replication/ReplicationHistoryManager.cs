@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -14,6 +13,12 @@ namespace Garnet.cluster
 {
     internal sealed class ReplicationHistory
     {
+        /// <summary>
+        /// Version of the replication history serialization format.
+        /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
+        /// </summary>
+        public const byte ReplicationHistoryVersion = 1;
+
         public string PrimaryReplId => primary_replid;
         string primary_replid;
         public string PrimaryReplId2 => primary_replid2;
@@ -43,8 +48,9 @@ namespace Garnet.cluster
         public byte[] ToByteArray()
         {
             using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms, Encoding.ASCII);
+            using var writer = new BinaryWriter(ms);
 
+            writer.Write(ReplicationHistoryVersion);
             writer.Write(primary_replid);
             writer.Write(primary_replid2);
             replicationOffset.Serialize(writer);
@@ -58,6 +64,14 @@ namespace Garnet.cluster
         {
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
+
+            // Read and validate serialization format version
+            if (data.Length < 1)
+                throw new InvalidDataException("Invalid ReplicationHistory payload: too short to contain a version");
+
+            var version = reader.ReadByte();
+            if (version != ReplicationHistoryVersion)
+                throw new InvalidDataException($"Incompatible ReplicationHistory version: expected {ReplicationHistoryVersion}, got {version}");
 
             var primary_replid = reader.ReadString();
             var primary_replid2 = reader.ReadString();
@@ -105,13 +119,15 @@ namespace Garnet.cluster
         private void RecoverReplicationHistory()
         {
             var replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
-            currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
-            //TODO: handle scenario where replica crashed before became a primary and it has two replication ids
-            //var current = storeWrapper.clusterManager.CurrentConfig;
-            //if(current.GetLocalNodeRole() == NodeRole.REPLICA && !primary_replid2.Equals(Generator.DefaultHexId()))
-            //{
-
-            //}
+            try
+            {
+                currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
+            {
+                logger?.LogWarning(ex, "Corrupt or incompatible replication history on disk, reinitializing fresh state");
+                InitializeReplicationHistory(storeWrapper.serverOptions.AofPhysicalSublogCount);
+            }
         }
 
         private void TryUpdateMyPrimaryReplId(string primaryReplicationId)

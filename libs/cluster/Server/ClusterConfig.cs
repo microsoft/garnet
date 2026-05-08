@@ -41,6 +41,12 @@ namespace Garnet.cluster
         public const int MAX_HASH_SLOT_VALUE = 16384;
 
         /// <summary>
+        /// Version of the cluster config serialization format.
+        /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
+        /// </summary>
+        public const byte ClusterConfigVersion = 1;
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="slot"></param>
