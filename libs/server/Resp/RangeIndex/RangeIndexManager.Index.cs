@@ -249,17 +249,23 @@ namespace Garnet.server
             if (stub.IsTransferred && !deleteFiles)
                 return;
 
-            if (stub.TreeHandle == nint.Zero && !deleteFiles)
-            {
-                // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
-                _ = liveIndexes.TryRemove(KeyId(key), out _);
-                return;
-            }
-
+            // All liveIndexes mutations (cold-pending eviction below, plus the activated path
+            // further down) MUST hold the per-key exclusive lock to serialize against
+            // SetCheckpointBarrier / SnapshotAllTreesForCheckpoint / RegisterIndex /
+            // PreStageAndRegisterPending which all touch this entry under the same lock.
+            // Without it, a cold eviction concurrent with checkpoint can silently drop a
+            // pending entry mid-snapshot iteration, narrowing checkpoint coverage for the key.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
+                if (stub.TreeHandle == nint.Zero && !deleteFiles)
+                {
+                    // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
+                    _ = liveIndexes.TryRemove(KeyId(key), out _);
+                    return;
+                }
+
                 _ = UnregisterIndex(key);
 
                 if (deleteFiles)

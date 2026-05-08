@@ -286,7 +286,10 @@ namespace Garnet.server
                 if (!File.Exists(workingPath))
                 {
                     // Should not happen in normal flow — pre-staging guarantees data.bftree exists
-                    // for any stub above FUA whose TreeHandle is 0. Log warning and return false.
+                    // for any stub above FUA whose TreeHandle is 0. Assert in Debug builds so CI
+                    // catches violations of the pre-stage invariant; LogWarning + return false in
+                    // Release so the affected key surfaces NOTFOUND rather than crashing the process.
+                    Debug.Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
                     logger?.LogWarning("RestoreTree: data.bftree missing for {Hash} — pre-stage invariant violated", hashPrefix);
                     return false;
                 }

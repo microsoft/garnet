@@ -527,9 +527,6 @@ namespace Garnet.server
         /// <param name="logicalAddress">The logical address of the record being flushed.</param>
         internal void SnapshotTreeForFlush(ReadOnlySpan<byte> key, Span<byte> valueSpan, long logicalAddress)
         {
-            if (string.IsNullOrEmpty(riLogRoot))
-                return;
-
             ref readonly var stub = ref ReadIndex(valueSpan);
 
             // Stale source whose ownership was transferred to a newer record at the tail: no-op.
@@ -541,12 +538,18 @@ namespace Garnet.server
 
             if (stub.StorageBackend == (byte)StorageBackendType.Memory)
             {
-                // Memory-only trees: not yet supported by the native library for snapshot-to-file.
-                // Set IsFlushed so the next access triggers RIPROMOTE-live which re-anchors the
-                // in-memory tree to a fresh tail record. Data is lost on first eviction post-flush.
+                // Memory-only trees: no disk artifacts to write (snapshot-to-file not yet
+                // supported by the native library). Set IsFlushed unconditionally — including
+                // when riLogRoot is null/empty — so the next access triggers RIPROMOTE-live
+                // which re-anchors the in-memory tree to a fresh tail record. Without this
+                // flag the tree would be disposed on first page eviction with no recourse.
                 SetFlushedFlag(valueSpan);
                 return;
             }
+
+            // Disk-backed paths require riLogRoot.
+            if (string.IsNullOrEmpty(riLogRoot))
+                return;
 
             var hashPrefix = HashKeyToPrefix(key);
             var dataPath = LogDataPath(hashPrefix);
