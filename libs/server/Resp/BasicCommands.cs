@@ -331,7 +331,7 @@ namespace Garnet.server
 
             storageApi.SETRANGE(key, ref input, ref output);
 
-            WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
+            WriteLargeIntegerFromBytes(outputBuffer.Slice(0, output.Length));
 
             return true;
         }
@@ -732,7 +732,7 @@ namespace Garnet.server
             switch (errorFlag)
             {
                 case OperationError.SUCCESS:
-                    WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
+                    WriteLargeIntegerFromBytes(outputBuffer.Slice(0, output.Length));
                     break;
                 case OperationError.NAN_OR_INFINITY:
                 case OperationError.INVALID_TYPE:
@@ -799,7 +799,7 @@ namespace Garnet.server
 
             storageApi.APPEND(ref sbKey, ref input, ref output);
 
-            WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
+            WriteLargeIntegerFromBytes(outputBuffer.Slice(0, output.Length));
 
             return true;
         }
@@ -1327,7 +1327,7 @@ namespace Garnet.server
             var uSeconds = utcTime.ToString("ffffff");
             var response = $"*2\r\n${seconds.ToString().Length}\r\n{seconds}\r\n${uSeconds.Length}\r\n{uSeconds}\r\n";
 
-            WriteAsciiDirect(response);
+            WriteLargeAsciiDirect(response);
 
             return true;
         }
@@ -1544,14 +1544,14 @@ namespace Garnet.server
             WriteMapLength(helloResult.Length + 1);
             for (var i = 0; i < helloResult.Length; i++)
             {
-                WriteAsciiBulkString(helloResult[i].Item1);
+                WriteLargeAsciiBulkString(helloResult[i].Item1);
                 if (helloResult[i].Item2 is long value)
                 {
                     WriteInt64(value);
                 }
                 else
                 {
-                    WriteAsciiBulkString(helloResult[i].Item2.ToString());
+                    WriteLargeAsciiBulkString(helloResult[i].Item2.ToString());
                 }
             }
             WriteBulkString(CmdStrings.modules);

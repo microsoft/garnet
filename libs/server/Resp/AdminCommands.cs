@@ -802,7 +802,7 @@ namespace Garnet.server
                     foreach (var replice in replicaInfo)
                     {
                         WriteArrayLength(3);
-                        WriteAsciiBulkString(replice.address);
+                        WriteLargeAsciiBulkString(replice.address);
                         WriteInt32(replice.port);
                         WriteInt64(replice.replication_offset);
                     }
@@ -815,11 +815,11 @@ namespace Garnet.server
 
                     WriteBulkString(CmdStrings.slave);
 
-                    WriteAsciiBulkString(role.address);
+                    WriteLargeAsciiBulkString(role.address);
 
                     WriteInt32(role.port);
 
-                    WriteAsciiBulkString(role.replication_state);
+                    WriteLargeAsciiBulkString(role.replication_state);
 
                     WriteInt64(role.replication_offset);
                 }

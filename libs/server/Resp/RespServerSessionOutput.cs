@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -34,8 +33,29 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteAsciiBulkString(ReadOnlySpan<char> message)
         {
+            Debug.Assert(!message.ContainsAnyExceptInRange((char)0, (char)127), "Can only write all ASCII values using this method");
+
             while (!RespWriteUtils.TryWriteAsciiBulkString(message, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteLargeAsciiBulkString(ReadOnlySpan<char> message)
+        {
+            Debug.Assert(!message.ContainsAnyExceptInRange((char)0, (char)127), "Can only write all ASCII values using this method");
+
+            var buff = ArrayPool<byte>.Shared.Rent(message.Length);
+            try
+            {
+                var written = Encoding.ASCII.GetBytes(message, buff);
+                var asSpan = buff.AsSpan()[..written];
+
+                WriteLargeBulkString(asSpan);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buff);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -266,8 +286,11 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void WriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes)
+        internal void WriteLargeIntegerFromBytes(ReadOnlySpan<byte> integerBytes)
         {
+            // Despite being "Large" this is actually fixed size - could clean that up later
+            Debug.Assert(integerBytes.Length <= 20, "64-bit integer should not have more than 20 digits");
+
             while (!RespWriteUtils.TryWriteIntegerFromBytes(integerBytes, ref dcurr, dend))
                 SendAndReset();
         }
@@ -421,6 +444,29 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
                     SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLargeVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                ext = ext.IsEmpty ? RespStrings.VerbatimTxt : ext;
+
+                while (!RespWriteUtils.TryWriteVerbatimStringHeader(item, ext, ref dcurr, dend))
+                    SendAndReset();
+
+                // Write out item
+                WriteLargeDirect(item);
+
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                // RESP2 just gets a bulk string
+                WriteLargeBulkString(item);
             }
         }
     }
