@@ -79,6 +79,7 @@ namespace Garnet.cluster
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 GarnetClientSession gcs = null;
                 resetHandler ??= new CancellationTokenSource();
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                 try
                 {
                     if (!clusterProvider.serverOptions.EnableFastCommit && storeWrapper.appendOnlyFile != null)
@@ -95,9 +96,34 @@ namespace Garnet.cluster
 
                     // Reset the database in preparation for connecting to primary
                     // only if we expect to have disk checkpoint to recover from,
-                    // otherwise the replica will receive a reset message from primary if needed
+                    // otherwise the replica will receive a reset message from primary if needed.
+                    // Pause VectorManager's background cleanup task first — Reset's
+                    // post-Phase-2 Initialize() rewinds HeadAddress / BeginAddress /
+                    // TailPageOffset and reallocates pages. Tsavorite's iterator path is
+                    // safe (Initializing flag), but the cleanup task's POST-iterate RMWs
+                    // on metadata records (ClearDeleteInProgress / UpdateContextMetadata)
+                    // are NOT — they can dereference freed pagePointers and AVE. The pause
+                    // serializes the entire cleanup-iteration (iterate + RMWs) with Reset
+                    // by holding cleanupGate, restoring Reset's "store is quiesced" contract.
+                    //
+                    // Pass linkedCts.Token so a slow cleanup-iteration over a large keyspace
+                    // doesn't block re-attach indefinitely if the broader replication is
+                    // cancelled (ctsRepManager / resetHandler). If PauseCleanupAsync throws
+                    // OCE, the try block isn't entered and ResumeCleanup is correctly skipped.
                     if (!disklessSync)
-                        storeWrapper.Reset();
+                    {
+                        var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
+                        if (vectorManager != null)
+                            await vectorManager.PauseCleanupAsync(linkedCts.Token).ConfigureAwait(false);
+                        try
+                        {
+                            storeWrapper.Reset();
+                        }
+                        finally
+                        {
+                            vectorManager?.ResumeCleanup();
+                        }
+                    }
 
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
@@ -125,7 +151,6 @@ namespace Garnet.cluster
                         return errorMsg;
                     }
 
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                     gcs = new(
                         new IPEndPoint(IPAddress.Parse(address), port),
                         networkBufferSettings: clusterProvider.replicationManager.GetIRSNetworkBufferSettings,

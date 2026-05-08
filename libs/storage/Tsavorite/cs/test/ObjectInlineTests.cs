@@ -428,7 +428,7 @@ namespace Tsavorite.test.Objects
             static void SetAndVerify(ref TestObjectInput input, ref TestValueStyle style, bool isInline, bool isOverflow)
             {
                 Set(ref style, isInline, isOverflow);
-                Assert.That(input.wantValueStyle, Is.EqualTo(style));
+                Assert.That(style, Is.EqualTo(input.wantValueStyle));
             }
 
             static RecordFieldInfo GetFieldInfo<TKey>(TKey key, ref TestObjectInput input)

@@ -12,7 +12,6 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.LogRecordTests
 {
     using static Utility;
-    using static VarbyteLengthUtility;
 
     /// <summary>
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
@@ -29,7 +28,7 @@ namespace Tsavorite.test.LogRecordTests
 #pragma warning disable IDE1006 // Naming Styles
         const int initialKeyLen = 10;
         const int initialValueLen = 40;
-        const int initialVarbyteSize = MinLengthMetadataBytes;
+        const int initialVarbyteSize = RecordDataHeader.MinHeaderBytes;
         const int initialOptionalSize = sizeof(long) * 2;
 
         const int maxInlineKeySize = 64;
@@ -72,13 +71,18 @@ namespace Tsavorite.test.LogRecordTests
             if (valueSize > 0)
                 sizeInfo.FieldInfo.ValueSize = valueSize;
 
+            // Clear packed word since we are re-evaluating; CalculateSizes will set KeyLengthBytes/RecordLengthBytes.
+            sizeInfo.word = 0;
+
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            if (sizeInfo.FieldInfo.KeySize <= maxInlineKeySize)
+                sizeInfo.SetKeyIsInline();
             keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValueSize;
+            if (!sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValueSize)
+                sizeInfo.SetValueIsInline();
             valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record
@@ -147,10 +151,10 @@ namespace Tsavorite.test.LogRecordTests
                         ValueSize = valueLength,
                         ExtendedNamespaceSize = exNameSpaceLength
                     },
-                    KeyIsInline = true,
-                    ValueIsInline = true,
                     MaxInlineValueSize = 1 << LogSettings.kMaxStringSizeBits
                 };
+                sizeInfo.SetKeyIsInline();
+                sizeInfo.SetValueIsInline();
                 sizeInfo.CalculateSizes(sizeInfo.FieldInfo.KeySize, sizeInfo.FieldInfo.ValueSize);
 
                 var dataHeader = new RecordDataHeader((byte*)nativePointer);

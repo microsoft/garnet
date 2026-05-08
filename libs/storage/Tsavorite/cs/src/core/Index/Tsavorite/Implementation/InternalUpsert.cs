@@ -72,7 +72,8 @@ namespace Tsavorite.core
             UpsertInfo upsertInfo = new()
             {
                 Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID
+                SessionID = sessionFunctions.Ctx.sessionID,
+                KeyHash = stackCtx.hei.hash
             };
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
@@ -117,7 +118,6 @@ namespace Tsavorite.core
 
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     upsertInfo.Address = stackCtx.recSrc.LogicalAddress;
-                    upsertInfo.KeyHash = stackCtx.hei.hash;
 
                     if (srcLogRecord.Info.Tombstone)
                     {

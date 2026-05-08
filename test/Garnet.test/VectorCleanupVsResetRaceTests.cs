@@ -3,9 +3,10 @@
 
 using System;
 using System.Buffers.Binary;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Allure.NUnit;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -16,12 +17,17 @@ namespace Garnet.test
     /// Regression test for a race between <c>VectorManager</c>'s background
     /// cleanup-task scan iterator (over the main string keyspace) and a
     /// concurrent <c>storeWrapper.Reset()</c> (e.g. triggered by a replica
-    /// re-attach). The race manifested as an AVE in
+    /// re-attach). The race originally manifested as an AVE in
     /// <c>SpanByteScanIterator.GetNext</c> dereferencing a freed page.
     ///
-    /// The test reproduces the path with no cluster overhead: add a vector
-    /// set on a single Garnet server, drop it (queues a cleanup scan), then
-    /// hammer <c>storeWrapper.Reset()</c> while the scan runs.
+    /// Production paths (cluster re-attach) wrap Reset with
+    /// <c>VectorManager.PauseCleanupAsync</c> / <c>ResumeCleanup</c> to
+    /// serialize the cleanup task (iterator + post-iterate RMWs) against
+    /// allocator teardown — Reset is only safe for concurrent SCAN iteration,
+    /// not for the cleanup task's RMWs on metadata records that follow the
+    /// iteration. This test mirrors that production pattern: add a vector set
+    /// on a single Garnet server, drop it (queues a cleanup scan), then hammer
+    /// <c>Pause + Reset + Resume</c> while the cleanup task runs.
     /// </summary>
     [AllureNUnit]
     [TestFixture]
@@ -44,24 +50,23 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        // Reflection helpers — the storeWrapper field is internal/private on GarnetServer.
-        private static object GetStoreWrapper(global::Garnet.GarnetServer s)
-        {
-            var field = typeof(global::Garnet.GarnetServer).GetField("storeWrapper", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return field?.GetValue(s);
-        }
-
-        private static void CallReset(object storeWrapper)
-        {
-            var method = storeWrapper.GetType().GetMethod("Reset", BindingFlags.Instance | BindingFlags.Public, null, [typeof(int)], null);
-            ClassicAssert.IsNotNull(method, "Reset(int) method not found on storeWrapper via reflection — signature may have changed; update CallReset()");
-            method.Invoke(storeWrapper, [0]);
-        }
+        // The storeWrapper field is private on GarnetServer; everything below it
+        // (DefaultDatabase, VectorManager, Reset(int)) is public so we access them
+        // directly through the StoreWrapper reference returned here.
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
+        private static extern ref StoreWrapper GetStoreWrapper(global::Garnet.GarnetServer server);
 
         /// <summary>
         /// Reproducer: drop a vector set (queues full-keyspace cleanup) and concurrently
-        /// hammer storeWrapper.Reset() until the cleanup task either completes or the
-        /// process AVE's.
+        /// hammer Pause+Reset+Resume — the production pattern used by cluster re-attach
+        /// (ReplicaDisklessSync / ReplicaDiskbasedSync). Without the Pause, Reset's
+        /// post-Phase-2 Initialize() would race with the cleanup task's RMWs on metadata
+        /// records (ClearDeleteInProgress / UpdateContextMetadata) and AVE — Reset is
+        /// only safe for concurrent SCAN iteration, not for arbitrary RMW/Read/Upsert.
+        ///
+        /// Verifies:
+        ///   * Pause+Reset+Resume against an in-flight cleanup-task iteration does not AVE.
+        ///   * cleanupGate correctly serializes cleanup-iteration with Reset.
         /// </summary>
         [Test]
         [Repeat(5)]
@@ -70,8 +75,11 @@ namespace Garnet.test
             const int Vectors = 4_000;
             const string Key = nameof(DropVectorSetWhileResettingStore);
 
-            var storeWrapper = GetStoreWrapper(server);
-            ClassicAssert.IsNotNull(storeWrapper, "Could not access storeWrapper via reflection");
+            ref var storeWrapper = ref GetStoreWrapper(server);
+            ClassicAssert.IsNotNull(storeWrapper, "Could not access storeWrapper via UnsafeAccessor");
+
+            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
+            ClassicAssert.IsNotNull(vectorManager, "VectorManager not initialised — enableVectorSetPreview must be true");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
@@ -88,32 +96,42 @@ namespace Garnet.test
             }
 
             // Drop the vector set. This calls VectorManager.CleanupDroppedIndex which writes to
-            // the cleanup channel; the background task then runs Iterate over the full keyspace.
+            // the cleanup channel; the background task then runs Iterate over the full keyspace
+            // and a series of RMWs to clear the in-progress-deletes metadata.
             _ = db.KeyDelete(Key);
 
-            // Race window: hammer storeWrapper.Reset() while the cleanup task iterates.
-            // If a Reset can free a page that the iterator subsequently dereferences,
-            // the test host AVEs.
+            // Race window: hammer Pause+Reset+Resume while the cleanup task iterates.
+            // Pause acquires VectorManager's cleanupGate; the cleanup-iteration body holds
+            // that gate from the start of the iterate through the post-iterate RMWs, so
+            // Pause waits for any in-flight iteration to fully finish before Reset proceeds.
             var deadline = DateTime.UtcNow.AddSeconds(5);
             int resets = 0;
             while (DateTime.UtcNow < deadline)
             {
+                vectorManager.PauseCleanupAsync().GetAwaiter().GetResult();
                 try
                 {
-                    CallReset(storeWrapper);
-                    resets++;
+                    try
+                    {
+                        storeWrapper.Reset();
+                        resets++;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Reset itself can throw if the store is in an unexpected state — that's OK
+                        // for our purposes; we care about whether the cleanup iteration AVEs.
+                        TestContext.Progress.WriteLine($"[reset] threw: {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
-                catch (TargetInvocationException tie) when (tie.InnerException is not null)
+                finally
                 {
-                    // Reset itself can throw if the store is in an unexpected state — that's OK
-                    // for our purposes; we care about whether the cleanup iteration AVEs.
-                    TestContext.Progress.WriteLine($"[reset] threw: {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
+                    vectorManager.ResumeCleanup();
                 }
                 Thread.Sleep(1);
             }
 
             TestContext.Progress.WriteLine($"[DropVectorSetWhileResettingStore] resets={resets}");
-            // If we reach here the cleanup iterator did not AVE the host.
+            // If we reach here the cleanup task did not AVE the host while Reset was hammering.
         }
     }
 }

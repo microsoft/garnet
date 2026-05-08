@@ -29,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
-        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
+        public readonly ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 
         /// <summary>
         /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
@@ -46,12 +46,13 @@ namespace Garnet.server
         /// </summary>
         PinnedSpanByte[] rootBuffer;
 
-        private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, ref PinnedSpanByte* bufferPtr, int count) : this()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, PinnedSpanByte* bufferPtr, int count)
         {
             this.rootBuffer = rootBuffer;
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
-            this.Count = count;
+            Count = count;
         }
 
         /// <summary>
@@ -172,9 +173,7 @@ namespace Garnet.server
             Initialize(args.Length);
 
             for (var i = 0; i < args.Length; i++)
-            {
                 *(bufferPtr + i) = args[i];
-            }
         }
 
         /// <summary>
@@ -216,13 +215,11 @@ namespace Garnet.server
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SessionParseState Slice(int idxOffset)
         {
             Debug.Assert(idxOffset - 1 < rootCount);
-
-            var count = rootCount - idxOffset;
-            var offsetBuffer = bufferPtr + idxOffset;
-            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
+            return new SessionParseState(ref rootBuffer, rootCount, bufferPtr: bufferPtr + idxOffset, count: rootCount - idxOffset);
         }
 
         /// <summary>
@@ -231,12 +228,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
         /// <param name="count">Argument count</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SessionParseState Slice(int idxOffset, int count)
         {
             Debug.Assert(idxOffset + count - 1 < rootCount);
-
-            var offsetBuffer = bufferPtr + idxOffset;
-            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
+            return new SessionParseState(ref rootBuffer, rootCount, bufferPtr: bufferPtr + idxOffset, count);
         }
 
         /// <summary>
@@ -249,9 +245,7 @@ namespace Garnet.server
             Initialize(args.Length);
 
             for (var i = 0; i < args.Length; i++)
-            {
                 *(bufferPtr + i) = args[i];
-            }
         }
 
         /// <summary>
@@ -265,9 +259,7 @@ namespace Garnet.server
             *(bufferPtr + i) = arg;
 
             if (i >= Count)
-            {
                 Count = i + 1;
-            }
         }
 
         /// <summary>
@@ -275,7 +267,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="i">Index of buffer at which to start setting arguments</param>
         /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, params ReadOnlySpan<PinnedSpanByte> args)
+        public readonly void SetArguments(int i, params ReadOnlySpan<PinnedSpanByte> args)
         {
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
@@ -286,7 +278,7 @@ namespace Garnet.server
         /// Get serialized length of parse state
         /// </summary>
         /// <returns>The serialized length</returns>
-        public int GetSerializedLength()
+        public readonly int GetSerializedLength()
         {
             var serializedLength = sizeof(int);
 
@@ -302,7 +294,7 @@ namespace Garnet.server
         /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
         /// <param name="length">Length of buffer to serialize into.</param>
         /// <returns>Total serialized bytes</returns>
-        public int SerializeTo(byte* dest, int length)
+        public readonly int SerializeTo(byte* dest, int length)
         {
             var curr = dest;
 
@@ -326,7 +318,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="src">Memory buffer to deserialize from</param>
         /// <returns>Number of deserialized bytes</returns>
-        public unsafe int DeserializeFrom(byte* src)
+        public int DeserializeFrom(byte* src)
         {
             var curr = src;
 
@@ -349,7 +341,7 @@ namespace Garnet.server
         /// Read the next argument from the input buffer
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Read(int i, ref byte* ptr, byte* end)
+        public readonly bool Read(int i, ref byte* ptr, byte* end)
         {
             Debug.Assert(i < Count);
             ref var slice = ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i);
@@ -374,7 +366,7 @@ namespace Garnet.server
         /// Get the argument at the given index
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref PinnedSpanByte GetArgSliceByRef(int i)
+        public readonly ref PinnedSpanByte GetArgSliceByRef(int i)
         {
             Debug.Assert(i < Count);
             return ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i);
@@ -385,7 +377,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetInt(int i)
+        public readonly int GetInt(int i)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadInt(*(bufferPtr + i));
@@ -396,7 +388,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetInt(int i, out int value)
+        public readonly bool TryGetInt(int i, out int value)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadInt(*(bufferPtr + i), out value);
@@ -407,7 +399,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetLong(int i)
+        public readonly long GetLong(int i)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadLong(*(bufferPtr + i));
@@ -418,7 +410,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if long parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetLong(int i, out long value)
+        public readonly bool TryGetLong(int i, out long value)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadLong(*(bufferPtr + i), out value);
@@ -429,7 +421,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if long parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetLong(int i, bool allowLeadingZeros, out long value)
+        public readonly bool TryGetLong(int i, bool allowLeadingZeros, out long value)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadLong(*(bufferPtr + i), allowLeadingZeros, out value);
@@ -440,7 +432,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public double GetDouble(int i, bool canBeInfinite = true)
+        public readonly double GetDouble(int i, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
@@ -451,7 +443,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetDouble(int i, out double value, bool canBeInfinite = true)
+        public readonly bool TryGetDouble(int i, out double value, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
@@ -462,7 +454,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public float GetFloat(int i, bool canBeInfinite = true)
+        public readonly float GetFloat(int i, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
@@ -473,7 +465,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        public readonly bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
@@ -484,7 +476,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public string GetString(int i)
+        public readonly string GetString(int i)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadString(*(bufferPtr + i));
@@ -495,7 +487,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool GetBool(int i)
+        public readonly bool GetBool(int i)
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadBool(*(bufferPtr + i));
@@ -506,7 +498,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if boolean parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetBool(int i, out bool value)
+        public readonly bool TryGetBool(int i, out bool value)
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadBool(*(bufferPtr + i), out value);

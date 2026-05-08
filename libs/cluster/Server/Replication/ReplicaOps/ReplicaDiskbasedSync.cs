@@ -132,8 +132,31 @@ namespace Garnet.cluster
                     // Reset replication offset
                     replicationOffset.SetValue(0);
 
-                    // Reset the database in preparation for connecting to primary
-                    storeWrapper.Reset();
+                    // Reset the database in preparation for connecting to primary.
+                    // Pause VectorManager's background cleanup task first — Reset's
+                    // post-Phase-2 Initialize() rewinds HeadAddress / BeginAddress /
+                    // TailPageOffset and reallocates pages. Tsavorite's iterator path is
+                    // safe (Initializing flag), but the cleanup task's POST-iterate RMWs
+                    // on metadata records (ClearDeleteInProgress / UpdateContextMetadata)
+                    // are NOT — they can dereference freed pagePointers and AVE. The pause
+                    // serializes the entire cleanup-iteration (iterate + RMWs) with Reset
+                    // by holding cleanupGate, restoring Reset's "store is quiesced" contract.
+                    //
+                    // Pass linkedCts.Token so a slow cleanup-iteration over a large keyspace
+                    // doesn't block re-attach indefinitely if the broader replication is
+                    // cancelled (ctsRepManager / resetHandler). If PauseCleanupAsync throws
+                    // OCE, the try block isn't entered and ResumeCleanup is correctly skipped.
+                    var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
+                    if (vectorManager != null)
+                        await vectorManager.PauseCleanupAsync(linkedCts.Token).ConfigureAwait(false);
+                    try
+                    {
+                        storeWrapper.Reset();
+                    }
+                    finally
+                    {
+                        vectorManager?.ResumeCleanup();
+                    }
 
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);

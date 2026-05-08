@@ -54,8 +54,6 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
-    using static VarbyteLengthUtility;
-
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
@@ -281,7 +279,7 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             // Records all have a Span<byte> corresponding to a 'long' ii and value, which means one length byte.
-            recordSize = RoundUp(RecordInfo.Size + NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
+            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
@@ -1969,10 +1967,10 @@ namespace Tsavorite.test.Revivification
                     {
                         KeySize = DefaultKeySize,
                         ValueSize = recordSize - DefaultKeySize - RecordInfo.Size - RecordDataHeader.MinHeaderBytes
-                    },
-                    KeyIsInline = true,
-                    ValueIsInline = true
+                    }
                 };
+                sizeInfo.SetKeyIsInline();
+                sizeInfo.SetValueIsInline();
 
                 Assert.That(sizeInfo.InlineValueSize > 0, $"RecordSize {recordSize} is too small; sizeInfo.InlineValueSize {sizeInfo.InlineValueSize} must be greater than zero");
                 sizeInfo.CalculateSizes(sizeInfo.FieldInfo.KeySize, sizeInfo.FieldInfo.ValueSize);
