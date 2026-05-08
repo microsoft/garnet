@@ -902,7 +902,7 @@ namespace Garnet.test
 
         /// <summary>
         /// Verifies the flush→promote→access cycle: when pages move to read-only,
-        /// OnFlush snapshots the BfTree and sets FlagFlushed. The next RI.GET detects
+        /// OnFlush snapshots the BfTree and sets IsFlushed. The next RI.GET detects
         /// the flag, promotes the stub to tail via RMW, and data remains accessible.
         /// </summary>
         [Test]
@@ -1956,7 +1956,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// After checkpoint recovery, <c>FlagRecovered</c> must be cleared when the tree
+        /// After checkpoint recovery, <c>IsRecovered</c> must be cleared when the tree
         /// is first restored. Otherwise, a second eviction cycle causes
         /// RestoreTreeFromFlush to pick the stale checkpoint snapshot instead of the
         /// fresh <c>flush.bftree</c>, losing post-recovery writes.
@@ -2320,18 +2320,18 @@ namespace Garnet.test
         /// branch in <c>DisposeTreeUnderLock</c>, and remove the liveIndexes entry that now belongs
         /// to the destination — losing checkpoint coverage and DEL-time native-tree disposal.</para>
         ///
-        /// <para>The fix: both transfer paths set <c>FlagTransferred</c> on src. <c>DisposeTreeUnderLock</c>
+        /// <para>The fix: both transfer paths set <c>IsTransferred</c> on src. <c>DisposeTreeUnderLock</c>
         /// checks this flag first and no-ops when set (the entry belongs to a newer record).</para>
         ///
         /// <para>This test exercises the fix at the unit level by:</para>
         /// <list type="number">
-        /// <item>Constructing a 35-byte stub with FlagTransferred=1, TreeHandle=0.</item>
+        /// <item>Constructing a 35-byte stub with IsTransferred=true, TreeHandle=0.</item>
         /// <item>Pre-populating liveIndexes with an "owning" entry for the test key.</item>
         /// <item>Calling <c>DisposeTreeUnderLock(key, stub, deleteFiles: false)</c>.</item>
         /// <item>Asserting the entry SURVIVED (count unchanged).</item>
         /// </list>
         ///
-        /// <para>Without the FlagTransferred check (pre-fix), the call would remove the entry and
+        /// <para>Without the IsTransferred check (pre-fix), the call would remove the entry and
         /// the assertion would fail.</para>
         /// </summary>
         [Test]
@@ -2349,39 +2349,39 @@ namespace Garnet.test
             db.Execute("RI.SET", "transtest", "field-x", "value-v1");
             ClassicAssert.AreEqual(1, rim.LiveIndexCount, "tree should be live after creation");
 
-            // Construct a stub representing a "stale source" (FlagTransferred=1, TreeHandle=0)
+            // Construct a stub representing a "stale source" (IsTransferred=true, TreeHandle=0)
             // with the SAME key as the live entry. This models the byte state of a source record
             // after PostCopyToTail-live or RIPROMOTE-live: src.TreeHandle was cleared and
-            // src.FlagTransferred was set.
+            // src.IsTransferred was set.
             var staleStub = new byte[RangeIndexManager.IndexSizeBytes];
-            // Stub layout: [0..7]=TreeHandle (zero), [33]=Flags
-            staleStub[33] = 4; // FlagTransferred = 4
+            // Stub layout: [0..7]=TreeHandle (zero), [33]=flags byte (Transferred bit = 1<<2 = 4)
+            staleStub[33] = 4;
 
             // Verify our reading of the stub matches expectation.
             ref readonly var stubRef = ref RangeIndexManager.ReadIndex(staleStub);
             ClassicAssert.AreEqual(nint.Zero, stubRef.TreeHandle, "test setup: stub TreeHandle should be 0");
-            ClassicAssert.IsTrue(stubRef.IsTransferred, "test setup: FlagTransferred should be 1");
-            ClassicAssert.IsFalse(stubRef.IsFlushed, "test setup: FlagFlushed should be 0");
+            ClassicAssert.IsTrue(stubRef.IsTransferred, "test setup: IsTransferred should be true");
+            ClassicAssert.IsFalse(stubRef.IsFlushed, "test setup: IsFlushed should be false");
 
             // Call DisposeTreeUnderLock as OnEvict would, with deleteFiles=false (eviction path).
-            // With FlagTransferred=1, this should no-op — NOT remove the entry that belongs to
+            // With IsTransferred=true, this should no-op — NOT remove the entry that belongs to
             // the live record at the tail.
             var keyBytes = System.Text.Encoding.ASCII.GetBytes("transtest");
             rim.DisposeTreeUnderLock(keyBytes, staleStub, deleteFiles: false);
 
             ClassicAssert.AreEqual(1, rim.LiveIndexCount,
-                "DisposeTreeUnderLock on a stale (FlagTransferred=1) source must NOT remove the live entry. " +
-                "Pre-fix: src.TreeHandle was cleared without FlagTransferred, so this DisposeTreeUnderLock " +
+                "DisposeTreeUnderLock on a stale (IsTransferred=true) source must NOT remove the live entry. " +
+                "Pre-fix: src.TreeHandle was cleared without IsTransferred, so this DisposeTreeUnderLock " +
                 "would erroneously remove the entry that belongs to dst.");
 
             // Live tree should still be functional.
             ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "transtest", "field-x"));
 
-            // For comparison: a stub WITHOUT FlagTransferred (pure pending entry, e.g. evicted
+            // For comparison: a stub WITHOUT IsTransferred (pure pending entry, e.g. evicted
             // before activation) WOULD remove the entry. This proves the discriminating power
-            // of the FlagTransferred check.
+            // of the IsTransferred check.
             var pendingStub = new byte[RangeIndexManager.IndexSizeBytes];
-            // FlagTransferred=0, TreeHandle=0 — looks like a pending entry being evicted.
+            // IsTransferred=0, TreeHandle=0 — looks like a pending entry being evicted.
             // Use a DIFFERENT key for this part to avoid disturbing the live entry above.
             db.Execute("RI.CREATE", "pendkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
             ClassicAssert.AreEqual(2, rim.LiveIndexCount, "second tree created");
@@ -2389,8 +2389,8 @@ namespace Garnet.test
             var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
             rim.DisposeTreeUnderLock(pendKeyBytes, pendingStub, deleteFiles: false);
             ClassicAssert.AreEqual(1, rim.LiveIndexCount,
-                "DisposeTreeUnderLock without FlagTransferred should still remove the entry " +
-                "(pending-eviction case): proves the discriminating power of the FlagTransferred check");
+                "DisposeTreeUnderLock without IsTransferred should still remove the entry " +
+                "(pending-eviction case): proves the discriminating power of the IsTransferred check");
         }
     }
 }

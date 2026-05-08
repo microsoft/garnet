@@ -92,7 +92,6 @@ namespace Garnet.server
                 MaxKeyLen = maxKeyLen,
                 LeafPageSize = leafPageSize,
                 StorageBackend = storageBackend,
-                Flags = 0,
                 SerializationPhase = 0,
             };
 

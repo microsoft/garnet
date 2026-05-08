@@ -27,11 +27,34 @@ namespace Garnet.server
         /// via <c>Unsafe.As</c> from raw store value spans.</para>
         ///
         /// <para>Total size: <see cref="Size"/> (35 bytes).</para>
+        ///
+        /// <para>Flags byte (offset 33) bit layout (LSB = bit 0 = first allocated):</para>
+        /// <code>
+        ///   [Unused7][Unused6][Unused5][Pinned*][Modified*][Transferred][Recovered][Flushed]
+        /// </code>
+        /// <para>* = reserved for future use; bit position allocated, no property exposed yet.</para>
+        /// <list type="bullet">
+        ///   <item><c>Flushed</c>     — stub has been flushed; needs promotion to tail on next access.</item>
+        ///   <item><c>Recovered</c>   — stub was loaded from a checkpoint snapshot file.</item>
+        ///   <item><c>Transferred</c> — ownership transferred to a newer record (compaction or RIPROMOTE).</item>
+        ///   <item><c>Modified*</c>   — [reserved] for future write-tracking.</item>
+        ///   <item><c>Pinned*</c>     — [reserved] for future eviction-pinning.</item>
+        ///   <item><c>Unused5..7</c>  — available for future expansion.</item>
+        /// </list>
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         internal struct RangeIndexStub
         {
             internal const int Size = 35;
+
+            // Flag bit masks (Flags byte at offset 33).
+            private const byte kFlushedBitMask = 1 << 0;
+            private const byte kRecoveredBitMask = 1 << 1;
+            private const byte kTransferredBitMask = 1 << 2;
+            // Reserved for future use (bit positions allocated; properties deferred until semantics exist):
+            //   bit 3 = Modified
+            //   bit 4 = Pinned
+            //   bits 5..7 currently unused
 
             /// <summary>Pointer to the live BfTreeService instance (managed object handle).</summary>
             [FieldOffset(0)]
@@ -61,37 +84,46 @@ namespace Garnet.server
             [FieldOffset(32)]
             public byte StorageBackend;
 
-            /// <summary>Reserved flags byte.</summary>
+            /// <summary>Flags byte. Private so all writes must go through typed properties / <see cref="ResetFlags"/>,
+            /// which centralizes invariant control as additional bits gain semantics.</summary>
             [FieldOffset(33)]
-            public byte Flags;
-
-            /// <summary>Flag bit indicating the stub has been flushed and needs promotion to tail.</summary>
-            internal const byte FlagFlushed = 1;
-
-            /// <summary>Flag bit indicating the stub was recovered from a checkpoint snapshot file.</summary>
-            internal const byte FlagRecovered = 2;
-
-            /// <summary>Flag bit indicating ownership has been transferred to a newer record (compaction
-            /// PostCopyToTail or RIPROMOTE PostCopyUpdater set this on the source record so a later
-            /// <see cref="GarnetRecordTriggers.OnEvict"/> on the stale source does NOT remove the
-            /// liveIndexes entry that now belongs to the newer destination, and so a later
-            /// <see cref="GarnetRecordTriggers.OnFlush"/> on the stale source does NOT snapshot a
-            /// stale view of <c>data.bftree</c>).</summary>
-            internal const byte FlagTransferred = 4;
-
-            /// <summary>Returns true if the stub has been flushed and needs promotion to tail.</summary>
-            internal readonly bool IsFlushed => (Flags & FlagFlushed) != 0;
-
-            /// <summary>Returns true if the stub was recovered from a checkpoint snapshot.</summary>
-            internal readonly bool IsRecovered => (Flags & FlagRecovered) != 0;
-
-            /// <summary>Returns true if ownership has been transferred to a newer record at the tail
-            /// (so OnEvict/OnFlush on this stale source must be no-ops).</summary>
-            internal readonly bool IsTransferred => (Flags & FlagTransferred) != 0;
+            private byte flags;
 
             /// <summary>Serialization phase for checkpoint coordination.</summary>
             [FieldOffset(34)]
             public byte SerializationPhase;
+
+            /// <summary>Whether the stub has been flushed and needs promotion to tail.</summary>
+            internal bool IsFlushed
+            {
+                readonly get => (flags & kFlushedBitMask) != 0;
+                set => flags = value ? (byte)(flags | kFlushedBitMask) : (byte)(flags & ~kFlushedBitMask);
+            }
+
+            /// <summary>Whether the stub was recovered from a checkpoint snapshot file.</summary>
+            internal bool IsRecovered
+            {
+                readonly get => (flags & kRecoveredBitMask) != 0;
+                set => flags = value ? (byte)(flags | kRecoveredBitMask) : (byte)(flags & ~kRecoveredBitMask);
+            }
+
+            /// <summary>Whether ownership has been transferred to a newer record at the tail
+            /// (compaction <see cref="GarnetRecordTriggers.PostCopyToTail"/> or RIPROMOTE PostCopyUpdater
+            /// set this on the source record so a later <see cref="GarnetRecordTriggers.OnEvict"/> on the
+            /// stale source does NOT remove the liveIndexes entry that now belongs to the newer
+            /// destination, and so a later <see cref="GarnetRecordTriggers.OnFlush"/> on the stale source
+            /// does NOT snapshot a stale view of <c>data.bftree</c>).</summary>
+            internal bool IsTransferred
+            {
+                readonly get => (flags & kTransferredBitMask) != 0;
+                set => flags = value ? (byte)(flags | kTransferredBitMask) : (byte)(flags & ~kTransferredBitMask);
+            }
+
+            /// <summary>Reset all flag bits to 0. Used by <see cref="CreateIndex"/> on a freshly initialized
+            /// stub and by AOF replay (<see cref="HandleRangeIndexCreateReplay"/>) when reinitializing an
+            /// in-memory stub for an RI.CREATE record.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void ResetFlags() => flags = 0;
         }
 
         /// <summary>
@@ -127,7 +159,7 @@ namespace Garnet.server
             stub.MaxKeyLen = maxKeyLen;
             stub.LeafPageSize = leafPageSize;
             stub.StorageBackend = storageBackend;
-            stub.Flags = 0;
+            stub.ResetFlags();
             stub.SerializationPhase = 0;
         }
 
@@ -155,7 +187,7 @@ namespace Garnet.server
 
             // Clear FlagRecovered so that future eviction cycles use the flush snapshot
             // (which reflects post-recovery writes) instead of the stale checkpoint snapshot.
-            stub.Flags &= unchecked((byte)~RangeIndexStub.FlagRecovered);
+            stub.IsRecovered = false;
         }
 
         /// <summary>
@@ -173,7 +205,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Set the <see cref="RangeIndexStub.FlagTransferred"/> bit on a stub span. Called by
+        /// Set the <see cref="RangeIndexStub.IsTransferred"/> flag on a stub span. Called by
         /// PostCopyToTail (compaction) and RIPROMOTE PostCopyUpdater on the SOURCE record after
         /// ownership is transferred to a new tail destination. This guarantees a later
         /// <see cref="GarnetRecordTriggers.OnEvict"/> on the stale source no-ops (does not remove
@@ -186,7 +218,7 @@ namespace Garnet.server
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));
-            stub.Flags |= RangeIndexStub.FlagTransferred;
+            stub.IsTransferred = true;
         }
 
         /// <summary>
@@ -286,7 +318,7 @@ namespace Garnet.server
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));
-            stub.Flags |= RangeIndexStub.FlagFlushed;
+            stub.IsFlushed = true;
         }
 
         /// <summary>
@@ -299,7 +331,7 @@ namespace Garnet.server
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));
-            stub.Flags &= unchecked((byte)~RangeIndexStub.FlagFlushed);
+            stub.IsFlushed = false;
         }
 
         /// <summary>
@@ -328,7 +360,7 @@ namespace Garnet.server
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));
             stub.TreeHandle = nint.Zero;
-            stub.Flags |= RangeIndexStub.FlagRecovered;
+            stub.IsRecovered = true;
         }
     }
 }

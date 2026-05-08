@@ -479,13 +479,13 @@ namespace Garnet.server
         /// entry in <see cref="liveIndexes"/> and a pre-staged <c>data.bftree</c> on disk; if
         /// <c>data.bftree</c> is missing, something has corrupted that invariant (e.g. a prior
         /// pre-stage failure, or external file deletion). The caller (<see cref="GarnetRecordTriggers.OnFlush"/>)
-        /// must NOT set <see cref="RangeIndexStub.FlagFlushed"/> in this case — that would put the
+        /// must NOT set <see cref="RangeIndexStub.IsFlushed"/> in this case — that would put the
         /// record into an unrestorable state where RIPROMOTE-cold would also fail and the key
         /// would be permanently broken.
         /// </summary>
         internal void LogOnFlushInvariantViolation(string hashPrefix, long logicalAddress)
         {
-            logger?.LogError("OnFlush: invariant violation — TreeHandle=0 but data.bftree missing for {Hash} at addr 0x{Addr:x16}; skipping FlagFlushed (record will route through RestoreTree which will return NOTFOUND for the affected key)",
+            logger?.LogError("OnFlush: invariant violation — TreeHandle=0 but data.bftree missing for {Hash} at addr 0x{Addr:x16}; skipping IsFlushed (record will route through RestoreTree which will return NOTFOUND for the affected key)",
                 hashPrefix, logicalAddress);
         }
 
@@ -714,7 +714,7 @@ namespace Garnet.server
 
             // Replace stale handle with fresh one in the stub bytes
             stub.TreeHandle = bfTree.NativePtr;
-            stub.Flags = 0;
+            stub.ResetFlags();
 
             // Let the normal RMW path create the record from the updated stub bytes
             var output = new StringOutput();
