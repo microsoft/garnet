@@ -56,7 +56,7 @@ namespace Garnet.cluster
         public Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
         {
             if (consumed)
-                throw new InvalidOperationException("MetadataCheckpointDataSource has already been consumed.");
+                throw new InvalidOperationException("TsavoriteMetadataSource has already been consumed.");
 
             var data = dataFactory() ?? [];
             EndOffset = data.Length;

@@ -265,7 +265,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
         /// <param name="fileType">The checkpoint file type (including metadata variants).</param>
-        /// <param name="startAddress">The start address for this chunk (0 for metadata).</param>
+        /// <param name="startAddress">The start address for this chunk (-1 for metadata).</param>
         /// <param name="data">The data to send.</param>
         /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
         public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)

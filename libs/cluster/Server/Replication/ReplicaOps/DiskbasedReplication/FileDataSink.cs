@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ namespace Garnet.cluster
         private readonly TimeSpan timeout;
         private readonly CancellationToken cancellationToken;
         private readonly ILogger logger;
+        private volatile uint lastIOErrorCode;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -75,6 +77,14 @@ namespace Garnet.cluster
                     ExceptionUtils.ThrowException(new GarnetException(
                         $"Timed out writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
                 }
+
+                var errorCode = lastIOErrorCode;
+                Debug.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
+                if (errorCode != 0)
+                {
+                    ExceptionUtils.ThrowException(new GarnetException(
+                        $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
+                }
             }
             finally
             {
@@ -96,6 +106,7 @@ namespace Garnet.cluster
 
         private void IOCallback(uint errorCode, uint numBytes, object context)
         {
+            lastIOErrorCode = errorCode;
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);

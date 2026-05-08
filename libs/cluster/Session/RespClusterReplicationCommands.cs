@@ -354,7 +354,8 @@ namespace Garnet.cluster
             var fileTokenBytes = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             if (!parseState.TryGetInt(1, out var ckptFileTypeInt) ||
-                !parseState.TryGetLong(2, out var startAddress))
+                !parseState.TryGetLong(2, out var startAddress) ||
+                !parseState.TryGetInt(4, out var segmentId))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
@@ -363,8 +364,9 @@ namespace Garnet.cluster
 
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
 
-            // segmentId (parseState index 4) is parsed for backward compatibility but not used;
+            // segmentId is validated for backward compatibility but not used;
             // disk-based replication now uses the SNAPSHOT_DATA command path instead.
+            _ = segmentId;
 
             var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;

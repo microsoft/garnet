@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -26,6 +27,7 @@ namespace Garnet.cluster
         private readonly ILogger logger;
         private readonly SectorAlignedBufferPool bufferPool;
         private readonly SemaphoreSlim signalCompletion;
+        private volatile uint lastIOErrorCode;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -124,11 +126,21 @@ namespace Garnet.cluster
                     $"Timed out reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
             }
 
+            var errorCode = lastIOErrorCode;
+            Debug.Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
+            if (errorCode != 0)
+            {
+                buffer.Return();
+                ExceptionUtils.ThrowException(new GarnetException(
+                    $"I/O error {errorCode} reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
+            }
+
             return (buffer, (int)numBytesToRead);
         }
 
         private void IOCallback(uint errorCode, uint numBytes, object context)
         {
+            lastIOErrorCode = errorCode;
             if (errorCode != 0)
             {
                 var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
