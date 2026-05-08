@@ -324,7 +324,7 @@ namespace Tsavorite.core
             // RecordLength is already set and we don't set key here; we wait for Revivification to do that. But we must update the sizeInfo
             // to ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called.
             sizeInfo.AllocatedInlineRecordSize = recordLength;
-            sizeInfo.IsRevivifiedRecord = true;
+            sizeInfo.SetIsRevivifiedRecord();
         }
 
         /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>

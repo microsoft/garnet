@@ -55,13 +55,21 @@ namespace Garnet.server
 
         public void LockSublogs(ulong logAccessBitmap)
         {
+            SpinWait spinWait = default;
             while (true)
             {
-                Thread.Yield();
                 var currentLockMap = lockMap;
-                var newLockMap = currentLockMap | logAccessBitmap;
-                if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
-                    break;
+
+                // Attempt CAS only if none of the requested bits are held
+                if ((currentLockMap & logAccessBitmap) == 0)
+                {
+                    var newLockMap = currentLockMap | logAccessBitmap;
+                    if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
+                        break;
+                }
+
+                // Bits held by another caller or CAS failed — spin before retrying
+                spinWait.SpinOnce();
             }
         }
 

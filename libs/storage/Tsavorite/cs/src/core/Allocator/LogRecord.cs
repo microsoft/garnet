@@ -15,7 +15,7 @@ namespace Tsavorite.core
     /// <summary>The in-memory record on the log. The space is laid out as:
     /// <list type="bullet">
     ///     <item><see cref="RecordInfo"/> header</item>
-    ///     <item>RecordDataHeader bytes (including RecordType and Namespace) and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
+    ///     <item>RecordDataHeader bytes (including RecordType and Namespace) and lengths; see <see cref="RecordDataHeader"/> header comments for details</item>
     ///     <item>Key data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Value data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Optional data (may or may not be present): ETag, Expiration</item>
@@ -1132,17 +1132,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void PopulateRecordSizeInfoForIPU(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
+
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             var (keyLength, existingValueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
 
             // The sizeInfo's FieldInfo has already been populated. Key size won't change in IPU.
-            sizeInfo.KeyIsInline = Info.KeyIsInline;
+            var keyOverflowInlineSize = 0;
+            if (Info.KeyIsInline)
+                sizeInfo.SetKeyIsInline();
+            else
+                keyOverflowInlineSize = ObjectLogPositionSize;
 
             // Because this is IPU we are limited in inline value size by the record length less any optional length growth in the sizeInfo.
             // We don't allow non-inline if we have a null objectIdMap. TODO: Need better awareness of actual inline value max length.
             var existingOptionalSize = eTagLen + expirationLen + objectLogPositionLen;
-            sizeInfo.MaxInlineValueSize = existingValueLength + fillerLen - (sizeInfo.OptionalSize - existingOptionalSize);
-            sizeInfo.ValueIsInline = objectIdMap is null ? true : !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
+
+            // sizeInfo.OptionalSize will be nonzero because we've not yet set ValueIsInline so calculate the sizeInfo OptionalSize values directly
+            // from its FieldInfo with keyOverflowInlineSize as a proxy for ObjectLogPosition.
+            sizeInfo.MaxInlineValueSize = existingValueLength + fillerLen - (sizeInfo.FieldInfo.eTagSize + sizeInfo.FieldInfo.expirationSize + keyOverflowInlineSize - existingOptionalSize);
+
+            if (objectIdMap is null || (!sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize))
+                sizeInfo.SetValueIsInline();
             var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record

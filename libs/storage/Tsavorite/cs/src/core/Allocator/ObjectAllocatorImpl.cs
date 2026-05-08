@@ -114,12 +114,6 @@ namespace Tsavorite.core
 
         internal int OverflowPageCount => freePagePool.Count;
 
-        public override void Reset()
-        {
-            base.Reset();
-            Initialize();
-        }
-
         /// <inheritdoc />
         protected override void FreeAllAllocatedPages()
         {
@@ -310,14 +304,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
+
             // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            if (sizeInfo.FieldInfo.KeySize <= maxInlineKeySize)
+                sizeInfo.SetKeyIsInline();
             var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
+            if (!sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize)
+                sizeInfo.SetValueIsInline();
             var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record

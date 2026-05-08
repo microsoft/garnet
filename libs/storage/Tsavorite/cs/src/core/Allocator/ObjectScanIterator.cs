@@ -99,12 +99,33 @@ namespace Tsavorite.core
             }
             diskLogRecord = default;
             currentAddress = nextAddress;
+
+            // Acquire the epoch BEFORE sampling Initializing / TailAddress / HeadAddress /
+            // pagePointers, so that any allocator state we read is consistent with the epoch
+            // we hold.
+            epoch?.Resume();
+
+            // If a concurrent Reset is rebuilding the allocator, terminate the iteration
+            // cleanly — Reset is a wholesale wipe, the records we were iterating are gone,
+            // and the address range we were stepping through no longer maps to live data.
+            // Also avoids dereferencing the non-monotonic mid-Initialize state (HeadAddress
+            // already rewound to FirstValidAddress while TailPageOffset still holds the
+            // pre-Reset tail and pagePointers[i] are mostly 0).
+            if (hlogBase.Initializing)
+            {
+                epoch?.Suspend();
+                stopAddress = 0;
+                return false;
+            }
+
             stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
             if (currentAddress >= stopAddress)
+            {
+                epoch?.Suspend();
                 return false;
+            }
 
-            // Success; acquire the epoch. Caller will suspend the epoch as needed.
-            epoch?.Resume();
+            // Success; caller will suspend the epoch as needed.
             return true;
         }
 
