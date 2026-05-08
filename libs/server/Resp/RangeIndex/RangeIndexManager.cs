@@ -193,10 +193,6 @@ namespace Garnet.server
         internal string LogDataPath(string hashPrefix)
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree");
 
-        /// <summary>{logRoot}/&lt;hash&gt;.data.bftree.tmp</summary>
-        internal string LogTmpPath(string hashPrefix)
-            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree.tmp");
-
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
         internal string LogFlushPath(string hashPrefix, long logicalAddress)
             => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
@@ -354,12 +350,21 @@ namespace Garnet.server
 
         /// <summary>
         /// Atomically pre-stage <c>data.bftree</c> from <c>&lt;srcAddr:x16&gt;.flush.bftree</c>
-        /// (atomic via .tmp + File.Move) and register a pending entry in
-        /// <see cref="liveIndexes"/> so a subsequent checkpoint will capture it via
-        /// <see cref="SnapshotAllTreesForCheckpoint"/>.
+        /// and register a pending entry in <see cref="liveIndexes"/> so a subsequent checkpoint
+        /// will capture it via <see cref="SnapshotAllTreesForCheckpoint"/>.
         ///
         /// <para>Called from RIPROMOTE PostCopyUpdater (cold case: src.TreeHandle == 0) and
         /// from <c>PostCopyToTail</c> (compaction with disk source).</para>
+        ///
+        /// <para>Concurrency: a direct <c>File.Copy(overwrite: true)</c> is sufficient. Both
+        /// callers run BEFORE <c>UnsealAndValidate</c> on the destination record (so concurrent
+        /// readers see <c>SkipOnScan</c> and retry — no read race), Tsavorite's hash-bucket CAS
+        /// serializes concurrent writers per key (so no two pre-stages race on the same file),
+        /// and <c>OnEvict</c> closes the prior native BfTree before any cold-restore can happen
+        /// (so no live fd is open on <c>data.bftree</c> when this runs). A crash mid-copy is
+        /// self-healing: post-recovery either <c>OnRecoverySnapshotRead</c> (above-FUA stub) or
+        /// the next RIPROMOTE-cold (FlagFlushed=1 stub) re-pre-stages and overwrites any
+        /// partial file before <c>RestoreTree</c> can observe it.</para>
         /// </summary>
         internal void PreStageAndRegisterPending(ReadOnlySpan<byte> keyBytes, long srcFlushAddress)
         {
@@ -375,18 +380,15 @@ namespace Garnet.server
             }
 
             var dataPath = LogDataPath(hashPrefix);
-            var tmpPath = LogTmpPath(hashPrefix);
 
             try
             {
                 Directory.CreateDirectory(riLogRoot);
-                File.Copy(snapshotPath, tmpPath, overwrite: true);
-                File.Move(tmpPath, dataPath, overwrite: true);
+                File.Copy(snapshotPath, dataPath, overwrite: true);
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy/move failed for {Hash}", hashPrefix);
-                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy failed for {Hash}", hashPrefix);
                 return;
             }
 
@@ -400,6 +402,13 @@ namespace Garnet.server
         /// during recovery. Called from <c>OnRecoverySnapshotRead</c> for above-FUA-at-checkpoint stubs
         /// (snapshot file may be deleted post-recovery, so this MUST run during recovery).
         /// Registers a pending entry so any first checkpoint after recovery captures the key correctly.
+        ///
+        /// <para>Note: a direct <c>File.Copy(overwrite: true)</c> is used instead of the atomic
+        /// <c>.tmp</c> + <c>File.Move</c> pattern (cf. <see cref="PreStageAndRegisterPending"/>):
+        /// recovery is single-threaded with no concurrent readers, and a crash mid-copy is
+        /// self-healing — the next recovery attempt re-fires <c>OnRecoverySnapshotRead</c> for
+        /// the same stub and fully overwrites any partial file before any <c>RestoreTree</c>
+        /// can observe it.</para>
         /// </summary>
         internal void RebuildFromSnapshotIfPending(ReadOnlySpan<byte> keyBytes)
         {
@@ -417,18 +426,15 @@ namespace Garnet.server
             }
 
             var dataPath = LogDataPath(hashPrefix);
-            var tmpPath = LogTmpPath(hashPrefix);
 
             try
             {
                 Directory.CreateDirectory(riLogRoot);
-                File.Copy(snapshotPath, tmpPath, overwrite: true);
-                File.Move(tmpPath, dataPath, overwrite: true);
+                File.Copy(snapshotPath, dataPath, overwrite: true);
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "RebuildFromSnapshotIfPending: copy/move failed for {Hash}", hashPrefix);
-                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                logger?.LogWarning(ex, "RebuildFromSnapshotIfPending: copy failed for {Hash}", hashPrefix);
                 return;
             }
 
@@ -528,8 +534,11 @@ namespace Garnet.server
 
         /// <summary>
         /// On log truncation, delete per-flush snapshot files in the log root whose address is
-        /// strictly less than <paramref name="newBeginAddress"/>, plus any orphaned <c>.tmp</c>
-        /// files. Per-checkpoint snapshots are NOT touched here — Tsavorite's checkpoint manager
+        /// strictly less than <paramref name="newBeginAddress"/>. Also defensively cleans any
+        /// stale <c>.data.bftree.tmp</c> files (current code paths use direct
+        /// <c>System.IO.File.Copy</c> so no <c>.tmp</c> files are produced; this cleanup
+        /// catches orphans from any legacy or future atomic-rename code paths).
+        /// Per-checkpoint snapshots are NOT touched here — Tsavorite's checkpoint manager
         /// removes them when it deletes the parent token directory.
         /// </summary>
         internal void OnTruncateImpl(long newBeginAddress)
@@ -545,6 +554,7 @@ namespace Garnet.server
                 {
                     var name = Path.GetFileName(path);
 
+                    // Defensive: clean up any stale .tmp orphan from legacy code paths.
                     if (name.EndsWith(".data.bftree.tmp", StringComparison.Ordinal))
                     {
                         TryDelete(path);
