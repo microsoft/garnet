@@ -108,8 +108,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override async Task<bool> TakeCheckpointAsync(bool background, CancellationToken token = default, ILogger logger = null)
+        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
+            if (dbId != -1 && dbId != 0)
+                throw new ArgumentOutOfRangeException(nameof(dbId), dbId, "SingleDatabaseManager only supports dbId 0.");
+
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
@@ -137,14 +140,6 @@ namespace Garnet.server
                     ResumeCheckpoints(defaultDatabase.Id);
                 }
             }
-        }
-
-        /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, CancellationToken token = default, ILogger logger = null)
-        {
-            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-
-            return TakeCheckpointAsync(background, token, logger);
         }
 
         /// <inheritdoc/>

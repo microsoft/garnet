@@ -381,31 +381,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Take checkpoint of all active databases
+        /// Take checkpoint of all active databases (or a specified database)
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
         /// <param name="logger">Logger</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, CancellationToken token = default,
-            ILogger logger = null) => databaseManager.TakeCheckpointAsync(background, token, logger);
-
-        /// <summary>
-        /// Take checkpoint of all active database IDs or a specified database ID
-        /// </summary>
-        /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
-        /// <param name="token">Cancellation token</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, int dbId, CancellationToken token = default, ILogger logger = null)
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
-            if (dbId == -1)
-            {
-                return databaseManager.TakeCheckpointAsync(background, token, logger);
-            }
-
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+            if (dbId > 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
 
             return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);

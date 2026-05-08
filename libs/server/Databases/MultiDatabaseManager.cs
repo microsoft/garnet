@@ -140,8 +140,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, CancellationToken token = default, ILogger logger = null)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
+            // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
+            // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
+            // swapped DB and let a second BGSAVE race against the in-flight checkpoint).
             if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
 
             var multiDbLockHeld = false;
@@ -150,30 +153,48 @@ namespace Garnet.server
 
             try
             {
-                var activeDbIdsMapSize = activeDbIds.ActualSize;
-
-                if (activeDbIdsMapSize > 1)
+                if (dbId == -1)
                 {
-                    if (!multiDbCheckpointingLock.TryWriteLock())
+                    // All-active-DBs path: take multiDbCheckpointingLock if multi-db, then synchronously
+                    // pause per-DB checkpoints for every active DB so any BGSAVE issued after this method
+                    // returns reliably observes the in-progress checkpoint. The buffer is local so a
+                    // concurrent HandleDatabaseAdded that resizes shared state cannot strand the IDs.
+                    var activeDbIdsMapSize = activeDbIds.ActualSize;
+
+                    if (activeDbIdsMapSize > 1)
+                    {
+                        if (!multiDbCheckpointingLock.TryWriteLock())
+                        {
+                            databasesContentLock.ReadUnlock();
+                            return Task.FromResult(false);
+                        }
+
+                        multiDbLockHeld = true;
+                    }
+
+                    pausedDbIds = new int[activeDbIdsMapSize];
+                    var activeDbIdsMapSnapshot = activeDbIds.Map;
+                    for (var i = 0; i < activeDbIdsMapSize; i++)
+                    {
+                        var id = activeDbIdsMapSnapshot[i];
+                        if (TryPauseCheckpoints(id))
+                            pausedDbIds[pausedCount++] = id;
+                    }
+                }
+                else
+                {
+                    // Single-DB path: just pause this one DB. multiDbCheckpointingLock is not taken
+                    // because multiple per-DB BGSAVEs on different DBs are legal.
+                    Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
+
+                    if (!TryPauseCheckpoints(dbId))
                     {
                         databasesContentLock.ReadUnlock();
                         return Task.FromResult(false);
                     }
 
-                    multiDbLockHeld = true;
-                }
-
-                // Synchronously pause per-DB checkpoints for all active DBs so that any per-DB BGSAVE
-                // issued after this method returns reliably observes the in-progress checkpoint.
-                // The buffer is local to this operation so a concurrent HandleDatabaseAdded that resizes
-                // shared state cannot strand the IDs we already paused.
-                pausedDbIds = new int[activeDbIdsMapSize];
-                var activeDbIdsMapSnapshot = activeDbIds.Map;
-                for (var i = 0; i < activeDbIdsMapSize; i++)
-                {
-                    var dbId = activeDbIdsMapSnapshot[i];
-                    if (TryPauseCheckpoints(dbId))
-                        pausedDbIds[pausedCount++] = dbId;
+                    pausedDbIds = [dbId];
+                    pausedCount = 1;
                 }
             }
             catch
@@ -192,42 +213,6 @@ namespace Garnet.server
             }
 
             var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
-
-            if (background)
-                return Task.FromResult(true);
-
-            return checkpointTask;
-        }
-
-        /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, CancellationToken token = default, ILogger logger = null)
-        {
-            Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
-
-            // Acquire databasesContentLock (read) so a concurrent swap-db can't move the GarnetDatabase
-            // out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the swapped DB
-            // and let a second BGSAVE for the same dbId race against the in-flight checkpoint).
-            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
-
-            int[] pausedDbIds;
-            try
-            {
-                if (!TryPauseCheckpoints(dbId))
-                {
-                    databasesContentLock.ReadUnlock();
-                    return Task.FromResult(false);
-                }
-                pausedDbIds = [dbId];
-            }
-            catch
-            {
-                databasesContentLock.ReadUnlock();
-                throw;
-            }
-
-            // Reuse the shared runner. multiDbLockHeld=false because per-DB BGSAVE doesn't take the
-            // multi-DB-checkpointing mutex (multiple per-DB BGSAVEs on different DBs are legal).
-            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, 1, multiDbLockHeld: false, token, logger);
 
             if (background)
                 return Task.FromResult(true);
