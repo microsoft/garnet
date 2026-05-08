@@ -180,6 +180,20 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
+            foreach (var ds in fileDataSources)
+            {
+                try { ds.Dispose(); }
+                catch (Exception ex) { logger?.LogError(ex, "Error disposing file data source {type} {token}", ds.Type, ds.Token); }
+            }
+            fileDataSources.Clear();
+
+            foreach (var ds in metadataDataSources)
+            {
+                try { ds.Dispose(); }
+                catch (Exception ex) { logger?.LogError(ex, "Error disposing metadata data source {type} {token}", ds.Type, ds.Token); }
+            }
+            metadataDataSources.Clear();
+
             signalCompletion?.Dispose();
             bufferPool?.Free();
         }
