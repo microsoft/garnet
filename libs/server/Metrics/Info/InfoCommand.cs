@@ -75,7 +75,8 @@ namespace Garnet.server
                 }
                 else
                 {
-                    WriteDirect(CmdStrings.RESP_EMPTY);
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
             return true;
