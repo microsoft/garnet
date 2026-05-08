@@ -356,15 +356,20 @@ namespace Garnet.server
         /// <para>Called from RIPROMOTE PostCopyUpdater (cold case: src.TreeHandle == 0) and
         /// from <c>PostCopyToTail</c> (compaction with disk source).</para>
         ///
-        /// <para>Concurrency: a direct <c>File.Copy(overwrite: true)</c> is sufficient. Both
-        /// callers run BEFORE <c>UnsealAndValidate</c> on the destination record (so concurrent
-        /// readers see <c>SkipOnScan</c> and retry — no read race), Tsavorite's hash-bucket CAS
-        /// serializes concurrent writers per key (so no two pre-stages race on the same file),
-        /// and <c>OnEvict</c> closes the prior native BfTree before any cold-restore can happen
-        /// (so no live fd is open on <c>data.bftree</c> when this runs). A crash mid-copy is
-        /// self-healing: post-recovery either <c>OnRecoverySnapshotRead</c> (above-FUA stub) or
-        /// the next RIPROMOTE-cold (FlagFlushed=1 stub) re-pre-stages and overwrites any
-        /// partial file before <c>RestoreTree</c> can observe it.</para>
+        /// <para>Concurrency: takes the per-key EXCLUSIVE rangeIndex lock for the duration of the
+        /// file copy. This is required because <c>CASRecordIntoChain</c> unseals dst immediately
+        /// on CAS-success (in <c>Helpers.cs.CASRecordIntoChain</c>), so by the time this trigger
+        /// fires, concurrent readers can already observe dst with <c>TreeHandle == 0</c> and
+        /// invoke <c>RestoreTree</c>, which opens <c>data.bftree</c> under its own per-key
+        /// exclusive lock. Holding the exclusive lock here blocks <c>RestoreTree</c> until the
+        /// file is fully written, preventing it from observing a partial <c>data.bftree</c>.</para>
+        ///
+        /// <para>A direct <c>File.Copy(overwrite: true)</c> is sufficient under this lock — the
+        /// exclusive lock serializes against any reader that would open <c>data.bftree</c>, and
+        /// against other concurrent <c>PreStageAndRegisterPending</c> calls for the same key.
+        /// A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
+        /// (above-FUA stub) or the next RIPROMOTE-cold (FlagFlushed=1 stub) re-pre-stages and
+        /// overwrites any partial file before <c>RestoreTree</c> can observe it.</para>
         /// </summary>
         internal void PreStageAndRegisterPending(ReadOnlySpan<byte> keyBytes, long srcFlushAddress)
         {
@@ -380,21 +385,28 @@ namespace Garnet.server
             }
 
             var dataPath = LogDataPath(hashPrefix);
+            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
 
+            // Acquire the per-key exclusive lock for the duration of the file copy AND the
+            // pending-entry registration. This blocks any concurrent RestoreTree (which also
+            // takes the exclusive lock) from observing a partial data.bftree.
+            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
                 Directory.CreateDirectory(riLogRoot);
                 File.Copy(snapshotPath, dataPath, overwrite: true);
+
+                var keyId = KeyId(keyBytes);
+                _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy failed for {Hash}", hashPrefix);
-                return;
+                logger?.LogWarning(ex, "PreStageAndRegisterPending: copy/register failed for {Hash}", hashPrefix);
             }
-
-            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
-            var keyId = KeyId(keyBytes);
-            _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
+            finally
+            {
+                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+            }
         }
 
         /// <summary>
