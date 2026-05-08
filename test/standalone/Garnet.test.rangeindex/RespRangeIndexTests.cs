@@ -1828,7 +1828,8 @@ namespace Garnet.test
         /// thread's keys (point-in-time snapshot consistency).
         /// </summary>
         [Test]
-        public void RIConcurrentOpsWithCheckpointTest()
+        [CancelAfter(120_000)]
+        public void RIConcurrentOpsWithCheckpointTest(System.Threading.CancellationToken cancellationToken)
         {
             // 4 threads insert contiguous keys at full speed. A single SAVE (blocking)
             // runs from a 5th thread. After SAVE completes, workers are signaled and

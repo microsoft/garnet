@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.server.BfTreeInterop;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -71,59 +70,7 @@ namespace Garnet.server
                 || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
                 return;
 
-            ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
-
-            // Stale source whose ownership was transferred to a newer record at the tail: no-op.
-            // The destination owns the tree; snapshotting from this stale source would either be a
-            // no-op (TreeHandle was cleared) or capture a stale view of data.bftree (which the
-            // destination is now actively mutating).
-            if (stub.IsTransferred)
-                return;
-
-            var hashPrefix = RangeIndexManager.HashKeyToPrefix(logRecord.Key);
-            var dataPath = rangeIndexManager.LogDataPath(hashPrefix);
-            var flushPath = rangeIndexManager.LogFlushPath(hashPrefix, logicalAddress);
-
-            if (stub.StorageBackend == (byte)StorageBackendType.Memory)
-            {
-                // Memory-only trees: not yet supported by the native library for snapshot-to-file.
-                // Set IsFlushed so the next access triggers RIPROMOTE; data will be lost on restore.
-                RangeIndexManager.SetFlushedFlag(logRecord.ValueSpan);
-                return;
-            }
-
-            try
-            {
-                if (stub.TreeHandle != nint.Zero)
-                {
-                    // Live tree active on data.bftree — snapshot via the native handle.
-                    BfTreeService.SnapshotToFileByPtr(stub.TreeHandle, dataPath, flushPath);
-                }
-                else
-                {
-                    // No live tree. data.bftree is the only correct source: it is pre-staged by
-                    // PostCopyToTail-cold / RIPROMOTE-cold / OnRecoverySnapshotRead. If data.bftree
-                    // is missing here, the per-flush snapshot invariant has been violated — log
-                    // loudly and DO NOT set IsFlushed (otherwise the next RIPROMOTE-cold would
-                    // silently produce an unrestorable record). The next access will see
-                    // TreeHandle=0 / IsFlushed=false and route through RestoreTree, which will
-                    // surface a clear NOTFOUND for the affected key while leaving the record
-                    // otherwise consistent.
-                    if (!System.IO.File.Exists(dataPath))
-                    {
-                        rangeIndexManager.LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
-                        return;
-                    }
-                    System.IO.File.Copy(dataPath, flushPath, overwrite: false);
-                }
-            }
-            catch (Exception)
-            {
-                // Surface as fatal — checkpoint will fail and state machine driver handles it.
-                throw;
-            }
-
-            RangeIndexManager.SetFlushedFlag(logRecord.ValueSpan);
+            rangeIndexManager.SnapshotTreeForFlush(logRecord.Key, logRecord.ValueSpan, logicalAddress);
         }
 
         /// <inheritdoc/>

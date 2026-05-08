@@ -490,6 +490,98 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Snapshot a BfTree's current contents to its per-flush snapshot file. Called from
+        /// <see cref="GarnetRecordTriggers.OnFlush"/> when a page transitions to read-only.
+        ///
+        /// <para>Acquires the per-key exclusive lock for the duration of the snapshot/copy so
+        /// that the native call serializes against:</para>
+        /// <list type="bullet">
+        /// <item>Concurrent worker <c>InsertByPtr</c> / <c>DeleteByPtr</c> on the same TreeHandle
+        /// (workers using a chain-head record whose page just rolled but whose TreeHandle still
+        /// points at the live native tree).</item>
+        /// <item>Concurrent <c>SnapshotAllTreesForCheckpoint</c> on the same TreeHandle
+        /// (which holds the same per-key exclusive lock).</item>
+        /// <item>Concurrent <c>PreStageAndRegisterPending</c> on the same key (which holds the
+        /// same per-key exclusive lock around its <c>data.bftree</c> rewrite — relevant to the
+        /// cold branch's <c>File.Copy(data.bftree → flush.bftree)</c>).</item>
+        /// </list>
+        ///
+        /// <para>Sets <see cref="RangeIndexStub.IsFlushed"/> on the in-memory stub on success so
+        /// the next data operation routes through <see cref="GarnetRecordTriggers.PostCopyToTail"/>
+        /// or RIPROMOTE PostCopyUpdater to re-anchor the tree at the tail.</para>
+        ///
+        /// <para>Memory-backed trees: snapshot is skipped (not yet supported by native lib);
+        /// <see cref="RangeIndexStub.IsFlushed"/> is still set so the live re-anchor path
+        /// (RIPROMOTE-live transfer) keeps the in-memory tree alive across page rolls. The
+        /// tree dies on first eviction post-flush; data loss on recovery is expected.</para>
+        ///
+        /// <para>Cold case (<c>TreeHandle==0</c>): no live native tree to snapshot. The
+        /// pre-staged <c>data.bftree</c> is the only correct source. If it is missing, the
+        /// per-flush snapshot invariant has been violated — log error and DO NOT set
+        /// <see cref="RangeIndexStub.IsFlushed"/> (a subsequent RIPROMOTE-cold routing would
+        /// silently produce an unrestorable record). The next access routes through
+        /// <c>RestoreTree</c> which surfaces NOTFOUND for the affected key.</para>
+        /// </summary>
+        /// <param name="key">The raw key bytes (used for hash prefix + lock acquisition).</param>
+        /// <param name="valueSpan">The store value span containing the stub.</param>
+        /// <param name="logicalAddress">The logical address of the record being flushed.</param>
+        internal void SnapshotTreeForFlush(ReadOnlySpan<byte> key, Span<byte> valueSpan, long logicalAddress)
+        {
+            if (string.IsNullOrEmpty(riLogRoot))
+                return;
+
+            ref readonly var stub = ref ReadIndex(valueSpan);
+
+            // Stale source whose ownership was transferred to a newer record at the tail: no-op.
+            // The destination owns the tree; snapshotting from this stale source would either be
+            // a no-op (TreeHandle was cleared) or capture a stale view of data.bftree (which the
+            // destination is now actively mutating).
+            if (stub.IsTransferred)
+                return;
+
+            if (stub.StorageBackend == (byte)StorageBackendType.Memory)
+            {
+                // Memory-only trees: not yet supported by the native library for snapshot-to-file.
+                // Set IsFlushed so the next access triggers RIPROMOTE-live which re-anchors the
+                // in-memory tree to a fresh tail record. Data is lost on first eviction post-flush.
+                SetFlushedFlag(valueSpan);
+                return;
+            }
+
+            var hashPrefix = HashKeyToPrefix(key);
+            var dataPath = LogDataPath(hashPrefix);
+            var flushPath = LogFlushPath(hashPrefix, logicalAddress);
+            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
+
+            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+            try
+            {
+                Directory.CreateDirectory(riLogRoot);
+
+                if (stub.TreeHandle != nint.Zero)
+                {
+                    // Live tree active — snapshot via the native handle.
+                    BfTreeService.SnapshotToFileByPtr(stub.TreeHandle, dataPath, flushPath);
+                }
+                else
+                {
+                    if (!File.Exists(dataPath))
+                    {
+                        LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
+                        return;
+                    }
+                    File.Copy(dataPath, flushPath, overwrite: false);
+                }
+
+                SetFlushedFlag(valueSpan);
+            }
+            finally
+            {
+                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+            }
+        }
+
+        /// <summary>
         /// Set the checkpoint barrier. Called at version shift (PREPARE → IN_PROGRESS).
         /// Marks all entries (activated + pending) as snapshot-pending, then sets the global flag.
         /// </summary>
