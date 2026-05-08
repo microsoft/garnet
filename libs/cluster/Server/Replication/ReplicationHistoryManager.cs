@@ -19,19 +19,6 @@ namespace Garnet.cluster
         /// </summary>
         public const int ReplicationHistoryVersion = 1;
 
-        /// <summary>
-        /// Magic prefix "GR" (Garnet Replication) written at the start of serialized ReplicationHistory payloads.
-        /// <para>
-        /// This prefix provides backwards compatibility with the legacy (pre-versioned) serialization format.
-        /// Legacy payloads begin with a 7-bit length-prefixed string (the <c>primary_replid</c>), whose first
-        /// byte is 0x28 (40 decimal, the length of a hex node ID). The magic byte 'G' (0x47) can never appear
-        /// as the first byte of a valid legacy payload, so a versioned payload is always distinguishable from
-        /// an old one. Without this prefix, a version value would be ambiguous with legacy string lengths,
-        /// leading to silent corruption during disk recovery.
-        /// </para>
-        /// </summary>
-        static ReadOnlySpan<byte> ReplicationHistoryMagic => "GR"u8;
-
         public string PrimaryReplId => primary_replid;
         string primary_replid;
         public string PrimaryReplId2 => primary_replid2;
@@ -63,8 +50,6 @@ namespace Garnet.cluster
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
 
-            writer.Write(ReplicationHistoryMagic[0]);
-            writer.Write(ReplicationHistoryMagic[1]);
             writer.Write(ReplicationHistoryVersion);
             writer.Write(primary_replid);
             writer.Write(primary_replid2);
@@ -80,11 +65,9 @@ namespace Garnet.cluster
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
 
-            // Read and validate magic prefix
-            if (data.Length < ReplicationHistoryMagic.Length + sizeof(int)
-                || reader.ReadByte() != ReplicationHistoryMagic[0]
-                || reader.ReadByte() != ReplicationHistoryMagic[1])
-                throw new InvalidDataException("Invalid ReplicationHistory payload: missing or unrecognized magic prefix");
+            // Read and validate serialization format version
+            if (data.Length < sizeof(int))
+                throw new InvalidDataException("Invalid ReplicationHistory payload: too short to contain a version");
 
             var version = reader.ReadInt32();
             if (version != ReplicationHistoryVersion)

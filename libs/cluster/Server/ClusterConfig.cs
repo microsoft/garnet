@@ -47,19 +47,6 @@ namespace Garnet.cluster
         public const int ClusterConfigVersion = 1;
 
         /// <summary>
-        /// Magic prefix "GC" (Garnet Config) written at the start of serialized ClusterConfig payloads.
-        /// <para>
-        /// This prefix provides backwards compatibility with the legacy (pre-versioned) serialization format.
-        /// Legacy payloads begin with a UInt16 <c>segmentCount</c> (range 1–16384). Reading the two magic bytes
-        /// as a little-endian UInt16 yields 0x4347 = 18243, which exceeds the maximum valid <c>segmentCount</c>,
-        /// so a versioned payload can never be mistaken for a legacy one and vice versa.
-        /// Without this prefix, a version value would be ambiguous with a legacy
-        /// <c>segmentCount</c> whose low byte happens to equal 1, leading to silent corruption.
-        /// </para>
-        /// </summary>
-        static ReadOnlySpan<byte> ClusterConfigMagic => "GC"u8;
-
-        /// <summary>
         /// 
         /// </summary>
         /// <param name="slot"></param>

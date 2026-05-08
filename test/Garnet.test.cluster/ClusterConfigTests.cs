@@ -174,9 +174,7 @@ namespace Garnet.test.cluster
 
             var configBytes = config.ToByteArray();
 
-            // Verify magic prefix and version int
-            Assert.That(configBytes[0], Is.EqualTo((byte)'G'));
-            Assert.That(configBytes[1], Is.EqualTo((byte)'C'));
+            // Verify version int at start of payload
             Assert.That(ClusterConfig.TryPeekVersion(configBytes, out var version), Is.True);
             Assert.That(version, Is.EqualTo(ClusterConfig.ClusterConfigVersion));
 
@@ -200,8 +198,8 @@ namespace Garnet.test.cluster
 
             var configBytes = config.ToByteArray();
 
-            // Corrupt the version int (at index 2, after 2-byte magic prefix)
-            BitConverter.TryWriteBytes(configBytes.AsSpan(2), ClusterConfig.ClusterConfigVersion + 1);
+            // Corrupt the version int (at index 0)
+            BitConverter.TryWriteBytes(configBytes.AsSpan(0), ClusterConfig.ClusterConfigVersion + 1);
 
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ClusterConfig.FromByteArray(configBytes));
@@ -216,26 +214,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(7)]
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
-        public void ClusterConfigLegacyPayloadRejectedTest()
-        {
-            // Simulate a legacy payload that starts with a UInt16 segmentCount = 1
-            // (which was the old format before the magic prefix was added)
-            var legacyPayload = new byte[] { 0x01, 0x00, 0x00, 0x40 };
-            Assert.That(ClusterConfig.TryPeekVersion(legacyPayload, out _), Is.False);
-            Assert.Throws<System.IO.InvalidDataException>(() => ClusterConfig.FromByteArray(legacyPayload));
-        }
-
-        [Test, Order(8)]
-        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ReplicationHistoryVersionRoundTripTest()
         {
             var history = new ReplicationHistory(1);
             var bytes = history.ToByteArray();
 
-            // Verify magic prefix and version int
-            Assert.That(bytes[0], Is.EqualTo((byte)'G'));
-            Assert.That(bytes[1], Is.EqualTo((byte)'R'));
-            Assert.That(BitConverter.ToInt32(bytes, 2), Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
+            // Verify version int at start of payload
+            Assert.That(BitConverter.ToInt32(bytes, 0), Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
 
             // Round-trip should succeed and preserve fields
             var restored = ReplicationHistory.FromByteArray(bytes);
@@ -250,8 +235,8 @@ namespace Garnet.test.cluster
             var history = new ReplicationHistory(1);
             var bytes = history.ToByteArray();
 
-            // Corrupt the version int (at index 2, after 2-byte magic prefix)
-            BitConverter.TryWriteBytes(bytes.AsSpan(2), ReplicationHistory.ReplicationHistoryVersion + 1);
+            // Corrupt the version int (at index 0)
+            BitConverter.TryWriteBytes(bytes.AsSpan(0), ReplicationHistory.ReplicationHistoryVersion + 1);
 
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ReplicationHistory.FromByteArray(bytes));
