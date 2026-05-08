@@ -626,7 +626,7 @@ namespace Garnet.server
                         opType = opType,
                         storeVersion = version,
                         sessionID = sessionId,
-                        padding = (byte)AofHeaderType.ShardedHeader
+                        HeaderType = AofHeaderType.ShardedHeader
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -688,7 +688,7 @@ namespace Garnet.server
                         opType = opType,
                         storeVersion = version,
                         sessionID = sessionId,
-                        padding = (byte)AofHeaderType.ShardedHeader
+                        HeaderType = AofHeaderType.ShardedHeader
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -747,7 +747,7 @@ namespace Garnet.server
                         opType = opType,
                         storeVersion = version,
                         sessionID = sessionId,
-                        padding = (byte)AofHeaderType.ShardedHeader
+                        HeaderType = AofHeaderType.ShardedHeader
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -799,7 +799,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            padding = (byte)AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.TransactionHeader,
                             opType = opType,
                             procedureId = procedureId,
                             storeVersion = txnVersion,
@@ -869,7 +869,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            padding = (byte)AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.TransactionHeader,
                             opType = opType,
                             storeVersion = txnVersion,
                             sessionID = sessionId,
@@ -935,7 +935,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            padding = (byte)AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.TransactionHeader,
                             opType = opType,
                             storeVersion = version,
                             sessionID = -1
@@ -1011,7 +1011,7 @@ namespace Garnet.server
                         opType = opType,
                         storeVersion = version,
                         sessionID = sessionId,
-                        padding = (byte)AofHeaderType.ShardedHeader
+                        HeaderType = AofHeaderType.ShardedHeader
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -1049,7 +1049,7 @@ namespace Garnet.server
                     opType = opType,
                     storeVersion = 0,
                     sessionID = -1,
-                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                    UnsafeTruncateLog = unsafeTruncateLog,
                     databaseId = (byte)dbId
                 };
                 singleLog.log.Enqueue(header, out _);
@@ -1062,11 +1062,11 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            padding = (byte)AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.TransactionHeader,
                             opType = opType,
                             storeVersion = 0,
                             sessionID = -1,
-                            unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                            UnsafeTruncateLog = unsafeTruncateLog,
                             databaseId = (byte)dbId
                         },
                         sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()

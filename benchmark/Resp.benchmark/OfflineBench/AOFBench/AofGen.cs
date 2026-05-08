@@ -446,7 +446,7 @@ namespace Resp.benchmark
                                 {
                                     basicHeader = new AofHeader
                                     {
-                                        padding = (byte)AofHeaderType.ShardedHeader,
+                                        HeaderType = AofHeaderType.ShardedHeader,
                                         opType = aofHeader.opType,
                                         storeVersion = aofHeader.storeVersion,
                                         sessionID = aofHeader.sessionID

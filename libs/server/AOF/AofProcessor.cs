@@ -278,7 +278,7 @@ namespace Garnet.server
                 case AofEntryType.FlushAll:
                     if (!usingShardedLog)
                     {
-                        storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
+                        storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog);
                     }
                     else
                     {
@@ -286,14 +286,14 @@ namespace Garnet.server
                             virtualSublogIdx,
                             ptr,
                             (int)LeaderBarrierType.FLUSH_DB_ALL,
-                            () => { storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1); return Task.CompletedTask; }
+                            () => { storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog); return Task.CompletedTask; }
                         );
                     }
                     break;
                 case AofEntryType.FlushDb:
                     if (!usingShardedLog)
                     {
-                        storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
+                        storeWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: header.databaseId);
                     }
                     else
                     {
@@ -301,7 +301,7 @@ namespace Garnet.server
                             virtualSublogIdx,
                             ptr,
                             (int)LeaderBarrierType.FLUSH_DB,
-                            () => { storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId); return Task.CompletedTask; }
+                            () => { storeWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: header.databaseId); return Task.CompletedTask; }
                         );
                     }
                     break;
@@ -643,7 +643,7 @@ namespace Garnet.server
         public bool CanReplay(byte* ptr, int replayTaskIdx, out long sequenceNumber)
         {
             var header = *(AofHeader*)ptr;
-            var replayHeaderType = (AofHeaderType)header.padding;
+            var replayHeaderType = header.HeaderType;
             sequenceNumber = 0L;
             switch (replayHeaderType)
             {
@@ -677,7 +677,7 @@ namespace Garnet.server
         public int GetReplayTaskIdx(byte* ptr)
         {
             var header = *(AofHeader*)ptr;
-            var replayHeaderType = (AofHeaderType)header.padding;
+            var replayHeaderType = header.HeaderType;
             switch (replayHeaderType)
             {
                 // Check if should replay entry by inspecting key
@@ -711,7 +711,7 @@ namespace Garnet.server
             if (untilSequenceNumber == -1)
                 return true;
             var header = *(AofHeader*)ptr;
-            var replayHeaderType = (AofHeaderType)header.padding;
+            var replayHeaderType = header.HeaderType;
             switch (replayHeaderType)
             {
                 case AofHeaderType.ShardedHeader:

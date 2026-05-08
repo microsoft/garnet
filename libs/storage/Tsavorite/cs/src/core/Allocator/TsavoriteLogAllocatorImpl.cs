@@ -21,6 +21,7 @@ namespace Tsavorite.core
             : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            pageHeaderSize = PageHeader.Size;
         }
 
         /// <inheritdoc />

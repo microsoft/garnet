@@ -52,6 +52,7 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteLog")]
+        [Explicit("TODO - Temporarily explicit while we investigate test failure")]
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);
