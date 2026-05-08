@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -279,44 +277,15 @@ namespace Garnet.server
             if (respProtocolVersion >= 3)
             {
                 ext = ext.IsEmpty ? RespStrings.VerbatimTxt : ext;
-                Debug.Assert(ext.Length == 3);
 
-                var actualLength = 3 + 1 + item.Length;
-                var itemDigits = NumUtils.CountDigits(actualLength);
-
-                var lenSpace = 1 + itemDigits + 2; // =<digits>\r\n
-                if (lenSpace > (int)(dend - dcurr))
-                {
+                while (!RespWriteUtils.TryWriteVerbatimStringHeader(item, ext, ref dcurr, dend))
                     SendAndReset();
-                }
-                Debug.Assert((int)(dend - dcurr) >= lenSpace, "Should always have enough space for length after a flush");
-
-                // Write out: =<digits>\r\n
-                *dcurr = (byte)'=';
-                dcurr++;
-                NumUtils.WriteInt32(actualLength, itemDigits, ref dcurr);
-                Unsafe.WriteUnaligned(dcurr, MemoryMarshal.Read<ushort>("\r\n"u8));
-                dcurr += 2;
-
-                // Write out <ext>:
-                WriteDirectLarge(ext);
-                if ((int)(dend - dcurr) < 1)
-                {
-                    SendAndReset();
-                }
-                WriteDirect(":"u8);
 
                 // Write out item
                 WriteDirectLarge(item);
 
-                if ((int)(dend - dcurr) < 2)
-                {
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                     SendAndReset();
-                }
-
-                // Write out trailing \r\n
-                Unsafe.WriteUnaligned(dcurr, MemoryMarshal.Read<ushort>("\r\n"u8));
-                dcurr += 2;
             }
             else
             {
