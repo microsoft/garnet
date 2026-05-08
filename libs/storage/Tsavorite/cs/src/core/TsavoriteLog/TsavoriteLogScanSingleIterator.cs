@@ -45,7 +45,8 @@ namespace Tsavorite.core
                     return false;
                 if (this.Ended) return false;
 
-                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress)
+                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress
+                    || this.NextAddress < this.tsavoriteLog.RefreshSafeTailAddress())
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
