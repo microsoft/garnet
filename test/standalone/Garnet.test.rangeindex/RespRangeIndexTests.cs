@@ -2068,9 +2068,11 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that DEL on a disk-backed RangeIndex cleans up BfTree data files on disk.
-        /// After RI.CREATE with DISK backend, a &lt;hash&gt;.data.bftree file should exist under
-        /// the riLogRoot. After DEL, all <c>&lt;hash&gt;.*</c> files for that key should be removed.
+        /// Verifies that DEL on a disk-backed RangeIndex cleans up the WORKING file
+        /// (<c>&lt;hash&gt;.data.bftree</c>) on disk but PRESERVES per-flush snapshot files
+        /// (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>). Per-flush files are LOG-tied — they may
+        /// still be required to recover an OLDER checkpoint that was taken BEFORE the DEL.
+        /// They are reclaimed by <c>OnTruncate</c> when the log's BeginAddress passes their address.
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteTest()
@@ -2092,18 +2094,71 @@ namespace Garnet.test
             var delResult = db.KeyDelete("cleanup");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify all <hash>.* files for this key are cleaned up
+            // Working file should be cleaned up.
             dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
             ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree files should be deleted after DEL");
-            var flushFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
-            ClassicAssert.AreEqual(0, flushFiles.Length, "flush.bftree files should be deleted after DEL");
+            // (Flush files are not asserted here because none were created in this test — no flush
+            // event fired between RI.SET and DEL. The next test verifies the preservation contract.)
         }
 
         /// <summary>
-        /// Verifies that DEL cleans up disk files for a RangeIndex that was evicted and then
-        /// lazily restored. The eviction cycle ensures the BfTree was flushed to disk; the
-        /// subsequent DEL must remove those files even though they were created by eviction
-        /// rather than by the initial RI.CREATE.
+        /// Verifies the LOG-tied lifetime of per-flush snapshot files: DEL preserves the
+        /// <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files that were created by prior flush
+        /// events, because they may be required to recover an OLDER checkpoint that was taken
+        /// before the DEL. Only <c>OnTruncate</c> (when log BeginAddress passes their address)
+        /// can safely delete them.
+        /// </summary>
+        [Test]
+        public void RIDeletePreservesPerFlushSnapshotFilesTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
+                lowMemory: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Create RI, write, force flush so a per-flush snapshot file is created.
+            db.Execute("RI.CREATE", "preservetest", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "preservetest", "field-x", "value-v1");
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            var flushBefore = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.GreaterOrEqual(flushBefore.Length, 1,
+                "test setup: at least one flush.bftree file should exist after force-flush");
+
+            // Read once to promote the flushed stub back to the mutable region (RIPROMOTE).
+            // This is required because DEL operates on the in-memory chain head.
+            ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "preservetest", "field-x"));
+
+            // DEL the key.
+            ClassicAssert.IsTrue(db.KeyDelete("preservetest"), "DEL should succeed");
+
+            // Working file must be deleted, but per-flush snapshot file(s) must SURVIVE.
+            var dataAfter = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(0, dataAfter.Length, "data.bftree should be deleted on DEL");
+
+            var flushAfter = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.AreEqual(flushBefore.Length, flushAfter.Length,
+                "per-flush snapshot files MUST be preserved on DEL — they may be required to recover " +
+                "an older checkpoint that was taken before the DEL. Only OnTruncate (when log " +
+                "BeginAddress passes their address) can safely delete them.");
+
+            // Verify file content is byte-identical (not corrupted).
+            for (var i = 0; i < flushBefore.Length; i++)
+            {
+                ClassicAssert.IsTrue(File.Exists(flushBefore[i]), $"flush file {Path.GetFileName(flushBefore[i])} must still exist after DEL");
+            }
+        }
+
+        /// <summary>
+        /// Verifies that DEL of a previously-evicted-and-restored RangeIndex correctly cleans
+        /// up the working file but PRESERVES per-flush snapshot files (LOG-tied lifetime).
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteAfterEvictionAndRestoreTest()
@@ -2136,6 +2191,8 @@ namespace Garnet.test
             // Files should still exist after eviction (preserved for lazy restore)
             var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
             ClassicAssert.AreEqual(1, dataFiles.Length, "data.bftree file should survive eviction");
+            var flushFilesPostEvict = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.GreaterOrEqual(flushFilesPostEvict.Length, 1, "at least one flush snapshot should exist post-eviction");
 
             // Lazy restore brings the record back in-memory (DEL requires the record
             // to be in-memory; the unified Delete path does not trigger lazy restore).
@@ -2143,16 +2200,18 @@ namespace Garnet.test
             ClassicAssert.AreEqual("val1", (string)val, "lazy restore should recover data after eviction");
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live again after lazy restore");
 
-            // Now delete — the tree was evicted and flushed to disk, then restored;
-            // DEL must clean up the flush files created during eviction.
+            // Now delete — only the working data.bftree should be removed; per-flush snapshots
+            // must survive (LOG-tied lifetime; needed for recovery to a prior checkpoint).
             var delResult = db.KeyDelete("evictdel");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify all <hash>.* files for this key have been cleaned up
             dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
-            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree should be deleted after DEL on previously-evicted key");
-            var flushFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
-            ClassicAssert.AreEqual(0, flushFiles.Length, "flush.bftree files should be deleted after DEL on previously-evicted key");
+            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree should be deleted after DEL");
+
+            var flushFilesPostDel = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
+            ClassicAssert.AreEqual(flushFilesPostEvict.Length, flushFilesPostDel.Length,
+                "per-flush snapshot files MUST be preserved on DEL even for previously-evicted keys " +
+                "— they may be required to recover an older checkpoint taken before the DEL.");
         }
 
         // ============================================================================

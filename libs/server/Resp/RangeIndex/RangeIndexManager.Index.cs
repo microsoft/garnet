@@ -242,30 +242,45 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Delete BfTree data files for a key under the flat layout. Removes:
-        /// <c>{logRoot}/&lt;hash&gt;.data.bftree</c>, <c>&lt;hash&gt;.data.bftree.tmp</c>,
-        /// and all <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files.
-        /// Per-checkpoint snapshots are NOT deleted here — Tsavorite removes them when their
-        /// parent token directory is purged.
-        /// Called after a DEL/UNLINK removes the key from the main store.
+        /// Delete the working files for a deleted RangeIndex key under the flat layout. Removes
+        /// only <c>{logRoot}/&lt;hash&gt;.data.bftree</c> and any orphan
+        /// <c>&lt;hash&gt;.data.bftree.tmp</c>.
+        ///
+        /// <para>Does NOT delete <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files: those are
+        /// LOG-tied (their lifetime tracks log addresses, not key existence) and may still be
+        /// required to recover an OLDER checkpoint that was taken BEFORE the DEL — at recovery
+        /// time the recovered main log would still contain a stub at some addr A_old with
+        /// FlagFlushed=1, and RIPROMOTE-cold would need to find <c>&lt;hash&gt;.&lt;A_old&gt;.flush.bftree</c>
+        /// to restore the pre-delete tree state. Per-flush files are reclaimed by
+        /// <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes their address —
+        /// at which point no checkpoint can recover the pre-delete state anyway.</para>
+        ///
+        /// <para>Per-checkpoint snapshots under <c>cpr-checkpoints/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</c>
+        /// are also NOT deleted here (different root) — Tsavorite removes them when it deletes the
+        /// parent token directory.</para>
+        ///
+        /// <para>Called after a DEL/UNLINK removes the key from the main store.</para>
         /// </summary>
         private void DeleteTreeFiles(ReadOnlySpan<byte> key)
         {
             if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
                 return;
 
-            try
+            var hashPrefix = HashKeyToPrefix(key);
+            TryDelete(LogDataPath(hashPrefix));
+            TryDelete(Path.Combine(riLogRoot, hashPrefix + ".data.bftree.tmp"));
+
+            void TryDelete(string p)
             {
-                var hashPrefix = HashKeyToPrefix(key);
-                foreach (var path in Directory.EnumerateFiles(riLogRoot, hashPrefix + ".*"))
+                try
                 {
-                    try { File.Delete(path); }
-                    catch (Exception ex) { logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", path); }
+                    if (File.Exists(p))
+                        File.Delete(p);
                 }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "DeleteTreeFiles: enumeration failed for key");
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", p);
+                }
             }
         }
 
