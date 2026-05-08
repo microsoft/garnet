@@ -12,16 +12,16 @@ namespace Garnet.cluster
         /// Peek the serialization version from a config byte array without full deserialization.
         /// </summary>
         /// <param name="data">Serialized cluster config payload.</param>
-        /// <param name="version">The version int at the start of the payload.</param>
-        /// <returns>True if the payload is large enough to contain a version int; false otherwise.</returns>
-        public static bool TryPeekVersion(ReadOnlySpan<byte> data, out int version)
+        /// <param name="version">The version byte at the start of the payload.</param>
+        /// <returns>True if the payload is large enough to contain a version byte; false otherwise.</returns>
+        public static bool TryPeekVersion(ReadOnlySpan<byte> data, out byte version)
         {
-            if (data.Length < sizeof(int))
+            if (data.Length < 1)
             {
                 version = 0;
                 return false;
             }
-            version = BitConverter.ToInt32(data);
+            version = data[0];
             return true;
         }
 
@@ -130,9 +130,9 @@ namespace Garnet.cluster
             var reader = new BinaryReader(ms);
 
             // Read and validate serialization format version
-            if (other.Length < sizeof(int))
+            if (other.Length < 1)
                 throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
-            var version = reader.ReadInt32();
+            var version = reader.ReadByte();
             if (version != ClusterConfigVersion)
                 throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
 

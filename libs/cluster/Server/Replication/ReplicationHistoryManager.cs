@@ -17,7 +17,7 @@ namespace Garnet.cluster
         /// Version of the replication history serialization format.
         /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const int ReplicationHistoryVersion = 1;
+        public const byte ReplicationHistoryVersion = 1;
 
         public string PrimaryReplId => primary_replid;
         string primary_replid;
@@ -66,10 +66,10 @@ namespace Garnet.cluster
             using var reader = new BinaryReader(ms);
 
             // Read and validate serialization format version
-            if (data.Length < sizeof(int))
+            if (data.Length < 1)
                 throw new InvalidDataException("Invalid ReplicationHistory payload: too short to contain a version");
 
-            var version = reader.ReadInt32();
+            var version = reader.ReadByte();
             if (version != ReplicationHistoryVersion)
                 throw new InvalidDataException($"Incompatible ReplicationHistory version: expected {ReplicationHistoryVersion}, got {version}");
 

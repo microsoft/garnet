@@ -44,7 +44,7 @@ namespace Garnet.cluster
         /// Version of the cluster config serialization format.
         /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const int ClusterConfigVersion = 1;
+        public const byte ClusterConfigVersion = 1;
 
         /// <summary>
         /// 
