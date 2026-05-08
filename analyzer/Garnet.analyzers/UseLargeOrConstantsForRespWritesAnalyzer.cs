@@ -26,9 +26,10 @@ namespace Garnet.analyzers
         private static DiagnosticDescriptor AddLargeOverridesForVariableSizeResponses { get; } = new("GARNET0003", "Add Large Override For Variable Size Responses", "Add and use {0} to RespServerSessionOutput.cs in place of using {1} for variable size responses", "Correctness", DiagnosticSeverity.Warning, isEnabledByDefault: true);
         private static DiagnosticDescriptor MoveOutputConstantsToCmdStrings { get; } = new("GARNET0004", "Move Output Constants To CmdStrings", "Add {0} to CmdStrings and use it in place of an inline literal", "Correctness", DiagnosticSeverity.Warning, isEnabledByDefault: true);
         private static DiagnosticDescriptor UseExistingConstantInCmdStrings { get; } = new("GARNET0005", "Use Existing Constants In CmdStrings", "Use CmdStrings.{0} instead of inline literal", "Correctness", DiagnosticSeverity.Warning, isEnabledByDefault: true);
+        private static DiagnosticDescriptor CmdStringsConstantTooLarge { get; } = new("GARNET0006", "CmdStrings Constant Too Large", "CmdStrings.{0} estimated serialization length of {1} exceeds minimum send buffer size of {2}", "Correctness", DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
         /// <inheritdoc/>
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = [UseLargeOverridesWithVariableSizeResponses, AddLargeOverridesForVariableSizeResponses, MoveOutputConstantsToCmdStrings, UseExistingConstantInCmdStrings];
+        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = [UseLargeOverridesWithVariableSizeResponses, AddLargeOverridesForVariableSizeResponses, MoveOutputConstantsToCmdStrings, UseExistingConstantInCmdStrings, CmdStringsConstantTooLarge];
 
         /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
@@ -82,7 +83,7 @@ namespace Garnet.analyzers
                             SyntaxKind.InvocationExpression
                         );
 
-                        var knownConstants = BuildKnownConstantsLookup(cmdStringType, compilationStartContext.CancellationToken);
+                        var knownConstants = BuildKnownConstantsLookup(cmdStringType, readOnlySpanByteType, compilationStartContext.CancellationToken);
 
                         compilationStartContext.RegisterSyntaxNodeAction(
                             syntaxNodeAction =>
@@ -90,6 +91,14 @@ namespace Garnet.analyzers
                                 AnalyzeCallerForNonCmdStringsConstants(syntaxNodeAction, cmdStringType, respServerSessionType, knownConstants, syntaxNodeAction.CancellationToken);
                             },
                             SyntaxKind.InvocationExpression
+                        );
+
+                        compilationStartContext.RegisterSyntaxNodeAction(
+                            syntaxNodeAction =>
+                            {
+                                AnalyzeDeclarationForTooLargeCmdStringConstants(syntaxNodeAction, cmdStringType, knownConstants);
+                            },
+                            SyntaxKind.ClassDeclaration
                         );
                     }
                 }
@@ -139,13 +148,18 @@ namespace Garnet.analyzers
             }
 
             // Build a map of literals ("foo" and "bar"u8) to the corresponding properties on CmdStrings
-            static Dictionary<string, string> BuildKnownConstantsLookup(INamedTypeSymbol cmdStringsType, CancellationToken cancellation)
+            static Dictionary<string, string> BuildKnownConstantsLookup(INamedTypeSymbol cmdStringsType, INamedTypeSymbol readOnlySpanByteType, CancellationToken cancellation)
             {
                 var lookup = new Dictionary<string, string>();
 
                 foreach (var prop in cmdStringsType.GetMembers().OfType<IPropertySymbol>())
                 {
                     if (prop.GetMethod is null || prop.SetMethod is not null)
+                    {
+                        continue;
+                    }
+
+                    if (!SymbolEqualityComparer.Default.Equals(prop.Type, readOnlySpanByteType))
                     {
                         continue;
                     }
@@ -318,6 +332,133 @@ namespace Garnet.analyzers
             }
 
             context.ReportDiagnostic(diag);
+        }
+
+        /// <summary>
+        /// Checks for constants in CmdStrings that exceed CmdStrings.MaximumConstantSize in bytes.
+        /// 
+        /// Constants that start with a RESP sigil are assumed to be literal, everything else is treated like a Bulk String.
+        /// </summary>
+        private static void AnalyzeDeclarationForTooLargeCmdStringConstants(SyntaxNodeAnalysisContext context, INamedTypeSymbol cmdStringsType, Dictionary<string, string> constantLookup)
+        {
+            if (context.Node is not ClassDeclarationSyntax classDecl)
+            {
+                return;
+            }
+
+            // Quick check for CmdStrings name
+            if (classDecl.Identifier.Text != "CmdStrings")
+            {
+                return;
+            }
+
+            // Check for CmdStrings type
+            var declType = context.SemanticModel.GetDeclaredSymbol(classDecl);
+            if (declType is null || !SymbolEqualityComparer.Default.Equals(cmdStringsType, declType))
+            {
+                return;
+            }
+
+            // Get the MaximumConstantSize property
+            var maximumConstantSizeDecl = classDecl.Members.OfType<PropertyDeclarationSyntax>().SingleOrDefault(static propDecl => propDecl.Identifier.Text == "MaximumConstantSize");
+            if (maximumConstantSizeDecl is null)
+            {
+                return;
+            }
+
+            // Get MaximumConstantSize literal value
+            var getDeclSyntax = maximumConstantSizeDecl.ExpressionBody;
+            if (getDeclSyntax is not ArrowExpressionClauseSyntax arrowDecl)
+            {
+                return;
+            }
+
+            if (arrowDecl.Expression is not LiteralExpressionSyntax literal)
+            {
+                return;
+            }
+
+            var maximumSizeLit = context.SemanticModel.GetConstantValue(literal);
+            if (!maximumSizeLit.HasValue)
+            {
+                return;
+            }
+
+            var maximumSize = (int)maximumSizeLit.Value;
+
+            // Consider all found constaints and calculate their effective length
+            foreach (var kv in constantLookup)
+            {
+                var lit = kv.Key;
+                var prop = kv.Value;
+
+                if (!string.IsNullOrEmpty(lit) && lit[0] == '"')
+                {
+                    lit = lit.Substring(1);
+                }
+
+                if (!string.IsNullOrEmpty(lit) && lit.EndsWith("u8"))
+                {
+                    lit = lit.Substring(0, lit.Length - 2);
+                }
+
+                if (!string.IsNullOrEmpty(lit) && lit[lit.Length - 1] == '"')
+                {
+                    lit = lit.Substring(0, lit.Length - 1);
+                }
+
+                // Skip empty
+                if (string.IsNullOrEmpty(lit))
+                {
+                    continue;
+                }
+
+                var maybeSigil = lit[0];
+                var isRespEncoded = maybeSigil is '+' or '-' or ':' or '$' or '*' or '_' or '#' or ',' or '(' or '!' or '=' or '%' or '|' or '~' or '>';
+
+                int effectiveLength;
+                if (isRespEncoded)
+                {
+                    effectiveLength = lit.Replace("\\", "").Length;
+                }
+                else
+                {
+                    // Assume Bulk String: $<len>\r\n<value>\r\n
+                    var rawLength = lit.Replace("\\", "").Length;
+                    effectiveLength = 1 + CountDigits(rawLength) + 2 + rawLength + 2;
+                }
+
+                if (effectiveLength > maximumSize)
+                {
+                    var decl = classDecl.Members.OfType<PropertyDeclarationSyntax>().FirstOrDefault(p => p.Identifier.Text == prop);
+
+                    if (decl is not null)
+                    {
+                        var diag = Diagnostic.Create(CmdStringsConstantTooLarge, decl.GetLocation(), prop, effectiveLength, maximumSize);
+                        context.ReportDiagnostic(diag);
+                    }
+                }
+            }
+
+            // Figure out space needed to serialize a Bulk String length
+            static int CountDigits(int value)
+            {
+                value = value < 0 ? ((~value) + 1) : value;
+
+                if (value < 10) return 1;
+                if (value < 100) return 2;
+                if (value < 1000) return 3;
+                if (value < 100000000L)
+                {
+                    if (value < 1000000)
+                    {
+                        if (value < 10000) return 4;
+                        return 5 + (value >= 100000 ? 1 : 0);
+                    }
+                    return 7 + (value >= 10000000L ? 1 : 0);
+                }
+                return 9 + (value >= 1000000000L ? 1 : 0);
+            }
         }
     }
 }

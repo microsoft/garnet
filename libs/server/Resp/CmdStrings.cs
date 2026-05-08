@@ -11,6 +11,11 @@ namespace Garnet.server
     static partial class CmdStrings
     {
         /// <summary>
+        /// Maximum size to allow - considered by the UseLargeOrConstantsForRespWritesAnalyzer.
+        /// </summary>
+        internal static int MaximumConstantSize => 512;
+
+        /// <summary>
         /// Request strings
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
