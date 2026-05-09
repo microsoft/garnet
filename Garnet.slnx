@@ -86,5 +86,12 @@
     <Project Path="test/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
     <Project Path="test/Garnet.test.cluster.multilog/Garnet.test.cluster.multilog.csproj" />
     <Project Path="test/Garnet.test/Garnet.test.csproj" />
+    <Project Path="test/Garnet.test.collections/Garnet.test.collections.csproj" />
+    <Project Path="test/Garnet.test.acl/Garnet.test.acl.csproj" />
+    <Project Path="test/Garnet.test.scripting/Garnet.test.scripting.csproj" />
+    <Project Path="test/Garnet.test.complexstring/Garnet.test.complexstring.csproj" />
+    <Project Path="test/Garnet.test.vectorset/Garnet.test.vectorset.csproj" />
+    <Project Path="test/Garnet.test.rangeindex/Garnet.test.rangeindex.csproj" />
+    <Project Path="test/Garnet.test.extensions/Garnet.test.extensions.csproj" />
   </Folder>
 </Solution>
