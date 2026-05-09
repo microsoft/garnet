@@ -90,7 +90,9 @@ namespace Garnet.server
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
-        const byte AofHeaderVersion = 2;
+        // Version 3 repurposes the flags byte as a bitfield containing the header type
+        // plus chunked-record and unsafe-truncate markers.
+        const byte AofHeaderVersion = 3;
 
         /// <summary>
         /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>
