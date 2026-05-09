@@ -94,7 +94,6 @@ namespace Garnet.test
             ClassicAssert.Greater(second, first, "uptime_in_seconds should increase between INFO calls");
         }
 
-        [Test]
         [TestCase("ALL", RedisProtocol.Resp2)]
         [TestCase("ALL", RedisProtocol.Resp3)]
         [TestCase("DEFAULT", RedisProtocol.Resp2)]
