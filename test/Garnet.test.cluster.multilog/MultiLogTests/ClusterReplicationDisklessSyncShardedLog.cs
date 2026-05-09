@@ -4,11 +4,13 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster.MultiLogTests
 {
     [TestFixture]
+    [AllureNUnit]
     [NonParallelizable]
     public class ClusterReplicationDisklessSyncShardedLog : ClusterReplicationDisklessSyncTests
     {
