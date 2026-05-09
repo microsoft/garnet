@@ -8,7 +8,6 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -16,7 +15,6 @@ using StackExchange.Redis;
 namespace Garnet.test.cluster.MultiLogTests
 {
     [TestFixture]
-    [AllureNUnit]
     [NonParallelizable]
     public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {

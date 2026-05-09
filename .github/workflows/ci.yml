@@ -113,11 +113,12 @@ jobs:
           }
           $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
           if (-not $allureBase) {
-            # AllureTestBase may be in a referenced assembly (e.g., child test projects referencing a base test project)
-            foreach ($refAsm in $asm.GetReferencedAssemblies()) {
+            # AllureTestBase may be in a transitive dependency already loaded by the runtime during GetTypes().
+            # Search all loaded assemblies in the AppDomain rather than only direct references.
+            foreach ($loaded in [System.AppDomain]::CurrentDomain.GetAssemblies()) {
               try {
-                $loaded = [System.Reflection.Assembly]::Load($refAsm)
-                $allureBase = $loaded.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+                try { $refTypes = $loaded.GetTypes() } catch [System.Reflection.ReflectionTypeLoadException] { $refTypes = $_.Exception.Types | Where-Object { $_ -ne $null } }
+                $allureBase = $refTypes | Where-Object { $_.Name -eq "AllureTestBase" }
                 if ($allureBase) { break }
               } catch { }
             }
