@@ -216,13 +216,22 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
                         var returnedConfigArray = resp.Span.ToArray();
-                        var other = ClusterConfig.FromByteArray(returnedConfigArray);
 
-                        // Check if gossip is from a node that is known and trusted before merging
-                        if (current.IsKnown(other.LocalNodeId))
-                            _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                        // Validate config version before full deserialization
+                        if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                        {
+                            logger?.LogWarning("Received failover gossip response with incompatible config version: {version}", version);
+                        }
                         else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
+                        {
+                            var other = ClusterConfig.FromByteArray(returnedConfigArray);
+
+                            // Check if gossip is from a node that is known and trusted before merging
+                            if (current.IsKnown(other.LocalNodeId))
+                                _ = clusterProvider.clusterManager.TryMerge(other);
+                            else
+                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
+                        }
                     }
                 }
                 catch (Exception ex)

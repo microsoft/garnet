@@ -41,13 +41,6 @@ namespace Garnet.server
         // Lock for synchronizing checkpointing of all active DBs (if more than one)
         SingleWriterMultiReaderLock multiDbCheckpointingLock;
 
-        // Reusable task array for tracking checkpointing of multiple DBs
-        // Used by recurring checkpointing task if multiple DBs exist
-        Task[] checkpointTasks;
-
-        // Reusable array for storing database IDs for checkpointing
-        int[] dbIdsToCheckpoint;
-
         // True if StartObjectSizeTrackers was previously called
         bool sizeTrackersStarted;
 
@@ -147,113 +140,115 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
-            var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return false;
+            // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
+            // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
+            // swapped DB and let a second BGSAVE race against the in-flight checkpoint).
+            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
 
-            var checkpointTask = TakeCheckpointHelperAsync();
+            var multiDbLockHeld = false;
+            int[] pausedDbIds = null;
+            var pausedCount = 0;
 
-            if (background)
-                return true;
-
-            return await checkpointTask.ConfigureAwait(false);
-
-            async Task<bool> TakeCheckpointHelperAsync()
+            try
             {
-                // Force async 
-                await Task.Yield();
-
-                var checkpointLockTaken = false;
-
-                try
+                if (dbId == -1)
                 {
+                    // All-active-DBs path: take multiDbCheckpointingLock if multi-db, then synchronously
+                    // pause per-DB checkpoints for every active DB so any BGSAVE issued after this method
+                    // returns reliably observes the in-progress checkpoint. The buffer is local so a
+                    // concurrent HandleDatabaseAdded that resizes shared state cannot strand the IDs.
                     var activeDbIdsMapSize = activeDbIds.ActualSize;
 
                     if (activeDbIdsMapSize > 1)
                     {
                         if (!multiDbCheckpointingLock.TryWriteLock())
-                            return false;
+                        {
+                            databasesContentLock.ReadUnlock();
+                            return Task.FromResult(false);
+                        }
 
-                        checkpointLockTaken = true;
+                        multiDbLockHeld = true;
                     }
 
+                    pausedDbIds = new int[activeDbIdsMapSize];
                     var activeDbIdsMapSnapshot = activeDbIds.Map;
-                    Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
-
-                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).ConfigureAwait(false);
+                    for (var i = 0; i < activeDbIdsMapSize; i++)
+                    {
+                        var id = activeDbIdsMapSnapshot[i];
+                        if (TryPauseCheckpoints(id))
+                            pausedDbIds[pausedCount++] = id;
+                    }
                 }
-                finally
+                else
                 {
-                    if (checkpointLockTaken)
-                        multiDbCheckpointingLock.WriteUnlock();
+                    // Single-DB path: just pause this one DB. multiDbCheckpointingLock is not taken
+                    // because multiple per-DB BGSAVEs on different DBs are legal.
+                    Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
 
-                    databasesContentLock.ReadUnlock();
+                    if (!TryPauseCheckpoints(dbId))
+                    {
+                        databasesContentLock.ReadUnlock();
+                        return Task.FromResult(false);
+                    }
+
+                    pausedDbIds = [dbId];
+                    pausedCount = 1;
                 }
             }
-        }
+            catch
+            {
+                if (pausedDbIds != null)
+                {
+                    for (var i = 0; i < pausedCount; i++)
+                        ResumeCheckpoints(pausedDbIds[i]);
+                }
 
-        /// <inheritdoc/>
-        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
-        {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+                if (multiDbLockHeld)
+                    multiDbCheckpointingLock.WriteUnlock();
 
-            // Check if checkpoint already in progress
-            if (!TryPauseCheckpoints(dbId))
-                return false;
+                databasesContentLock.ReadUnlock();
+                throw;
+            }
 
-            var checkpointTask = TakeCheckpointHelperAsync(databasesMapSnapshot, dbId, logger, token);
+            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
 
             if (background)
-                return true;
+                return Task.FromResult(true);
 
-            await checkpointTask.ConfigureAwait(false);
-            return true;
-
-            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databasesMapSnapshot, int dbId, ILogger logger, CancellationToken token)
-            {
-                try
-                {
-                    var storeTailAddress = await TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
-
-                    UpdateLastSaveData(dbId, storeTailAddress);
-                }
-                finally
-                {
-                    ResumeCheckpoints(dbId);
-                }
-            }
+            return checkpointTask;
         }
 
         /// <inheritdoc/>
         public override async Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
         {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
 
-            var db = databasesMapSnapshot[dbId];
+            // Acquire databasesContentLock (read) so a concurrent swap-db can't mis-attribute LASTSAVE
+            // (UpdateLastSaveData uses databases.Map[dbId] at write time).
+            if (!TryGetDatabasesContentReadLock()) return;
 
-            // Check if checkpoint already in progress
-            var checkpointsPaused = TryPauseCheckpoints(dbId);
-
+            var checkpointsPaused = false;
             try
             {
+                checkpointsPaused = TryPauseCheckpoints(dbId);
+                var db = databases.Map[dbId];
+
                 // If another checkpoint is in progress or a checkpoint was taken beyond the provided entryTime - return
                 if (!checkpointsPaused || db.LastSaveTime > entryTime)
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
-
-                var storeTailAddress = result;
+                var storeTailAddress = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
                 UpdateLastSaveData(dbId, storeTailAddress);
             }
             finally
             {
-                ResumeCheckpoints(dbId);
+                if (checkpointsPaused)
+                    ResumeCheckpoints(dbId);
+
+                databasesContentLock.ReadUnlock();
             }
         }
 
@@ -261,27 +256,26 @@ namespace Garnet.server
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit, CancellationToken token = default,
             ILogger logger = null)
         {
-            var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return;
+            if (!TryGetDatabasesContentReadLock(token)) return;
 
-            var activeDbIdsMapSize = activeDbIds.ActualSize;
-
-            var checkpointLockTaken = false;
+            var multiDbLockHeld = false;
 
             try
             {
+                var activeDbIdsMapSize = activeDbIds.ActualSize;
+
                 if (activeDbIdsMapSize > 1)
                 {
                     if (!multiDbCheckpointingLock.TryWriteLock())
                         return;
 
-                    checkpointLockTaken = true;
+                    multiDbLockHeld = true;
                 }
 
+                // Find first oversized DB and synchronously pause it.
                 var databasesMapSnapshot = databases.Map;
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
-
-                var dbIdsIdx = 0;
+                var pausedDbId = -1;
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
@@ -293,18 +287,19 @@ namespace Garnet.server
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {dbAofSize} > AofSizeLimit: {aofSizeLimit} (Database ID: {dbId})",
                             dbAofSize, aofSizeLimit, dbId);
-                        dbIdsToCheckpoint[dbIdsIdx++] = dbId;
+                        if (TryPauseCheckpoints(dbId))
+                            pausedDbId = dbId;
                         break;
                     }
                 }
 
-                if (dbIdsIdx == 0) return;
+                if (pausedDbId < 0) return;
 
-                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token).ConfigureAwait(false);
+                await RunPausedCheckpointAsync(databasesMapSnapshot[pausedDbId], pausedDbId, token, logger).ConfigureAwait(false);
             }
             finally
             {
-                if (checkpointLockTaken)
+                if (multiDbLockHeld)
                     multiDbCheckpointingLock.WriteUnlock();
 
                 databasesContentLock.ReadUnlock();
@@ -936,17 +931,6 @@ namespace Garnet.server
 
             activeDbIds.TryGetNextId(out var nextIdx);
             activeDbIds.TrySetValue(nextIdx, db.Id);
-
-            activeDbIds.mapLock.ReadLock();
-            try
-            {
-                checkpointTasks = new Task[activeDbIds.ActualSize];
-                dbIdsToCheckpoint = new int[activeDbIds.ActualSize];
-            }
-            finally
-            {
-                activeDbIds.mapLock.ReadUnlock();
-            }
         }
 
         /// <summary>
@@ -983,72 +967,68 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Asynchronously checkpoint multiple databases and wait for all to complete
+        /// Run pre-paused per-DB checkpoints in parallel, then release the outer locks held by the caller.
+        /// Caller must hold <see cref="databasesContentLock"/> as a reader and must have synchronously
+        /// pause-locked every DB in <paramref name="pausedDbIds"/>[0..<paramref name="pausedCount"/>).
         /// </summary>
-        /// <param name="dbIdsCount">Number of databases to checkpoint (first dbIdsCount indexes from dbIdsToCheckpoint)</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>False if checkpointing already in progress</returns>
-        private async Task<bool> TakeDatabasesCheckpointAsync(int dbIdsCount, ILogger logger = null,
-            CancellationToken token = default)
+        private async Task<bool> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
+            bool multiDbLockHeld, CancellationToken token, ILogger logger)
         {
-            Debug.Assert(checkpointTasks != null);
-            Debug.Assert(dbIdsCount <= dbIdsToCheckpoint.Length);
-
-            for (var i = 0; i < checkpointTasks.Length; i++)
-                checkpointTasks[i] = Task.CompletedTask;
-
-            var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return false;
-
             try
             {
+                // Force async so that the entry point can return synchronously to the caller.
+                await Task.Yield();
+
                 var databaseMapSnapshot = databases.Map;
+                var checkpointTasks = new Task[pausedCount];
+                var handedOffCount = 0;
 
-                for (var currIdx = 0; currIdx < dbIdsCount; currIdx++)
+                try
                 {
-                    var dbId = dbIdsToCheckpoint[currIdx];
+                    for (var i = 0; i < pausedCount; i++)
+                    {
+                        checkpointTasks[i] = RunPausedCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i], token, logger);
+                        handedOffCount = i + 1;
+                    }
 
-                    // If a checkpoint is already in progress for this database, skip it
-                    if (!TryPauseCheckpoints(dbId))
-                        continue;
-
-                    checkpointTasks[currIdx] = TakeCheckpointHelperAsync(databaseMapSnapshot, dbId);
+                    await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
                 }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Checkpointing threw exception");
 
-                await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Checkpointing threw exception");
+                    // Per-DB helpers that were started always resume their own dbId in finally.
+                    // Resume locks for any pre-paused DBs that didn't get handed off (very rare —
+                    // would require the synchronous tasks[] assignment loop above to throw).
+                    for (var i = handedOffCount; i < pausedCount; i++)
+                        ResumeCheckpoints(pausedDbIds[i]);
+                }
             }
             finally
             {
+                if (multiDbLockHeld)
+                    multiDbCheckpointingLock.WriteUnlock();
+
                 databasesContentLock.ReadUnlock();
             }
 
             return true;
+        }
 
-            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databaseMapSnapshot, int dbId)
+        /// <summary>
+        /// Run a single pre-paused per-DB checkpoint and resume the per-DB checkpoint lock.
+        /// Caller must have already pause-locked <paramref name="dbId"/> via <see cref="TryPauseCheckpoints(int)"/>.
+        /// </summary>
+        private async Task RunPausedCheckpointAsync(GarnetDatabase db, int dbId, CancellationToken token, ILogger logger)
+        {
+            try
             {
-                var needsResume = true;
-
-                try
-                {
-                    var storeTailAddress = await TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
-
-                    ResumeCheckpoints(dbId);
-                    needsResume = false;
-
-                    UpdateLastSaveData(dbId, storeTailAddress);
-                }
-                finally
-                {
-                    if (needsResume)
-                    {
-                        ResumeCheckpoints(dbId);
-                    }
-                }
+                var storeTailAddress = await TakeCheckpointAsync(db, logger: logger, token: token).ConfigureAwait(false);
+                UpdateLastSaveData(dbId, storeTailAddress);
+            }
+            finally
+            {
+                ResumeCheckpoints(dbId);
             }
         }
 
