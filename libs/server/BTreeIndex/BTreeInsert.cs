@@ -70,6 +70,10 @@ namespace Garnet.server.BTreeIndex
                 var destinationSpan = new Span<byte>(leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index) * BTreeNode.KEY_SIZE);
                 sourceSpan.CopyTo(destinationSpan);
 
+                // move values to the right of index (must iterate right-to-left for overlapping shift)
+                for (int j = leaf->info->count - 1; j >= index; j--)
+                    leaf->data.values[j + 1] = leaf->data.values[j];
+
                 leaf->SetKey(index, key);
                 leaf->SetValue(index, value);
                 leaf->info->count++;
@@ -121,13 +125,13 @@ namespace Garnet.server.BTreeIndex
                 var newLeafKeysSpan = new Span<byte>(newLeaf->keys + (newIndex + 1) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
                 existingLeafKeysSpan.CopyTo(newLeafKeysSpan);
 
-                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count, newIndex * sizeof(Value));
-                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newIndex * sizeof(Value));
+                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count, newIndex);
+                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newIndex);
                 existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
                 newLeaf->SetValue(newIndex, value);
 
-                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
-                var newLeafValuesSpan2 = new Span<Value>(newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
+                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, BTreeNode.LEAF_CAPACITY - index);
+                var newLeafValuesSpan2 = new Span<Value>(newLeaf->data.values + newIndex + 1, BTreeNode.LEAF_CAPACITY - index);
                 existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
                 newLeaf->info->validCount++;
             }
@@ -142,12 +146,12 @@ namespace Garnet.server.BTreeIndex
                 existingLeafKeysSpan2.CopyTo(newLeafKeysSpan2);
                 leaf->SetKey(index, key);
 
-                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count - 1, newLeaf->info->count * sizeof(Value));
-                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newLeaf->info->count * sizeof(Value));
+                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count - 1, newLeaf->info->count);
+                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newLeaf->info->count);
                 existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
 
-                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (leaf->info->count - index - 1) * sizeof(Value));
-                var newLeafValuesSpan2 = new Span<Value>(leaf->data.values + index + 1, (leaf->info->count - index - 1) * sizeof(Value));
+                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, leaf->info->count - index - 1);
+                var newLeafValuesSpan2 = new Span<Value>(leaf->data.values + index + 1, leaf->info->count - index - 1);
                 existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
                 leaf->SetValue(index, value);
                 leaf->info->validCount++;
