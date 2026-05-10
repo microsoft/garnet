@@ -604,9 +604,10 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = version,
-                    sessionID = sessionId,
+                    sessionID = sessionId
                 };
 
                 singleLog.log.Enqueue(
@@ -623,10 +624,10 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
+                        HeaderType = AofHeaderType.ShardedHeader,
                         opType = opType,
                         storeVersion = version,
-                        sessionID = sessionId,
-                        HeaderType = AofHeaderType.ShardedHeader
+                        sessionID = sessionId
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -667,9 +668,10 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = version,
-                    sessionID = sessionId,
+                    sessionID = sessionId
                 };
 
                 singleLog.log.Enqueue(
@@ -685,10 +687,10 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
+                        HeaderType = AofHeaderType.ShardedHeader,
                         opType = opType,
                         storeVersion = version,
-                        sessionID = sessionId,
-                        HeaderType = AofHeaderType.ShardedHeader
+                        sessionID = sessionId
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -726,6 +728,7 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = version,
                     sessionID = sessionId,
@@ -744,10 +747,10 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
+                        HeaderType = AofHeaderType.ShardedHeader,
                         opType = opType,
                         storeVersion = version,
-                        sessionID = sessionId,
-                        HeaderType = AofHeaderType.ShardedHeader
+                        sessionID = sessionId
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -784,6 +787,7 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     procedureId = procedureId,
                     storeVersion = txnVersion,
@@ -855,6 +859,7 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = txnVersion,
                     sessionID = sessionId,
@@ -919,8 +924,9 @@ namespace Garnet.server
         {
             if (usingSingleLog)
             {
-                var header = new AofHeader()
+                var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = version,
                     sessionID = -1
@@ -991,6 +997,7 @@ namespace Garnet.server
             {
                 var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = version,
                     sessionID = sessionId,
@@ -1008,10 +1015,10 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
+                        HeaderType = AofHeaderType.ShardedHeader,
                         opType = opType,
                         storeVersion = version,
                         sessionID = sessionId,
-                        HeaderType = AofHeaderType.ShardedHeader
                     },
                     sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                 };
@@ -1044,8 +1051,9 @@ namespace Garnet.server
         {
             if (usingSingleLog)
             {
-                AofHeader header = new()
+                var header = new AofHeader
                 {
+                    HeaderType = AofHeaderType.BasicHeader,
                     opType = opType,
                     storeVersion = 0,
                     sessionID = -1,
