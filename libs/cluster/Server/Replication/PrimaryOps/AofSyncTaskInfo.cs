@@ -127,7 +127,7 @@ namespace Garnet.cluster
             finally
             {
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
-                logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, previousAddress);
+                logger?.LogWarning("AofSync task terminated for remote node {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, previousAddress);
 
                 if (!aofTaskStore.TryRemove(this))
                 {
