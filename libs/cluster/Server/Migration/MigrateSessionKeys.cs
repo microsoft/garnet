@@ -128,6 +128,20 @@ namespace Garnet.cluster
                         logger?.LogCritical("Final flush after Vector Set migration failed");
                         return false;
                     }
+
+                    // Mark VectorSet keys for deletion so DeleteKeys() removes them during the DELETING phase
+                    var sketchKeys = migrateTask.sketch.Keys;
+                    for (var i = 0; i < sketchKeys.Count; i++)
+                    {
+                        if (sketchKeys[i].Item2)
+                            continue;
+
+                        var spanByte = sketchKeys[i].Item1.SpanByte;
+                        if (indexesToMigrate.ContainsKey(spanByte.ToByteArray()))
+                        {
+                            sketchKeys[i] = (sketchKeys[i].Item1, true);
+                        }
+                    }
                 }
 
                 // Final cleanup, which will also delete Vector Sets
