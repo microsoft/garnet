@@ -16,8 +16,8 @@ using Tsavorite.test.recovery;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -49,19 +49,19 @@ namespace Tsavorite.test
             {
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-                using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+                using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                     new()
                     {
                         IndexSize = 1L << 16,
                         LogDevice = log,
                         MutableFraction = 1,
                         PageSize = 1L << 10,
-                        MemorySize = 1L << 20,
+                        LogMemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
-                    }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                    }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
@@ -71,7 +71,9 @@ namespace Tsavorite.test
                 for (var i = 0; i < 10; i++)
                 {
                     // Do some dummy update
-                    _ = bContext.Upsert(0, random.Next());
+                    var key = 0L;
+                    var value = (long)random.Next();
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
 
                     var checkpointType = random.Next(5);
                     Guid result = default;

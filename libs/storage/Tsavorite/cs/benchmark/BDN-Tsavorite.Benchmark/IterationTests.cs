@@ -13,17 +13,33 @@ using Tsavorite.core;
 namespace BenchmarkDotNetTests
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class IterationTests
     {
-        const int NumRecords = 1_000_000;
+        public int NumRecords => BenchmarkDotNetTestsApp.NumRecords;
 
-        [Params(true, false)]
-        public bool FlushAndEvict;
+        public static bool? FlushAndEvictConfig;
 
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        [ParamsSource(nameof(FlushAndEvictProvider))]
+        public bool FlushAndEvict { get; set; }
+
+        /// <summary>
+        /// Operation parameters provider
+        /// </summary>
+        public IEnumerable<bool> FlushAndEvictProvider()
+        {
+            if (FlushAndEvictConfig.HasValue)
+            {
+                yield return FlushAndEvictConfig.Value;
+                yield break;
+            }
+            yield return false;
+            yield return true;
+        }
+
+        TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
         string logDirectory;
 
@@ -37,27 +53,25 @@ namespace BenchmarkDotNetTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = logDevice
-            }, StoreFunctions<SpanByte, SpanByte>.Create()
+            }, StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordTriggers())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
         unsafe void PopulateStore()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var keySpanByte = SpanByte.FromPinnedSpan(keyVec);
-
-            Span<byte> valueVec = stackalloc byte[sizeof(long)];
-            var valueSpanByte = SpanByte.FromPinnedSpan(valueVec);
+            long keyNum = 0, valueNum = 0;
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
+            Span<byte> value = SpanByte.FromPinnedVariable(ref valueNum);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                *(long*)keySpanByte.ToPointer() = ii;
-                *(long*)valueSpanByte.ToPointer() = ii + NumRecords;
-                _ = bContext.Upsert(keySpanByte, valueSpanByte);
+                keyNum = ii;
+                valueNum = ii + NumRecords;
+                _ = bContext.Upsert(new SpanByteKey(key), value);
             }
 
             if (FlushAndEvict)
@@ -88,7 +102,7 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("Cursor"), Benchmark]
         public void Cursor()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
 
             var scanFunctions = new ScanFunctions();
             var cursor = 0L;
@@ -102,7 +116,7 @@ namespace BenchmarkDotNetTests
             internal int count;
         }
 
-        internal struct ScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+        internal struct ScanFunctions : IScanIteratorFunctions
         {
             private readonly ScanCounter counter;
 
@@ -114,16 +128,13 @@ namespace BenchmarkDotNetTests
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             /// <inheritdoc/>
-            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
             {
                 ++counter.count;
                 cursorRecordResult = CursorRecordResult.Accept;
                 return true;
             }
-
-            /// <inheritdoc/>
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc/>
             public void OnStop(bool completed, long numberOfRecords) { }

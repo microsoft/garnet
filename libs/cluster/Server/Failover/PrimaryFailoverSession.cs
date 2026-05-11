@@ -5,20 +5,21 @@ using System;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private async Task<long> CheckReplicaSyncAsync(GarnetClient gclient)
+        private async Task<string> CheckReplicaSyncAsync(GarnetClient gclient)
         {
             try
             {
                 if (!gclient.IsConnected)
                     await gclient.ConnectAsync().ConfigureAwait(false);
 
-                return await gclient.FailReplicationOffsetAsync(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
+                return await gclient.ExecuteClusterFailReplicationOffsetAsync(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -31,7 +32,7 @@ namespace Garnet.cluster
         {
             if (clients.Length > 1)
             {
-                var tasks = new Task<long>[clients.Length + 1];
+                var tasks = new Task<string>[clients.Length + 1];
 
                 var tcount = 0;
                 foreach (var _gclient in clients)
@@ -47,12 +48,11 @@ namespace Garnet.cluster
                     return null;
                 }
 
-                var completedTaskRes = await completedTask.ConfigureAwait(false);
-
                 // Return client for replica that has caught up with replication primary
                 for (var i = 0; i < tasks.Length; i++)
                 {
-                    if (completedTask == tasks[i] && completedTaskRes == clusterProvider.replicationManager.ReplicationOffset)
+                    var replicationOffset = AofAddress.FromString(await tasks[i].ConfigureAwait(false));
+                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                         return clients[i];
                 }
                 return null;
@@ -70,15 +70,14 @@ namespace Garnet.cluster
                     return null;
                 }
 
-                var syncTaskResult = await syncTask.ConfigureAwait(false);
-
-                if (syncTaskResult != clusterProvider.replicationManager.ReplicationOffset)
+                var replicationOffset = AofAddress.FromString(await syncTask.ConfigureAwait(false));
+                if (!replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                     return null;
                 else
                     return clients[0];
             }
 
-            static async Task<long> DelayToDefaultAsync(TimeSpan failoverTimeout)
+            static async Task<string> DelayToDefaultAsync(TimeSpan failoverTimeout)
             {
                 await Task.Delay(failoverTimeout).ConfigureAwait(false);
 

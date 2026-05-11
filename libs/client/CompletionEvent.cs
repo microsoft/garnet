@@ -7,10 +7,12 @@ using System.Threading.Tasks;
 
 namespace Garnet.client
 {
-    // This structure uses a SemaphoreSlim as if it were a ManualResetEventSlim, because MRES does not support async waiting.
+    // This structure uses a SemaphoreSlim as if it were an AutoResetEvent, because ARE does not support async waiting.
     internal struct CompletionEvent : IDisposable
     {
         private SemaphoreSlim semaphore;
+
+        public override string ToString() => semaphore?.ToString();
 
         internal void Initialize() => this.semaphore = new SemaphoreSlim(0);
 

@@ -149,13 +149,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringCallback, tcs.stringTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.stringTcs.Task;
+                    return await tcs.stringTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.stringTcs.Task;
+                return await tcs.stringTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -175,13 +175,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringCallback, tcs.stringTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.stringTcs.Task;
+                    return await tcs.stringTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.stringTcs.Task;
+                return await tcs.stringTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -200,13 +200,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringCallback, tcs.stringTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, op, args, token);
-                    return await tcs.stringTcs.Task;
+                    return await tcs.stringTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, op, args, token);
-                return await tcs.stringTcs.Task;
+                return await tcs.stringTcs.Task.ConfigureAwait(false);
             }
 
         }
@@ -377,13 +377,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultCallback, tcs.memoryByteTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.memoryByteTcs.Task;
+                    return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.memoryByteTcs.Task;
+                return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -403,13 +403,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultCallback, tcs.memoryByteTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.memoryByteTcs.Task;
+                    return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.memoryByteTcs.Task;
+                return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -428,13 +428,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultCallback, tcs.memoryByteTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, op, args, token);
-                    return await tcs.memoryByteTcs.Task;
+                    return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, op, args, token);
-                return await tcs.memoryByteTcs.Task;
+                return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -452,13 +452,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultCallback, tcs.memoryByteTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, args, token);
-                    return await tcs.memoryByteTcs.Task;
+                    return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, args, token);
-                return await tcs.memoryByteTcs.Task;
+                return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -601,13 +601,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringArrayCallback, tcs.stringArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.stringArrayTcs.Task;
+                    return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.stringArrayTcs.Task;
+                return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -628,13 +628,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringArrayCallback, tcs.stringArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.stringArrayTcs.Task;
+                    return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.stringArrayTcs.Task;
+                return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -654,13 +654,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringArrayCallback, tcs.stringArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, op, args, token);
-                    return await tcs.stringArrayTcs.Task;
+                    return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, op, args, token);
-                return await tcs.stringArrayTcs.Task;
+                return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -679,13 +679,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationStringArrayCallback, tcs.stringArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, args, token);
-                    return await tcs.stringArrayTcs.Task;
+                    return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, args, token);
-                return await tcs.stringArrayTcs.Task;
+                return await tcs.stringArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -829,13 +829,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultArrayCallback, tcs.memoryByteArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.memoryByteArrayTcs.Task;
+                    return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.memoryByteArrayTcs.Task;
+                return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -856,13 +856,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultArrayCallback, tcs.memoryByteArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                    return await tcs.memoryByteArrayTcs.Task;
+                    return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, respOp, param1, param2, token);
-                return await tcs.memoryByteArrayTcs.Task;
+                return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -883,13 +883,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationMemoryResultArrayCallback, tcs.memoryByteArrayTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, op, args, token);
-                    return await tcs.memoryByteArrayTcs.Task;
+                    return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, op, args, token);
-                return await tcs.memoryByteArrayTcs.Task;
+                return await tcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
             }
         }
 
@@ -1034,13 +1034,13 @@ namespace Garnet.client
                 using (token.Register(TokenRegistrationLongCallback, tcs.longTcs))
                 {
                     var _ = InternalExecuteAsync(tcs, op, args, token);
-                    return await tcs.longTcs.Task;
+                    return await tcs.longTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
                 var _ = InternalExecuteAsync(tcs, op, args, token);
-                return await tcs.longTcs.Task;
+                return await tcs.longTcs.Task.ConfigureAwait(false);
             }
         }
 

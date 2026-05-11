@@ -9,8 +9,9 @@ namespace Garnet
 {
     sealed class BulkRead : CustomTransactionProcedure
     {
-        // BULKREAD 3 a [b] [c]
+        // BULKREAD <count> a [b] [c]
         public static readonly RespCommandsInfo CommandInfo = new() { Arity = -3 };
+        public static readonly string Name = "BULKREAD";
 
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
@@ -21,7 +22,7 @@ namespace Garnet
                 return false;
 
             for (var i = 0; i < count; i++)
-                AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, isObject: false);
+                AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, storeType: StoreType.Main);
 
             return true;
         }
@@ -36,7 +37,7 @@ namespace Garnet
                 return;
             }
 
-            var result = new ArgSlice[count];
+            var result = new PinnedSpanByte[count];
 
             for (var i = 0; i < count; i++)
             {

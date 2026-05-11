@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
-namespace Garnet.test.cluster.ReplicationTests
+namespace Garnet.test.cluster
 {
     /// <summary>
     /// These tests simulate scenarios where a replica gets stuck or is in replication attach and verify that
@@ -56,7 +56,7 @@ namespace Garnet.test.cluster.ReplicationTests
             var nodes_count = 2;
 
             // Create instances with diskless sync enabled
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: true, timeout: createInstanceTimeout);
+            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: true, timeout: createInstanceTimeout);
             context.CreateConnection();
 
             // Setup primary
@@ -72,9 +72,11 @@ namespace Garnet.test.cluster.ReplicationTests
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync);
 
+                // Initiate replication.
                 var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, async: true, logger: context.logger);
 
-                await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+                // Wait for the primary to reach the desired code path (ReplicationManager.TryBeginDisklessSync).
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync);
 
                 // Verify that the replica is in a replicating state
                 var replicationInfo = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);
@@ -83,6 +85,9 @@ namespace Garnet.test.cluster.ReplicationTests
                 // Issuing CLUSTER RESET HARD while replication is ongoing/stuck.
                 var resetResp = context.clusterTestUtils.ClusterReset(replicaIndex, soft: false, expiry: 60, logger: context.logger);
                 ClassicAssert.AreEqual("OK", resetResp);
+
+                // Release waiting task at ReplicationManager.TryBeginDisklessSync
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync);
 
                 // Verify that the node is no longer in recovery state
                 replicationInfo = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);
@@ -112,7 +117,7 @@ namespace Garnet.test.cluster.ReplicationTests
             var nodes_count = 2;
 
             // (diskless sync is false)
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: false, timeout: createInstanceTimeout);
+            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: false, timeout: createInstanceTimeout);
             context.CreateConnection();
 
             // Setup primary
@@ -127,17 +132,22 @@ namespace Garnet.test.cluster.ReplicationTests
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync);
 
+                // Initiate replication.
                 var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, async: true, logger: context.logger);
 
-                await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+                // Wait for the primary to reach the desired code path (ReplicationManager.TryBeginDiskbasedSync).
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync);
 
                 // Verify that the replica is in a replicating state
                 var replicationInfo = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);
                 ClassicAssert.AreEqual("ClusterReplicate", replicationInfo[0].Item2);
 
-                // Issueing CLUSTER RESET HARD while replication is ongoing/stuck.
+                // Issuing CLUSTER RESET HARD while replication is ongoing/stuck.
                 var resetResp = context.clusterTestUtils.ClusterReset(replicaIndex, soft: false, expiry: 60, logger: context.logger);
                 ClassicAssert.AreEqual("OK", resetResp);
+
+                // Release waiting task at ReplicaSyncSession.SendCheckpoint
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync);
 
                 // Verify that the node is no longer in recovery state
                 replicationInfo = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);

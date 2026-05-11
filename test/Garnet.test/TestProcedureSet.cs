@@ -26,7 +26,7 @@ namespace Garnet
             if (setA.Length == 0)
                 return false;
 
-            AddKey(setA, LockType.Exclusive, true);
+            AddKey(setA, LockType.Exclusive, StoreType.Object);
             return true;
         }
 
@@ -39,7 +39,7 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var elements = new ArgSlice[10];
+            var elements = new PinnedSpanByte[10];
 
             var setA = GetNextArg(ref procInput, ref offset);
 

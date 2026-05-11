@@ -79,10 +79,10 @@ namespace Garnet.client
         /// <summary>
         /// Constructor
         /// </summary>
-        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, ILogger logger = null)
+        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
         {
             this.networkBufferSettings = new NetworkBufferSettings(messageBufferSize, messageBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
 
             if (BufferSize > PageOffset.kPageMask) throw new Exception();
             this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkBufferSettings, networkPool, sslOptions != null, serverHook, networkSendThrottleMax: networkSendThrottleMax, logger: logger);

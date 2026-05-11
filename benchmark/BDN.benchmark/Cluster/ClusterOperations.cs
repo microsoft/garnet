@@ -22,8 +22,9 @@ namespace BDN.benchmark.Cluster
         /// </summary>
         public IEnumerable<ClusterParams> ClusterParamsProvider()
         {
-            yield return new(false);
-            yield return new(true);
+            yield return new(false, false);
+            yield return new(true, false);
+            yield return new(false, true);
         }
 
         ClusterContext cc;
@@ -32,7 +33,7 @@ namespace BDN.benchmark.Cluster
         public virtual void GlobalSetup()
         {
             cc = new ClusterContext();
-            cc.SetupSingleInstance(Params.disableSlotVerification);
+            cc.SetupSingleInstance(Params);
             cc.AddSlotRange([(0, 16383)]);
             cc.CreateGetSet();
             cc.CreateMGetMSet();

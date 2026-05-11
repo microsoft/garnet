@@ -10,14 +10,13 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession
     {
-        #region mainStoreScan
-        internal sealed unsafe class MainStoreScan : IScanIteratorFunctions<SpanByte, SpanByte>
+        internal sealed unsafe class StoreScan : IScanIteratorFunctions
         {
-            readonly MigrateOperation mss;
+            readonly MigrateOperation migrateOperation;
 
-            internal MainStoreScan(MigrateOperation mss)
+            internal StoreScan(MigrateOperation migrateOperation)
             {
-                this.mss = mss;
+                this.migrateOperation = migrateOperation;
             }
 
             public bool OnStart(long beginAddress, long endAddress) => true;
@@ -26,41 +25,39 @@ namespace Garnet.cluster
 
             public void OnException(Exception exception, long numberOfRecords) { }
 
-            public unsafe bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
-                mss.ThrowIfCancelled();
+                migrateOperation.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                // NOTE: Because the scan executes includingTombstones, tombstone records may not have valid expiration metadata; skip expiration validation here and defer it until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendMainStoreKeyValuePair).
-                if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
+                if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
                     return true;
 
-                // TODO: Some other way to detect namespaces
-                if (key.MetadataSize == 1)
+                if (srcLogRecord.HasNamespace)
                 {
-                    var ns = key.GetNamespaceInPayload();
-
-                    if (mss.ContainsNamespace(ns) && !mss.sketch.TryHashAndStore(ns, key.AsSpan()))
+                    // Migrating a Vector Set element
+                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !migrateOperation.sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
                         return false;
                 }
                 else
                 {
-                    var s = HashSlotUtils.HashSlot(ref key);
+                    var key = srcLogRecord.Key;
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                    // Check if key belongs to slot that is being migrated...
-                    if (mss.Contains(s))
+                    // Check if key belongs to slot that is being migrated and if it can be added to our buffer
+                    if (migrateOperation.Contains(slot))
                     {
-                        if (recordMetadata.RecordInfo.VectorSet)
+                        if (srcLogRecord.RecordType == VectorManager.RecordType)
                         {
                             // We can't delete the vector set _yet_ nor can we migrate it, 
                             // we just need to remember it to migrate once the associated namespaces are all moved over
-                            mss.EncounteredVectorSet(key.ToByteArray(), value.ToByteArray());
+                            migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
                         }
-                        else if (!mss.sketch.TryHashAndStore(key.AsSpan()))
+                        else if (!migrateOperation.sketch.TryHashAndStore(key))
                         {
-                            // Out of space, end scan for now
                             return false;
                         }
                     }
@@ -68,50 +65,6 @@ namespace Garnet.cluster
 
                 return true;
             }
-
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
         }
-        #endregion
-
-        #region objectStoreScan
-        internal sealed unsafe class ObjectStoreScan : IScanIteratorFunctions<byte[], IGarnetObject>
-        {
-            readonly MigrateOperation mss;
-
-            internal ObjectStoreScan(MigrateOperation mss)
-            {
-                this.mss = mss;
-            }
-
-            public bool OnStart(long beginAddress, long endAddress) => true;
-
-            public void OnStop(bool completed, long numberOfRecords) { }
-
-            public void OnException(Exception exception, long numberOfRecords) { }
-
-            public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-            public unsafe bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            {
-                cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-
-                mss.ThrowIfCancelled();
-
-                // Do not send key if it is expired
-                // NOTE: Because the scan executes includingTombstones, tombstone records may not have valid expiration metadata; skip expiration validation here and defer it until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendObjectStoreKeyValuePair).
-                if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
-                    return true;
-
-                var s = HashSlotUtils.HashSlot(key);
-                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
-                if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
-                    return false;
-
-                return true;
-            }
-        }
-        #endregion
     }
 }

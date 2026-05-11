@@ -71,9 +71,15 @@
     </None>
   </ItemGroup>
 
+	<!-- Define compilation symbol for test project -->
 	<PropertyGroup>
 		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
 		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+		<DefineConstants>$(DefineConstants);TEST_PROJECT</DefineConstants>
 	</PropertyGroup>
 
+	<!-- Include shared global usings file for server projects -->
+	<ItemGroup>
+		<Compile Include="$(MSBuildThisFileDirectory)../../libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
+	</ItemGroup>
 </Project>

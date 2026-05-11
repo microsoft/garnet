@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -10,13 +11,10 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public unsafe GarnetStatus StringSetBit<TContext>(ArgSlice key, ArgSlice offset, bool bit, out bool previous, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringSetBit<TStringContext>(PinnedSpanByte key, PinnedSpanByte offset, bool bit, out bool previous, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             previous = false;
 
@@ -25,22 +23,20 @@ namespace Garnet.server
 
             var setValBytes = stackalloc byte[1];
             setValBytes[0] = (byte)(bit ? '1' : '0');
-            var setValSlice = new ArgSlice(setValBytes, 1);
+            var setValSlice = PinnedSpanByte.FromPinnedPointer(setValBytes, 1);
 
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new RawStringInput(RespCommand.SETBIT, ref parseState,
-                                           arg1: ParseUtils.ReadLong(ref offset));
+            var input = new StringInput(RespCommand.SETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
-            SpanByteAndMemory output = new(null);
-            var keySp = key.SpanByte;
-            RMW_MainStore(ref keySp, ref input, ref output, ref context);
+            StringOutput output = new();
+            RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus StringGetBit<TContext>(ArgSlice key, ArgSlice offset, out bool bValue, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringGetBit<TStringContext>(PinnedSpanByte key, PinnedSpanByte offset, out bool bValue, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             bValue = false;
 
@@ -49,16 +45,14 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState,
-                                           arg1: ParseUtils.ReadLong(ref offset));
+            var input = new StringInput(RespCommand.GETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
-            SpanByteAndMemory output = new(null);
-            var keySp = key.SpanByte;
-            var status = Read_MainStore(ref keySp, ref input, ref output, ref context);
+            StringOutput output = new();
+            var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-            if (status == GarnetStatus.OK && !output.IsSpanByte)
+            if (status == GarnetStatus.OK && !output.SpanByteAndMemory.IsSpanByte)
             {
-                fixed (byte* outputPtr = output.Memory.Memory.Span)
+                fixed (byte* outputPtr = output.SpanByteAndMemory.MemorySpan)
                 {
                     var refPtr = outputPtr;
                     if (*refPtr == ':')
@@ -67,13 +61,13 @@ namespace Garnet.server
                         bValue = *refPtr == '1';
                     }
                 }
-                output.Memory.Dispose();
+                output.SpanByteAndMemory.Memory.Dispose();
             }
 
             return status;
         }
 
-        public unsafe GarnetStatus StringBitOperation(ref RawStringInput input, BitmapOperation bitOp, out long result)
+        public unsafe GarnetStatus StringBitOperation(ref StringInput input, BitmapOperation bitOp, out long result)
         {
             var maxBitmapLen = int.MinValue;
             var minBitmapLen = int.MaxValue;
@@ -81,30 +75,41 @@ namespace Garnet.server
             var keys = input.parseState.Parameters;
             var keyCount = keys.Length;
 
-            // 8 byte start pointer
-            // 4 byte int length
-            Span<byte> output = stackalloc byte[12];
             var srcBitmapPtrs = stackalloc byte*[keyCount - 1];
             var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
+
+            // Tracks heap-allocated source value buffers (used when the value is stored as overflow byte[]
+            // outside the log) and the pin handle held over them for the duration of BITOP execution.
+            // Allocated lazily and disposed in the finally block.
+            IMemoryOwner<byte>[] overflowOwners = null;
+            MemoryHandle[] overflowHandles = null;
+            var overflowCount = 0;
 
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
                 Debug.Assert(txnManager.state == TxnState.None);
-                txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
+                txnManager.SaveKeyEntryToLock(keys[0], LockType.Exclusive);
                 for (var i = 1; i < keys.Length; i++)
-                    txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
-                txnManager.Run(true);
+                    txnManager.SaveKeyEntryToLock(keys[i], LockType.Shared);
+                _ = txnManager.Run(true);
             }
 
             // Perform under unsafe epoch control for pointer safety.
-            var uc = txnManager.LockableUnsafeContext;
+            var uc = txnManager.TransactionalUnsafeContext;
 
             try
             {
                 uc.BeginUnsafe();
             readFromScratch:
+                // Reset all per-attempt state and release any pin handles / heap buffers accumulated by the
+                // previous attempt before re-reading sources from scratch.
+                ReleaseOverflowBuffers(overflowOwners, overflowHandles, ref overflowCount);
+                maxBitmapLen = int.MinValue;
+                minBitmapLen = int.MaxValue;
+
                 var localHeadAddress = uc.Session.HeadAddress;
                 var localReadCacheHeadAddress = uc.Session.ReadCacheHeadAddress;
                 var keysFound = 0;
@@ -112,8 +117,10 @@ namespace Garnet.server
                 for (var i = 1; i < keys.Length; i++)
                 {
                     var srcKey = keys[i];
-                    //Read srcKey
-                    var outputBitmap = SpanByteAndMemory.FromPinnedSpan(output);
+                    // Read srcKey. The backend populates either SpanByteAndMemory.SpanByte (inline values
+                    // already pinned in log memory) or SpanByteAndMemory.Memory (overflow values copied to
+                    // a heap-rented buffer that we must pin here for BITOP execution).
+                    var outputBitmap = new StringOutput();
                     status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, localReadCacheHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
@@ -124,9 +131,31 @@ namespace Garnet.server
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
 
-                    var outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
-                    var localBitmapPtr = (byte*)(nuint)(*(ulong*)outputBitmapPtr);
-                    var localBitmapLength = *(int*)(outputBitmapPtr + 8);
+                    byte* localBitmapPtr;
+                    int localBitmapLength;
+
+                    if (outputBitmap.SpanByteAndMemory.IsSpanByte)
+                    {
+                        // Inline value: SpanByte points directly into the log buffer.
+                        localBitmapPtr = outputBitmap.SpanByteAndMemory.SpanByte.ToPointer();
+                        localBitmapLength = outputBitmap.SpanByteAndMemory.SpanByte.Length;
+                    }
+                    else
+                    {
+                        // Overflow value: data was copied into a heap buffer. Pin it so that GC compaction
+                        // cannot relocate the underlying array between now and the BITOP execution below.
+                        var owner = outputBitmap.SpanByteAndMemory.Memory;
+                        localBitmapLength = outputBitmap.SpanByteAndMemory.Length;
+                        var memHandle = owner.Memory.Pin();
+
+                        overflowOwners ??= new IMemoryOwner<byte>[keys.Length - 1];
+                        overflowHandles ??= new MemoryHandle[keys.Length - 1];
+                        overflowOwners[overflowCount] = owner;
+                        overflowHandles[overflowCount] = memHandle;
+                        overflowCount++;
+
+                        localBitmapPtr = (byte*)memHandle.Pointer;
+                    }
 
                     // Keep track of pointers returned from ISessionFunctions
                     srcBitmapPtrs[keysFound] = localBitmapPtr;
@@ -154,9 +183,9 @@ namespace Garnet.server
 
                     if (maxBitmapLen > 0)
                     {
-                        var dstKey = keys[0].SpanByte;
-                        var dstBitmapSpanByte = SpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
-                        status = SET(ref dstKey, ref dstBitmapSpanByte, ref uc);
+                        var dstKey = keys[0];
+                        var dstBitmapSpanByte = PinnedSpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
+                        status = SET(dstKey, dstBitmapSpanByte, ref uc);
                     }
                 }
                 else
@@ -170,32 +199,44 @@ namespace Garnet.server
             {
                 // Suspend Thread
                 uc.EndUnsafe();
+                // Release any overflow pin handles and heap buffers regardless of whether BITOP succeeded.
+                ReleaseOverflowBuffers(overflowOwners, overflowHandles, ref overflowCount);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
             result = maxBitmapLen;
             return status;
+
+            static void ReleaseOverflowBuffers(IMemoryOwner<byte>[] owners, MemoryHandle[] handles, ref int count)
+            {
+                for (var h = 0; h < count; h++)
+                {
+                    handles[h].Dispose();
+                    owners[h].Dispose();
+                }
+                count = 0;
+            }
         }
 
-        public GarnetStatus StringBitOperation(BitmapOperation bitOp, ArgSlice destinationKey, ArgSlice[] keys, out long result)
+        public GarnetStatus StringBitOperation(BitmapOperation bitOp, PinnedSpanByte destinationKey, PinnedSpanByte[] keys, out long result)
         {
             result = 0;
             if (destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
-            var args = new ArgSlice[keys.Length + 1];
+            var args = new PinnedSpanByte[keys.Length + 1];
             args[0] = destinationKey;
             keys.CopyTo(args, 1);
 
             parseState.InitializeWithArguments(args);
 
-            var input = new RawStringInput(RespCommand.BITOP, ref parseState);
+            var input = new StringInput(RespCommand.BITOP, ref parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
 
-        public unsafe GarnetStatus StringBitCount<TContext>(ArgSlice key, long start, long end, bool useBitInterval, out long result, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitCount<TStringContext>(PinnedSpanByte key, long start, long end, bool useBitInterval, out long result, ref TStringContext context)
+             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             result = 0;
 
@@ -219,55 +260,52 @@ namespace Garnet.server
             // Use bit interval
             var useBitIntervalSpan = paramsSpan.Slice(paramsSpanOffset, 1);
             (useBitInterval ? "1"u8 : "0"u8).CopyTo(useBitIntervalSpan);
-            var useBitIntervalSlice = ArgSlice.FromPinnedSpan(useBitIntervalSpan);
+            var useBitIntervalSlice = PinnedSpanByte.FromPinnedSpan(useBitIntervalSpan);
             paramsSpanOffset += 1;
 
             // Start
             var startSpan = paramsSpan.Slice(paramsSpanOffset, startLength);
-            NumUtils.WriteInt64(start, startSpan);
-            var startSlice = ArgSlice.FromPinnedSpan(startSpan);
+            _ = NumUtils.WriteInt64(start, startSpan);
+            var startSlice = PinnedSpanByte.FromPinnedSpan(startSpan);
             paramsSpanOffset += startLength;
 
             // End
             var endSpan = paramsSpan.Slice(paramsSpanOffset, endLength);
-            NumUtils.WriteInt64(end, endSpan);
-            var endSlice = ArgSlice.FromPinnedSpan(endSpan);
+            _ = NumUtils.WriteInt64(end, endSpan);
+            var endSlice = PinnedSpanByte.FromPinnedSpan(endSpan);
 
-            SpanByteAndMemory output = new(null);
+            StringOutput output = new();
 
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.BITCOUNT, ref parseState);
 
-            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
-            var keySp = key.SpanByte;
-
-            var status = Read_MainStore(ref keySp, ref input, ref output, ref context);
+            var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
             if (status == GarnetStatus.OK)
             {
-                if (!output.IsSpanByte)
+                if (!output.SpanByteAndMemory.IsSpanByte)
                 {
-                    fixed (byte* outputPtr = output.Memory.Memory.Span)
+                    fixed (byte* outputPtr = output.SpanByteAndMemory.MemorySpan)
                     {
                         var refPtr = outputPtr;
-                        RespReadUtils.TryReadInt64(out result, ref refPtr, refPtr + sizeof(long));
+                        _ = RespReadUtils.TryReadInt64(out result, ref refPtr, refPtr + sizeof(long));
                     }
-                    output.Memory.Dispose();
+                    output.SpanByteAndMemory.Memory.Dispose();
                 }
             }
 
             return status;
         }
 
-        public unsafe GarnetStatus StringBitField<TContext>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitField<TStringContext>(PinnedSpanByte key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TStringContext context)
+             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new RawStringInput(RespCommand.BITFIELD);
+            var input = new StringInput(RespCommand.BITFIELD);
 
-            result = new();
-            var keySp = key.SpanByte;
+            result = [];
 
             for (var i = 0; i < commandArguments.Count; i++)
             {
@@ -298,40 +336,40 @@ namespace Garnet.server
 
                 // Secondary op code
                 var opSpan = paramsSpan.Slice(paramsSpanOffset, op.Length);
-                Encoding.UTF8.GetBytes(op, opSpan);
-                var opSlice = ArgSlice.FromPinnedSpan(opSpan);
+                _ = Encoding.UTF8.GetBytes(op, opSpan);
+                var opSlice = PinnedSpanByte.FromPinnedSpan(opSpan);
                 paramsSpanOffset += opSpan.Length;
 
                 // Encoding
                 var encodingSpan = paramsSpan.Slice(paramsSpanOffset, 1 + encodingSuffixLength);
                 encodingSpan[0] = encodingPrefix[0];
                 var encodingSuffixSpan = encodingSpan.Slice(1);
-                NumUtils.WriteInt64(encodingSuffix, encodingSuffixSpan);
-                var encodingSlice = ArgSlice.FromPinnedSpan(encodingSpan);
+                _ = NumUtils.WriteInt64(encodingSuffix, encodingSuffixSpan);
+                var encodingSlice = PinnedSpanByte.FromPinnedSpan(encodingSpan);
                 paramsSpanOffset += 1 + encodingSuffixLength;
 
                 // Offset
                 var offsetSpan = paramsSpan.Slice(paramsSpanOffset, offsetLength);
-                NumUtils.WriteInt64(commandArguments[i].offset, offsetSpan);
-                var offsetSlice = ArgSlice.FromPinnedSpan(offsetSpan);
+                _ = NumUtils.WriteInt64(commandArguments[i].offset, offsetSpan);
+                var offsetSlice = PinnedSpanByte.FromPinnedSpan(offsetSpan);
                 paramsSpanOffset += offsetLength;
 
                 // Value
-                ArgSlice valueSlice = default;
+                PinnedSpanByte valueSlice = default;
                 if (!isGet)
                 {
                     var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
-                    NumUtils.WriteInt64(commandArguments[i].value, valueSpan);
-                    valueSlice = ArgSlice.FromPinnedSpan(valueSpan);
+                    _ = NumUtils.WriteInt64(commandArguments[i].value, valueSpan);
+                    valueSlice = PinnedSpanByte.FromPinnedSpan(valueSpan);
                     paramsSpanOffset += valueLength;
                 }
 
                 // Overflow Type
                 var overflowTypeSpan = paramsSpan.Slice(paramsSpanOffset, overflowType.Length);
-                Encoding.UTF8.GetBytes(overflowType, overflowTypeSpan);
-                var overflowTypeSlice = ArgSlice.FromPinnedSpan(overflowTypeSpan);
+                _ = Encoding.UTF8.GetBytes(overflowType, overflowTypeSpan);
+                var overflowTypeSlice = PinnedSpanByte.FromPinnedSpan(overflowTypeSpan);
 
-                var output = new SpanByteAndMemory(null);
+                var output = new StringOutput();
 
                 if (isGet)
                 {
@@ -345,10 +383,10 @@ namespace Garnet.server
 
                 input.parseState = parseState;
                 var status = commandArguments[i].secondaryCommand == RespCommand.GET ?
-                    Read_MainStore(ref keySp, ref input, ref output, ref context) :
-                    RMW_MainStore(ref keySp, ref input, ref output, ref context);
+                    Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context) :
+                    RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-                scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
+                scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryCommand == RespCommand.GET)
                 {
@@ -360,20 +398,20 @@ namespace Garnet.server
                     {
                         long resultCmd;
                         var error = false;
-                        if (!output.IsSpanByte)
+                        if (!output.SpanByteAndMemory.IsSpanByte)
                         {
-                            fixed (byte* outputPtr = output.Memory.Memory.Span)
+                            fixed (byte* outputPtr = output.SpanByteAndMemory.MemorySpan)
                             {
                                 var refPtr = outputPtr;
-                                if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.Length))
+                                if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.SpanByteAndMemory.Length))
                                     error = true;
                             }
-                            output.Memory.Dispose();
+                            output.SpanByteAndMemory.Memory.Dispose();
                         }
                         else
                         {
-                            var refPtr = output.SpanByte.ToPointer();
-                            if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.SpanByte.Length))
+                            var refPtr = output.SpanByteAndMemory.SpanByte.ToPointer();
+                            if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.SpanByteAndMemory.SpanByte.Length))
                                 error = true;
                         }
                         result.Add(error ? null : resultCmd);
@@ -383,43 +421,43 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus StringSetBit<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-          where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            => RMW_MainStore(ref key, ref input, ref output, ref context);
+        public GarnetStatus StringSetBit<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+          where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-        public GarnetStatus StringGetBit<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            => Read_MainStore(ref key, ref input, ref output, ref context);
+        public GarnetStatus StringGetBit<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitCount<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-         where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-             => Read_MainStore(ref key, ref input, ref output, ref context);
+        public unsafe GarnetStatus StringBitCount<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+         where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+             => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitPosition<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-             => Read_MainStore(ref key, ref input, ref output, ref context);
+        public unsafe GarnetStatus StringBitPosition<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+             => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitField<TContext>(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitField<TStringContext>(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             GarnetStatus status;
             if (secondaryCommand == RespCommand.GET)
-                status = Read_MainStore(ref key, ref input, ref output, ref context);
+                status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
             else
             {
                 Debug.Assert(input.header.cmd != RespCommand.BITFIELD_RO);
-                status = RMW_MainStore(ref key, ref input, ref output, ref context);
+                status = RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
             }
             return status;
         }
 
-        public unsafe GarnetStatus StringBitFieldReadOnly<TContext>(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
-              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitFieldReadOnly<TStringContext>(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output, ref TStringContext context)
+              where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
+            var status = GarnetStatus.NOTFOUND;
 
             if (secondaryCommand == RespCommand.GET)
-                status = Read_MainStore(ref key, ref input, ref output, ref context);
+                status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
             return status;
         }
 

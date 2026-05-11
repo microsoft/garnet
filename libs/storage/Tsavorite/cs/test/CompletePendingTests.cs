@@ -14,13 +14,27 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    public class LocalKeyStructComparer : IKeyComparer<KeyStruct>
+    public class LocalKeyStructComparer : IKeyComparer
     {
         internal long? forceCollisionHash;
 
-        public long GetHashCode64(ref KeyStruct key) => forceCollisionHash.HasValue ? forceCollisionHash.Value : Utility.GetHashCode(key.kfield1);
+        public long GetHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => forceCollisionHash ?? Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
-        public bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1 && k1.KeyBytes.AsRef<KeyStruct>().kfield2 == k2.KeyBytes.AsRef<KeyStruct>().kfield2;
 
         public override string ToString() => $"forceHashCollision: {forceCollisionHash}";
     }
@@ -28,16 +42,16 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, LocalKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, LocalKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<LocalKeyStructComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<LocalKeyStructComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
     class CompletePendingTests : AllureTestBase
     {
-        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;
-        LocalKeyStructComparer comparer = new();
+        readonly LocalKeyStructComparer comparer = new();
 
         [SetUp]
         public void Setup()
@@ -50,8 +64,8 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 29
-            }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
+                LogMemorySize = 1L << 29
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
         }
@@ -74,7 +88,7 @@ namespace Tsavorite.test
         static InputStruct NewInputStruct(int key) => new() { ifield1 = key + NumRecords * 30, ifield2 = key + NumRecords * 40 };
         static ContextStruct NewContextStruct(int key) => new() { cfield1 = key + NumRecords * 50, cfield2 = key + NumRecords * 60 };
 
-        static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
+        static void VerifyStructs(int key, in KeyStruct keyStruct, in InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
         {
             ClassicAssert.AreEqual(key, keyStruct.kfield1);
             ClassicAssert.AreEqual(key + NumRecords * 10, keyStruct.kfield2);
@@ -91,7 +105,7 @@ namespace Tsavorite.test
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.
-            private int deferredPendingMax = CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
+            private int deferredPendingMax = CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
             private int deferredPending = 0;
             internal Dictionary<int, long> keyAddressDict = [];
             private bool isFirst = true;
@@ -113,11 +127,11 @@ namespace Tsavorite.test
                 return false;
             }
 
-            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, List<(KeyStruct, long)> rmwCopyUpdatedAddresses)
+            internal void Process(CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct> completedOutputs, List<(KeyStruct, long)> rmwCopyUpdatedAddresses)
             {
                 var useRMW = rmwCopyUpdatedAddresses is not null;
-                ClassicAssert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
-                                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
+                ClassicAssert.AreEqual(CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
+                                CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
                 ClassicAssert.AreEqual(deferredPending, completedOutputs.maxIndex);
                 ClassicAssert.AreEqual(-1, completedOutputs.currentIndex);
 
@@ -125,11 +139,11 @@ namespace Tsavorite.test
                 for (; completedOutputs.Next(); ++count)
                 {
                     ref var result = ref completedOutputs.Current;
-                    VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
+                    VerifyStructs((int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1, in result.Key.KeyBytes.AsRef<KeyStruct>(), in result.Input, ref result.Output, ref result.Context, useRMW);
                     if (!useRMW)
-                        ClassicAssert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.RecordMetadata.Address);
-                    else if (keyAddressDict[(int)result.Key.kfield1] != result.RecordMetadata.Address)
-                        rmwCopyUpdatedAddresses.Add((result.Key, result.RecordMetadata.Address));
+                        ClassicAssert.AreEqual(keyAddressDict[(int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1], result.RecordMetadata.Address);
+                    else if (keyAddressDict[(int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1] != result.RecordMetadata.Address)
+                        rmwCopyUpdatedAddresses.Add((result.Key.KeyBytes.AsRef<KeyStruct>(), result.RecordMetadata.Address));
                 }
                 completedOutputs.Dispose();
                 ClassicAssert.AreEqual(deferredPending + 1, count);
@@ -146,11 +160,11 @@ namespace Tsavorite.test
                 ClassicAssert.AreEqual(0, deferredPending);
             }
 
-            internal static void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
+            internal static void VerifyOneNotFound(CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
             {
                 ClassicAssert.IsTrue(completedOutputs.Next());
                 ClassicAssert.IsFalse(completedOutputs.Current.Status.Found);
-                ClassicAssert.AreEqual(keyStruct, completedOutputs.Current.Key);
+                ClassicAssert.AreEqual(keyStruct, completedOutputs.Current.Key.KeyBytes.AsRef<KeyStruct>());
                 ClassicAssert.IsFalse(completedOutputs.Next());
                 completedOutputs.Dispose();
             }
@@ -160,7 +174,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
             var bContext = session.BasicContext;
             ClassicAssert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
@@ -171,7 +185,7 @@ namespace Tsavorite.test
                 var keyStruct = NewKeyStruct(key);
                 var valueStruct = NewValueStruct(key);
                 processPending.keyAddressDict[key] = store.Log.TailAddress;
-                _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+                _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             }
 
             // Flush to make reads or RMWs go pending.
@@ -190,9 +204,9 @@ namespace Tsavorite.test
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += NumRecords * 10;
-                    if (bContext.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
+                    if (bContext.Read(ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
                     {
-                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                        CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if ((key & 1) == 0)
                             completedOutputs = await bContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
                         else
@@ -203,8 +217,8 @@ namespace Tsavorite.test
 
                 // We don't use context (though we verify it), and Read does not use input.
                 var status = useRMW
-                    ? bContext.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
-                    : bContext.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
+                    ? bContext.RMW(keyStruct, ref inputStruct, ref outputStruct, contextStruct)
+                    : bContext.Read(keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status.IsPending)
                 {
                     if (processPending.IsFirst())
@@ -216,7 +230,7 @@ namespace Tsavorite.test
 
                     if (!processPending.DeferPending())
                     {
-                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                        CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if ((key & 1) == 0)
                             completedOutputs = await bContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
                         else
@@ -235,37 +249,34 @@ namespace Tsavorite.test
 
             foreach (var (key, address) in rmwCopyUpdatedAddresses)
             {
-                // ConcurrentReader does not verify the input struct.
+                // Reader does not verify the input struct.
                 InputStruct inputStruct = default;
                 OutputStruct outputStruct = default;
                 ReadOptions readOptions = default;
 
                 // This should not be pending since we've not flushed.
                 var localKey = key;
-                var status = bContext.Read(ref localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
+                var status = bContext.Read(localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
                 ClassicAssert.IsFalse(status.IsPending);
                 ClassicAssert.AreEqual(address, recordMetadata.Address);
             }
         }
-        public class PendingReadFunctions<TContext> : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
+        public class PendingReadFunctions<TContext> : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
         {
-            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 ClassicAssert.IsTrue(status.Found);
-                ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield1, output.value.vfield1);
                 // Do not compare field2; that's our updated value, and the key won't be found if we change kfield2
             }
 
             // Read functions
-            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             {
-                ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
-                dst.value = value;
+                ClassicAssert.IsFalse(srcLogRecord.Info.IsNull);
+                output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
                 return true;
             }
-
-            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-                => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
         }
 
         [Test]
@@ -274,29 +285,29 @@ namespace Tsavorite.test
         {
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(keyStruct);
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with the same key and flush this too if requested.
             var secondValue = firstValue + 1;
             valueStruct.vfield2 = secondValue * valueMult;
-            _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.AreEqual(secondValue * valueMult, outputStruct.value.vfield2, "Should have returned second value");
         }
 
@@ -306,33 +317,33 @@ namespace Tsavorite.test
         {
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Force collisions to test having another key in the chain
-            comparer.forceCollisionHash = comparer.GetHashCode64(ref keyStruct);
+            comparer.forceCollisionHash = comparer.GetHashCode64(keyStruct);
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(keyStruct);
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with a different key and flush this too if requested.
             var secondValue = firstValue + 1;
             keyStruct = new() { kfield1 = secondValue, kfield2 = secondValue * valueMult };
             valueStruct = new() { vfield1 = secondValue, vfield2 = secondValue * valueMult };
-            _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
 
@@ -343,22 +354,23 @@ namespace Tsavorite.test
             // Basic test of pending read
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(ref keyStruct, ref valueStruct);
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(keyStruct);
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
+            ClassicAssert.IsTrue(status.Found, $"Expected status.Found: {status}");
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
     }

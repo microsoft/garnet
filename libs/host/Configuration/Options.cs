@@ -60,24 +60,32 @@ namespace Garnet
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
-        [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
-        public string MemorySize { get; set; }
+        [Option('m', "memory", Required = false, HelpText = "Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2")]
+        public string LogMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option('p', "page", Required = false, HelpText = "Size of each page in bytes (rounds down to power of 2)")]
+        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2).")]
         public string PageSize { get; set; }
 
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("pagecount", Required = false, HelpText = "Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than LogMemorySize divided by PageSize.")]
+        public int PageCount { get; set; }
+
         [MemorySizeValidation]
-        [Option('s', "segment", Required = false, HelpText = "Size of each log segment in bytes on disk (rounds down to power of 2)")]
+        [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
         public string SegmentSize { get; set; }
 
         [MemorySizeValidation]
+        [Option("object-log-segment", Required = false, HelpText = "Size of each object-log segment in bytes on disk (rounds down to power of 2)")]
+        public string ObjectLogSegmentSize { get; set; }
+
+        [MemorySizeValidation]
         [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexSize { get; set; }
+        public string IndexMemorySize { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexMaxSize { get; set; }
+        public string IndexMaxMemorySize { get; set; }
 
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
@@ -88,56 +96,16 @@ namespace Garnet
         public bool? EnableReadCache { get; set; }
 
         [MemorySizeValidation]
-        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        [Option("readcache-memory", Required = false, HelpText = "Total readcache-log memory (inline and heap) to use if readcache is enabled, in bytes. Does not need to be a power of 2")]
         public string ReadCacheMemorySize { get; set; }
 
         [MemorySizeValidation]
         [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
         public string ReadCachePageSize { get; set; }
 
-        [MemorySizeValidation(false)]
-        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreHeapMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log)")]
-        public string ObjectStoreLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-page", Required = false, HelpText = "Size of each object store page in bytes (rounds down to power of 2)")]
-        public string ObjectStorePageSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-segment", Required = false, HelpText = "Size of each object store log segment in bytes on disk (rounds down to power of 2)")]
-        public string ObjectStoreSegmentSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-index", Required = false, HelpText = "Start size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("obj-index-max-size", Required = false, HelpText = "Max size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexMaxSize { get; set; }
-
-        [PercentageValidation]
-        [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
-        public int ObjectStoreMutablePercent { get; set; }
-
-        [OptionValidation]
-        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
-        public bool? EnableObjectStoreReadCache { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCacheLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCachePageSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("readcache-pagecount", Required = false, HelpText = "Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.")]
+        public int ReadCachePageCount { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -146,10 +114,6 @@ namespace Garnet
         [OptionValidation]
         [Option("copy-reads-to-tail", Required = false, HelpText = "When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log.")]
         public bool? CopyReadsToTail { get; set; }
-
-        [OptionValidation]
-        [Option("obj-copy-reads-to-tail", Required = false, HelpText = "When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log.")]
-        public bool? ObjectStoreCopyReadsToTail { get; set; }
 
         [LogDirValidation(false, false)]
         [Option('l', "logdir", Required = false, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified.")]
@@ -166,10 +130,6 @@ namespace Garnet
         [OptionValidation]
         [Option("no-pubsub", Required = false, HelpText = "Disable pub/sub feature on server.")]
         public bool? DisablePubSub { get; set; }
-
-        [OptionValidation]
-        [Option("incsnap", Required = false, HelpText = "Enable incremental snapshots.")]
-        public bool? EnableIncrementalSnapshots { get; set; }
 
         [MemorySizeValidation]
         [Option("pubsub-pagesize", Required = false, HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
@@ -240,6 +200,18 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
+        public int AofPhysicalSublogCount { get; set; }
+
+        [IntRangeValidation(1, 256, isRequired: false)]
+        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        public int AofReplayTaskCount { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
+        public int AofTailWitnessFreqMs { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -255,14 +227,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
         public int AofSizeLimitEnforceFrequencySecs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-refresh-freq", Required = false, HelpText = "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
-        public int AofReplicationRefreshFrequencyMs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("subscriber-refresh-freq", Required = false, HelpText = "Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.")]
-        public int SubscriberRefreshFrequencyMs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
@@ -282,10 +246,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
         public int CompactionMaxSegments { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
-        public int ObjectStoreCompactionMaxSegments { get; set; }
 
         [OptionValidation]
         [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
@@ -458,7 +418,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
@@ -482,7 +442,7 @@ namespace Garnet
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
-        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        [Option("aof-null-device", Required = false, HelpText = "With fast-aof-truncate replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
@@ -535,8 +495,7 @@ namespace Garnet
 
         [DoubleRangeValidation(0, 1)]
         [Option("reviv-fraction", Required = false,
-            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification." +
-                       "        Applies to both main and object store.")]
+            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification.")]
         public double RevivifiableFraction { get; set; }
 
         [OptionValidation]
@@ -562,14 +521,8 @@ namespace Garnet
         [OptionValidation]
         [Option("reviv-in-chain-only", Required = false,
             HelpText = "Revivify tombstoned records in tag chains only (do not use free list)." +
-                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts. Propagates to object store by default.")]
+                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts.")]
         public bool? RevivInChainOnly { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("reviv-obj-bin-record-count", Required = false,
-            HelpText = "Number of records in the single free record bin for the object store. The Object store has only a single bin, unlike the main store." +
-                       "        Ignored unless the main store is using the free record list.")]
-        public int RevivObjBinRecordCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
@@ -599,12 +552,16 @@ namespace Garnet
         public bool? ExtensionAllowUnsignedAssemblies { get; set; }
 
         [IntRangeValidation(1, int.MaxValue, isRequired: false)]
-        [Option("index-resize-freq", Required = false, HelpText = "Index resize check frequency in seconds")]
+        [Option("index-resize-freq", Required = false, HelpText = "Hash-index resize check frequency in seconds")]
         public int IndexResizeFrequencySecs { get; set; }
 
         [IntRangeValidation(1, 100, isRequired: false)]
-        [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
+        [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue, isRequired: false)]
+        [Option("value-overflow-threshold", Required = false, HelpText = "The length at which a value string becomes an overflow byte[]")]
+        public int ValueOverflowThreshold { get; set; }
 
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
@@ -680,6 +637,9 @@ namespace Garnet
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
+        [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableRangeIndexPreview { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -746,13 +706,9 @@ namespace Garnet
 
             var useAzureStorage = deviceType == DeviceType.AzureStorage;
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
                 throw new InvalidAzureConfiguration("Cannot use AzureStorage device without supplying storage-string or storage-service-uri");
-            }
             if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
                 throw new InvalidAzureConfiguration("Cannot use AzureStorage device with both storage-string and storage-service-uri");
-            }
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
@@ -831,6 +787,9 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
+            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
+                throw new Exception("Cannot use sharded-log without FastCommit!");
+
             if (!EnableAOF.GetValueOrDefault())
             {
                 if (!string.IsNullOrEmpty(AofSizeLimit))
@@ -856,33 +815,23 @@ namespace Garnet
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
-                MemorySize = MemorySize,
+                LogMemorySize = LogMemorySize,
                 PageSize = PageSize,
+                PageCount = PageCount,
                 SegmentSize = SegmentSize,
-                IndexSize = IndexSize,
-                IndexMaxSize = IndexMaxSize,
+                ObjectLogSegmentSize = ObjectLogSegmentSize,
+                IndexMemorySize = IndexMemorySize,
+                IndexMaxMemorySize = IndexMaxMemorySize,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
                 ReadCachePageSize = ReadCachePageSize,
-                ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
-                ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
-                ObjectStorePageSize = ObjectStorePageSize,
-                ObjectStoreSegmentSize = ObjectStoreSegmentSize,
-                ObjectStoreIndexSize = ObjectStoreIndexSize,
-                ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
-                ObjectStoreMutablePercent = ObjectStoreMutablePercent,
-                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
-                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
-                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
-                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
+                ReadCachePageCount = ReadCachePageCount,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
-                ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
-                EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
@@ -896,7 +845,9 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
-                AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
+                AofPhysicalSublogCount = AofPhysicalSublogCount,
+                AofReplayTaskCount = AofReplayTaskCount,
+                AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
@@ -906,7 +857,6 @@ namespace Garnet
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
-                ObjectStoreCompactionMaxSegments = ObjectStoreCompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
@@ -963,13 +913,13 @@ namespace Garnet
                 RevivBinBestFitScanLimit = RevivBinBestFitScanLimit,
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
-                RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
                 EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
+                ValueOverflowThreshold = ValueOverflowThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
@@ -980,7 +930,8 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
-                VectorSetReplayTaskCount = VectorSetReplayTaskCount
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }
 

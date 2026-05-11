@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -33,6 +34,7 @@ namespace Tsavorite.core
         private readonly bool disableFileBuffering;
         private readonly bool osReadBuffering;
         private readonly bool readOnly;
+        private readonly ILogger logger;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<StorageAccessContext>, AsyncPool<StorageAccessContext>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
 
@@ -54,7 +56,8 @@ namespace Tsavorite.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="osReadBuffering">Enable OS read buffering</param>
         /// <param name="readOnly">Open file in readOnly mode</param>
-        public RandomAccessLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false)
+        /// <param name="logger"></param>
+        public RandomAccessLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false, ILogger logger = null)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new(1, 1);
@@ -70,6 +73,7 @@ namespace Tsavorite.core
             this.disableFileBuffering = disableFileBuffering;
             this.osReadBuffering = osReadBuffering;
             this.readOnly = readOnly;
+            this.logger = logger;
             logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
@@ -172,6 +176,7 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
+                logger?.LogCritical(ex, $"{nameof(ReadAsync)}");
                 var ioex = ex as IOException ?? ex.InnerException as IOException;
                 if (ioex is not null)
                     errorCode = (uint)(ioex.HResult & 0x0000FFFF);
@@ -226,10 +231,11 @@ namespace Tsavorite.core
                 {
                     storageAccessContext.memoryManager.SetDestination((byte*)sourceAddress, (int)numBytesToWrite);
                 }
-                await RandomAccess.WriteAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)destinationAddress);
+                await RandomAccess.WriteAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)destinationAddress).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                logger?.LogCritical(ex, $"{nameof(ReadAsync)}");
                 var ioex = ex as IOException ?? ex.InnerException as IOException;
                 if (ioex is not null)
                     errorCode = (uint)(ioex.HResult & 0x0000FFFF);

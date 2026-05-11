@@ -162,7 +162,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 3944;
+            var expectedResponse = 3976;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -206,7 +206,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 344;
+            var expectedResponse = 376;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.GeoAdd(new RedisKey("SecondKey"), 13.361389, 38.115556, new RedisValue("Palermo"));
@@ -216,7 +216,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
@@ -225,7 +225,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 

@@ -37,7 +37,8 @@ namespace Garnet.test.Resp.ACL
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
                                                   useAcl: true, enableLua: true,
-                                                  enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
+                                                  enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
+                                                  enableRangeIndexPreview: true);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -99,7 +100,7 @@ namespace Garnet.test.Resp.ACL
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
                 var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
-                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", "").Replace(".", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
                 ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommandsInfo not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
@@ -110,7 +111,7 @@ namespace Garnet.test.Resp.ACL
                 IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.NormalizeForACLs()).Distinct();
                 IEnumerable<RespCommand> testableValues =
                     allValues
-                    .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM])
+                    .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM, RespCommand.RIPROMOTE, RespCommand.RIRESTORE])
                     .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
                     .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
@@ -1000,35 +1001,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task ClusterAofSyncACLsAsync()
-        {
-            // All cluster command "success" is a thrown exception, because clustering is disabled
-
-            await CheckCommandsAsync(
-                "CLUSTER AOFSYNC",
-                [DoClusterAofSyncAsync]
-            ).ConfigureAwait(false);
-
-            static async Task DoClusterAofSyncAsync(GarnetClient client)
-            {
-                try
-                {
-                    await client.ExecuteForStringResultAsync("CLUSTER", ["AOFSYNC", "abc", "def"]).ConfigureAwait(false);
-                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
-                }
-                catch (Exception e)
-                {
-                    if (e.Message == "ERR This instance has cluster support disabled")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
-            }
-        }
-
-        [Test]
         public async Task ClusterAppendLogACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -1892,6 +1864,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterAdvanceTimeACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER ADVANCE_TIME",
+                [DoClusterAdvanceTimeAsync]
+            );
+
+            static async Task DoClusterAdvanceTimeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADVANCE_TIME"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterMyIdACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -2420,6 +2421,53 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["SLOTSTATE"]).ConfigureAwait(false);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterMlogKeyTimeACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER MLOG_KEY_TIME",
+                [DoClusterMlogKeyTimeAsync, DoClusterMlogKeyTimeFrontierAsync]
+            );
+
+            static async Task DoClusterMlogKeyTimeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoClusterMlogKeyTimeFrontierAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key", "FRONTIER"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -5382,6 +5430,189 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task RICreateACLsAsync()
+        {
+            int count = 0;
+
+            await CheckCommandsAsync(
+                "RI.CREATE",
+                [DoRICreateAsync]
+            ).ConfigureAwait(false);
+
+            async Task DoRICreateAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.CREATE", [$"myindex-{count}", "MEMORY", "CACHESIZE", "65536"]).ConfigureAwait(false);
+                count++;
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task RIDelACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["ridel-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+
+            int count = 0;
+
+            await CheckCommandsAsync(
+                "RI.DEL",
+                [DoRIDelAsync]
+            ).ConfigureAwait(false);
+
+            async Task DoRIDelAsync(GarnetClient client)
+            {
+                // Insert a field as default user, then delete it as the test user
+                await setupClient.ExecuteForStringResultAsync("RI.SET", ["ridel-acl-idx", $"field-{count}", "val"]).ConfigureAwait(false);
+                var val = await client.ExecuteForStringResultAsync("RI.DEL", ["ridel-acl-idx", $"field-{count}"]).ConfigureAwait(false);
+                count++;
+                ClassicAssert.AreEqual("1", val);
+            }
+        }
+
+        [Test]
+        public async Task RIGetACLsAsync()
+        {
+            // Pre-create the index and insert a field using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riget-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["riget-acl-idx", "field1", "value1"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.GET",
+                [DoRIGetAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIGetAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.GET", ["riget-acl-idx", "field1"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("value1", val);
+            }
+        }
+
+        [Test]
+        public async Task RISetACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riset-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.SET",
+                [DoRISetAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRISetAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.SET", ["riset-acl-idx", "field1", "value1"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task RIRangeACLsAsync()
+        {
+            // Pre-create the index and insert fields using default user (DISK mode required for scan)
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["rirange-acl-idx", "DISK", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["rirange-acl-idx", "aaa", "val-a"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["rirange-acl-idx", "bbb", "val-b"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.RANGE",
+                [DoRIRangeAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIRangeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.RANGE", ["rirange-acl-idx", "aaa", "bbb", "FIELDS", "KEY"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.AreEqual(2, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task RIScanACLsAsync()
+        {
+            // Pre-create the index and insert a field using default user (DISK mode required for scan)
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riscan-acl-idx", "DISK", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["riscan-acl-idx", "aaa", "val-a"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.SCAN",
+                [DoRIScanAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIScanAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.SCAN", ["riscan-acl-idx", "aaa", "COUNT", "10", "FIELDS", "KEY"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.IsTrue(val.Length >= 1);
+            }
+        }
+
+        [Test]
+        public async Task RIExistsACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riexists-acl-idx", "MEMORY", "CACHESIZE", "65536"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.EXISTS",
+                [DoRIExistsAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIExistsAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.EXISTS", ["riexists-acl-idx"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("1", val);
+            }
+        }
+
+        [Test]
+        public async Task RIConfigACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riconfig-acl-idx", "MEMORY", "CACHESIZE", "65536"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.CONFIG",
+                [DoRIConfigAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIConfigAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.CONFIG", ["riconfig-acl-idx"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.AreEqual(12, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task RIMetricsACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["rimetrics-acl-idx", "MEMORY", "CACHESIZE", "65536"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.METRICS",
+                [DoRIMetricsAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIMetricsAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.METRICS", ["rimetrics-acl-idx"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.AreEqual(8, val.Length);
+            }
+        }
+
+        [Test]
         public async Task ReplicaOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests
@@ -5661,6 +5892,24 @@ namespace Garnet.test.Resp.ACL
             static async Task DoSetIfGreaterAsync(GarnetClient client)
             {
                 var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
+        public async Task SetWithEtagACLsAsync()
+        {
+            int count = 0;
+
+            await CheckCommandsAsync(
+               "SETWITHETAG",
+               [DoSetWithEtagAsync]
+           ).ConfigureAwait(false);
+
+            async Task DoSetWithEtagAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("SETWITHETAG", [$"key-{count}", "value"]).ConfigureAwait(false);
+                count++;
                 ClassicAssert.IsNotNull(res);
             }
         }

@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SetObject : IGarnetObject
     {
-        private void SetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void SetAdd(ref ObjectInput input, ref ObjectOutput output)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -25,13 +25,13 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    output.Header.result1++;
+                    output.result1++;
                     UpdateSize(member);
                 }
             }
         }
 
-        private void SetMembers(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetMembers(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -40,11 +40,11 @@ namespace Garnet.server
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
-        private void SetIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -55,10 +55,10 @@ namespace Garnet.server
             var isMember = Set.Contains(member.ToArray());
 #endif
             writer.WriteInt32(isMember ? 1 : 0);
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
-        private void SetMultiIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -75,10 +75,10 @@ namespace Garnet.server
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.Header.result1 = input.parseState.Count;
+            output.result1 = input.parseState.Count;
         }
 
-        private void SetRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void SetRemove(ref ObjectInput input, ref ObjectOutput output)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -90,19 +90,19 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    output.Header.result1++;
+                    output.result1++;
                     UpdateSize(field, false);
                 }
             }
         }
 
-        private void SetLength(ref GarnetObjectStoreOutput output)
+        private void SetLength(ref ObjectOutput output)
         {
             // SCARD key
-            output.Header.result1 = Set.Count;
+            output.result1 = Set.Count;
         }
 
-        private void SetPop(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SPOP key [count]
             var count = input.arg1;
@@ -151,10 +151,10 @@ namespace Garnet.server
                 countDone++;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
-        private void SetRandomMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var count = input.arg1;
             var seed = input.arg2;
@@ -230,7 +230,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
     }
 }

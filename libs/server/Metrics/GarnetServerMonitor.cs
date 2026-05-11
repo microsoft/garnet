@@ -83,7 +83,7 @@ namespace Garnet.server
             if (monitorSamplingFrequency > TimeSpan.Zero)
             {
                 done.Reset();
-                _ = MainMonitorTaskAsync(cts.Token);
+                _ = Task.Run(() => MainMonitorTaskAsync(cts.Token));
             }
         }
 
@@ -267,14 +267,11 @@ namespace Garnet.server
 
         private async Task MainMonitorTaskAsync(CancellationToken token)
         {
-            // Force async
-            await Task.Yield();
-
             try
             {
                 while (true)
                 {
-                    await Task.Delay(monitorSamplingFrequency, token);
+                    await Task.Delay(monitorSamplingFrequency, token).ConfigureAwait(false);
 
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.

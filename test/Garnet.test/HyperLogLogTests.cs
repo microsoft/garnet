@@ -138,7 +138,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -147,7 +147,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -156,7 +156,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -165,7 +165,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -174,7 +174,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
         }
 
@@ -575,12 +575,12 @@ namespace Garnet.test
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    memorySize: "1024",
+                    memorySize: "2k",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                     pageSize: "512");
             else
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    memorySize: "32k",
+                    memorySize: "64k",  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                     pageSize: "16k");
             server.Start();
 
@@ -693,7 +693,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                memorySize: "1024",
+                memorySize: "2k",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 pageSize: "512");
             server.Start();
 
@@ -802,7 +802,7 @@ namespace Garnet.test
         {
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                memorySize: "32k",
+                memorySize: "64k",  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 pageSize: "16k");
             server.Start();
 
@@ -912,7 +912,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                memorySize: "32k",
+                memorySize: "64k",  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 pageSize: "16k");
             server.Start();
 

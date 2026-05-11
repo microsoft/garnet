@@ -80,7 +80,6 @@ namespace Garnet.test.cluster
         [TestCase("mtasks", new int[] { 1, 2, 3, 4 })]
         [TestCase("replicas", new int[] { 0, 2, 3, 4 })]
         [TestCase("replicate", new int[] { 0, 3, 4 })]
-        [TestCase("AOFSYNC", new int[] { 0, 1, 3, 4 })]
         [TestCase("APPENDLOG", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("INITIATE_REPLICA_SYNC", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("SEND_CKPT_METADATA", new int[] { 0, 1, 2, 4, 5, 6 })]
@@ -343,7 +342,7 @@ namespace Garnet.test.cluster
 
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
                 var primaryOffset2 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
-                ClassicAssert.Less(primaryOffset1, primaryOffset2);
+                ClassicAssert.Less(primaryOffset1[0], primaryOffset2[0]);
 
                 // Take another checkpoin to truncate
                 primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
@@ -626,6 +625,7 @@ namespace Garnet.test.cluster
             var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
             ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
+
         [Test, Order(14), CancelAfter(testTimeout)]
         [Category("REPLICATION")]
         public async Task ClusterFailoverSucceedsDuringEnsureReplicationAsync(CancellationToken cancellationToken)

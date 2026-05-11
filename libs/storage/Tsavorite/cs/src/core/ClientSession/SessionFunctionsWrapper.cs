@@ -1,120 +1,180 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal readonly struct SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>
-            : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-        where TSessionLocker : struct, ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal readonly struct SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>
+            : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        where TSessionLocker : struct, ISessionLocker<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        private readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> _clientSession;
+        private readonly ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> _clientSession;
         private readonly TSessionLocker _sessionLocker;  // Has no data members
 
-        public SessionFunctionsWrapper(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
+        public SessionFunctionsWrapper(ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             _clientSession = clientSession;
             _sessionLocker = new TSessionLocker();
         }
 
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.store;
-        public OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable => _clientSession.store.LockTable;
+        public TsavoriteKV<TStoreFunctions, TAllocator> Store => _clientSession.store;
+        public OverflowBucketLockTable<TStoreFunctions, TAllocator> LockTable => _clientSession.store.LockTable;
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo)
-            => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.Reader(in srcLogRecord, ref input, ref dst, ref readInfo);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
-
-        public void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
-            => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
+        public void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
+            => _clientSession.functions.ReadCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
 
         #endregion Reads
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => _clientSession.functions.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => _clientSession.functions.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            recordInfo.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            logRecord.InfoRef.SetModified();
+            _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(long physicalAddress, ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
-            if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo))
+            logRecord.InfoRef.SetModified();
+            _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            dstLogRecord.InfoRef.SetModified();
+            _clientSession.functions.PostInitialWriter(ref dstLogRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        {
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
-            _clientSession.store.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
-            recordInfo.SetDirtyAndModified();
+            logRecord.InfoRef.SetModified();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref TValue src, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        {
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
+                return false;
+            logRecord.InfoRef.SetModified();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo))
+                return false;
+            logRecord.InfoRef.SetModified();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostUpsertOperation(ref key, ref input, ref src, ref upsertInfo, epochAccessor);
+            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueSpan, ref upsertInfo, epochAccessor);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
         #endregion Upserts
 
         #region RMWs
         #region InitialUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
+        public bool NeedInitialUpdate<TOpKey>(TOpKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+        public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            => _clientSession.functions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
         {
-            recordInfo.SetDirtyAndModified();
-            _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            logRecord.InfoRef.SetModified();
+            _clientSession.functions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion InitialUpdater
 
         #region CopyUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
+        public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.NeedCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
+        public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            recordInfo.SetDirtyAndModified();
-            return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            dstLogRecord.InfoRef.SetModified();
+            return _clientSession.functions.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion CopyUpdater
 
         #region InPlaceUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(long physicalAddress, ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
-            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-
-            if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
+            // This wraps the ISessionFunctions call to provide expiration logic.
+            if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-                recordInfo.SetDirtyAndModified();
+                logRecord.InfoRef.SetModified();
 
-                // MarkPage is done in InternalRMW
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 return true;
             }
@@ -122,8 +182,8 @@ namespace Tsavorite.core
             if (rmwInfo.Action == RMWAction.ExpireAndResume)
             {
                 // This inserts the tombstone if appropriate
-                return _clientSession.store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
-                                                    ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
+                return _clientSession.store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
+                                                    ref logRecord, ref input, ref output, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
             }
 
             if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -132,8 +192,15 @@ namespace Tsavorite.core
             }
             else if (rmwInfo.Action == RMWAction.ExpireAndStop)
             {
-                recordInfo.SetTombstone();
+                // Tombstone is set by the caller (InternalRMW) AFTER OnDispose,
+                // so that internal heap accounting reads the pre-tombstone value size.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+            }
+            else if (rmwInfo.Action == RMWAction.WrongType)
+            {
+                // WrongType means the operation was rejected — the record must NOT be modified.
+                // Do not set Tombstone; the key should remain intact for correct-type operations.
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
             }
             else
                 status = OperationStatus.SUCCESS;
@@ -142,42 +209,48 @@ namespace Tsavorite.core
         #endregion InPlaceUpdater
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostRMWOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        public void PostRMWOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostRMWOperation(ref key, ref input, ref rmwInfo, epochAccessor);
+            => _clientSession.functions.PostRMWOperation(key, ref input, ref rmwInfo, epochAccessor);
 
-        public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
-            => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
+        public void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
+            => _clientSession.functions.RMWCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
 
         #endregion RMWs
 
         #region Deletes
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            => _clientSession.functions.InitialDeleter(ref logRecord, ref deleteInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            recordInfo.SetDirtyAndModified();
-            _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
+            logRecord.InfoRef.SetModified();
+            _clientSession.functions.PostInitialDeleter(ref logRecord, ref deleteInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentDeleter(long physicalAddress, ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int allocatedSize)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-            if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo))
+            if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
-            _clientSession.store.SetTombstoneAndExtraValueLength(ref value, ref recordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
-            recordInfo.SetDirtyAndModified();
+            // Tombstone and Modified are set by the caller (InternalDelete) AFTER
+            // OnDispose, so that internal heap accounting reads the pre-tombstone value size.
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostDeleteOperation<TEpochAccessor>(ref TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+        public void PostDeleteOperation<TOpKey, TEpochAccessor>(TOpKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostDeleteOperation(ref key, ref deleteInfo, epochAccessor);
+            => _clientSession.functions.PostDeleteOperation(key, ref deleteInfo, epochAccessor);
         #endregion Deletes
 
         #region Utilities
@@ -185,43 +258,64 @@ namespace Tsavorite.core
         public void ConvertOutputToHeap(ref TInput input, ref TOutput output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);
         #endregion Utilities
 
-        #region Transient locking
-        public bool IsManualLocking => _sessionLocker.IsManualLocking;
+        #region Ephemeral locking
+        public bool IsTransactionalLocking => _sessionLocker.IsTransactionalLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) =>
-            _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
+        public bool TryLockEphemeralExclusive(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx) =>
+            _sessionLocker.TryLockEphemeralExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
+        public bool TryLockEphemeralShared(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.TryLockEphemeralShared(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
+        public void UnlockEphemeralExclusive(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.UnlockEphemeralExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
-        #endregion Transient locking
+        public void UnlockEphemeralShared(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.UnlockEphemeralShared(Store, ref stackCtx);
+        #endregion Ephemeral locking
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRMWInitialValueLength(ref TInput input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
+        public RecordFieldInfo GetRMWInitialFieldInfo<TOpKey>(TOpKey key, ref TInput input)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetRMWInitialFieldInfo(key, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRMWModifiedValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.GetRMWModifiedFieldInfo(in srcLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetUpsertValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetUpsertValueLength(ref t, ref input);
+        public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, ReadOnlySpan<byte> value, ref TInput input)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
-        {
-            if (typeof(TInput) == typeof(SpanByte))
-                return new SpanByteHeapContainer(ref Unsafe.As<TInput, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
-            return new StandardHeapContainer<TInput>(ref input);
-        }
+        public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, IHeapObject value, ref TInput input)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.GetUpsertFieldInfo(key, in inputLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
@@ -230,10 +324,10 @@ namespace Tsavorite.core
         public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> Ctx => _clientSession.ctx;
+        public TsavoriteKV<TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> Ctx => _clientSession.ctx;
         #endregion Internal utilities
     }
 }

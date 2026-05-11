@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Tsavorite.benchmark
@@ -8,18 +9,48 @@ namespace Tsavorite.benchmark
     public sealed class SessionSpanByteFunctions : SpanByteFunctions<Empty>
     {
         /// <inheritdoc />
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             // Copy only the first cache line for more interpretable results
-            value.CopySliceTo(32, ref dst, memoryPool);
+            srcLogRecord.ValueSpan.Slice(0, 32).CopyTo(output.SpanByte.Span);
             return true;
         }
 
-        /// <inheritdoc />
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        // Note: Currently, only the ReadOnlySpan<byte> form of Upsert value is used here.
+
+        /// <inheritdoc/>
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            // Copy only the first cache line for more interpretable results
-            value.CopySliceTo(32, ref dst, memoryPool);
+            // This does not try to set ETag or Expiration
+            srcValue.CopyTo(logRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        {
+            // This does not try to set ETag or Expiration
+            srcValue.CopyTo(dstLogRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            => throw new TsavoriteException("InitialUpdater not implemented for YCSB");
+
+        /// <inheritdoc/>
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        {
+            // This does not try to set ETag or Expiration
+            input.CopyTo(dstLogRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        {
+            // This does not try to set ETag or Expiration
+            input.CopyTo(logRecord.ValueSpan);
             return true;
         }
     }

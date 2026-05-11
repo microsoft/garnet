@@ -15,8 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\server\Garnet.server.csproj" PrivateAssets="All" />
-    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All" />
-    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All" />
+		<ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All" />
+		<ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +46,16 @@
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
 		<None Include="..\..\README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
+
+	<!-- Define compilation symbol for server project -->
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);HOST_PROJECT</DefineConstants>
+	</PropertyGroup>
+
+	<!-- Include shared global usings file for server projects -->
+	<ItemGroup>
+		<Compile Include="$(MSBuildThisFileDirectory)../../libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
+	</ItemGroup>	
 
 	<PropertyGroup>
 		<NoWarn>$(NoWarn);NU5118</NoWarn>

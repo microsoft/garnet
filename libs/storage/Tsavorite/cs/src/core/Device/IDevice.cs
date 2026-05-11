@@ -61,7 +61,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Initialize device. This function is used to pass optional information that may only be known after
         /// Tsavorite initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
-        /// information if it does not need the supplied information. Segment size of -1 is used for object log.
+        /// information if it does not need the supplied information.
         /// 
         /// This is a bit of a hack. 
         /// </summary>
@@ -86,7 +86,7 @@ namespace Tsavorite.core
 
         /* Segmented addressing API */
         /// <summary>
-        /// Write
+        /// Write to the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="sourceAddress"></param>
         /// <param name="segmentId"></param>
@@ -94,10 +94,13 @@ namespace Tsavorite.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        /// <remarks>While this supports concurrent writes, the caller should try as much as possible to sequentialize the writes, as the IDevice implementation
+        ///     may require append-only behavior and thus will have to buffer. For similar reasons, do not back up and re-write; depending on the IDevice implementation,
+        ///     this may fail or be inefficient.</remarks>
         void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
-        /// Read
+        /// Read from the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="segmentId"></param>
         /// <param name="sourceAddress"></param>
@@ -110,17 +113,22 @@ namespace Tsavorite.core
         /* Direct addressing API */
 
         /// <summary>
-        /// Write
+        /// Write to the file. The alignedSourceAddress must be pinned. If inheriting from <see cref="StorageDeviceBase"/>, that provides an implementation of this that calculates the segmentId
+        /// and then invokes the overload with that segmentId.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        /// <remarks>While this supports concurrent writes, the caller should try as much as possible to sequentialize the writes, as the IDevice implementation
+        ///     may require append-only behavior and thus will have to buffer. For similar reasons, do not back up and re-write; depending on the IDevice implementation,
+        ///     this may fail or be inefficient.</remarks>
         void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
-        /// Read
+        /// Read from the file. The alignedDestinationAddress must be pinned. If inheriting from <see cref="StorageDeviceBase"/>, that provides an implementation of this that calculates the segmentId
+        /// and then invokes the overload with that segmentId.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>

@@ -112,7 +112,7 @@ public class Caching
             string key = i.ToString();
             MovieReview movieReview = MovieReview.CreateRandomReview(random);
             string value = JsonSerializer.Serialize(movieReview);
-            long etag = (long)await db.ExecuteAsync("SET", key, value, "WITHETAG");
+            long etag = (long)await db.ExecuteAsync("SETWITHETAG", key, value);
             localApplicationState.Add(i, (etag, movieReview));
             Console.WriteLine($"Seeded {i}");
         }

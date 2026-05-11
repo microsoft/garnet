@@ -12,6 +12,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
+#pragma warning disable IDE1006 // Naming Styles
+
 namespace Tsavorite.test
 {
     [AllureNUnit]
@@ -70,7 +72,7 @@ namespace Tsavorite.test
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
-                LocalMemorylog.Enqueue(entry);
+                _ = LocalMemorylog.Enqueue(entry);
             }
 
             // Commit to the log
@@ -97,7 +99,7 @@ namespace Tsavorite.test
 
             for (int i = 0; i < numEntries; i++)
             {
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
             }
 
             log.CompleteLog(true);
@@ -119,7 +121,7 @@ namespace Tsavorite.test
                         }
                         break;
                     case TsavoriteLogTestBase.IteratorType.AsyncMemoryOwner:
-                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
+                        await foreach ((IMemoryOwner<byte> result, _, _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                         {
                             ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();

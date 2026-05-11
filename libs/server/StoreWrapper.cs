@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -19,12 +20,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
@@ -43,17 +38,28 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => this.databaseManager.MainStore;
-
-        /// <summary>
-        /// Object store (of DB 0)
-        /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => this.databaseManager.ObjectStore;
+        public TsavoriteKV<StoreFunctions, StoreAllocator> store => databaseManager.Store;
 
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
+        public GarnetAppendOnlyFile appendOnlyFile => databaseManager.AppendOnlyFile;
+
+        /// <summary>
+        /// Get total AOF size (i.e. diff TailAddres - BeginAddress)
+        /// </summary>
+        /// <returns></returns>
+        public long AofSize() => appendOnlyFile.Log.TailAddress.AggregateDiff(appendOnlyFile.Log.BeginAddress);
+
+        /// <summary>
+        /// AOF BeginAddress
+        /// </summary>
+        public AofAddress BeginAddress => appendOnlyFile.Log.BeginAddress;
+
+        /// <summary>
+        /// AOF TailAddress
+        /// </summary>
+        public AofAddress TailAddress => appendOnlyFile.Log.TailAddress;
 
         /// <summary>
         /// Last save time (of DB 0)
@@ -61,9 +67,11 @@ namespace Garnet.server
         public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
 
         /// <summary>
-        /// Object store size tracker (of DB 0)
+        /// Store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
+        public CacheSizeTracker sizeTracker => databaseManager.SizeTracker;
+
+        public IStoreFunctions storeFunctions => store.StoreFunctions;
 
         /// <summary>
         /// Server options
@@ -111,6 +119,11 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequency;
 
         /// <summary>
+        /// RangeIndex (BfTree) manager shared across sessions
+        /// </summary>
+        internal readonly RangeIndexManager rangeIndexManager;
+
+        /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
         public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
@@ -146,6 +159,8 @@ namespace Garnet.server
         internal readonly ILogger sessionLogger;
         internal long safeAofAddress = -1;
 
+        private readonly bool enforceConsistentRead;
+
         // Standalone instance node_id
         internal readonly string runId;
 
@@ -162,14 +177,14 @@ namespace Garnet.server
         bool disposed;
 
         /// <summary>
-        /// Garnet checkpoint manager for main store
+        /// Garnet checkpoint manager
         /// </summary>
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
         /// <summary>
-        /// Garnet checkpoint manager for object store
+        /// Get task manager instance
         /// </summary>
-        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
+        public TaskManager TaskManager => taskManager;
 
         /// <summary>
         /// Constructor
@@ -200,12 +215,14 @@ namespace Garnet.server
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
                 : null;
+            this.enforceConsistentRead = serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.MultiLogEnabled;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.taskManager = new TaskManager(loggerFactory?.CreateLogger("TaskManager"));
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+            this.rangeIndexManager = DefaultDatabase.RangeIndexManager;
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 
@@ -272,11 +289,6 @@ namespace Garnet.server
                 if (StoreCheckpointManager != null)
                 {
                     StoreCheckpointManager.CurrentHistoryId = runId;
-                }
-
-                if (!serverOptions.DisableObjects && ObjectStoreCheckpointManager != null)
-                {
-                    ObjectStoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
         }
@@ -353,9 +365,7 @@ namespace Garnet.server
             if (serverOptions.EnableCluster)
             {
                 if (serverOptions.Recover)
-                {
                     clusterProvider.Recover();
-                }
             }
             else
             {
@@ -363,7 +373,7 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    _ = ReplayAOF();
+                    ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
                 }
             }
 
@@ -371,34 +381,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Take checkpoint of all active databases
+        /// Take checkpoint of all active databases (or a specified database)
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="logger">Logger</param>
+        /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null,
-            CancellationToken token = default) => databaseManager.TakeCheckpointAsync(background, logger, token);
-
-        /// <summary>
-        /// Take checkpoint of all active database IDs or a specified database ID
-        /// </summary>
-        /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
         /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
-            if (dbId == -1)
-            {
-                return databaseManager.TakeCheckpointAsync(background, logger, token);
-            }
-
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+            if (dbId > 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
 
-            return databaseManager.TakeCheckpointAsync(background, dbId, logger, token);
+            return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);
         }
 
         /// <summary>
@@ -418,9 +413,11 @@ namespace Garnet.server
         /// <summary>
         /// Recover checkpoint
         /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
-            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
-            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
+        {
+            StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
+            databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+        }
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -455,7 +452,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
+        public AofAddress ReplayAOF(AofAddress untilAddress) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -480,7 +477,7 @@ namespace Garnet.server
         {
             if (!serverOptions.EnableAOF) return false;
 
-            await databaseManager.WaitForCommitToAofAsync(token);
+            await databaseManager.WaitForCommitToAofAsync(token).ConfigureAwait(false);
             return true;
         }
 
@@ -497,14 +494,14 @@ namespace Garnet.server
 
             if (dbId == -1)
             {
-                await databaseManager.CommitToAofAsync(token, logger);
+                await databaseManager.CommitToAofAsync(token, logger).ConfigureAwait(false);
                 return true;
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
 
-            await databaseManager.CommitToAofAsync(dbId, token);
+            await databaseManager.CommitToAofAsync(dbId, token).ConfigureAwait(false);
             return true;
         }
 
@@ -512,6 +509,7 @@ namespace Garnet.server
         /// Create database functions state
         /// </summary>
         /// <param name="dbId">Database ID</param>
+        /// <param name="respProtocolVersion">Resp protocol version</param>
         /// <returns>Functions state</returns>
         /// <exception cref="GarnetException"></exception>
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
@@ -677,7 +675,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.DoCompaction(token, logger);
+                    await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
 
                     if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
@@ -802,9 +800,10 @@ namespace Garnet.server
             // Start generic node tasks
             StartGenericNodeTasks();
 
-            // Start object size trackers
-            databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
+            StartSizeTrackers();    // We may have already started this for recovery.
         }
+
+        private void StartSizeTrackers() => databaseManager.StartSizeTrackers(ctsCommit.Token);
 
         public bool HasKeysInSlots(List<int> slots)
         {
@@ -812,39 +811,27 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
-                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    using var iter = store.Iterate<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());  // TODO replace with Push iterator
+                    while (!hasKeyInSlots && iter.GetNext())
                     {
-                        ref var key = ref iter.GetKey();
-
-                        // TODO: better way to ignore vector set elements
-                        if (key.MetadataSize == 1)
-                        {
-                            continue;
-                        }
-
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(ref key);
+                        var key = iter.Key;
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key);
                         if (slots.Contains(hashSlotForKey))
-                        {
                             hasKeyInSlots = true;
-                        }
                     }
                 }
 
                 if (!hasKeyInSlots && !serverOptions.DisableObjects)
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
-                    var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    using var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var objStoreFunctions = new ObjectSessionFunctions(functionsState);
+                    using var objectStoreSession = store?.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
                     using var iter = objectStoreSession.Iterate();
-                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    while (!hasKeyInSlots && iter.GetNext())
                     {
-                        ref var key = ref iter.GetKey();
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key.AsSpan());
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key);
                         if (slots.Contains(hashSlotForKey))
-                        {
                             hasKeyInSlots = true;
-                        }
                     }
                 }
 
@@ -882,19 +869,29 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Check whether to perform consistent read
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnforceConsistentRead()
+            => enforceConsistentRead && clusterProvider.IsReplica();
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
 
-            itemBroker?.Dispose();
             clusterProvider?.Dispose();
+            itemBroker?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             taskManager.Dispose();
+            rangeIndexManager?.Dispose();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
@@ -904,18 +901,18 @@ namespace Garnet.server
         /// Suspend background task that may interfere with the replicas AOF
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendPrimaryOnlyTasksAsync()
+        public Task SuspendPrimaryOnlyTasksAsync()
         {
-            await taskManager.CancelAsync(TaskPlacementCategory.Primary);
+            return taskManager.CancelAsync(TaskPlacementCategory.Primary);
         }
 
         /// <summary>
         /// Suspend background task that may interfere with the primary store.
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendReplicaOnlyTasksAsync()
+        public Task SuspendReplicaOnlyTasksAsync()
         {
-            await taskManager.CancelAsync(TaskPlacementCategory.Replica);
+            return taskManager.CancelAsync(TaskPlacementCategory.Replica);
         }
 
         /// <summary>
@@ -950,6 +947,7 @@ namespace Garnet.server
                 taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTaskAsync(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
             }
         }
+
 
         /// <summary>
         /// Start background maintenance tasks that should only be run when this node is a replica.

@@ -13,15 +13,6 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    /// <summary>
-    /// TODO: Testing scenarios
-    /// 1. Empty replica attach sync
-    ///     a. Primary empty
-    ///     b. Primary non-empty
-    /// 2. Replica same history and version different AOF
-    /// 3. Replica same history and different version and AOF
-    /// 4. Replica different history, version and AOF
-    /// </summary>
     [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
@@ -32,12 +23,14 @@ namespace Garnet.test.cluster
 
         protected bool useTLS = false;
         protected bool asyncReplay = false;
+        protected int sublogCount = 1;
 
         int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
         int testTimeout = (int)TimeSpan.FromSeconds(120).TotalSeconds;
 
         public Dictionary<string, LogLevel> monitorTests = new(){
-            { "ClusterDisklessSyncFailover", LogLevel.Trace }
+            { "ClusterDisklessSyncFailover", LogLevel.Trace },
+            { "ClusterDisklessSyncResetSyncManagerCts", LogLevel.Trace }
         };
 
         [SetUp]
@@ -115,7 +108,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -157,7 +150,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncFullSyncAofThreshold: forceFullSync ? "1k" : string.Empty);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncFullSyncAofThreshold: forceFullSync ? "1k" : string.Empty, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -215,7 +208,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaOneIndex = 1;
             var replicaTwoIndex = 2;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -244,12 +237,11 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaOneIndex, disableObjects);
 
             // Validate db version
-            var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
+            var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
 
-            // With unified store, versions increase per scan (main and object)
-            // so expected versions depend on whether objects are disabled or not
-            var expectedVersion1 = disableObjects ? 2 : 3;
+            // Versions increase per scan and we have only a single store which takes a single scan regardless of 'disableObjects' setting
+            var expectedVersion1 = 2;
             ClassicAssert.AreEqual(expectedVersion1, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
 
@@ -269,13 +261,12 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaTwoIndex, disableObjects);
 
             // Validate db version
-            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
-            var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
+            var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, logger: context.logger);
 
-            // With unified store, versions increase per scan (main and object)
-            // so expected versions depend on whether objects are disabled or not
-            var expectedVersion2 = disableObjects ? 3 : 5;
+            // With unified store we have only a single scan so a single increment regardless of 'disableObjects' setting
+            var expectedVersion2 = 3;
             ClassicAssert.AreEqual(expectedVersion2, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
             ClassicAssert.AreEqual(expectedVersion1, replicaOneVersion);
@@ -286,13 +277,12 @@ namespace Garnet.test.cluster
             // Validate second replica data
             Validate(primaryIndex, replicaOneIndex, disableObjects);
 
-            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
-            replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
+            replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, logger: context.logger);
 
-            // With unified store, versions increase per scan (main and object)
-            // so expected versions depend on whether objects are disabled or not
-            var expectedVersion3 = disableObjects ? 4 : 7;
+            // With unified store we have only a single scan so a single increment regardless of 'disableObjects' setting
+            var expectedVersion3 = 4;
             ClassicAssert.AreEqual(expectedVersion3, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
@@ -307,7 +297,7 @@ namespace Garnet.test.cluster
             var replicaOneIndex = 1;
             var replicaTwoIndex = 2;
             var replicaThreeIndex = 3;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -350,7 +340,7 @@ namespace Garnet.test.cluster
 
             int[] nOffsets = [primary, replicaOne, replicaTwo];
 
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -410,7 +400,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaOneIndex = 1;
-            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -433,6 +423,9 @@ namespace Garnet.test.cluster
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
+
+            // Ensure that replicas have connected before completing the test
+            context.clusterTestUtils.WaitForReplicasConnected(primaryIndex, 1, logger: context.logger);
         }
 #endif
     }

@@ -630,7 +630,7 @@ namespace Garnet
     }
 
     /// <summary>
-    /// Validate that, when annotated property is set, another option has a least a minimum memory value.
+    /// Validate that, when annotated property is set, another option has at least a minimum memory value.
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     internal sealed class RequiresMinimumMemory : OptionValidationAttribute

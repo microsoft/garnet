@@ -27,7 +27,7 @@ namespace Garnet
             if (setA.Length == 0)
                 return false;
 
-            AddKey(setA, LockType.Exclusive, true);
+            AddKey(setA, LockType.Exclusive, StoreType.Object);
             return true;
         }
 
@@ -40,8 +40,8 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var pairs = new (ArgSlice field, ArgSlice value)[6];
-            var fields = new ArgSlice[pairs.Length];
+            var pairs = new (PinnedSpanByte field, PinnedSpanByte value)[6];
+            var fields = new PinnedSpanByte[pairs.Length];
 
             var myHash = GetNextArg(ref procInput.parseState, ref offset);
 
@@ -122,12 +122,12 @@ namespace Garnet
                 return false;
 
             // HGET (hashobject exists, field not found)
-            status = api.HashGet(myHash, ArgSlice.FromPinnedSpan("nonexistingfield"u8), out value);
+            status = api.HashGet(myHash, PinnedSpanByte.FromPinnedSpan("nonexistingfield"u8), out value);
             if (status != GarnetStatus.OK || value.Length != 0)
                 return false;
 
             // HGET (hashobject not found)
-            status = api.HashGet(ArgSlice.FromPinnedSpan("nonexistinghash"u8), pairs[0].field, out value);
+            status = api.HashGet(PinnedSpanByte.FromPinnedSpan("nonexistinghash"u8), pairs[0].field, out value);
             if (status != GarnetStatus.NOTFOUND || value.Length != 0)
                 return false;
 

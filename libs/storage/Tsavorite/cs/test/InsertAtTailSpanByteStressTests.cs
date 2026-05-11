@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -17,7 +16,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.InsertAtTailStressTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteKeyComparerModulo, SpanByteRecordTriggers>;
 
     // Number of mutable pages for this test
     public enum MutablePages
@@ -31,9 +30,9 @@ namespace Tsavorite.test.InsertAtTailStressTests
     [TestFixture]
     class SpanByteInsertAtTailChainTests : AllureTestBase
     {
-        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
-        SpanByteComparerModulo comparer;
+        SpanByteKeyComparerModulo comparer;
 
         const long ValueAdd = 1_000_000_000;
         const long NumKeys = 2_000;
@@ -71,20 +70,20 @@ namespace Tsavorite.test.InsertAtTailStressTests
             }
 
             // Make the main log mutable region small enough that we force the readonly region to stay close to tail, causing inserts.
-            int pageBits = 15, memoryBits = 34;
-            KVSettings<SpanByte, SpanByte> kvSettings = new()
+            int pageBits = 15, memoryBits = 24;
+            KVSettings kvSettings = new()
             {
                 LogDevice = log,
                 PageSize = 1L << pageBits,
-                MemorySize = 1L << memoryBits,
+                LogMemorySize = 1L << memoryBits,
                 MutableFraction = 8.0 / (1 << (memoryBits - pageBits)),
             };
             store = new(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            comparer = new SpanByteComparerModulo(modRange);
+            comparer = new SpanByteKeyComparerModulo(modRange);
         }
 
         [TearDown]
@@ -100,40 +99,48 @@ namespace Tsavorite.test.InsertAtTailStressTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                src.CopyTo(ref dst);
-                src.CopyTo(ref output, memoryPool);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                    return false;
+                srcValue.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                src.CopyTo(ref dst);
-                src.CopyTo(ref output, memoryPool);
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                    return false;
+                srcValue.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                input.CopyTo(ref newValue);
+                if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
+                    return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 // The default implementation of IPU simply writes input to destination, if there is space
-                base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
+                    return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 Assert.Fail("For these tests, InitialUpdater should never be called");
                 return false;
@@ -142,16 +149,15 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
         unsafe void PopulateAndSetReadOnlyToTail()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var key = SpanByte.FromPinnedSpan(keyVec);
+            Span<byte> key = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumKeys; ii++)
             {
-                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                var status = bContext.Upsert(ref key, ref key);
+                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), key);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             bContext.CompletePending(true);
@@ -169,8 +175,6 @@ namespace Tsavorite.test.InsertAtTailStressTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
             // Initial population so we know we can read the keys.
             PopulateAndSetReadOnlyToTail();
@@ -178,11 +182,10 @@ namespace Tsavorite.test.InsertAtTailStressTests
             const int numIterations = 10;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
-                Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromPinnedSpan(keyVec);
+                Span<byte> key = stackalloc byte[sizeof(long)];
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -191,8 +194,8 @@ namespace Tsavorite.test.InsertAtTailStressTests
                     {
                         SpanByteAndMemory output = default;
 
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        var status = bContext.Read(ref key, ref output);
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
+                        var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(key), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -203,7 +206,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
                             ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
                             ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
-                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            long value = BitConverter.ToInt64(output.Span);
                             ClassicAssert.AreEqual(ii, value % ValueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
                             output.Memory.Dispose();
                         }
@@ -220,13 +223,13 @@ namespace Tsavorite.test.InsertAtTailStressTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.KeyBytes);
 
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == LogAddress.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
                                     ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
-                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    long value = BitConverter.ToInt64(output.Span);
                                     ClassicAssert.AreEqual(keyLong, value % ValueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
                                     output.Memory.Dispose();
                                 }
@@ -239,13 +242,12 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
             unsafe void runUpdateThread(int tid)
             {
-                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
                 var bContext = session.BasicContext;
 
-                Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromPinnedSpan(keyVec);
-                Span<byte> inputVec = stackalloc byte[sizeof(long)];
-                var input = SpanByte.FromPinnedSpan(inputVec);
+                Span<byte> key = stackalloc byte[sizeof(long)];
+                Span<byte> input = stackalloc byte[sizeof(long)];
+                var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -254,11 +256,11 @@ namespace Tsavorite.test.InsertAtTailStressTests
                     {
                         SpanByteAndMemory output = default;
 
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + ValueAdd));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(input, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
-                                        ? bContext.RMW(ref key, ref input, ref output)
-                                        : bContext.Upsert(ref key, ref input, ref input, ref output);
+                                        ? bContext.RMW(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, ref output)
+                                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref pinnedInputSpan, input, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -272,7 +274,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
                             if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                 ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            long value = BitConverter.ToInt64(output.Span);
                             ClassicAssert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
                             output.Memory?.Dispose();
@@ -290,12 +292,12 @@ namespace Tsavorite.test.InsertAtTailStressTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.KeyBytes);
 
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                         ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
 
-                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    long value = BitConverter.ToInt64(output.Span);
                                     ClassicAssert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
 
                                     output.Memory?.Dispose();
