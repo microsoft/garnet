@@ -2,15 +2,20 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.server;
+
 #if DEBUG
 using Garnet.common;
 #endif
-using Garnet.server;
+
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -72,40 +77,31 @@ namespace Garnet.cluster
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
-            var mainStorePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            var storePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
 
 #if DEBUG
             // Only on Debug mode
-            await ExceptionInjectionHelper.WaitOnSetAsync(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).ConfigureAwait(false);
+            await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).ConfigureAwait(false);
 #endif
 
-            // Send main store
+            // Send store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasksAsync(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
-            if (!success) return false;
 
-            // Send object store
-            if (!clusterProvider.serverOptions.DisableObjects)
-            {
-                var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
-                var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
-                var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                logger?.LogWarning("Object Store migrate scan range [{objectStoreBeginAddress}, {objectStoreTailAddress}]", objectStoreBeginAddress, objectStoreTailAddress);
-                success = await CreateAndRunMigrateTasksAsync(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
-                if (!success) return false;
-            }
+            var success = await CreateAndRunMigrateTasksAsync(storeBeginAddress, storeTailAddress, storePageSize);
+            if (!success) return false;
 
             return true;
 
-            async Task<bool> CreateAndRunMigrateTasksAsync(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> CreateAndRunMigrateTasksAsync(long beginAddress, long tailAddress, int pageSize)
             {
-                logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasksAsync), storeType, beginAddress, tailAddress);
+                logger?.LogTrace("{method} > Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress);
                 var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
                 {
                     var idx = i;
-                    migrateOperationRunners[idx] = ScanStoreTaskAsync(idx, storeType, beginAddress, tailAddress, pageSize);
+                    migrateOperationRunners[idx] = ScanStoreTaskAsync(idx, beginAddress, tailAddress, pageSize);
                     i++;
                 }
 
@@ -119,14 +115,15 @@ namespace Garnet.cluster
                     }
 
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
-                    if (storeType == StoreType.Main)
+                    var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
+
+                    if (vectorSets.Count > 0)
                     {
-                        var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
+                        var gcs = migrateOperation[0].Client;
 
-                        if (vectorSets.Count > 0)
+                        var serializeBufferArr = ArrayPool<byte>.Shared.Rent(128);
+                        try
                         {
-                            var gcs = migrateOperation[0].Client;
-
                             foreach (var (key, value) in vectorSets)
                             {
                                 // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
@@ -136,39 +133,42 @@ namespace Garnet.cluster
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
 
-                                Task<bool> pendingHandleTask;
-                            retryKeyAndValue:
-                                unsafe
+                                var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
+
+                                if (neededSpace > serializeBufferArr.Length)
                                 {
-                                    fixed (byte* keyPtr = key, valuePtr = value)
+                                    ArrayPool<byte>.Shared.Return(serializeBufferArr);
+                                    serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
+                                }
+
+                                // Scope so Span doesn't cross await boundary
+                                {
+                                    Span<byte> serializeBuffer = serializeBufferArr;
+                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
+                                    key.CopyTo(serializeBuffer[sizeof(int)..]);
+                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
+                                    value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
+                                }
+
+                                if (gcs.NeedsInitialization)
+                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+
+                                while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
+                                {
+                                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                     {
-                                        var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                        var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
-
-                                        if (gcs.NeedsInitialization)
-                                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-
-                                        if (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
-                                        {
-                                            // Need to wait for response, but can't do so in unsafe...
-                                            pendingHandleTask = HandleMigrateTaskResponseAsync(task);
-                                            goto awaitAndRetry;
-                                        }
+                                        logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
+                                        return false;
                                     }
+
+                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
                                 }
 
                                 // Force a flush before doing the delete, in case that fails
                                 if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                                 {
-                                    unsafe
-                                    {
-                                        fixed (byte* keyPtr = key)
-                                        {
-                                            var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                            logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", keySpan);
-                                            return false;
-                                        }
-                                    }
+                                    logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", SpanByte.ToShortString(key));
+                                    return false;
                                 }
 
                                 // Delete the index on this node now that it's moved over to the destination node
@@ -176,46 +176,28 @@ namespace Garnet.cluster
                                 {
                                     fixed (byte* keyPtr = key)
                                     {
-                                        var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                        migrateOperation[0].DeleteVectorSet(ref keySpan);
+                                        var pinnedKeySpan = PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length);
+                                        migrateOperation[0].DeleteVectorSet(pinnedKeySpan);
                                     }
                                 }
-
-                                // Move to next Vector Set index key
-                                continue;
-
-
-                            awaitAndRetry:
-                                if (!await pendingHandleTask.ConfigureAwait(false))
-                                {
-                                    unsafe
-                                    {
-                                        fixed (byte* keyPtr = key)
-                                        {
-                                            var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                            logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
-                                            return false;
-                                        }
-                                    }
-                                }
-
-                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-                                goto retryKeyAndValue;
                             }
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(serializeBufferArr);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), storeType, beginAddress, tailAddress, pageSize);
+                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress, pageSize);
                     await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
-
                 return true;
             }
 
-            async Task<bool> ScanStoreTaskAsync(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> ScanStoreTaskAsync(int taskId, long beginAddress, long tailAddress, int pageSize)
             {
                 // Force async
                 await Task.Yield();
@@ -231,13 +213,13 @@ namespace Garnet.cluster
                     return false;
 
                 var cursor = workerStartAddress;
-                logger?.LogWarning("<{StoreType}:{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", storeType, taskId, workerStartAddress, workerEndAddress);
+                logger?.LogWarning("<{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", taskId, workerStartAddress, workerEndAddress);
                 while (true)
                 {
                     var current = cursor;
                     // Build Sketch
                     migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(storeType, ref current, workerEndAddress);
+                    migrateOperation.Scan(ref current, workerEndAddress);
 
                     // Stop if no keys have been found
                     if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
@@ -250,7 +232,7 @@ namespace Garnet.cluster
                     await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered
-                    if (!await migrateOperation.TransmitSlotsAsync(storeType).ConfigureAwait(false))
+                    if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
                     {
                         logger?.LogWarning("[{taskId}> TransmitSlots failed for {cursor} to {current} (with {count} keys)", taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
                         return false;

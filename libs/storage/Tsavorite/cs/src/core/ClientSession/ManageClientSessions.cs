@@ -7,20 +7,28 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal Dictionary<int, SessionInfo> _activeSessions = new();
+        internal Dictionary<int, SessionInfo> _activeSessions = [];
 
         /// <summary>
         /// Start a new client session with Tsavorite.
         /// </summary>
         /// <param name="functions">Callback functions</param>
+        /// <param name="enableConsistentRead">Enable consistent read context</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ReadCopyOptions readCopyOptions = default)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+        public ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TKey, TInput, TOutput, TContext, TFunctions>(
+            TFunctions functions,
+            bool enableConsistentRead = false,
+            ReadCopyOptions readCopyOptions = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
@@ -29,15 +37,14 @@ namespace Tsavorite.core
             var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
 
-            var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
             if (RevivificationManager.IsEnabled)
             {
                 if (_activeSessions == null)
                     _ = Interlocked.CompareExchange(ref _activeSessions, [], null);
-
-                lock (_activeSessions)
-                    _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             }
+            var session = new ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
+            lock (_activeSessions)
+                _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             return session;
         }
 
@@ -74,7 +81,6 @@ namespace Tsavorite.core
                     // Merge the session-level stats into the global stats, clear the session-level stats, and keep the cumulative stats.
                     foreach (var sessionInfo in _activeSessions.Values)
                         sessionInfo.session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
-
                 }
             }
             return RevivificationManager.stats.Dump();

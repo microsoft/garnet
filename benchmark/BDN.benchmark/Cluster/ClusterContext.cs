@@ -29,16 +29,28 @@ namespace BDN.benchmark.Cluster
             server.Dispose();
         }
 
-        public void SetupSingleInstance(bool disableSlotVerification = false)
+        public void SetupSingleInstance(ClusterParams clusterParams)
         {
             var opt = new GarnetServerOptions
             {
                 QuietMode = true,
-                EnableCluster = !disableSlotVerification,
+                EnableCluster = !clusterParams.disableSlotVerification,
                 EndPoints = [new IPEndPoint(IPAddress.Loopback, port)],
                 CleanClusterConfig = true,
-                ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, port)
+                ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, port),
+                EnableAOF = clusterParams.enableAof,
             };
+
+            if (clusterParams.enableAof)
+            {
+                opt.EnableAOF = true;
+                opt.UseAofNullDevice = true;
+                opt.FastAofTruncate = true;
+                opt.CommitFrequencyMs = -1;
+                opt.AofPageSize = "128m";
+                opt.AofMemorySize = "256m";
+            }
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 opt.CheckpointDir = "/tmp";
             server = new EmbeddedRespServer(opt);
@@ -168,5 +180,4 @@ namespace BDN.benchmark.Cluster
         public void Consume(byte* ptr, int length)
             => session.TryConsumeMessages(ptr, length);
     }
-
 }

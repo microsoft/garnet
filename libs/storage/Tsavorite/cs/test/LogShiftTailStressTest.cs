@@ -34,7 +34,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < 5 * numEntries; i++)
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
 
             // for comparison, insert some entries without any commit records
             var referenceTailLength = log.TailAddress;
@@ -55,9 +55,7 @@ namespace Tsavorite.test
             foreach (var t in commitThreads)
                 t.Start();
             for (int i = 0; i < 5 * numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
             enqueueDone.Set();
 
             foreach (var t in commitThreads)

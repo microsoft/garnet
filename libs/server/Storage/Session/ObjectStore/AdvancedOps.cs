@@ -2,47 +2,43 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus RMW_ObjectStore<TObjectContext>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus RMW_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectStoreContext.RMW(ref key, ref input, ref output);
+            var status = objectContext.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
+                CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
 
             if (status.Found)
             {
                 if (output.HasWrongType)
                     return GarnetStatus.WRONGTYPE;
-
                 return GarnetStatus.OK;
             }
 
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_ObjectStore<TObjectContext>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus Read_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
+        where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectStoreContext.Read(ref key, ref input, ref output);
+            var status = objectContext.Read((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
+                CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
 
             if (status.Found)
             {
                 if (output.HasWrongType)
                     return GarnetStatus.WRONGTYPE;
-
                 return GarnetStatus.OK;
             }
 

@@ -9,22 +9,26 @@ using Garnet.networking;
 namespace Garnet.server
 {
     /// <summary>
-    /// AofReplayContext
+    /// Sublog replay buffer (one for each sublog)
     /// </summary>
-    public sealed class AofReplayContext
+    internal sealed class AofReplayContext
     {
         public readonly List<byte[]> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
-        public readonly RawStringInput storeInput;
-        public readonly ObjectInput objectStoreInput;
+        internal readonly RespServerSession respServerSession;
+
         public CustomProcedureInput customProcInput;
-        public readonly SessionParseState parseState;
+        public SessionParseState parseState;
 
         public readonly byte[] objectOutputBuffer;
 
         public MemoryResult<byte> output;
+
+        public StringBasicContext StringBasicContext => respServerSession.storageSession.stringBasicContext;
+        public ObjectBasicContext ObjectBasicContext => respServerSession.storageSession.objectBasicContext.Session == null ? default : respServerSession.storageSession.objectBasicContext.Session.BasicContext;
+        public UnifiedBasicContext UnifiedBasicContext => respServerSession.storageSession.unifiedBasicContext;
 
         /// <summary>
         /// Fuzzy region of AOF is the region between the checkpoint start and end commit markers.
@@ -37,23 +41,36 @@ namespace Garnet.server
         public bool inFuzzyRegion = false;
 
         /// <summary>
-        /// AofReplayContext constructor
+        /// AOF replay context constructor
         /// </summary>
-        public AofReplayContext()
+        public AofReplayContext(RespServerSession respServerSession)
         {
+            this.respServerSession = respServerSession;
             parseState.Initialize();
-            storeInput.parseState = parseState;
-            objectStoreInput.parseState = parseState;
             customProcInput.parseState = parseState;
             objectOutputBuffer = GC.AllocateArray<byte>(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), pinned: true);
+        }
+
+        public void Dispose()
+        {
+            var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
+            foreach (var dbSession in databaseSessionsSnapshot)
+            {
+                dbSession.StorageSession.stringBasicContext.Session?.Dispose();
+                dbSession.StorageSession.objectBasicContext.Session?.Dispose();
+            }
+            respServerSession?.Dispose();
+            output.MemoryOwner?.Dispose();
         }
 
         /// <summary>
         /// Add transaction group to this replay buffer
         /// </summary>
         /// <param name="sessionID"></param>
-        public void AddTransactionGroup(int sessionID)
-            => activeTxns[sessionID] = new();
+        /// <param name="sublogIdx"></param>
+        /// <param name="logAccessBitmap"></param>
+        public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap)
+            => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap);
 
         /// <summary>
         /// Add transaction group to fuzzy region buffer

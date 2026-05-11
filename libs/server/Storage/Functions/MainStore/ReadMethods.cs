@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -10,36 +10,51 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleReader(
-            ref SpanByte key, ref RawStringInput input,
-            ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            if (value.MetadataSize == 8 && CheckExpiry(ref value))
+            var info = srcLogRecord.Info;
+
+            // Fast path for simple GET on a normal inline string key with no optional fields.
+            // HasOptionalOrObjectFields is false iff: KeyIsInline, ValueIsInline, !HasETag, !HasExpiration (implies !ValueIsObject).
+            // RecordType 0 means normal string (not VectorSet or RangeIndex).
+            // This avoids expiry checks (no expiration), type-safety checks, ETag handling, and custom command dispatch.
+            if (input.arg1 < 0 && !info.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0)
             {
-                readInfo.RecordInfo.ClearHasETag();
+                CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                return true;
+            }
+
+            if (info.ValueIsObject)
+            {
+                readInfo.Action = ReadAction.WrongType;
                 return false;
             }
 
+            if (LogRecordUtils.CheckExpiry(in srcLogRecord))
+                return false;
+
             var cmd = input.header.cmd;
 
-            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            // Type safety: prevent cross-type access (e.g., GET on RI key, RI.SET on string key).
+            // Hot path (normal GET/SET on normal string): RecordType == 0, cmd is not special →
+            // hits only the first condition (one byte compare), skips everything.
             if (cmd != RespCommand.NONE)
             {
-                // Vector sets are reachable (key not mangled) and hidden.
-                // So we can use that to detect type mismatches.
-                if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+                var recordType = srcLogRecord.RecordType;
+                if (recordType != 0)
                 {
-                    // Attempted an illegal op on a VectorSet
-                    readInfo.Action = ReadAction.CancelOperation;
-                    return false;
+                    // Record has a special type (RI or Vector) — check if the command is allowed
+                    if (CheckRecordTypeMismatch(recordType, cmd, ref readInfo))
+                        return false;
                 }
-                else if (!readInfo.RecordInfo.VectorSet && cmd.IsLegalOnVectorSet())
+                else if (cmd != RespCommand.GET && (cmd.IsRangeIndexCommand() || cmd.IsVectorSetCommand()))
                 {
-                    // Attempted a vector set op on a non-VectorSet
-                    readInfo.Action = ReadAction.CancelOperation;
+                    // RI/Vector command on a normal string key
+                    readInfo.Action = ReadAction.WrongType;
                     return false;
                 }
             }
@@ -55,27 +70,18 @@ namespace Garnet.server
                 cmd = RespCommand.NONE;
             }
 
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
-                    return true;
-            }
-            else if (cmd > RespCommandExtensions.LastValidCommand)
-            {
-                if (readInfo.RecordInfo.ETag)
-                {
-                    CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref dst);
-                    return true;
-                }
+            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
 
-                var valueLength = value.LengthWithoutMetadata;
+            if (cmd > RespCommandExtensions.LastValidCommand)
+            {
+                var valueLength = value.Length;
 
-                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref dst);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
                     var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                        .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref writer, ref readInfo);
-                    Debug.Assert(valueLength <= value.LengthWithoutMetadata);
+                        .Reader(srcLogRecord.Key, ref input, value, ref writer, ref readInfo);
+                    Debug.Assert(valueLength <= value.Length);
                     return ret;
                 }
                 finally
@@ -84,148 +90,50 @@ namespace Garnet.server
                 }
             }
 
-            if (readInfo.RecordInfo.ETag)
+            switch (cmd)
             {
-                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
-            }
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
-            {
-                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
-                EtagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
-            if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
-            else
-            {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
-            }
-
-            if (readInfo.RecordInfo.ETag)
-            {
-                EtagState.ResetState(ref functionsState.etagState);
+                case RespCommand.GETIFNOTMATCH:
+                case RespCommand.GETWITHETAG:
+                    return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
+                case RespCommand.NONE:
+                    CopyRespTo(value, ref output);
+                    break;
+                default:
+                    CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
+                    break;
             }
 
             return true;
         }
 
-        /// <inheritdoc />
-        public bool ConcurrentReader(
-            ref SpanByte key, ref RawStringInput input, ref SpanByte value,
-            ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        /// <summary>
+        /// Checks for type mismatches between the record's RecordType and the command.
+        /// Called only when RecordType != 0 (RI or Vector key). Separated from Reader
+        /// to keep the hot path compact.
+        /// </summary>
+        private static bool CheckRecordTypeMismatch(byte recordType, RespCommand cmd, ref ReadInfo readInfo)
         {
-            if (value.MetadataSize == 8 && CheckExpiry(ref value))
+            // RangeIndex type safety
+            if (recordType == RangeIndexManager.RangeIndexRecordType && !cmd.IsLegalOnRangeIndex())
             {
-                recordInfo.ClearHasETag();
-                return false;
+                readInfo.Action = ReadAction.WrongType;
+                return true;
             }
-
-            var cmd = input.header.cmd;
-
-            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
-            if (cmd != RespCommand.NONE)
+            if (recordType != RangeIndexManager.RangeIndexRecordType && cmd.IsRangeIndexCommand())
             {
-                // Vector sets are reachable (key not mangled) and hidden.
-                // So we can use that to detect type mismatches.
-                if (recordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
-                {
-                    // Attempted an illegal op on a VectorSet
-                    readInfo.Action = ReadAction.CancelOperation;
-                    return false;
-                }
-                else if (!recordInfo.VectorSet && cmd.IsLegalOnVectorSet())
-                {
-                    // Attempted a vector set op on a non-VectorSet
-                    readInfo.Action = ReadAction.CancelOperation;
-                    return false;
-                }
-            }
-
-            // GET is used in a number of non-RESP contexts, which messes up existing logic
-            //
-            // Easiest to mark the actually-RESP commands with a < 0 arg1 and roll back to old logic
-            // after the Vector Set checks
-            //
-            // TODO: This is quite hacky, but requires a bunch of non-Vector Set changes - do those and remove
-            if (input.arg1 < 0 && cmd == RespCommand.GET)
-            {
-                cmd = RespCommand.NONE;
-            }
-
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
-                    return true;
-            }
-            else if (cmd > RespCommandExtensions.LastValidCommand)
-            {
-                if (readInfo.RecordInfo.ETag)
-                {
-                    CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref dst);
-                    return true;
-                }
-
-                var valueLength = value.LengthWithoutMetadata;
-
-                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref dst);
-                try
-                {
-                    var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                        .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref writer, ref readInfo);
-                    Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                    return ret;
-                }
-                finally
-                {
-                    writer.Dispose();
-                }
-            }
-
-            if (readInfo.RecordInfo.ETag)
-            {
-                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
-            }
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
-            {
-                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
-                EtagState.ResetState(ref functionsState.etagState);
+                readInfo.Action = ReadAction.WrongType;
                 return true;
             }
 
-            if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
-            else
+            // Vector set type safety
+            if (recordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
             {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+                readInfo.Action = ReadAction.WrongType;
+                return true;
             }
-
-            if (readInfo.RecordInfo.ETag)
+            if (recordType != VectorManager.RecordType && cmd.IsVectorSetCommand())
             {
-                EtagState.ResetState(ref functionsState.etagState);
-            }
-
-            return true;
-        }
-
-        private bool handleGetIfNotMatch(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
-        {
-            // Any value without an etag is treated the same as a value with an etag
-            long etagToMatchAgainst = input.parseState.GetLong(0);
-
-            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : EtagConstants.NoETag;
-
-            if (existingEtag == etagToMatchAgainst)
-            {
-                // write back array of the format [etag, nil]
-                var nilResp = functionsState.nilResp;
-                // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
-                WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
+                readInfo.Action = ReadAction.WrongType;
                 return true;
             }
 

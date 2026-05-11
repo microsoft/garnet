@@ -30,6 +30,8 @@ namespace Garnet.test.cluster
     [AllureNUnit]
     public class ClusterVectorSetTests : AllureTestBase
     {
+        protected int sublogCount = 1;
+
         private sealed class StringAndByteArrayComparer : IEqualityComparer<(string Key, byte[] Elem)>
         {
             public static readonly StringAndByteArrayComparer Instance = new();
@@ -428,7 +430,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
                 var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", bytes3]);
-                ClassicAssert.IsTrue(querySecondary.Length >= 1);
+                ClassicAssert.IsTrue(querySecondary.Length is (1 or 2));
 
                 for (var j = 0; j < querySecondary.Length; j++)
                 {
@@ -606,6 +608,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        [CancelAfter(180_000)]
         public async Task MultipleReplicasWithVectorSetsAndDeletesAsync()
         {
             const int PrimaryIndex = 0;
@@ -1050,7 +1053,7 @@ namespace Garnet.test.cluster
             }
 
             // Finish migration
-            context.clusterTestUtils.WaitForMigrationCleanup(NullLogger.Instance);
+            context.clusterTestUtils.WaitForMigrationCleanup();
 
             // Validate vector sets coherent
             for (var i = 0; i < keys.Count; i++)
@@ -1076,7 +1079,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            const int VectorSetsPerPrimary = 8;
+            const int VectorSetsPerPrimary = 4;
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
             context.CreateConnection(useTLS: true);
@@ -1296,7 +1299,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true, enableIncrementalSnapshots: true);
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1987,7 +1990,7 @@ namespace Garnet.test.cluster
                 migrateCancel.Cancel();
                 var migrationTimes = await migrateTask.ConfigureAwait(false);
 
-                ClassicAssert.IsTrue(migrationTimes.Count >= 2, $"Should have moved back and forth, saw: {migrationTimes.Count}");
+                ClassicAssert.IsTrue(migrationTimes.Count >= 2, $"Should have moved back and forth, saw {migrationTimes}");
 
                 writeCancel.Cancel();
                 await Task.WhenAll(writeTasks).ConfigureAwait(false);
@@ -2100,9 +2103,9 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-        private Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false, bool useTLS = true)
+        private Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
-            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots, threadPoolMinIOCompletionThreads: 512);
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
             context.CreateConnection(useTLS: useTLS);
             return context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
         }

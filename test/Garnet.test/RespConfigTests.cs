@@ -11,31 +11,30 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
     [AllureNUnit]
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigTests : AllureTestBase
     {
         GarnetServer server;
-        private string memorySize = "17g";
-        private string indexSize = "64m";
-        private string objectStoreLogMemorySize = "17m";
-        private string objectStoreHeapMemorySize = "32m";
-        private string objectStoreIndexSize = "8m";
-        private bool useReviv;
+        private readonly string memorySizeStr = "17g";
+        private readonly string indexSizeStr = "64m";
+        private readonly string pageSizeStr = "32m";
+        private readonly bool useReviv;
 
-        public RespConfigTests(bool useReviv)
+        // The HLOG will always have at least two pages allocated.
+        internal const int MinLogAllocatedPageCount = 2;
+
+        public RespConfigTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -43,11 +42,9 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                memorySize: memorySize,
-                indexSize: indexSize,
-                objectStoreLogMemorySize: objectStoreLogMemorySize,
-                objectStoreIndexSize: objectStoreIndexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
+                memorySize: memorySizeStr,
+                indexSize: indexSizeStr,
+                pageSize: pageSizeStr,
                 useReviv: useReviv);
             server.Start();
         }
@@ -60,118 +57,141 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory / obj-log-memory
+        /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="smallerSize">Memory size smaller than the initial size</param>
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         /// <param name="largerThanBufferSize">Memory size larger than the buffer size</param>
         /// <param name="malformedSize">Malformed memory size string</param>
+        /// <remarks>Initial memory size for main log is 32GB</remarks>
         [Test]
-        [TestCase(StoreType.Main, "16g", "32g", "64g", "g4")]
-        [TestCase(StoreType.Main, "9gB", "28GB", "33G", "2gBB")]
-        [TestCase(StoreType.Object, "16m", "32m", "64m", "3bm")]
-        [TestCase(StoreType.Object, "5MB", "30M", "128mb", "44d")]
-        public void ConfigSetMemorySizeTest(StoreType storeType, string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
+        [TestCase("16g", "32g", "64g", "g4")]
+        [TestCase("9gB", "28GB", "33G", "2gBB")]
+        [TestCase("128m", "256m", "256GB", "3bm")]
+        [TestCase("500m", "1500M", "128GB", "44d")]
+        public void ConfigSetMemorySizeTest(string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
-            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
+            var option = "memory";
+            var metricName = "Log.AllocatedPageCount";
+            var metricType = InfoMetricsType.STORE;
+            var initMemorySize = memorySizeStr;
 
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
-            var bufferSize = ServerOptions.NextPowerOf2(currMemorySize);
-            var pageSize = storeType == StoreType.Main ? 32L * 1024 * 1024 : 4 * 1024; // default page size
+            var pageSize = ServerOptions.ParseSize(pageSizeStr, out _);
 
-            // Check initial MinEPC before any changes
+            var bufferSizeInBytes = ServerOptions.NextPowerOf2(currMemorySize);
+            Assert.That(bufferSizeInBytes / pageSize, Is.EqualTo(store.Log.BufferSize));
+
+            // expectedMaxAPC does not change after being set in AllocatorBase initialization
+            var expectedMaxAPC = (int)(RoundUp(currMemorySize, pageSize) / pageSize);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
+
+            // Check initial AllocatedPageCount before any changes
             var metrics = server.Metrics.GetInfoMetrics(metricType);
-            var miMinEPC = metrics.FirstOrDefault(mi => mi.Name == "Log.MinEmptyPageCount");
-            ClassicAssert.IsNotNull(miMinEPC);
-            ClassicAssert.IsTrue(long.TryParse(miMinEPC.Value, out var minEmptyPageCount));
-            var expectedMinEPC = (int)((bufferSize - currMemorySize) / pageSize);
-            ClassicAssert.AreEqual(expectedMinEPC, minEmptyPageCount);
+            var miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out var allocatedPageCount));
+            long expectedAPC = MinLogAllocatedPageCount;
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to the same value as current
             var result = db.Execute("CONFIG", "SET", option, initMemorySize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // MinEPC should remain unchanged
+            // miAPC should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miMinEPC = metrics.FirstOrDefault(mi => mi.Name == "Log.MinEmptyPageCount");
-            ClassicAssert.IsNotNull(miMinEPC);
-            ClassicAssert.IsTrue(long.TryParse(miMinEPC.Value, out minEmptyPageCount));
-            ClassicAssert.AreEqual(expectedMinEPC, minEmptyPageCount);
+            miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            // expectedAPC remains unchanged because we didn't add records
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to a smaller value than current
             result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Check that MinEPC has changed accordingly
+            // Check that miAPC has changed accordingly
             currMemorySize = ServerOptions.ParseSize(smallerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miMinEPC = metrics.FirstOrDefault(mi => mi.Name == "Log.MinEmptyPageCount");
-            ClassicAssert.IsNotNull(miMinEPC);
-            ClassicAssert.IsTrue(long.TryParse(miMinEPC.Value, out minEmptyPageCount));
-            expectedMinEPC = (int)((bufferSize - currMemorySize) / pageSize);
-            ClassicAssert.AreEqual(expectedMinEPC, minEmptyPageCount);
+            miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            // expectedAPC remains unchanged because we didn't add records
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to a larger value than current
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Check that MinEPC has changed accordingly
+            // Check that miAPC has changed accordingly
             currMemorySize = ServerOptions.ParseSize(largerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miMinEPC = metrics.FirstOrDefault(mi => mi.Name == "Log.MinEmptyPageCount");
-            ClassicAssert.IsNotNull(miMinEPC);
-            ClassicAssert.IsTrue(long.TryParse(miMinEPC.Value, out minEmptyPageCount));
-            expectedMinEPC = (int)((bufferSize - currMemorySize) / pageSize);
-            ClassicAssert.AreEqual(expectedMinEPC, minEmptyPageCount);
+            miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            // expectedAPC remains unchanged because we didn't add records
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size larger than the buffer size - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, largerThanBufferSize),
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, largerThanBufferSize),
                 string.Format(CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option));
 
-            // MinEPC should remain unchanged
+            // Page counts should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miMinEPC = metrics.FirstOrDefault(mi => mi.Name == "Log.MinEmptyPageCount");
-            ClassicAssert.IsNotNull(miMinEPC);
-            ClassicAssert.IsTrue(long.TryParse(miMinEPC.Value, out minEmptyPageCount));
-            ClassicAssert.AreEqual(expectedMinEPC, minEmptyPageCount);
+            miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size with a malformed size input - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
                 string.Format(CmdStrings.GenericErrIncorrectSizeFormat, option));
+
+            // Page counts should remain unchanged
+            metrics = server.Metrics.GetInfoMetrics(metricType);
+            miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
+            ClassicAssert.IsNotNull(miAPC);
+            ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
         }
 
         /// <summary>
         /// This test verifies that dynamically changing the index size configuration using CONFIG SET index / obj-index
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="smallerSize">Index size smaller than the initial size</param>
         /// <param name="largerSize">Index size larger than the initial size</param>
         /// <param name="illegalSize">Illegal index size (not a power of 2)</param>
         /// <param name="malformedSize">Malformed index size string</param>
+        /// <remarks>Initial index size for main log is 1MB</remarks>
         [Test]
-        [TestCase(StoreType.Main, "32m", "128m", "63m", "8d")]
-        [TestCase(StoreType.Main, "16mB", "256MB", "23m", "g8")]
-        [TestCase(StoreType.Object, "2m", "32m", "28m", "m9")]
-        [TestCase(StoreType.Object, "4Mb", "16mB", "129MB", "0.3gb")]
-        public void ConfigSetIndexSizeTest(StoreType storeType, string smallerSize, string largerSize, string illegalSize, string malformedSize)
+        [TestCase("32m", "128m", "63m", "8d")]
+        [TestCase("16mB", "256MB", "23m", "g8")]
+        [TestCase("2m", "512m", "28m", "m9")]
+        [TestCase("4Mb", "1024mB", "129MB", "0.3gb")]
+        public void ConfigSetIndexSizeTest(string smallerSize, string largerSize, string illegalSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var option = storeType == StoreType.Main ? "index" : "obj-index";
-            var initIndexSize = storeType == StoreType.Main ? indexSize : objectStoreIndexSize;
+            var metricType = InfoMetricsType.STORE;
+            var option = "index";
+            var initIndexSize = indexSizeStr;
 
             // Check initial index size before any changes
             var currIndexSize = ServerOptions.ParseSize(initIndexSize, out _);
             var metrics = server.Metrics.GetInfoMetrics(metricType);
-            var miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexSize");
+            var miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out var actualIndexSize));
             var expectedIndexSize = currIndexSize / 64;
@@ -183,7 +203,7 @@ namespace Garnet.test
 
             // Index size should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexSize");
+            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out actualIndexSize));
             ClassicAssert.AreEqual(expectedIndexSize, actualIndexSize);
@@ -195,87 +215,22 @@ namespace Garnet.test
             // Check that index size has changed accordingly
             currIndexSize = ServerOptions.ParseSize(largerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexSize");
+            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out actualIndexSize));
             expectedIndexSize = currIndexSize / 64;
             ClassicAssert.AreEqual(expectedIndexSize, actualIndexSize);
 
             // Try to set index size to a smaller value than current - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, smallerSize),
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, smallerSize),
                 string.Format(CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option));
 
             // Try to set index size to a value that is not a power of two - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, illegalSize),
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, illegalSize),
                 string.Format(CmdStrings.GenericErrIndexSizePowerOfTwo, option));
 
             // Try to set index size with a malformed size input - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
-                string.Format(CmdStrings.GenericErrIncorrectSizeFormat, option));
-        }
-
-        /// <summary>
-        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET object_store_heap_memory_target_size
-        /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
-        /// </summary>
-        /// <param name="smallerSize">Heap size smaller than the initial size</param>
-        /// <param name="largerSize">Heap size larger than the initial size</param>
-        /// <param name="malformedSize">Malformed heap size string</param>
-        [Test]
-        [TestCase("10m", "128m", "1.5mb")]
-        [TestCase("16m", "65m", "g6")]
-        public void ConfigObjHeapSizeTest(string smallerSize, string largerSize, string malformedSize)
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var option = "obj-heap-memory";
-            var currObjHeapSize = ServerOptions.ParseSize(objectStoreHeapMemorySize, out _);
-
-            // Check initial heap size before any changes
-            var metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            var miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
-            ClassicAssert.IsNotNull(miObjHeapTargetSize);
-            ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out var objHeapTargetSize));
-            ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
-
-            // Try to set heap size to the same value as current
-            var result = db.Execute("CONFIG", "SET", option, objectStoreHeapMemorySize);
-            ClassicAssert.AreEqual("OK", result.ToString());
-
-            // Heap size should remain unchanged
-            metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
-            ClassicAssert.IsNotNull(miObjHeapTargetSize);
-            ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
-            ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
-
-            // Try to set heap size to a smaller value than current
-            result = db.Execute("CONFIG", "SET", option, smallerSize);
-            ClassicAssert.AreEqual("OK", result.ToString());
-
-            // Check that heap size has changed accordingly
-            currObjHeapSize = ServerOptions.ParseSize(smallerSize, out _);
-            metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
-            ClassicAssert.IsNotNull(miObjHeapTargetSize);
-            ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
-            ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
-
-            // Try to set heap size to a larger value than current
-            result = db.Execute("CONFIG", "SET", option, largerSize);
-            ClassicAssert.AreEqual("OK", result.ToString());
-
-            // Check that heap size has changed accordingly
-            currObjHeapSize = ServerOptions.ParseSize(largerSize, out _);
-            metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
-            ClassicAssert.IsNotNull(miObjHeapTargetSize);
-            ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
-            ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
-
-            // Try to set heap size with a malformed size input - this should fail
-            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
                 string.Format(CmdStrings.GenericErrIncorrectSizeFormat, option));
         }
     }
@@ -283,25 +238,22 @@ namespace Garnet.test
 
 
     /// <summary>
-    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
+    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
     [AllureNUnit]
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigUtilizationTests : AllureTestBase
     {
         GarnetServer server;
-        private string memorySize = "3m";
-        private string indexSize = "1m";
-        private string objectStoreLogMemorySize = "2500";
-        private string objectStoreHeapMemorySize = "1m";
-        private string objectStoreIndexSize = "2048";
-        private string pageSize = "1024";
-        private bool useReviv;
+        private readonly string memorySize = "3m";
+        private readonly string indexSize = "1m";
+        private readonly string pageSize = "1024";
+        private readonly bool useReviv;
 
-        public RespConfigUtilizationTests(bool useReviv)
+        public RespConfigUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -312,10 +264,6 @@ namespace Garnet.test
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
-                objectStorePageSize: pageSize,
-                objectStoreLogMemorySize: objectStoreLogMemorySize,
-                objectStoreIndexSize: objectStoreIndexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
                 useReviv: useReviv);
             server.Start();
         }
@@ -331,28 +279,34 @@ namespace Garnet.test
         /// This test verifies that dynamically changing the memory size configuration using CONFIG SET
         /// incurs the expected shifts in the head and tail addresses of the store.
         /// </summary>
-        /// <param name="storeType">Store Type (Main / Object)</param>
         /// <param name="smallerSize">Memory size smaller than the initial size</param>
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         [Test]
-        [TestCase(StoreType.Main, "1m", "4m")]
-        [TestCase(StoreType.Main, "1024k", "4000k")]
-        [TestCase(StoreType.Object, "1024", "4000")]
-        [TestCase(StoreType.Object, "1024", "4096")]
-        public void ConfigSetMemorySizeUtilizationTest(StoreType storeType, string smallerSize, string largerSize)
+        [TestCase("1m", "4m")]
+        [TestCase("1024k", "4000k")]
+        [TestCase("4k", "8k")]
+        [TestCase("8k", "64k")]
+        public void ConfigSetInlineMemorySizeUtilizationTest(string smallerSize, string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
-            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
-            var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
+            var option = "memory";
+            var currMemorySize = TestUtils.GetEffectiveMemorySize(memorySize, pageSize, out var parsedPageSize);
+            var initialMemorySize = currMemorySize;
+
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
+
+            using var trimCompleteEvent = new ManualResetEventSlim(false);
+            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
 
             var garnetServer = redis.GetServer(TestUtils.EndPoint);
-            var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
-            ClassicAssert.AreEqual(storeType == StoreType.Main ? 64 : 24, info.TailAddress);
+            var info = TestUtils.GetStoreAddressInfo(garnetServer);
+            ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
             var i = 0;
-            var val = new RedisValue(new string('x', storeType == StoreType.Main ? 512 - 32 : 1));
+            var val = new RedisValue(new string('x', 512 - 32));
 
             // Insert records until head address moves
             var prevHead = info.HeadAddress;
@@ -360,54 +314,50 @@ namespace Garnet.test
             while (info.HeadAddress == prevHead)
             {
                 var key = $"key{i++:00000}";
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(key, val);
-                else
-                    _ = db.ListRightPush(key, [val]);
+                _ = db.StringSet(key, val);
 
                 prevHead = info.HeadAddress;
                 prevTail = info.TailAddress;
-                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
 
-            // Verify that records were inserted up to the configured memory size limit
-            Assert.That(prevTail, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - prevTail, Is.LessThanOrEqualTo(parsedPageSize));
-
-            // Try to set memory size to a smaller value than current
-            var result = db.Execute("CONFIG", "SET", option, smallerSize);
-            ClassicAssert.AreEqual("OK", result.ToString());
-
-            // Verify that head address moved forward
-            info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
-            Assert.That(info.HeadAddress, Is.GreaterThan(prevHead));
-
-            currMemorySize = TestUtils.GetEffectiveMemorySize(smallerSize, pageSize, out _);
-
-            // Insert records until head address moves
             prevHead = info.HeadAddress;
             prevTail = info.TailAddress;
-            while (info.HeadAddress == prevHead)
-            {
-                var key = $"key{i++:00000}";
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(key, val);
-                else
-                    _ = db.ListRightPush(key, [val]);
 
-                prevHead = info.HeadAddress;
-                prevTail = info.TailAddress;
-                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
-            }
+            // Verify that records were inserted up to the configured memory size limit.
+            // We may have overflowed by multiple pages.
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
 
-            // Verify that records were inserted up to the configured memory size limit
-            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
+            ////////////////////////////////////////////////////////
+            // Try to set memory size to a smaller value than current
+            currMemorySize = TestUtils.GetEffectiveMemorySize(smallerSize, pageSize, out _);
+            Assert.That(currMemorySize, Is.LessThan(initialMemorySize));
+            var result = db.Execute("CONFIG", "SET", option, smallerSize);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
+            // Insert records until head address moves
+            // Precondition: We have too much in memory for the smallSize and must evict.
+            Assert.That(prevTail - prevHead, Is.GreaterThan(tracker.TargetDeltaRange.high));
+
+            // Wait for the logSizeTracker to stabilize.
+            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker.ResizeTaskDelaySeconds)),
+                "Timeout occurred. Resizing did not happen within the specified time.");
+
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            prevHead = info.HeadAddress;
+            prevTail = info.TailAddress;
+
+            // Verify that records were inserted up to the configured memory size limit.
+            // We may have overflowed by multiple pages.
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
+
+            ////////////////////////////////////////////////////////
             // Try to set memory size to a larger value than current
+            currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
-            currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
             // Continue to insert records until new memory capacity is reached
             prevHead = info.HeadAddress;
@@ -415,84 +365,95 @@ namespace Garnet.test
             while (info.HeadAddress == prevHead)
             {
                 var key = $"key{i++:00000}";
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(key, val);
-                else
-                    _ = db.ListRightPush(key, [val]);
+                _ = db.StringSet(key, val);
 
                 prevHead = info.HeadAddress;
                 prevTail = info.TailAddress;
-                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
 
-            // Verify that memory is fully utilized
-            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
+            // Verify that memory is fully utilized and within memory bounds
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
         }
 
         /// <summary>
-        /// This test verifies recovery behavior after dynamically changing the memory size configuration using CONFIG SET.
+        /// This test verifies recovery behavior after dynamically changing the memory size configuration using CONFIG SET memory.
         /// The test fills the store to a larger capacity than the initial memory size, then verifies that recovering with the
         /// smaller initial memory size retains the last inserted keys in the expected initial capacity.
         /// </summary>
-        /// <param name="storeType">Store Type (Main / Object)</param>
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         [Test]
-        [TestCase(StoreType.Main, "4m")]
-        [TestCase(StoreType.Object, "4096")]
-        public void ConfigSetMemorySizeRecoveryTest(StoreType storeType, string largerSize)
+        [TestCase("4m")]
+        public void ConfigSetMemorySizeRecoveryTest(string largerSize)
         {
-            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
-            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
+            var option = "memory";
+            var initMemorySize = memorySize;
 
             var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
 
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
+            Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo((int)(currMemorySize / parsedPageSize)));
+
             int lastIdxSecondRound;
             int keysInsertedFirstRound;
+
+            // These are outside the individual blocks for debugging
+            var lastIdxFirstRound = -1;
+            var allocatedPagesFirstRound = -1;
+            var allocatedPagesSecondRound = -1;
+            long highTarget1 = -1, lowTarget1 = -1;
+            int maxAllocatedPageCount1 = -1;
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
-                var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
-                ClassicAssert.AreEqual(storeType == StoreType.Main ? 64 : 24, info.TailAddress);
+                var info = TestUtils.GetStoreAddressInfo(garnetServer);
+                ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
+
+                // Insert records until head address moves. We want to fit two records per page; pages are 1024 bytes so after subtracting
+                // PageHeader.Size we have 960 / 2 = 480 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
+                // more than 255, we have no optionals (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
+                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 480, so valueLength = 480-22 = 458 bytes.
+                // It's rounded up to kRecordAlignment (8) anyway.
+                var val = new RedisValue(new string('x', 458));
 
                 var i = 0;
-                var val = new RedisValue(new string('x', storeType == StoreType.Main ? 512 - 32 : 1));
-
-                // Insert records until head address moves
                 var prevHead = info.HeadAddress;
                 var prevTail = info.TailAddress;
                 while (info.HeadAddress == prevHead)
                 {
                     var key = $"key{i++:00000}";
-                    if (storeType == StoreType.Main)
-                        _ = db.StringSet(key, val);
-                    else
-                        _ = db.ListRightPush(key, [val]);
+                    _ = db.StringSet(key, val);
 
                     prevHead = info.HeadAddress;
                     prevTail = info.TailAddress;
-                    info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                    info = TestUtils.GetStoreAddressInfo(garnetServer);
                 }
 
-                var lastIdxFirstRound = i - 1;
+                lastIdxFirstRound = i - 1;
 
                 // Verify that records were inserted up to the configured memory size limit
-                Assert.That(prevTail, Is.LessThanOrEqualTo(currMemorySize));
-                Assert.That(currMemorySize - prevTail, Is.LessThanOrEqualTo(parsedPageSize));
+                // We may have overflowed by multiple pages.
+                Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
 
                 // Find the first key index that still exists in the server
                 ClassicAssert.IsTrue(db.KeyExists($"key{lastIdxFirstRound:00000}"));
                 var c = lastIdxFirstRound;
-                while (c > 0)
-                {
-                    if (!db.KeyExists($"key{--c:00000}")) break;
-                }
+                while (c > 0 && db.KeyExists($"key{--c:00000}"))
+                    continue;
 
                 // Record the number of keys inserted in the first round
                 keysInsertedFirstRound = lastIdxFirstRound + 1 - c;
+                allocatedPagesFirstRound = store.hlogBase.AllocatedPageCount - 1;   // APC includes the one-ahead page allocation
+                Assert.That(allocatedPagesFirstRound, Is.LessThanOrEqualTo(store.hlogBase.MaxAllocatedPageCount));
 
+                (highTarget1, lowTarget1) = tracker.TargetDeltaRange;
+                maxAllocatedPageCount1 = tracker.logAccessor.allocatorBase.MaxAllocatedPageCount;
+
+                ////////////////////////////////////////////////////////
                 // Try to set memory size to a larger value than current
                 var result = db.Execute("CONFIG", "SET", option, largerSize);
                 ClassicAssert.AreEqual("OK", result.ToString());
@@ -505,39 +466,54 @@ namespace Garnet.test
                 while (info.HeadAddress == prevHead)
                 {
                     var key = $"key{i++:00000}";
-                    if (storeType == StoreType.Main)
-                        _ = db.StringSet(key, val);
-                    else
-                        _ = db.ListRightPush(key, [val]);
+                    _ = db.StringSet(key, val);
 
                     prevHead = info.HeadAddress;
                     prevTail = info.TailAddress;
-                    info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                    info = TestUtils.GetStoreAddressInfo(garnetServer);
                 }
 
                 lastIdxSecondRound = i - 1;
+                allocatedPagesSecondRound = store.hlogBase.AllocatedPageCount - 1;  // APC includes the one-ahead page allocation
 
                 // Verify that memory is fully utilized
                 Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-                Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
 
+                // SAVE and wait for completion
                 garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
+            // Doing this here so lastIdxFirstRound remains visible for debugging without getting a warning.
+            Assert.That(lastIdxSecondRound, Is.GreaterThan(lastIdxFirstRound));
+
+            ///////////////////////////////////////////////////////////
             // Restart server with initial memory size and recover data
-            server.Dispose(false);
+            server.Dispose(deleteDir: false);
             server = TestUtils.CreateGarnetServer(null,
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
-                objectStorePageSize: pageSize,
-                objectStoreLogMemorySize: objectStoreLogMemorySize,
-                objectStoreIndexSize: objectStoreIndexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
                 useReviv: useReviv,
                 tryRecover: true);
             server.Start();
+
+            store = server.Provider.StoreWrapper.store;
+            tracker = store.Log.LogSizeTracker;
+            var allocatedPagesRestore = store.hlogBase.AllocatedPageCount - 1;  // APC includes the one-ahead page allocation
+
+            var (highTargetRestore, lowTargetRestore) = tracker.TargetDeltaRange;
+            Assert.That(highTargetRestore, Is.EqualTo(highTarget1));
+            Assert.That(lowTargetRestore, Is.EqualTo(lowTarget1));
+            var maxAllocatedPageCount2 = tracker.logAccessor.allocatorBase.MaxAllocatedPageCount;
+            Assert.That(maxAllocatedPageCount2, Is.EqualTo(maxAllocatedPageCount1));
+
+            // Recovery and insertion don't track sizes exactly the same way with logSizeTracker enabled, so this is not entirely deterministic; just verify the ranges.
+            Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(allocatedPagesFirstRound));
+            Assert.That(allocatedPagesRestore, Is.LessThanOrEqualTo(allocatedPagesSecondRound));
+            Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(lowTargetRestore / store.Log.allocatorBase.PageSize));
+            Assert.That(allocatedPagesRestore, Is.LessThanOrEqualTo(RoundUp(highTargetRestore, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize));
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -545,20 +521,19 @@ namespace Garnet.test
 
                 // Find the smallest key index that still exists in the server
                 var c = lastIdxSecondRound;
-                while (c > 0)
-                {
-                    if (!db.KeyExists($"key{--c:00000}"))
-                        break;
-                }
+                while (c > 0 && db.KeyExists($"key{--c:00000}"))
+                    continue;
 
-                // Verify that the number of existing keys matches the count of inserted keys in the first round of insertions
-                ClassicAssert.AreEqual(keysInsertedFirstRound, lastIdxSecondRound + 1 - c);
+                // Verify the head/tail addresses are within range and that the number of existing keys matches the head/tail range. We should have two keys per page.
+                var addressRange = store.Log.TailAddress - store.Log.HeadAddress;
+                var addressRangePages = RoundUp(addressRange, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize;
+                Assert.That(addressRange, Is.LessThanOrEqualTo(highTargetRestore));
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(allocatedPagesRestore * 2));   // AllocatedPageCount includes the "allocate-ahead" page
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(addressRangePages * 2));
 
                 // Verify that all previous keys are not present in the database
                 while (c > 0)
-                {
                     ClassicAssert.IsFalse(db.KeyExists($"key{--c:00000}"));
-                }
             }
         }
     }
@@ -567,21 +542,19 @@ namespace Garnet.test
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
     [AllureNUnit]
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigIndexUtilizationTests : AllureTestBase
     {
         GarnetServer server;
-        private string memorySize = "3m";
-        private string indexSize = "512";
-        private string objectStoreLogMemorySize = "16384";
-        private string objectStoreHeapMemorySize = "16384";
-        private string pageSize = "1024";
-        private bool useReviv;
+        private readonly string memorySize = "3m";
+        private readonly string indexSize = "512";
+        private readonly string pageSize = "1024";
+        private readonly bool useReviv;
 
-        public RespConfigIndexUtilizationTests(bool useReviv)
+        public RespConfigIndexUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -592,10 +565,6 @@ namespace Garnet.test
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
-                objectStorePageSize: pageSize,
-                objectStoreLogMemorySize: objectStoreLogMemorySize,
-                objectStoreIndexSize: indexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
                 useReviv: useReviv);
             server.Start();
         }
@@ -611,22 +580,18 @@ namespace Garnet.test
         /// This test verifies that dynamically changing the index size configuration using CONFIG SET
         /// incurs the expected shifts in the overflow buckets of the store, and that no data is lost in the process.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="largerSize1">Larger index size than configured</param>
         /// <param name="largerSize2">Larger index size than previous</param>
         [Test]
-        [TestCase(StoreType.Main, "1024", "4096")]
-        [TestCase(StoreType.Object, "1024", "4096")]
-        public void ConfigSetIndexSizeUtilizationTest(StoreType storeType, string largerSize1, string largerSize2)
+        [TestCase("1024", "4096")]
+        public void ConfigSetIndexSizeUtilizationTest(string largerSize1, string largerSize2)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = storeType == StoreType.Main ? "index" : "obj-index";
+            var option = "index";
             var parsedIndexSize = ServerOptions.ParseSize(indexSize, out _);
 
-            var currIndexSize = storeType == StoreType.Main
-                ? server.Provider.StoreWrapper.store.IndexSize
-                : server.Provider.StoreWrapper.objectStore.IndexSize;
+            var currIndexSize = server.Provider.StoreWrapper.store.IndexSize;
 
             // Verify initial index size and overflow bucket allocations are zero
             ClassicAssert.AreEqual(parsedIndexSize / 64, currIndexSize);
@@ -640,12 +605,7 @@ namespace Garnet.test
 
             // Insert first batch of data
             for (var i = 0; i < 250; i++)
-            {
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(keys[i], val);
-                else
-                    _ = db.ListRightPush(keys[i], [val]);
-            }
+                _ = db.StringSet(keys[i], val);
 
             // Verify that overflow bucket allocations are non-zero after initial insertions
             var currOverflowBucketAllocations = GetOverflowBucketAllocations();
@@ -656,18 +616,15 @@ namespace Garnet.test
             var result = db.Execute("CONFIG", "SET", option, largerSize1);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Verify that overflow bucket allocations have decreased
+            // Verify that overflow bucket allocations have not increased after growing the index.
+            // Note: the split algorithm may produce equal overflow counts in some cases because
+            // it inserts chain-start entries for both sides of the split, so we use LessOrEqual.
             currOverflowBucketAllocations = GetOverflowBucketAllocations();
-            ClassicAssert.Less(currOverflowBucketAllocations, prevOverflowBucketAllocations);
+            ClassicAssert.LessOrEqual(currOverflowBucketAllocations, prevOverflowBucketAllocations);
 
             // Insert second batch of data
             for (var i = 250; i < 500; i++)
-            {
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(keys[i], val);
-                else
-                    _ = db.ListRightPush(keys[i], [val]);
-            }
+                _ = db.StringSet(keys[i], val);
 
             prevOverflowBucketAllocations = GetOverflowBucketAllocations();
 
@@ -675,42 +632,36 @@ namespace Garnet.test
             result = db.Execute("CONFIG", "SET", option, largerSize2);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Verify that overflow bucket allocations have decreased again
+            // Verify that overflow bucket allocations have not increased again
             currOverflowBucketAllocations = GetOverflowBucketAllocations();
-            ClassicAssert.Less(currOverflowBucketAllocations, prevOverflowBucketAllocations);
+            ClassicAssert.LessOrEqual(currOverflowBucketAllocations, prevOverflowBucketAllocations);
 
             // Verify that all keys still exist in the database
             foreach (var key in keys)
-            {
                 ClassicAssert.IsTrue(db.KeyExists(key));
-            }
 
             long GetOverflowBucketAllocations() =>
-                storeType == StoreType.Main
-                    ? server.Provider.StoreWrapper.store.OverflowBucketAllocations
-                    : server.Provider.StoreWrapper.objectStore.OverflowBucketAllocations;
+                server.Provider.StoreWrapper.store.OverflowBucketAllocations;
         }
     }
 
     /// <summary>
-    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
+    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
     [AllureNUnit]
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigHeapUtilizationTests : AllureTestBase
     {
         GarnetServer server;
-        private string memorySize = "3m";
-        private string indexSize = "512";
-        private string objectStoreLogMemorySize = "8192";
-        private string objectStoreHeapMemorySize = "4096";
-        private string pageSize = "1024";
-        private bool useReviv;
+        private readonly string memorySize = "3m";
+        private readonly string indexSize = "512";
+        private readonly string pageSize = "1024";
+        private readonly bool useReviv;
 
-        public RespConfigHeapUtilizationTests(bool useReviv)
+        public RespConfigHeapUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -721,10 +672,6 @@ namespace Garnet.test
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
-                objectStorePageSize: pageSize,
-                objectStoreLogMemorySize: objectStoreLogMemorySize,
-                objectStoreIndexSize: indexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
                 useReviv: useReviv);
             server.Start();
         }
@@ -737,53 +684,64 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET
-        /// incurs a reduction in the empty page count of the object store.
+        /// This test verifies that dynamically shrinking the main-log memory target via CONFIG SET memory
+        /// drives the log size tracker to evict pages / release heap so that total memory usage is reduced.
         /// </summary>
-        /// <param name="largerSize">Heap size larger than configured size</param>
+        /// <param name="smallerSize">Memory size smaller than the current total log+heap usage</param>
         [Test]
         [TestCase("8192")]
-        public void ConfigSetHeapSizeUtilizationTest(string largerSize)
+        public void ConfigSetHeapMemorySizeUtilizationTest(string smallerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = "obj-heap-memory";
+            var option = "memory";
 
-            // Verify that initial empty page count is zero
-            var objectStore = server.Provider.StoreWrapper.objectStore;
-            ClassicAssert.AreEqual(0, objectStore.Log.EmptyPageCount);
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
 
-            // Add objects to store to fill up heap
+            // Verify initial state: no data yet, allocated page count at the minimum.
+            ClassicAssert.AreEqual(RespConfigTests.MinLogAllocatedPageCount, store.Log.AllocatedPageCount);
+
+            using var trimCompleteEvent = new ManualResetEventSlim(false);
+            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
+
+            // Insert enough list objects so that (a) the inline log grows beyond MinResizeTargetPageCount pages
+            // (required before DetermineEvictionRange can evict anything), and (b) the tracked heap size is
+            // well above the new target we're about to configure. Each list contributes ~4KB of heap
+            // (16 items * 256 bytes), and each record adds a small inline entry to the log.
+            const int numKeys = 128;
             var values = new RedisValue[16];
+            var valPayload = new string('x', 256);
             for (var i = 0; i < values.Length; i++)
-                values[i] = "x";
+                values[i] = valPayload;
+            for (var i = 0; i < numKeys; i++)
+                _ = db.ListRightPush($"key{i:00000}", values);
 
-            for (var i = 0; i < 8; i++)
-            {
-                var key = $"key{i++:00000}";
-                _ = db.ListRightPush(key, values);
-            }
+            // Sanity-check the preconditions for the shrink/eviction we are about to trigger.
+            var apcBefore = store.Log.AllocatedPageCount;
+            var heapBefore = tracker.LogHeapSizeBytes;
+            Assert.That(apcBefore, Is.GreaterThan(LogSizeTracker.MinResizeTargetPageCount),
+                "Test precondition: need more than MinResizeTargetPageCount pages for eviction to be possible.");
+            Assert.That(heapBefore, Is.GreaterThan(0), "Test precondition: heap should be non-empty after inserts.");
 
-            // Wait for log size tracker
-            var sizeTrackerDelay =
-                TimeSpan.FromSeconds(
-                    LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator,
-                        CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds + 2);
-            Thread.Sleep(sizeTrackerDelay);
-
-            // Verify that empty page count has increased
-            ClassicAssert.Greater(objectStore.Log.EmptyPageCount, 0);
-            var prevEpc = objectStore.Log.EmptyPageCount;
-
-            // Try to set heap size to a larger value than current
-            var result = db.Execute("CONFIG", "SET", option, largerSize);
+            // Shrink the memory target. The 'shrink' branch of LogSizeTracker.UpdateTargetSize signals the
+            // resizer task; because TotalSize is now well above highTargetSize, the task calls
+            // DetermineEvictionRange + ShiftAddresses and then invokes PostMemoryTrim.
+            var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
+            var smallerTarget = ServerOptions.ParseSize(smallerSize, out _);
+            Assert.That(tracker.TargetSize, Is.EqualTo(smallerTarget));
 
-            // Wait for log size tracker
-            Thread.Sleep(sizeTrackerDelay);
+            // Wait for the trim callback.
+            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker.ResizeTaskDelaySeconds)),
+                "Timeout occurred. PostMemoryTrim was not invoked after CONFIG SET memory shrink.");
 
-            // Verify that empty page count has decreased
-            ClassicAssert.Less(objectStore.Log.EmptyPageCount, prevEpc);
+            // Verify that memory usage actually dropped: we expect at least one of the allocated page count
+            // or the tracked heap size to have decreased as a result of the eviction scan.
+            var apcAfter = store.Log.AllocatedPageCount;
+            var heapAfter = tracker.LogHeapSizeBytes;
+            Assert.That(apcAfter < apcBefore || heapAfter < heapBefore, Is.True,
+                $"Expected APC ({apcBefore}->{apcAfter}) or heap ({heapBefore}->{heapAfter}) to decrease after trim.");
         }
     }
 }

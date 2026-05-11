@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using Allure.NUnit;
 using Garnet.test;
@@ -10,8 +11,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.InputOutputParameterTests
 {
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
+    using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -21,65 +22,77 @@ namespace Tsavorite.test.InputOutputParameterTests
         const int MultValue = 100;
         const int NumRecs = 10;
 
-        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
+        private ClientSession<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
-        internal class UpsertInputFunctions : SessionFunctionsBase<int, int, int, int, Empty>
+        internal class UpsertInputFunctions : SessionFunctionsBase<int, int, Empty>
         {
             internal long lastWriteAddress;
 
-            public override bool ConcurrentReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                lastWriteAddress = readInfo.Address;
-                return SingleReader(ref key, ref input, ref value, ref output, ref readInfo);
-            }
-
             /// <inheritdoc/>
-            public override bool SingleReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref ReadInfo readInfo)
             {
-                ClassicAssert.AreEqual(key * input, value);
+                ClassicAssert.AreEqual(srcLogRecord.Key.AsRef<int>() * input, srcLogRecord.ValueSpan.AsRef<int>());
                 lastWriteAddress = readInfo.Address;
-                output = value + AddValue;
+                output = srcLogRecord.ValueSpan.AsRef<int>() + AddValue;
                 return true;
             }
 
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-                => SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, WriteReason.Upsert, ref recordInfo);
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            {
+                RecordSizeInfo sizeInfo = new();    // unused by InitialWriter
+                return InitialWriter(ref logRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
+            }
 
             /// <inheritdoc/>
-            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastWriteAddress = upsertInfo.Address;
-                dst = output = src * input;
+                ref var value = ref logRecord.ValueSpan.AsRef<int>();
+                value = output = src.AsRef<int>() * input;
                 return true;
             }
             /// <inheritdoc/>
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reasons)
+            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
             {
                 ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
-                ClassicAssert.AreEqual(key * input, dst);
-                ClassicAssert.AreEqual(dst, output);
-            }
-
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-                => InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-
-            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                lastWriteAddress = rmwInfo.Address;
-                value = output = key * input;
-                return true;
-            }
-            /// <inheritdoc/>
-            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo)
-            {
-                ClassicAssert.AreEqual(lastWriteAddress, rmwInfo.Address);
-                ClassicAssert.AreEqual(key * input, value);
+                ref var value = ref dstLogRecord.ValueSpan.AsRef<int>();
+                ClassicAssert.AreEqual(dstLogRecord.Key.AsRef<int>() * input, value);
                 ClassicAssert.AreEqual(value, output);
             }
+
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                RecordSizeInfo sizeInfo = new();    // unused by InitialUpdater
+                return InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
+
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                lastWriteAddress = rmwInfo.Address;
+                ref var value = ref logRecord.ValueSpan.AsRef<int>();
+                value = output = logRecord.Key.AsRef<int>() * input;
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                ClassicAssert.AreEqual(lastWriteAddress, rmwInfo.Address);
+                ref var value = ref dstLogRecord.ValueSpan.AsRef<int>();
+                ClassicAssert.AreEqual(dstLogRecord.Key.AsRef<int>() * input, value);
+                ClassicAssert.AreEqual(value, output);
+            }
+
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(int), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int), ValueIsObject = false };
         }
 
         [SetUp]
@@ -92,13 +105,13 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 22,
+                LogMemorySize = 1L << 22,
                 SegmentSize = 1L << 22,
                 PageSize = 1L << 10
-            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
+            session = store.NewSession<TestSpanByteKey, int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
             bContext = session.BasicContext;
         }
 
@@ -130,9 +143,10 @@ namespace Tsavorite.test.InputOutputParameterTests
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     var tailAddress = store.Log.TailAddress;
+                    var upsertOptions = new UpsertOptions();
                     status = useRMW
-                        ? bContext.RMW(ref key, ref input, ref output, out var recordMetadata)
-                        : bContext.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
+                        ? bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, out var recordMetadata)
+                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, SpanByte.FromPinnedVariable(ref key), ref output, ref upsertOptions, out recordMetadata);
                     if (loading)
                     {
                         if (useRMW)
@@ -153,7 +167,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    _ = bContext.Read(ref key, ref input, ref output);
+                    _ = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output);
                     ClassicAssert.AreEqual(key * input + AddValue, output);
                 }
             }
@@ -165,7 +179,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             loading = false;
             input *= input;
 
-            // ConcurrentWriter (update existing records)
+            // InPlaceWriter (update existing records)
             doWrites();
             doReads();
         }

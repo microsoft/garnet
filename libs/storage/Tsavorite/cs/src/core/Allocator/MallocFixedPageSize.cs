@@ -13,46 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal sealed class CountdownWrapper
-    {
-        // Separate event for sync code and tcs for async code: Do not block on async code.
-        private readonly CountdownEvent syncEvent;
-        private readonly TaskCompletionSource<int> asyncTcs;
-        int remaining;
-
-        internal CountdownWrapper(int count, bool isAsync)
-        {
-            if (isAsync)
-            {
-                asyncTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-                remaining = count;
-                return;
-            }
-            syncEvent = new CountdownEvent(count);
-        }
-
-        internal bool IsCompleted => syncEvent is null ? remaining == 0 : syncEvent.IsSet;
-
-        internal void Wait() => syncEvent.Wait();
-        internal async ValueTask WaitAsync(CancellationToken cancellationToken)
-        {
-            using var reg = cancellationToken.Register(() => asyncTcs.TrySetCanceled());
-            await asyncTcs.Task.ConfigureAwait(false);
-        }
-
-        internal void Decrement()
-        {
-            if (asyncTcs is not null)
-            {
-                Debug.Assert(remaining > 0);
-                if (Interlocked.Decrement(ref remaining) == 0)
-                    asyncTcs.TrySetResult(0);
-                return;
-            }
-            syncEvent.Signal();
-        }
-    }
-
     /// <summary>
     /// Memory allocator for objects
     /// </summary>
@@ -79,7 +39,7 @@ namespace Tsavorite.core
         internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
-        private SemaphoreSlim checkpointSemaphore;
+        private TaskCompletionSource<bool> checkpointTcs;
 
         private readonly ConcurrentQueue<long> freeList;
 
@@ -307,12 +267,10 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
-            var s = checkpointSemaphore;
-            await s.WaitAsync(token).ConfigureAwait(false);
-            s.Release();
+            await checkpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        public SemaphoreSlim GetCheckpointSemaphore() => checkpointSemaphore;
+        public Task GetCheckpointTask() => checkpointTcs.Task;
 
         /// <summary>
         /// Public facing persistence API
@@ -339,7 +297,7 @@ namespace Tsavorite.core
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
             checkpointCallbackCount = numLevels;
-            checkpointSemaphore = new SemaphoreSlim(0);
+            checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
@@ -393,7 +351,7 @@ namespace Tsavorite.core
 
             if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                checkpointSemaphore.Release();
+                checkpointTcs.TrySetResult(true);
             }
         }
 

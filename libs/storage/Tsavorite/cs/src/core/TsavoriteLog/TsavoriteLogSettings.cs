@@ -14,7 +14,7 @@ namespace Tsavorite.core
     public delegate byte[] GetMemory(int minLength);
 
     /// <summary>
-    /// Type of checksum to add to log
+    /// Type of checksum to add to TsavoriteLog
     /// </summary>
     public enum LogChecksumType
     {
@@ -29,7 +29,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Tsavorite Log Settings
+    /// Tsavorite Log LogSettings
     /// </summary>
     public class TsavoriteLogSettings : IDisposable
     {
@@ -60,7 +60,7 @@ namespace Tsavorite.core
         public long MemorySize = 1L << 23;
 
         /// <summary>
-        /// Support bit-based setting of memory size for backward compatibility, use MemorySize directly for simplicity.
+        /// Support bit-based setting of memory size for backward compatibility, use LogMemorySize directly for simplicity.
         /// </summary>
         public int MemorySizeBits { set { MemorySize = 1L << value; } }
 
@@ -76,7 +76,7 @@ namespace Tsavorite.core
         public int SegmentSizeBits { set { SegmentSize = 1L << value; } }
 
         /// <summary>
-        /// Log commit manager - if you want to override the default implementation of commit.
+        /// TsavoriteLog commit manager - if you want to override the default implementation of commit.
         /// </summary>
         public ILogCommitManager LogCommitManager = null;
 
@@ -93,7 +93,7 @@ namespace Tsavorite.core
         public GetMemory GetMemory = null;
 
         /// <summary>
-        /// Type of checksum to add to log
+        /// Type of checksum to add to TsavoriteLog
         /// </summary>
         public LogChecksumType LogChecksum = LogChecksumType.None;
 
@@ -121,7 +121,7 @@ namespace Tsavorite.core
         public bool RemoveOutdatedCommits = true;
 
         /// <summary>
-        /// Log commit policy that influences the behavior of Commit() calls.
+        /// TsavoriteLog commit policy that influences the behavior of Commit() calls.
         /// </summary>
         public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
 
@@ -129,11 +129,6 @@ namespace Tsavorite.core
         /// Try to recover from latest commit, if available
         /// </summary>
         public bool TryRecoverLatest = true;
-
-        /// <summary>
-        /// SafeTailAddress refresh frequency in milliseconds. -1 => disabled; 0 => immediate refresh after every enqueue, >1 => refresh period in milliseconds.
-        /// </summary>
-        public int SafeTailRefreshFrequencyMs = -1;
 
         /// <summary>
         /// Whether we automatically commit the log as records are inserted
@@ -204,12 +199,14 @@ namespace Tsavorite.core
 
         internal LogSettings GetLogSettings()
         {
+            var pageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize);
             return new LogSettings
             {
                 LogDevice = LogDevice,
-                PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
+                PageSizeBits = pageSizeBits,
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
-                MemorySizeBits = ReadOnlyMode ? 0 : Utility.NumBitsPreviousPowerOf2(MemorySize),
+                MemorySize = ReadOnlyMode ? 0 : MemorySize,
+                PageCount = (int)(MemorySize >> pageSizeBits),
                 ReadCopyOptions = ReadCopyOptions.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,

@@ -29,9 +29,9 @@ namespace Garnet
             if (lstKey.Length == 0 || lstKeyB.Length == 0 || lstKeyC.Length == 0)
                 return false;
 
-            AddKey(lstKey, LockType.Exclusive, true);
-            AddKey(lstKeyB, LockType.Exclusive, true);
-            AddKey(lstKeyC, LockType.Exclusive, true);
+            AddKey(lstKey, LockType.Exclusive, StoreType.Object);
+            AddKey(lstKeyB, LockType.Exclusive, StoreType.Object);
+            AddKey(lstKeyC, LockType.Exclusive, StoreType.Object);
 
             return true;
         }
@@ -45,7 +45,7 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var elements = new ArgSlice[10];
+            var elements = new PinnedSpanByte[10];
 
             var lstKeyA = GetNextArg(ref procInput, ref offset);
             var lstKeyB = GetNextArg(ref procInput, ref offset);

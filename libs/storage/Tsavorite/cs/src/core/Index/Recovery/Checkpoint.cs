@@ -26,9 +26,9 @@ namespace Tsavorite.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
 
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -36,7 +36,6 @@ namespace Tsavorite.core
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
         internal HybridLogCheckpointInfo _hybridLogCheckpoint;
-        internal HybridLogCheckpointInfo _lastSnapshotCheckpoint;
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
@@ -58,17 +57,6 @@ namespace Tsavorite.core
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
-        internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
-        {
-            _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
-            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray(), deltaLog);
-        }
-
-        internal void CleanupLogIncrementalCheckpoint()
-        {
-            checkpointManager.CleanupLogIncrementalCheckpoint(_hybridLogCheckpointToken);
-        }
-
         internal void WriteIndexMetaInfo()
         {
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
@@ -87,12 +75,6 @@ namespace Tsavorite.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-        }
-
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
-            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
-        {
-            throw new NotImplementedException();
         }
 
         // #endregion

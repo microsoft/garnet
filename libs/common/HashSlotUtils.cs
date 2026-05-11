@@ -10,8 +10,6 @@ namespace Garnet.common
 {
     public static unsafe class HashSlotUtils
     {
-        public const ushort MaxHashSlot = 16_383;
-
         /// <summary>
         /// This table is based on the CRC-16-CCITT polynomial (0x1021)
         /// </summary>
@@ -74,18 +72,23 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Compute hash slot from the given ArgSlice
+        /// </summary>
+        public static unsafe ushort HashSlot(PinnedSpanByte argSlice)
+            => HashSlot(argSlice.ToPointer(), argSlice.Length);
+
+        /// <summary>
         /// Compute hash slot from the given SpanByte
         /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
-        public static unsafe ushort HashSlot(ref SpanByte key)
-            => HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
+        public static unsafe ushort HashSlot(ReadOnlySpan<byte> key)
+        {
+            fixed (byte* keyPtr = key)
+                return HashSlot(keyPtr, key.Length);
+        }
 
         /// <summary>
         /// Compute hash slot of given data
         /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
         public static unsafe ushort HashSlot(Span<byte> key)
         {
             fixed (byte* keyPtr = key)
@@ -103,14 +106,14 @@ namespace Garnet.common
             var startPtr = keyPtr;
             var end = keyPtr + ksize;
 
-            // Find first occurrence of '{'
+            // Find first occurence of '{'
             while (startPtr < end && *startPtr != '{')
             {
                 startPtr++;
             }
 
             // Return early if did not find '{'
-            if (startPtr == end) return (ushort)(Hash(keyPtr, ksize) & MaxHashSlot);
+            if (startPtr == end) return (ushort)(Hash(keyPtr, ksize) & 16383);
 
             var endPtr = startPtr + 1;
 
@@ -118,10 +121,10 @@ namespace Garnet.common
             while (endPtr < end && *endPtr != '}') { endPtr++; }
 
             // Return early if did not find '}' after '{'
-            if (endPtr == end || endPtr == startPtr + 1) return (ushort)(Hash(keyPtr, ksize) & MaxHashSlot);
+            if (endPtr == end || endPtr == startPtr + 1) return (ushort)(Hash(keyPtr, ksize) & 16383);
 
             // Return hash for byte sequence between brackets
-            return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & MaxHashSlot);
+            return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & 16383);
         }
     }
 }

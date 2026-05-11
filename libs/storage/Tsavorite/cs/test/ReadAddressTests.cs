@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.test;
@@ -14,18 +16,23 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.readaddress
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    public struct KeyStruct(long first)
+    public struct KeyStruct(long first) : IKey
     {
         public long key = first;
 
+        /// Not always pinned, so don't assume it is
+        public readonly bool IsPinned => false;
+
+        [UnscopedRef]
+        public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(new(in key));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         public override readonly string ToString() => key.ToString();
-
-        internal struct Comparer : IKeyComparer<KeyStruct>
-        {
-            public readonly long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.key);
-
-            public readonly bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.key == k2.key;
-        }
     }
 
     public struct ValueStruct(long value)
@@ -38,8 +45,8 @@ namespace Tsavorite.test.readaddress
 
 namespace Tsavorite.test.readaddress
 {
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -57,92 +64,100 @@ namespace Tsavorite.test.readaddress
         {
             public long value;
             public long address;
+            public RecordInfo recordInfo;
 
-            public override readonly string ToString() => $"val {value}; addr {address}";
+            public override readonly string ToString() => $"val {value}; addr {address}; RecordInfo {recordInfo}";
         }
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        public enum UseReadCache { NoReadCache, ReadCache }
-
-        internal class Functions : SessionFunctionsBase<KeyStruct, ValueStruct, ValueStruct, Output, Empty>
+        internal class Functions : SessionFunctionsBase<ValueStruct, Output, Empty>
         {
-            internal long lastWriteAddress = Constants.kInvalidAddress;
+            internal long lastWriteAddress = LogAddress.kInvalidAddress;
             readonly bool useReadCache;
             internal ReadCopyOptions readCopyOptions = ReadCopyOptions.None;
-            bool preserveCopyUpdaterSource;
+            readonly bool preserveCopyUpdaterSource;
 
             internal Functions(bool preserveCopyUpdaterSource = false)
             {
                 this.preserveCopyUpdaterSource = preserveCopyUpdaterSource;
                 foreach (var arg in TestContext.CurrentContext.Test.Arguments)
                 {
-                    if (arg is UseReadCache urc)
+                    if (arg is ReadCacheMode urc)
                     {
-                        useReadCache = urc == UseReadCache.ReadCache;
+                        useReadCache = urc == ReadCacheMode.UseRC;
                         continue;
                     }
                 }
             }
 
-            public override bool ConcurrentReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ValueStruct input, ref Output output, ref ReadInfo readInfo)
             {
-                output.value = SetReadOutput(key.key, value.value);
+                output.value = SetReadOutput(srcLogRecord.Key.AsRef<KeyStruct>().key, srcLogRecord.ValueSpan.AsRef<ValueStruct>().value);
                 output.address = readInfo.Address;
-                return true;
-            }
-
-            public override bool SingleReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo)
-            {
-                output.value = SetReadOutput(key.key, value.value);
-                output.address = readInfo.Address;
+                output.recordInfo = srcLogRecord.Info;
                 return true;
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override bool SingleWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo)
             {
-                dst = src;
+                dstLogRecord.ValueSpan.AsRef<ValueStruct>() = src.AsRef<ValueStruct>();
                 output.address = upsertInfo.Address;
+                output.recordInfo = dstLogRecord.Info;
                 lastWriteAddress = upsertInfo.Address;
                 return true;
             }
 
-            public override bool InitialUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
-                output.value = value.value = input.value;
+                output.value = logRecord.ValueSpan.AsRef<ValueStruct>().value = input.value;
+                output.recordInfo = logRecord.Info;
                 return true;
             }
 
-            public override bool CopyUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
-                output.value = newValue.value = input.value;
+                output.value = dstLogRecord.ValueSpan.AsRef<ValueStruct>().value = input.value;
+                output.recordInfo = dstLogRecord.Info;
                 rmwInfo.PreserveCopyUpdaterSourceRecord = preserveCopyUpdaterSource;
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            /// <inheritdoc/>
+            public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ValueStruct input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref ValueStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ValueStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
+
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
+                Assert.That(output.recordInfo.IsNull, Is.Not.True);
                 if (status.Found)
                 {
                     if (useReadCache && readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
-                        ClassicAssert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
+                        ClassicAssert.AreEqual(LogAddress.kInvalidAddress, recordMetadata.Address, $"key {diskLogRecord.Key.ToShortString()}");
                     else
-                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
+                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {diskLogRecord.Key.ToShortString()}");  // Should agree with what InitialWriter set
                 }
             }
 
-            public override void RMWCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
+                Assert.That(output.recordInfo.IsNull, Is.Not.True);
                 if (status.Found)
                     ClassicAssert.AreEqual(output.address, recordMetadata.Address);
             }
@@ -150,7 +165,7 @@ namespace Tsavorite.test.readaddress
 
         private class TestStore : IDisposable
         {
-            internal TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+            internal TsavoriteKV<StructStoreFunctions, StructAllocator> store;
             internal IDevice logDevice;
             private readonly bool flush;
 
@@ -170,10 +185,10 @@ namespace Tsavorite.test.readaddress
                     ReadCopyOptions = readCopyOptions,
                     // Use small-footprint values
                     PageSize = 1L << 12, // (4K pages)
-                    MemorySize = 1L << 20, // (1M memory for main log)
+                    LogMemorySize = 1L << 20, // (1M memory for main log)
 
                     CheckpointDir = Path.Join(MethodTestDir, "chkpt")
-                }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }
@@ -191,7 +206,7 @@ namespace Tsavorite.test.readaddress
             internal async Task Populate(bool useRMW, bool preserveCopyUpdaterSource = false)
             {
                 var functions = new Functions(preserveCopyUpdaterSource);
-                using var session = store.NewSession<ValueStruct, Output, Empty, Functions>(functions);
+                using var session = store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(functions);
                 var bContext = session.BasicContext;
 
                 var prevLap = 0;
@@ -210,8 +225,8 @@ namespace Tsavorite.test.readaddress
                     var value = new ValueStruct(key.key + LapOffset(lap));
 
                     var status = useRMW
-                        ? bContext.RMW(ref key, ref value)
-                        : bContext.Upsert(ref key, ref value);
+                        ? bContext.RMW(key, ref value)
+                        : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref value));
 
                     if (status.IsPending)
                         await bContext.CompletePendingAsync().ConfigureAwait(false);
@@ -221,15 +236,15 @@ namespace Tsavorite.test.readaddress
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == DeleteLap)
-                        _ = bContext.Delete(ref key);
+                        _ = bContext.Delete(key);
                 }
 
                 await Flush().ConfigureAwait(false);
             }
 
-            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput)
+            internal bool ProcessChainRecord(int lap, ref Output actualOutput)
             {
-                var recordInfo = recordMetadata.RecordInfo;
+                var recordInfo = actualOutput.recordInfo;
                 ClassicAssert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(DefaultKeyToScan, LapOffset(lap) + DefaultKeyToScan);
 
@@ -241,7 +256,7 @@ namespace Tsavorite.test.readaddress
                 return recordInfo.PreviousAddress >= store.Log.BeginAddress;
             }
 
-            internal static void ProcessNoKeyRecord(bool useRMW, Status status, RecordInfo recordInfo, ref Output actualOutput, int keyOrdinal)
+            internal static void ProcessNoKeyRecord(Status status, RecordInfo recordInfo, ref Output actualOutput, int keyOrdinal)
             {
                 if (status.Found)
                 {
@@ -264,20 +279,20 @@ namespace Tsavorite.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void VersionedReadTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public void VersionedReadTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -294,8 +309,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out _)
-                        : bContext.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _);
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out _)
+                        : bContext.ReadAtAddress(readAtAddress, key, ref input, ref output, ref readOptions, out _);
 
                     if (status.IsPending)
                     {
@@ -303,14 +318,14 @@ namespace Tsavorite.test.readaddress
                         _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
 
-        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
+        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions
         {
             readonly TestStore testStore;
             internal int numRecords;
@@ -320,15 +335,13 @@ namespace Tsavorite.test.readaddress
 
             public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
+                Output output = new() { address = recordMetadata.Address, value = SetReadOutput(logRecord.Key.AsRef<KeyStruct>().key, logRecord.ValueSpan.AsRef<ValueStruct>().value), recordInfo = logRecord.Info };
                 int lap = MaxLap - ++numRecords;
-                ClassicAssert.AreEqual(lap != 0, testStore.ProcessChainRecord(new(StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
+                ClassicAssert.AreEqual(lap != 0, testStore.ProcessChainRecord(lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
                 ClassicAssert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
                 return stopAt != numRecords;
             }
@@ -352,7 +365,7 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
-                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, key));
                 ClassicAssert.AreEqual(MaxLap, scanFunctions.numRecords);
             }
         }
@@ -371,26 +384,26 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
-                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, key));
                 ClassicAssert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void ReadAtAddressTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public void ReadAtAddressTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -406,7 +419,7 @@ namespace Tsavorite.test.readaddress
                 for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                     {
@@ -415,28 +428,28 @@ namespace Tsavorite.test.readaddress
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
 
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
 
         // Test is similar to others but tests the Overload where RadCopy*.None is set -- probably don't need all combinations of test but doesn't hurt
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async Task ReadAtAddressCopyOptNoRcTest(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public async Task ReadAtAddressCopyOptNoRcTest(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW).ConfigureAwait(false);
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -452,33 +465,34 @@ namespace Tsavorite.test.readaddress
                 {
                     Output output = new();
                     Status status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult(out recordMetadata);
+                    Assert.That(output.recordInfo.Tombstone, Is.EqualTo(lap == DeleteLap), $"lap {lap}");
 
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async ValueTask ReadNoKeyTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public async ValueTask ReadNoKeyTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW).ConfigureAwait(false);
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -504,7 +518,7 @@ namespace Tsavorite.test.readaddress
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
 
-                    TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);
+                    TestStore.ProcessNoKeyRecord(status, output.recordInfo, ref output, keyOrdinal);
                 }
 
                 await testStore.Flush().AsTask().ConfigureAwait(false);

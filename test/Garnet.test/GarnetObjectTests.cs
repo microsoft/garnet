@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -10,14 +12,11 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     [AllureNUnit]
     [TestFixture]
     public class GarnetObjectTests : AllureTestBase
     {
-        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
+        TsavoriteKV<StoreFunctions, StoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -40,113 +39,125 @@ namespace Garnet.test
         [Test]
         public void WriteRead()
         {
-            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(new SimpleSessionFunctions<byte[], IGarnetObject, Empty>());
+            using var session = store.NewSession<FixedSpanByteKey, IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());
             var bContext = session.BasicContext;
 
-            var key = new byte[] { 0 };
+            var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
 
-            bContext.Upsert(key, obj);
+            _ = bContext.Upsert((FixedSpanByteKey)key, obj);
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read((FixedSpanByteKey)key, ref output);
 
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(obj, output);
         }
 
+        const int keyNum = 0;
+
         [Test]
         public async Task WriteCheckpointRead()
         {
-            var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            var bContext = session.BasicContext;
-
-            var key = new byte[] { 0 };
             var obj = new SortedSetObject();
-            obj.Add([15], 10);
 
-            bContext.Upsert(key, obj);
-
-            session.Dispose();
-
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
-
+            LocalWrite();
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
+            _ = store.Recover();
+            LocalRead();
 
-            store.Recover();
+            void LocalWrite()
+            {
+                using var session = store.NewSession<FixedSpanByteKey, IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            bContext = session.BasicContext;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                obj.Add([15], 10);
 
-            IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+                _ = bContext.Upsert((FixedSpanByteKey)key, obj);
+            }
 
-            session.Dispose();
+            void LocalRead()
+            {
+                using var session = store.NewSession<FixedSpanByteKey, IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
+                IGarnetObject output = null;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                var status = bContext.Read((FixedSpanByteKey)key, ref output);
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
+            }
         }
 
         [Test]
-        public async Task CopyUpdate()
+        public async Task WriteCheckpointCopyUpdate()
         {
-            var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            var bContext = session.BasicContext;
-
-            var key = new byte[] { 0 };
             IGarnetObject obj = new SortedSetObject();
-            ((SortedSetObject)obj).Add([15], 10);
 
-            bContext.Upsert(key, obj);
-
-            store.Log.Flush(true);
-
-            bContext.RMW(ref key, ref obj);
-
-            session.Dispose();
-
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
-
+            LocalWrite();
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
+            _ = store.Recover();
+            LocalRead();
 
-            store.Recover();
+            void LocalWrite()
+            {
+                using var session = store.NewSession<FixedSpanByteKey, IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            bContext = session.BasicContext;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                ((SortedSetObject)obj).Add([15], 10);
 
-            IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+                _ = bContext.Upsert((FixedSpanByteKey)key, obj);
+                store.Log.Flush(true);
+                _ = bContext.RMW((FixedSpanByteKey)key, ref obj);
+            }
 
-            session.Dispose();
+            void LocalRead()
+            {
+                using var session = store.NewSession<FixedSpanByteKey, IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+                IGarnetObject output = null;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                var status = bContext.Read((FixedSpanByteKey)key, ref output);
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+            }
         }
 
-        private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+        private class MyFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, Empty>
         {
             public MyFunctions()
             { }
 
-            public override bool SingleReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
-                dst = value;
+                output = (IGarnetObject)srcLogRecord.ValueObject;
                 return true;
             }
 
-            public override bool ConcurrentReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
             {
-                dst = value;
+                Assert.That(dstLogRecord.Info.ValueIsObject, Is.True);
+                dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
                 return true;
             }
 
-            public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                oldValue.CopyUpdate(ref oldValue, ref newValue, false);
-                return true;
-            }
+            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref IGarnetObject input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref IGarnetObject input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref IGarnetObject input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref IGarnetObject input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
         private void CreateStore()
@@ -154,7 +165,7 @@ namespace Garnet.test
             logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
             objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
 
-            var kvSettings = new KVSettings<byte[], IGarnetObject>
+            var kvSettings = new KVSettings
             {
                 IndexSize = 1L << 13,
                 LogDevice = logDevice,
@@ -163,7 +174,8 @@ namespace Garnet.test
             };
 
             store = new(kvSettings
-                , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
+                , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(), () => new MyGarnetObjectSerializer(),
+                    new GarnetRecordTriggers())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }
@@ -171,10 +183,10 @@ namespace Garnet.test
     /// <summary>
     /// Serializer for IGarnetObject
     /// </summary>
-    sealed class MyGarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>
+    sealed class MyGarnetObjectSerializer : BinaryObjectSerializer<IHeapObject>
     {
         /// <inheritdoc />
-        public override void Deserialize(out IGarnetObject obj)
+        public override void Deserialize(out IHeapObject obj)
         {
             var type = (GarnetObjectType)reader.ReadByte();
             obj = type switch
@@ -188,12 +200,12 @@ namespace Garnet.test
         }
 
         /// <inheritdoc />
-        public override void Serialize(ref IGarnetObject obj)
+        public override void Serialize(IHeapObject obj)
         {
             if (obj == null)
                 writer.Write((byte)GarnetObjectType.Null);
             else
-                obj.Serialize(writer);
+                ((IGarnetObject)obj).Serialize(writer);
         }
     }
 }

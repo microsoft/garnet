@@ -110,6 +110,7 @@ namespace Garnet.server
         XCosine_Normalized,
     }
 
+
     /// <summary>
     /// Implementation of Vector Set operations.
     /// </summary>
@@ -119,28 +120,28 @@ namespace Garnet.server
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
 
-            var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
-            var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-            var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
+            var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+            var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            var valueTypeArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
             var valuesArg = values;
             var elementArg = element;
-            var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
-            var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+            var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+            var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
             var attributesArg = attributes;
-            var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
-            var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
+            var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+            var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
             parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
-            var input = new RawStringInput(RespCommand.VADD, ref parseState);
+            var input = new StringInput(RespCommand.VADD, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadOrCreateVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -156,7 +157,7 @@ namespace Garnet.server
                 if (result == VectorManagerResult.OK)
                 {
                     // On successful addition, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetAdd(ref key, ref input, ref basicContext);
+                    vectorManager.ReplicateVectorSetAdd(key, ref input, ref stringBasicContext);
                 }
 
                 return GarnetStatus.OK;
@@ -167,13 +168,13 @@ namespace Garnet.server
         /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetRemove(SpanByte key, SpanByte element)
+        public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
         {
-            var input = new RawStringInput(RespCommand.VREM, ref parseState);
+            var input = new StringInput(RespCommand.VREM, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -182,12 +183,12 @@ namespace Garnet.server
 
                 // After a successful read we remove the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                var res = vectorManager.TryRemove(indexSpan, element.AsReadOnlySpan());
+                var res = vectorManager.TryRemove(indexSpan, element.ReadOnlySpan);
 
                 if (res == VectorManagerResult.OK)
                 {
                     // On successful removal, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetRemove(ref key, ref element, ref input, ref basicContext);
+                    vectorManager.ReplicateVectorSetRemove(key, element, ref input, ref stringBasicContext);
 
                     return GarnetStatus.OK;
                 }
@@ -200,16 +201,16 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            parseState.InitializeWithArgument(key);
 
             // Get the index
-            var input = new RawStringInput(RespCommand.VSIM, ref parseState);
+            var input = new StringInput(RespCommand.VSIM, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -228,15 +229,15 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public unsafe GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            parseState.InitializeWithArgument(key);
 
-            var input = new RawStringInput(RespCommand.VSIM, ref parseState);
+            var input = new StringInput(RespCommand.VSIM, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -254,15 +255,15 @@ namespace Garnet.server
         /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        public unsafe GarnetStatus VectorSetEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            parseState.InitializeWithArgument(key);
 
-            var input = new RawStringInput(RespCommand.VEMB, ref parseState);
+            var input = new StringInput(RespCommand.VEMB, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -279,15 +280,15 @@ namespace Garnet.server
         }
 
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetDimensions(SpanByte key, out int dimensions)
+        internal unsafe GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
         {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            parseState.InitializeWithArgument(key);
 
-            var input = new RawStringInput(RespCommand.VDIM, ref parseState);
+            var input = new StringInput(RespCommand.VDIM, ref parseState);
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -308,7 +309,7 @@ namespace Garnet.server
         /// Get debugging information about the VectorSet
         /// </summary>
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetInfo(SpanByte key,
+        internal unsafe GarnetStatus VectorSetInfo(PinnedSpanByte key,
             out VectorQuantType quantType,
             out VectorDistanceMetricType distanceMetricType,
             out uint vectorDimensions,
@@ -317,11 +318,11 @@ namespace Garnet.server
             out uint numberOfLinks,
             out long size)
         {
-            parseState.InitializeWithArgument(new(ref key));
+            parseState.InitializeWithArgument(key);
 
-            var input = new RawStringInput(RespCommand.VINFO, ref parseState);
+            var input = new StringInput(RespCommand.VINFO, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -347,21 +348,21 @@ namespace Garnet.server
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetGetAttribute(SpanByte key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes)
+        internal unsafe GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte elementId, ref SpanByteAndMemory outputAttributes)
         {
-            parseState.InitializeWithArgument(new(ref key));
+            parseState.InitializeWithArgument(key);
 
             // Get the index
-            var input = new RawStringInput(RespCommand.VGETATTR, ref parseState);
+            var input = new StringInput(RespCommand.VGETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
                     return status;
                 }
 
-                var result = vectorManager.FetchSingleVectorElementAttributes(indexSpan, elementId.SpanByte, ref outputAttributes);
+                var result = vectorManager.FetchSingleVectorElementAttributes(indexSpan, elementId, ref outputAttributes);
                 return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }

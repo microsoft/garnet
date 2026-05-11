@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Garnet.server.ACL;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -76,8 +76,9 @@ namespace Garnet.server
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
+        /// <param name="waitForStableSlot"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -86,19 +87,15 @@ namespace Garnet.server
         public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output);
 
         /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte SessionAsking, bool waitForStableSlot, ref byte* dcurr, ref byte* dend, int count = -1);
-
-        /// <summary>
         /// Array slot verify (write result to network)
         /// </summary>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false);
 
         /// <summary>
         /// Array slot verify with no response
@@ -107,12 +104,35 @@ namespace Garnet.server
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false);
 
         /// <summary>
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
+
+        /// <summary>
+        /// NOTE: Used for micro-benchmark
+        /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="record"></param>
+        /// <param name="recordLength"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
     }
 }

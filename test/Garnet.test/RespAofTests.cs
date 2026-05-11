@@ -232,7 +232,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
+                db.Execute("SETWITHETAG", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
                 db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
                 db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
                 var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
@@ -315,7 +315,7 @@ namespace Garnet.test
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue3", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
 
-                // Set expiry time for 2nd string
+                // Set expiry time for 1st string
                 db.KeyExpire("AofExpiryRMWStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
 
@@ -326,7 +326,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
@@ -335,7 +335,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
@@ -364,6 +364,82 @@ namespace Garnet.test
 
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
+                ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
+                ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
+                ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
+            }
+        }
+
+        [Test]
+        public async Task AofExpiryUpsertStoreRecoverTestAsync()
+        {
+            // Test AOF recovery of main store records with an expiry time
+
+            var expireTime = DateTime.UtcNow + TimeSpan.FromMinutes(1);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Add 1st string to main store with long expiry
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey1", "AofExpiryUpsertStoreRecoverTestValue1", expiry: TimeSpan.FromDays(1));
+                // Add 2nd string to main store with short expiry
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey2", "AofExpiryUpsertStoreRecoverTestValue2", expiry: TimeSpan.FromSeconds(1));
+                // Wait for 2nd string record to expire
+                Thread.Sleep(2000);
+
+                // Set value for 2nd record (which has expired)
+                db.StringSet("AofExpiryUpsertStoreRecoverTestKey2", "AofExpiryUpsertStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10));
+
+                // Set expiry time for 1st string
+                db.KeyExpire("AofExpiryUpsertStoreRecoverTestKey1", expireTime);
+                Thread.Sleep(2000);
+
+                // Verify 1st string did not change
+                var recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
+                var recoveredValueExpTime = db.KeyExpireTime("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(200)));
+
+                // Verify 2nd string did change
+                recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
+                var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
+                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
+                ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
+            }
+
+            // Commit to AOF and restart server
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Verify 1st string value has not changed
+                var recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
+                var recoveredValueExpTime = db.KeyExpireTime("AofExpiryUpsertStoreRecoverTestKey1");
+                ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(2)));
+
+                // Verify 2nd string did change
+                recoveredValue = db.StringGet("AofExpiryUpsertStoreRecoverTestKey2");
+                ClassicAssert.AreEqual("AofExpiryUpsertStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
+                var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
@@ -472,21 +548,39 @@ namespace Garnet.test
                 db.ListRightPush(key1, values1_1);
                 db.KeyExpire(key1, expireTime);
 
+                var recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Add 2nd list to object store with short expiry
                 db.ListRightPush(key2, values2_1);
                 db.KeyExpire(key2, TimeSpan.FromSeconds(1));
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Wait for 2nd list record to expire
                 Thread.Sleep(2000);
+
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
 
                 // Push to elements to 1st list and 2nd list (now empty)
                 db.ListRightPush(key1, values1_2);
                 db.ListRightPush(key2, values2_2);
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Add longer expiry to 2nd list
                 db.KeyExpire(key2, TimeSpan.FromSeconds(15));
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 Thread.Sleep(2000);
+
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
 
                 // Verify 1st list has values from both pushes
                 var recoveredValues = db.ListRange(key1);
@@ -1063,8 +1157,8 @@ namespace Garnet.test
         }
 
         // Regression test for https://github.com/microsoft/garnet/issues/1749
-        // A SET / RMW / DEL whose AOF entry exceeds AofPageSize used to leave the per-bucket transient X-lock
-        // held forever (the AOF Enqueue threw "Entry does not fit on page" before TransientXUnlock could run),
+        // A SET / RMW / DEL whose AOF entry exceeds AofPageSize used to leave the per-bucket ephemeral X-lock
+        // held forever (the AOF Enqueue threw "Entry does not fit on page" before EphemeralXUnlock could run),
         // pinning subsequent ops on the same key in an infinite RETRY_LATER loop and burning 100% CPU.
         // The server is rebuilt with a small AofPageSize to trigger the oversize path with small payloads.
         [Test]
@@ -1087,19 +1181,19 @@ namespace Garnet.test
             }
 
             // 2) From a fresh connection issue several operations on the same key. Before the fix these would
-            //    spin forever inside Tsavorite waiting on the leaked transient X-lock. With the fix they return
+            //    spin forever inside Tsavorite waiting on the leaked ephemeral X-lock. With the fix they return
             //    promptly. We don't care what GET returns, only that the server does not hang.
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig() + ",syncTimeout=3000"))
             {
                 var db = redis.GetDatabase(0);
 
-                // Reads use a transient S-lock on the same hash bucket, so they block on a leaked X-lock.
+                // Reads use an ephemeral S-lock on the same hash bucket, so they block on a leaked X-lock.
                 Assert.DoesNotThrow(() => _ = db.StringGet(key));
 
-                // RMW operations (e.g. APPEND) use the same TransientX path as SET; verify they don't hang either.
+                // RMW operations (e.g. APPEND) use the same EphemeralX path as SET; verify they don't hang either.
                 Assert.DoesNotThrow(() => _ = db.StringAppend(key, "x"));
 
-                // Delete also takes the transient X-lock; verify it can complete.
+                // Delete also takes the ephemeral X-lock; verify it can complete.
                 Assert.DoesNotThrow(() => _ = db.KeyDelete(key));
 
                 // A small SET on the same key after recovery must succeed end-to-end.

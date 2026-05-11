@@ -23,21 +23,18 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 1);
 
             var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETWITHETAG);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var input = new StringInput(RespCommand.GETWITHETAG);
+            var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
                 default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -54,21 +51,18 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
 
             var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
+            var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
                 default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -87,7 +81,7 @@ namespace Garnet.server
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
 
-            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_ETAG);
@@ -96,10 +90,9 @@ namespace Garnet.server
             // Conditional delete is not natively supported for records in the stable region.
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
-            RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
-            input.header.SetWithEtagFlag();
+            StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
 
-            GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
+            GarnetStatus status = storageApi.DEL_ETagConditional(key, ref input);
 
             int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
@@ -133,6 +126,62 @@ namespace Garnet.server
         private bool NetworkSETIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
             => NetworkSetETagConditional(RespCommand.SETIFGREATER, ref storageApi);
+
+        /// <summary>
+        /// SETWITHETAG key value [EX seconds | PX milliseconds]
+        /// Sets a key value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented.
+        /// </summary>
+        private bool NetworkSETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2 || parseState.Count > 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETWITHETAG));
+            }
+
+            int expiry = 0;
+            ReadOnlySpan<byte> errorMessage = default;
+            ExpirationOption expOption = ExpirationOption.None;
+
+            if (parseState.Count > 2)
+            {
+                // Parse EX | PX expiry
+                var tokenIdx = 2;
+                if (parseState.TryGetExpirationOption(tokenIdx, out expOption))
+                {
+                    if (expOption is not ExpirationOption.EX and not ExpirationOption.PX)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                    }
+                    else
+                    {
+                        tokenIdx++;
+                        if (tokenIdx >= parseState.Count || !parseState.TryGetInt(tokenIdx, out expiry))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        }
+                        else if (expiry <= 0)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                        }
+                    }
+                }
+                else
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                }
+            }
+
+            if (!errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+            return ExecuteETagSetCommand(RespCommand.SETWITHETAG, expiry, expOption == ExpirationOption.PX, key, getValue: false, ref storageApi);
+        }
 
         private bool NetworkSetETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -214,9 +263,31 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
+            return ExecuteETagSetCommand(cmd, expiry, expOption == ExpirationOption.PX, key, getValue: !noGet, ref storageApi);
+        }
 
-            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+        /// <summary>
+        /// Shared implementation for ETag set commands (SETWITHETAG, SETIFMATCH, SETIFGREATER).
+        /// Builds input, calls SET_Conditional with output, and writes the response.
+        /// </summary>
+        private bool ExecuteETagSetCommand<TGarnetApi>(RespCommand cmd, int expiry, bool highPrecision, PinnedSpanByte key, bool getValue, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var inputArg = expiry == 0
+                ? 0
+                : DateTimeOffset.UtcNow.Ticks +
+                  (highPrecision
+                      ? TimeSpan.FromMilliseconds(expiry).Ticks
+                      : TimeSpan.FromSeconds(expiry).Ticks);
 
+            var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
+
+            if (getValue)
+                input.header.SetSetGetFlag();
+
+            var output = GetStringOutput();
+            storageApi.SET_ETagConditional(key, ref input, ref output);
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
     }

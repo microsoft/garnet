@@ -434,6 +434,7 @@ namespace Garnet.test
         }
 
         [Test]
+        //[Repeat(10000)]
         public void TransactionProcMGetIfPMTest()
         {
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
@@ -478,9 +479,7 @@ namespace Garnet.test
 
             // Set keys
             for (int i = 0; i < NumKeys; i++)
-            {
                 args2[i + 1] = $"key{i}";
-            }
 
             // Execute transaction
             var result2 = (string[])db.Execute("MGETIFPM", args2);
@@ -488,11 +487,10 @@ namespace Garnet.test
             // Verify results
             int expectedCount = NumKeys - 9; // only values with specified prefix
             ClassicAssert.AreEqual(2 * expectedCount, result2.Length);
+
             // Verify that keys have the correct prefix
             for (int i = 0; i < expectedCount; i++)
-            {
                 ClassicAssert.AreEqual(prefix, result2[2 * i + 1].Substring(0, prefix.Length));
-            }
         }
     }
 }

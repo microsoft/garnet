@@ -190,11 +190,8 @@ namespace Garnet.test
 
             // hydrate
             var startingHA = server.Provider.StoreWrapper.store.Log.HeadAddress;
-            var startingHAObj = server.Provider.StoreWrapper.objectStore.Log.HeadAddress;
-            await Task.WhenAll(
-                HydrateStore(db, (db, key, value) => db.StringSetAsync(key, value), () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress),
-                HydrateStore(db, (db, key, value) => db.SetAddAsync(key, value), () => startingHAObj == server.Provider.StoreWrapper.objectStore.Log.HeadAddress)
-            ).ConfigureAwait(false);
+            await HydrateStore(db, (db, key, value) => db.StringSetAsync(key, value),
+                () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress).ConfigureAwait(false);
 
             // Wait for the immediate expirations to kick in
             await Task.Delay(500).ConfigureAwait(false);

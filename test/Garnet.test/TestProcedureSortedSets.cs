@@ -27,7 +27,7 @@ namespace Garnet
             if (ssA.Length == 0)
                 return false;
 
-            AddKey(ssA, LockType.Exclusive, true);
+            AddKey(ssA, LockType.Exclusive, StoreType.Object);
 
             return true;
         }
@@ -41,8 +41,8 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var ssItems = new (ArgSlice score, ArgSlice member)[10];
-            var ssMembers = new ArgSlice[10];
+            var ssItems = new (PinnedSpanByte score, PinnedSpanByte member)[10];
+            var ssMembers = new PinnedSpanByte[10];
 
             var ssA = GetNextArg(ref procInput, ref offset);
 
@@ -57,7 +57,7 @@ namespace Garnet
             var maxRange = GetNextArg(ref procInput, ref offset);
             var match = GetNextArg(ref procInput, ref offset);
 
-            var ssB = new ArgSlice();
+            var ssB = new PinnedSpanByte();
             api.SortedSetAdd(ssB, ssItems[0].score, ssItems[0].member, out int count);
             if (count != 0)
                 return false;
@@ -73,7 +73,7 @@ namespace Garnet
             var strMatch = Encoding.ASCII.GetString(match.ReadOnlySpan);
 
             // Exercise SortedSetScan
-            api.SortedSetScan(ssA, 0, strMatch, ssItems.Length, out ArgSlice[] itemsInScan);
+            api.SortedSetScan(ssA, 0, strMatch, ssItems.Length, out PinnedSpanByte[] itemsInScan);
 
             // The pattern "*em*" should match all items
             if (itemsInScan.Length != (ssItems.Length * 2) + 1)
@@ -114,15 +114,15 @@ namespace Garnet
             if (status != GarnetStatus.OK || newScore != 12345)
                 return false;
 
-            status = api.SortedSetExpire(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], DateTimeOffset.UtcNow.AddMinutes(10), ExpireOption.None, out var expireResults);
+            status = api.SortedSetExpire(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), PinnedSpanByte.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], DateTimeOffset.UtcNow.AddMinutes(10), ExpireOption.None, out var expireResults);
             if (status != GarnetStatus.OK || expireResults.Length != 2 || expireResults[0] != 1 || expireResults[1] != -2)
                 return false;
 
-            status = api.SortedSetTimeToLive(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var expireIn);
+            status = api.SortedSetTimeToLive(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), PinnedSpanByte.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var expireIn);
             if (status != GarnetStatus.OK || expireIn.Length != 2 || expireIn[0].TotalMilliseconds <= 0 || expireIn[0].TotalMilliseconds > TimeSpan.FromMinutes(10).TotalMilliseconds || expireIn[1].TotalMilliseconds != 0)
                 return false;
 
-            status = api.SortedSetPersist(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var persistResults);
+            status = api.SortedSetPersist(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), PinnedSpanByte.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var persistResults);
             if (status != GarnetStatus.OK || persistResults.Length != 2 || persistResults[0] != 1 || persistResults[1] != -2)
                 return false;
 

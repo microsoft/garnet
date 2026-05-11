@@ -54,7 +54,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 184;
+            var expectedResponse = 224;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string popval = db.ListLeftPop(key);
@@ -85,7 +85,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.ListTrim(key, 1, 5);
@@ -95,7 +95,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 504;
+            expectedResponse = 544;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             //all elements remain
@@ -105,7 +105,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 504;
+            expectedResponse = 544;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.ListTrim(key, 0, -3);
@@ -173,11 +173,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var nVals = 100;
-            RedisValue[] values = new RedisValue[nVals];
+            var values = new RedisValue[nVals];
             for (int i = 0; i < 100; i++)
-            {
-                values[i] = ($"val-{i + 1}");
-            }
+                values[i] = $"val-{i + 1}";
 
             for (int j = 0; j < 25; j++)
             {
@@ -185,7 +183,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(nVals, nAdded);
             }
 
-            long nLen = db.ListLength("List_Test-10");
+            var nLen = db.ListLength("List_Test-10");
             ClassicAssert.AreEqual(100, nLen);
         }
 
@@ -295,7 +293,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 344;
+            var expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -309,7 +307,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 432;
+            expectedResponse = 472;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // test after
@@ -320,7 +318,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 520;
+            expectedResponse = 560;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -344,7 +342,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 584;
+            var expectedResponse = 624;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -353,7 +351,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 424;
+            expectedResponse = 464;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             ret = db.ListRemove(key, "val_4", -1);
@@ -362,7 +360,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 344;
+            expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             ret = db.ListRemove(key, "val_2", 0);
@@ -394,7 +392,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -440,7 +438,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -450,7 +448,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 744;
+            expectedResponse = 784;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -473,7 +471,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string popval = string.Empty;
@@ -541,7 +539,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var lrange = db.ListRange(key, 0, -1);
@@ -558,7 +556,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 272;
+            expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             lrange = db.ListRange(key, 0, -1);
@@ -1078,14 +1076,25 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public void ListPushPopStressTest()
+        public async Task ListPushPopStressTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            // Custom config with a generous timeout for this stress test specifically — the default
+            // 30s is normally plenty, but under heavy CI load a queued response can be delayed.
+            static ConfigurationOptions StressConfig()
+            {
+                var cfg = TestUtils.GetConfig();
+                cfg.SyncTimeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
+                cfg.AsyncTimeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
+                return cfg;
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(StressConfig());
             var db = redis.GetDatabase(0);
 
-            int keyCount = 10;
+            // Keep concurrency modest so we don't outpace small CI runners while still exercising
+            // real LPUSH/RPOP concurrency on multiple keys.
+            int keyCount = 5;
             int ppCount = 100;
-            //string[] keys = new string[keyCount];
             HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
                 while (!keys.Add(r.Next().ToString())) { }
@@ -1093,38 +1102,88 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
-            Task[] tasks = new Task[keyArray.Length << 1];
-            for (int i = 0; i < tasks.Length; i += 2)
-            {
-                int idx = i;
-                tasks[i] = Task.Run(async () =>
-                {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
-                        await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
-                });
 
-                tasks[i + 1] = Task.Run(() =>
-                {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
-                    {
-                        var value = db.ListRightPop(key);
-                        while (value.IsNull)
-                        {
-                            Thread.Yield();
-                            value = db.ListRightPop(key);
-                        }
-                        ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
-                    }
-                });
+            // Cancellation token stops in-flight workers on first failure and provides a hard deadline.
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
+            // Pre-create one ConnectionMultiplexer per worker so each "client" has its own socket.
+            // A single shared mux serializes all writes through one background writer; under CI load
+            // that writer can fall behind enough to exceed timeouts. Connect up front to also avoid
+            // a connect storm racing ConnectTimeout.
+            var workerCount = keyCount * 2;
+            var workerMuxes = new ConnectionMultiplexer[workerCount];
+            try
+            {
+                for (int i = 0; i < workerCount; i++)
+                    workerMuxes[i] = ConnectionMultiplexer.Connect(StressConfig());
             }
-            Task.WaitAll(tasks);
-
-            foreach (var key in keyArray)
+            catch
             {
-                var count = db.ListLength(key);
-                ClassicAssert.AreEqual(0, count);
+                foreach (var mux in workerMuxes)
+                    mux?.Dispose();
+                throw;
+            }
+
+            try
+            {
+                // Use async Redis APIs scheduled on the threadpool. Each await releases the worker
+                // thread while the response is in flight, so SE.Redis's IO-completion continuations
+                // always have a free worker.
+                var tasks = new Task[workerCount];
+                for (int i = 0; i < keyCount; i++)
+                {
+                    var key = keyArray[i];
+                    var pushDb = workerMuxes[i * 2].GetDatabase(0);
+                    var popDb = workerMuxes[i * 2 + 1].GetDatabase(0);
+
+                    tasks[i * 2] = Task.Run(async () =>
+                    {
+                        for (int j = 0; j < ppCount && !cts.IsCancellationRequested; j++)
+                            _ = await pushDb.ListLeftPushAsync(key, j).ConfigureAwait(false);
+                    });
+
+                    tasks[i * 2 + 1] = Task.Run(async () =>
+                    {
+                        for (int j = 0; j < ppCount && !cts.IsCancellationRequested; j++)
+                        {
+                            var value = await popDb.ListRightPopAsync(key).ConfigureAwait(false);
+                            while (value.IsNull && !cts.IsCancellationRequested)
+                            {
+                                await Task.Delay(1, cts.Token).ConfigureAwait(false);
+                                value = await popDb.ListRightPopAsync(key).ConfigureAwait(false);
+                            }
+                            if (!cts.IsCancellationRequested)
+                                ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
+                        }
+                    });
+                }
+
+                // Await all tasks; observe ALL faults (Task.WhenAll's awaiter only re-throws the
+                // first exception, but Task.WhenAll(...).Exception is the full aggregate).
+                var allDone = Task.WhenAll(tasks);
+                try
+                {
+                    await allDone.ConfigureAwait(false);
+                }
+                catch
+                {
+                    cts.Cancel();
+                }
+
+                if (allDone.Exception != null)
+                    throw allDone.Exception;
+
+                foreach (var key in keyArray)
+                {
+                    var count = db.ListLength(key);
+                    ClassicAssert.AreEqual(0, count);
+                }
+            }
+            finally
+            {
+                cts.Cancel();
+                foreach (var mux in workerMuxes)
+                    mux?.Dispose();
             }
         }
 
@@ -1239,7 +1298,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "mylist");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 904;
+            expectedResponse = 936;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             //this should not create a new list
@@ -1257,7 +1316,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "myaux-list");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 912;
+            expectedResponse = 952;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 

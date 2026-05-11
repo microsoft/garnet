@@ -23,6 +23,12 @@ namespace Garnet.cluster
         readonly ILogger logger;
 
         /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="clusterConfig"></param>
+        public void UnsafeSetConfig(ClusterConfig clusterConfig) => currentConfig = clusterConfig;
+
+        /// <summary>
         /// Get current config
         /// </summary>
         public ClusterConfig CurrentConfig => currentConfig;
@@ -63,13 +69,14 @@ namespace Garnet.cluster
             var clusterDataPath = serverOptions.CheckpointDir + clusterFolder;
             var deviceFactory = serverOptions.GetInitializedDeviceFactory(clusterDataPath);
 
+
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
             this.logger = logger;
-            var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !serverOptions.CleanClusterConfig;
+            var recoverConfig = clusterProvider.serverOptions.ClusterConfigFlushFrequencyMs != -1 && clusterConfigDevice.GetFileSize(0) > 0 && !serverOptions.CleanClusterConfig;
 
             tlsOptions = serverOptions.TlsOptions;
             if (!serverOptions.CleanClusterConfig)
@@ -248,27 +255,22 @@ namespace Garnet.cluster
         public static string GetRange(int[] slots)
         {
             var range = "> ";
-            if (slots.Length >= 1)
+            var start = slots[0];
+            var end = slots[0];
+            for (var i = 1; i < slots.Length + 1; i++)
             {
-
-                var start = slots[0];
-                var end = slots[0];
-                for (var i = 1; i < slots.Length + 1; i++)
+                if (i < slots.Length && slots[i] == end + 1)
+                    end = slots[i];
+                else
                 {
-                    if (i < slots.Length && slots[i] == end + 1)
-                        end = slots[i];
-                    else
+                    range += $"{start}-{end} ";
+                    if (i < slots.Length)
                     {
-                        range += $"{start}-{end} ";
-                        if (i < slots.Length)
-                        {
-                            start = slots[i];
-                            end = slots[i];
-                        }
+                        start = slots[i];
+                        end = slots[i];
                     }
                 }
             }
-
             return range;
         }
 

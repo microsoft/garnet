@@ -1,25 +1,34 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
+using System;
 
 namespace Tsavorite.core
 {
     /// <summary>
     /// Heap container for <see cref="SpanByte"/> structs
     /// </summary>
-    internal sealed class SpanByteHeapContainer : IHeapContainer<SpanByte>
+    public sealed class SpanByteHeapContainer : IHeapContainer<PinnedSpanByte>
     {
         readonly SectorAlignedMemory mem;
+        PinnedSpanByte pinnedSpanByte;
 
-        public unsafe SpanByteHeapContainer(ref SpanByte obj, SectorAlignedBufferPool pool)
+        public unsafe SpanByteHeapContainer(ReadOnlySpan<byte> item, SectorAlignedBufferPool pool)
         {
-            mem = pool.Get(obj.TotalSize);
-            obj.CopyTo(mem.GetValidPointer());
+            if (item.Length == 0)
+            {
+                pinnedSpanByte = default;
+                return;
+            }
+
+            var size = item.TotalSize();
+            mem = pool.Get(size);
+            item.SerializeTo(mem.GetValidPointer(), size);
+            pinnedSpanByte = PinnedSpanByte.FromLengthPrefixedPinnedPointer(mem.GetValidPointer());
         }
 
-        public unsafe ref SpanByte Get() => ref Unsafe.AsRef<SpanByte>(mem.GetValidPointer());
+        public ref PinnedSpanByte Get() => ref pinnedSpanByte;
 
-        public void Dispose() => mem.Return();
+        public void Dispose() => mem?.Return();
     }
 }

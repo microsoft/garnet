@@ -22,7 +22,7 @@ namespace Garnet.server
         bool initialized = false;
         ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
         ReadOptimizedConcurrentSet<PatternSubscriptionEntry> patternSubscriptions;
-        readonly TsavoriteLog log;
+        readonly TsavoriteLog aof;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
@@ -36,16 +36,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
-        /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
+        public SubscribeBroker(string logDir, long pageSize, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs, Epoch = epoch });
-            pageSizeBits = log.UnsafeGetLogPageSizeBits();
+            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, Epoch = epoch });
+            pageSizeBits = aof.UnsafeGetLogPageSizeBits();
             if (startFresh)
-                log.TruncateUntil(log.CommittedUntilAddress);
+                aof.TruncateUntil(aof.CommittedUntilAddress);
             this.logger = logger;
         }
 
@@ -74,7 +73,7 @@ namespace Garnet.server
             }
         }
 
-        unsafe int Broadcast(ArgSlice key, ArgSlice value)
+        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value)
         {
             var numSubscribers = 0;
 
@@ -99,7 +98,7 @@ namespace Garnet.server
                     var pattern = entry.pattern;
                     fixed (byte* patternPtr = pattern.ReadOnlySpan)
                     {
-                        var patternSlice = new ArgSlice(patternPtr, pattern.ReadOnlySpan.Length);
+                        var patternSlice = PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.ReadOnlySpan.Length);
                         if (Match(key, patternSlice))
                         {
                             var sessions = entry.subscriptions;
@@ -120,7 +119,7 @@ namespace Garnet.server
         {
             try
             {
-                using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                using var iterator = aof.ScanSingle(aof.BeginAddress, long.MaxValue, scanUncommitted: true);
                 var signal = iterator.Signal;
                 using var registration = cts.Token.Register(signal);
 
@@ -154,12 +153,12 @@ namespace Garnet.server
                 }
 
                 var ptr = payloadPtr;
-                var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
-                ptr += sizeof(int) + key.length;
-                var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                var key = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
+                ptr += sizeof(int) + key.Length;
+                var value = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
                 _ = Broadcast(key, value);
-                if (nextAddress > log.BeginAddress)
-                    log.TruncateUntil(nextAddress);
+                if (nextAddress > aof.BeginAddress)
+                    aof.TruncateUntil(nextAddress);
                 previousAddress = nextAddress;
             }
             catch (Exception ex)
@@ -184,7 +183,7 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool Subscribe(ArgSlice key, ServerSessionBase session)
+        public unsafe bool Subscribe(PinnedSpanByte key, ServerSessionBase session)
         {
             if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
@@ -204,7 +203,7 @@ namespace Garnet.server
         /// <param name="pattern">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
+        public unsafe bool PatternSubscribe(PinnedSpanByte pattern, ServerSessionBase session)
         {
             if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
@@ -295,7 +294,7 @@ namespace Garnet.server
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
         /// <returns>Number of subscribers notified</returns>
-        public unsafe int PublishNow(ArgSlice key, ArgSlice value)
+        public unsafe int PublishNow(PinnedSpanByte key, PinnedSpanByte value)
         {
             if (subscriptions == null && patternSubscriptions == null) return 0;
             return Broadcast(key, value);
@@ -306,13 +305,12 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        public unsafe void Publish(ArgSlice key, ArgSlice value)
+        public unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
-            if (subscriptions == null && patternSubscriptions == null) return;
+            if (subscriptions == null && patternSubscriptions == null)
+                return;
 
-            var keySB = key.SpanByte;
-            var valueSB = value.SpanByte;
-            log.Enqueue(ref keySB, ref valueSB, out _);
+            aof.Enqueue(key.ReadOnlySpan, value.ReadOnlySpan, out _);
         }
 
         /// <summary>
@@ -338,7 +336,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="pattern"></param>
         /// <returns></returns>
-        public unsafe List<ByteArrayWrapper> GetChannels(ArgSlice pattern)
+        public unsafe List<ByteArrayWrapper> GetChannels(PinnedSpanByte pattern)
         {
             if (subscriptions is null || subscriptions.IsEmpty)
                 return [];
@@ -350,7 +348,7 @@ namespace Garnet.server
                 {
                     fixed (byte* keyPtr = entry.Key.ReadOnlySpan)
                     {
-                        if (Match(new ArgSlice(keyPtr, entry.Key.ReadOnlySpan.Length), pattern))
+                        if (Match(PinnedSpanByte.FromPinnedPointer(keyPtr, entry.Key.ReadOnlySpan.Length), pattern))
                             channels.Add(entry.Key);
                     }
                 }
@@ -382,7 +380,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="channel"></param>
         /// <returns></returns>
-        public int NumSubscriptions(ArgSlice channel)
+        public int NumSubscriptions(PinnedSpanByte channel)
         {
             if (subscriptions is null)
                 return 0;
@@ -398,11 +396,11 @@ namespace Garnet.server
             done.WaitOne();
             subscriptions?.Clear();
             patternSubscriptions?.Clear();
-            log.Dispose();
+            aof.Dispose();
             device.Dispose();
         }
 
-        unsafe bool Match(ArgSlice key, ArgSlice pattern)
-            => GlobUtils.Match(pattern.ptr, pattern.length, key.ptr, key.length);
+        unsafe bool Match(PinnedSpanByte key, PinnedSpanByte pattern)
+            => GlobUtils.Match(pattern.ToPointer(), pattern.Length, key.ToPointer(), key.Length);
     }
 }

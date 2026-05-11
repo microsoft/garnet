@@ -19,7 +19,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            AddKey(GetNextArg(ref procInput.parseState, ref offset), LockType.Exclusive, true);
+            AddKey(GetNextArg(ref procInput.parseState, ref offset), LockType.Exclusive, StoreType.Object);
             return true;
         }
 
@@ -29,7 +29,7 @@ namespace Garnet
             var key = GetNextArg(ref procInput.parseState, ref offset);
             var expiryMs = GetNextArg(ref procInput.parseState, ref offset);
 
-            api.EXPIRE(key, expiryMs, out _, StoreType.Object);
+            api.EXPIRE(key, expiryMs, out _);
             WriteSimpleString(ref output, "SUCCESS");
         }
     }

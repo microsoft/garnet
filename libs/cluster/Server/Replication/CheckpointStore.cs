@@ -7,7 +7,6 @@ using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -40,19 +39,14 @@ namespace Garnet.cluster
         {
             head = tail = GetLatestCheckpointEntryFromDisk();
 
-            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1)
+            if (tail.metadata.storeVersion == -1)
             {
                 head = tail = null;
             }
             else
             {
-                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                clusterProvider.storeWrapper.StoreCheckpointManager.SetRecoveredSafeAofAddress(ref tail.metadata.storeCheckpointCoveredAofAddress);
                 clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
-                if (!storeWrapper.serverOptions.DisableObjects)
-                {
-                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
-                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
-                }
             }
 
             // This purge does not check for active readers
@@ -85,13 +79,11 @@ namespace Garnet.cluster
             entry ??= GetLatestCheckpointEntryFromDisk();
             if (entry == null) return;
             logger?.LogCheckpointEntry(LogLevel.Trace, nameof(PurgeAllCheckpointsExceptEntry), entry);
-            PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
-            if (!clusterProvider.serverOptions.DisableObjects)
-                PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.metadata.objectStoreHlogToken, entry.metadata.objectStoreIndexToken);
+            PurgeAllCheckpointsExceptTokens(entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
 
-            void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
+            void PurgeAllCheckpointsExceptTokens(Guid logToken, Guid indexToken)
             {
-                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
+                var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
 
                 // Delete log checkpoints
                 foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
@@ -129,7 +121,6 @@ namespace Garnet.cluster
             {
                 var lastEntry = tail ?? throw new GarnetException($"Checkpoint history unavailable, need full checkpoint for {entry}");
                 entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
-                entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
 
             _ = ValidateCheckpointEntry(entry);
@@ -155,9 +146,6 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.replicationManager.TryAcquireSettledMetadataForMainStore(entry, out _, out _))
                         throw new GarnetException("Failed to validate main store metadata at insertion");
-
-                    if (!clusterProvider.serverOptions.DisableObjects && !clusterProvider.replicationManager.TryAcquireSettledMetadataForObjectStore(entry, out _, out _))
-                        throw new GarnetException("Failed to validate object store metadata at insertion");
 
                     return true;
                 }
@@ -191,22 +179,11 @@ namespace Garnet.cluster
                 // Below check each checkpoint token separately if it is eligible for deletion
                 if (!CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
                     break;
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
+                clusterProvider.ReplicationLogCheckpointManager.DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
                 if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
                     break;
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
-
-                if (!clusterProvider.serverOptions.DisableObjects)
-                {
-                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
-                        break;
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
-
-                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
-                        break;
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
-                }
+                clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 
@@ -257,13 +234,9 @@ namespace Garnet.cluster
             var _tail = tail;
             if (_tail == null)
             {
-                cEntry = new CheckpointEntry()
+                cEntry = new CheckpointEntry
                 {
-                    metadata = new()
-                    {
-                        storeCheckpointCoveredAofAddress = 0,
-                        objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
-                    }
+                    metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 };
                 _ = cEntry.TryAddReader();
                 return true;
@@ -282,52 +255,30 @@ namespace Garnet.cluster
         /// <returns></returns>
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
         {
-            Guid objectStoreHLogToken = default;
-            Guid objectStoreIndexToken = default;
-            var objectStoreVersion = -1L;
+            var storeCheckpointCoveredAofAddress = server.AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
             storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
-            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);
-            var (storeCheckpointCoveredAofAddress, storePrimaryReplId) = GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken);
-            var (objectCheckpointCoveredAofAddress, objectStorePrimaryReplId) = objectStoreHLogToken == default ? (long.MaxValue, null) : GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken);
+            GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken, ref storeCheckpointCoveredAofAddress, out var storePrimaryReplId);
 
             CheckpointEntry entry = new()
             {
-                metadata = new()
+                metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 {
                     storeVersion = storeVersion,
                     storeHlogToken = storeHLogToken,
                     storeIndexToken = storeIndexToken,
                     storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
                     storePrimaryReplId = storePrimaryReplId,
-
-                    objectStoreVersion = objectStoreVersion,
-                    objectStoreHlogToken = objectStoreHLogToken,
-                    objectStoreIndexToken = objectStoreIndexToken,
-                    objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
-                    objectStorePrimaryReplId = objectStorePrimaryReplId,
                 }
             };
             return entry;
 
-            (long RecoveredSafeAofAddress, string RecoveredReplicationId) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
+            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId)
             {
-                if (fileToken == default) return (0, null);
-                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
-                var pageSizeBits = storeType == StoreType.Main ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
-                {
-                    if (deltaFileDevice is not null)
-                    {
-                        deltaFileDevice.Initialize(-1);
-                        if (deltaFileDevice.GetFileSize(0) > 0)
-                        {
-                            var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
-                            deltaLog.InitializeForReads();
-                            return ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1);
-                        }
-                    }
-                }
-                return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
+                RecoveredReplicationId = null;
+                if (fileToken == default) return;
+                var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
+
+                ckptManager.GetCheckpointCookieMetadata(fileToken, ref recoveredSafeAofAddress, out RecoveredReplicationId);
             }
         }
 

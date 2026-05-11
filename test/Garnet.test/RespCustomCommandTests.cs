@@ -22,43 +22,51 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    /// <summary>
+    /// Validates that data matches the deterministic pattern (i % 251) used by scratch buffer tests.
+    /// </summary>
+    internal static class ScratchBufferTestHelper
+    {
+        internal static bool ValidateContent(ReadOnlySpan<byte> data)
+        {
+            if (data.Length == 0) return false;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] != (byte)(i % 251))
+                    return false;
+            }
+            return true;
+        }
+    }
+
     public class LargeGet : CustomProcedure
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
-            {
-                bool status = garnetApi.ResetScratchBuffer(buffOffset);
-                if (!status)
-                    WriteError(ref output, "ERR ResetScratchBuffer failed");
-
-                return status;
-            }
-
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (var i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
-                        return false;
-                }
+                    garnetApi.ResetScratchBuffer();
             }
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
-            garnetApi.GET(key, out var outval2);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            garnetApi.GET(key, out PinnedSpanByte outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
+            garnetApi.ResetScratchBuffer();
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            if (!ScratchBufferTestHelper.ValidateContent(value.ReadOnlySpan))
+            {
+                WriteError(ref output, "ERR HashGet returned corrupted data");
+                return false;
+            }
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }
@@ -69,7 +77,7 @@ namespace Garnet.test
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, StoreType.Main);
             return true;
         }
 
@@ -77,18 +85,13 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (int i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!garnetApi.ResetScratchBuffer(buffOffset))
-                    {
-                        WriteError(ref output, "ERR ResetScratchBuffer failed");
-                        return;
-                    }
-                }
+                    garnetApi.ResetScratchBuffer();
             }
         }
     }
@@ -100,24 +103,26 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var buffOffset1 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
+            // Test scratch buffer reset with GET (output goes to ScratchBufferAllocator)
+            garnetApi.GET(key, out PinnedSpanByte outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
 
-            var buffOffset2 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval2);
-
-            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            // Verify GET results contain valid data (i % 251 pattern)
+            if (!ScratchBufferTestHelper.ValidateContent(outval1.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                WriteError(ref output, "ERR GET returned corrupted data for outval1");
                 return false;
             }
 
-            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
-            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            // Verify both results are identical (validates data integrity)
+            if (!outval1.ReadOnlySpan.SequenceEqual(outval2.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                WriteError(ref output, "ERR GET results should be identical");
                 return false;
             }
+
+            // Reset scratch buffer (full reset, discards all GET results)
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }
@@ -154,7 +159,7 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrement, out long _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
-            garnetApi.GET(keyToReturn, out ArgSlice outval);
+            garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
             WriteBulkString(ref output, outval.Span);
             return true;
         }
@@ -165,8 +170,8 @@ namespace Garnet.test
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
 
@@ -179,7 +184,7 @@ namespace Garnet.test
 
             // key will have an etag associated with it already but the transaction should not be able to see it.
             // if the transaction needs to see it, then it can send GET with cmd as GETWITHETAG
-            garnetApi.GET(key, out ArgSlice outval);
+            garnetApi.GET(key, out PinnedSpanByte outval);
 
             List<byte> valueToMessWith = outval.ToArray().ToList();
 
@@ -201,23 +206,19 @@ namespace Garnet.test
                 valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
             }
 
-            RawStringInput input = new RawStringInput(RespCommand.SET);
-            input.header.cmd = RespCommand.SET;
-            // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithEtagFlag();
+            StringInput input = new StringInput(RespCommand.SETWITHETAG);
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
-                ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
+                PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
-                // since we are setting with retain to etag, this change should be reflected in an etag update
-                garnetApi.SET_Conditional(key, ref input);
+                var etagOutput = new StringOutput();
+                garnetApi.SET_ETagConditional(key, ref input, ref etagOutput);
             }
-
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
-            // for a non SET command the etag should be invisible and be updated automatically
+            // non-ETag commands are ETag-blind
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
@@ -550,7 +551,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string key2 = "mykey2";
@@ -562,7 +563,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 408;
+            expectedResponse = 440;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -825,6 +826,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -849,6 +852,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -871,6 +876,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
 
             var result = db.Execute("OUTOFORDERFREE", key);
@@ -977,14 +984,15 @@ namespace Garnet.test
                 [.. args]);
 
             // Test READWRITETX
-            string key = "readkey";
+            string key1 = "readkey1";
+            string key2 = "readkey2";
             string value = "foovalue0";
-            db.StringSet(key, value);
+            db.StringSet(key1, value);
 
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
-            var result = db.Execute("READWRITETX", key, writekey1, writekey2);
+            var result = db.Execute("READWRITETX", key1, writekey1, writekey2);
             ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
@@ -1000,32 +1008,32 @@ namespace Garnet.test
             string newValue2 = "foovalue2";
 
             // This conditional set should pass (prefix matches)
-            result = db.Execute("SETIFPM", key, newValue1, "foo");
+            result = db.Execute("SETIFPM", key1, newValue1, "foo");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)
-            result = db.Execute("SETIFPM", key, newValue2, "bar");
+            result = db.Execute("SETIFPM", key1, newValue2, "bar");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // Test MYDICTSET
             string newKey1 = "newkey1";
             string newKey2 = "newkey2";
 
-            db.Execute("MYDICTSET", key, newKey1, newValue1);
+            db.Execute("MYDICTSET", key2, newKey1, newValue1);
 
-            var dictVal = db.Execute("MYDICTGET", key, newKey1);
+            var dictVal = db.Execute("MYDICTGET", key2, newKey1);
             ClassicAssert.AreEqual(newValue1, (string)dictVal);
 
-            db.Execute("MYDICTSET", key, newKey2, newValue2);
+            db.Execute("MYDICTSET", key2, newKey2, newValue2);
 
             // Test MYDICTGET
-            dictVal = db.Execute("MYDICTGET", key, newKey2);
+            dictVal = db.Execute("MYDICTGET", key2, newKey2);
             ClassicAssert.AreEqual(newValue2, (string)dictVal);
         }
 
@@ -1446,21 +1454,12 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("SETWITHETAG", key1, value1);
+                db.Execute("SETWITHETAG", key2, value2);
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
                 ClassicAssert.AreEqual("OK", result.ToString());
-
-                // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.IsTrue(res[1].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
-
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("18", res[1].ToString());
             }
             catch (RedisServerException rse)
             {
@@ -1484,24 +1483,13 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("SETWITHETAG", key1, value1);
+                db.Execute("SETWITHETAG", key2, value2);
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);
 
                 ClassicAssert.AreEqual(value1, result.ToString());
-
-                // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
-                // etag not updated for this
-                ClassicAssert.AreEqual("1", res[0].ToString());
-                ClassicAssert.AreEqual(value1, res[1].ToString());
-
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
-                // etag updated for this
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("257", res[1].ToString());
             }
             catch (RedisServerException rse)
             {

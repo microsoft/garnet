@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class KVSettings<TKey, TValue> : IDisposable
+    public sealed class KVSettings : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -32,24 +32,32 @@ namespace Tsavorite.core
         public IDevice ObjectLogDevice;
 
         /// <summary>
-        /// Size of a page, in bytes
+        /// Size of a main-log page, in bytes
         /// </summary>
         public long PageSize = 1 << 25;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bytes. Rounds down to power of 2.
+        /// Main-log circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow PageSize.
+        /// </summary>
+        /// <remarks>
+        /// If zero, calculate it from <see cref="LogMemorySize"/> and <see cref="PageSize"/>, which is also the max if both this and <see cref="LogMemorySize"/> are nonzero.
+        /// </remarks>
+        public int PageCount = 0;
+
+        /// <summary>
+        /// Size of a main log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
         public long SegmentSize = 1L << 30;
 
         /// <summary>
-        /// Total size of in-memory part of log, in bytes. Rounds down to power of 2.
+        /// Size of an object log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
-        public long MemorySize = 1L << 34;
+        public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
-        /// Controls how many pages should be empty to account for non-power-of-two-sized log
+        /// Total size of in-memory part of main log, in bytes. Rounds down to power of 2.
         /// </summary>
-        public int MinEmptyPageCount = 0;
+        public long LogMemorySize = 1L << 34;
 
         /// <summary>
         /// Fraction of log marked as mutable (in-place updates). Rounds down to power of 2.
@@ -72,19 +80,25 @@ namespace Tsavorite.core
         public bool ReadCacheEnabled = false;
 
         /// <summary>
+        /// Total size of readcache log if readcache is enabled, in bytes. Rounds down to power of 2.
+        /// </summary>
+        public long ReadCacheMemorySize = 1L << 32;
+
+        /// <summary>
         /// Size of a read cache page, in bytes. Rounds down to power of 2.
         /// </summary>
         public long ReadCachePageSize = 1 << 25;
 
         /// <summary>
-        /// Total size of read cache, in bytes. Rounds down to power of 2.
+        /// Main-log circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
         /// </summary>
-        public long ReadCacheMemorySize = 1L << 34;
+        /// <remarks>
+        /// If zero, calculate it from <see cref="ReadCacheMemorySize"/> and <see cref="ReadCachePageSize"/>, which is also the max if both this and <see cref="ReadCacheMemorySize"/> are nonzero.
+        /// </remarks>
+        public int ReadCachePageCount = 0;
 
         /// <summary>
-        /// Fraction of log head (in memory) used for second chance 
-        /// copy to tail. This is (1 - MutableFraction) for the 
-        /// underlying log.
+        /// Fraction of log head (in memory) used for second chance copy to tail. This is (1 - MutableFraction) for the underlying log.
         /// </summary>
         public double ReadCacheSecondChanceFraction = 0.1;
 
@@ -130,6 +144,16 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// </summary>
+        public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+
+        /// <summary>
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// </summary>
+        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -147,6 +171,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
+        /// <param name="loggerFactory"></param>
         /// <param name="logger"></param>
         public KVSettings(string baseDir, bool deleteDirOnDispose = false, ILoggerFactory loggerFactory = null, ILogger logger = null)
         {
@@ -157,9 +182,6 @@ namespace Tsavorite.core
             this.baseDir = baseDir;
 
             LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
-                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
-
             CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
         }
 
@@ -180,7 +202,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override string ToString()
         {
-            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
+            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction};";
@@ -205,33 +227,33 @@ namespace Tsavorite.core
             => cacheLines * 64;
 
         internal LogSettings GetLogSettings()
-        {
-            return new LogSettings
+            => new()
             {
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
-                MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
+                MemorySize = LogMemorySize,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
+                PageCount = PageCount,
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
+                ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjectLogSegmentSize),
                 MutableFraction = MutableFraction,
-                MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
-                ReadCacheSettings = GetReadCacheSettings()
+                ReadCacheSettings = GetReadCacheSettings(),
+                MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
+                MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
             };
-        }
 
         private ReadCacheSettings GetReadCacheSettings()
-        {
-            return ReadCacheEnabled ?
-                new ReadCacheSettings
+            => ReadCacheEnabled ?
+                new()
                 {
-                    MemorySizeBits = Utility.NumBitsPreviousPowerOf2(ReadCacheMemorySize),
+                    MemorySize = ReadCacheMemorySize,
                     PageSizeBits = Utility.NumBitsPreviousPowerOf2(ReadCachePageSize),
+                    PageCount = ReadCachePageCount,
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }
                 : null;
-        }
 
         internal CheckpointSettings GetCheckpointSettings()
         {

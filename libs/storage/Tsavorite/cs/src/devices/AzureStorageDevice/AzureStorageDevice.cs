@@ -28,7 +28,7 @@ namespace Tsavorite.devices
         readonly ConcurrentDictionary<long, ReadWriteRequestInfo> pendingReadWriteOperations;
         readonly ConcurrentDictionary<long, RemoveRequestInfo> pendingRemoveOperations;
         readonly Timer hangCheckTimer;
-        readonly SemaphoreSlim singleWriterSemaphore;
+        readonly SemaphoreSlim initialWriterSemaphore;
         readonly TimeSpan limit;
         readonly bool localBlobManager;
 
@@ -53,7 +53,7 @@ namespace Tsavorite.devices
             public DateTime TimeStamp;
         }
 
-        SemaphoreSlim SingleWriterSemaphore => singleWriterSemaphore;
+        SemaphoreSlim InitialWriterSemaphore => initialWriterSemaphore;
 
         internal IStorageErrorHandler StorageErrorHandler { get; private set; }
 
@@ -106,7 +106,7 @@ namespace Tsavorite.devices
             StorageErrorHandler.Token.Register(CancelAllRequests);
             this.underLease = underLease;
             hangCheckTimer = new Timer(DetectHangs, null, 0, 20000);
-            singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
+            initialWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
             limit = TimeSpan.FromSeconds(90);
 
             StartAsync().Wait();
@@ -141,7 +141,7 @@ namespace Tsavorite.devices
             StorageErrorHandler.Token.Register(CancelAllRequests);
             this.underLease = underLease;
             hangCheckTimer = new Timer(DetectHangs, null, 0, 20000);
-            singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
+            initialWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
             limit = TimeSpan.FromSeconds(90);
 
             StartAsync().Wait();
@@ -197,7 +197,7 @@ namespace Tsavorite.devices
                             pageResults = page.Values;
                             continuationToken = page.ContinuationToken;
                             return page.Values.Count; // not accurate, in terms of bytes, but still useful for tracing purposes
-                        });
+                        }).ConfigureAwait(false);
 
                     foreach (var item in pageResults)
                     {
@@ -217,7 +217,7 @@ namespace Tsavorite.devices
                 while (!string.IsNullOrEmpty(continuationToken));
 
                 // make sure we did not lose the lease while iterating to find the blobs
-                await BlobManager.ConfirmLeaseIsGoodForAWhileAsync();
+                await BlobManager.ConfirmLeaseIsGoodForAWhileAsync().ConfigureAwait(false);
                 StorageErrorHandler.Token.ThrowIfCancellationRequested();
 
 
@@ -319,7 +319,7 @@ namespace Tsavorite.devices
                 BlobManager.StopAsync().Wait();
 
             hangCheckTimer.Dispose();
-            singleWriterSemaphore?.Dispose();
+            initialWriterSemaphore?.Dispose();
 
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
             // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
@@ -384,7 +384,7 @@ namespace Tsavorite.devices
                     async (numAttempts) =>
                     {
                         var client = (numAttempts > 1) ? entry.PageBlob.Default : entry.PageBlob.Aggressive;
-                        await client.DeleteAsync(cancellationToken: StorageErrorHandler.Token);
+                        await client.DeleteAsync(cancellationToken: StorageErrorHandler.Token).ConfigureAwait(false);
                         return 1;
                     });
             }
@@ -419,7 +419,7 @@ namespace Tsavorite.devices
                     async (numAttempts) =>
                     {
                         var client = (numAttempts > 1) ? entry.PageBlob.Default : entry.PageBlob.Aggressive;
-                        await client.DeleteAsync(cancellationToken: StorageErrorHandler.Token);
+                        await client.DeleteAsync(cancellationToken: StorageErrorHandler.Token).ConfigureAwait(false);
                         return 1;
                     });
             }
@@ -585,7 +585,7 @@ namespace Tsavorite.devices
                     },
                     async () =>
                     {
-                        var response = await blobEntry.PageBlob.Default.GetPropertiesAsync();
+                        var response = await blobEntry.PageBlob.Default.GetPropertiesAsync().ConfigureAwait(false);
                         blobEntry.ETag = response.Value.ETag;
 
                     }).ConfigureAwait(false);
@@ -642,7 +642,7 @@ namespace Tsavorite.devices
                             }
 
                             return length;
-                        });
+                        }).ConfigureAwait(false);
 
                     readLength -= length;
                     offset += length;
@@ -666,34 +666,34 @@ namespace Tsavorite.devices
         {
             WriteToBlobAsync(blobEntry, sourceAddress, (long)destinationAddress, numBytesToWrite, id)
                 .ContinueWith((Task t) =>
+                {
+                    if (pendingReadWriteOperations.TryRemove(id, out ReadWriteRequestInfo request))
                     {
-                        if (pendingReadWriteOperations.TryRemove(id, out ReadWriteRequestInfo request))
+                        if (t.IsFaulted)
                         {
-                            if (t.IsFaulted)
-                            {
-                                BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Failure)");
-                                request.Callback(uint.MaxValue, request.NumBytes, request.Context);
-                            }
-                            else
-                            {
-                                BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id}");
-                                request.Callback(0, request.NumBytes, request.Context);
-                            }
+                            BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Failure)");
+                            request.Callback(uint.MaxValue, request.NumBytes, request.Context);
                         }
-
-                        if (underLease)
+                        else
                         {
-                            SingleWriterSemaphore.Release();
+                            BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id}");
+                            request.Callback(0, request.NumBytes, request.Context);
                         }
+                    }
 
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                    if (underLease)
+                    {
+                        InitialWriterSemaphore.Release();
+                    }
+
+                }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         async Task WriteToBlobAsync(BlobEntry blobEntry, IntPtr sourceAddress, long destinationAddress, uint numBytesToWrite, long id)
         {
             if (underLease)
             {
-                await SingleWriterSemaphore.WaitAsync();
+                await InitialWriterSemaphore.WaitAsync().ConfigureAwait(false);
             }
 
             long offset = 0;

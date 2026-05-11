@@ -9,7 +9,7 @@ tags: [garnet, concurrency, caching, lock-free, etags]
 
 Native ETags in a cache-store enable real-world use cases such as maintaining cache consistency, reducing network bandwidth utilization, and avoiding full-blown transactions for several applications.
 
-Garnet provides native ETag support for raw strings (data added and retrieved using operations such as `GET` and `SET`). It is not available for objects (such as sorted-set, hash, list). This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately. You can find the ETag API documentation [here](/docs/commands/garnet-specific-commands#native-etag-support).
+Garnet provides native ETag support for raw strings via a dedicated set of ETag commands (`SETWITHETAG`, `GETWITHETAG`, `SETIFMATCH`, `SETIFGREATER`, `GETIFNOTMATCH`, `DELIFGREATER`). It is not available for objects (such as sorted-set, hash, list). **Important:** Users must partition their keys and use only ETag commands on ETag-managed keys. Mixing ETag and non-ETag commands on the same key results in undefined behavior. You can find the ETag API documentation [here](/docs/commands/garnet-specific-commands#native-etag-support).
 
 This article explores when and how you can use this new Garnet feature for both your current and future applications.
 

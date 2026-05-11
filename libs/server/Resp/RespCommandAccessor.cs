@@ -4,7 +4,7 @@
 namespace Garnet.server
 {
     /// <summary>
-    /// RESP command accessor
+    /// Accessor to simplify access for a subset of <see cref="RespCommand"/> usable by external components such as cluster plugins.
     /// </summary>
     public static class RespCommandAccessor
     {

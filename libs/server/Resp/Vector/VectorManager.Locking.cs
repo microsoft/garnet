@@ -100,7 +100,7 @@ namespace Garnet.server
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
-        internal ReadVectorLock ReadVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal ReadVectorLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -108,9 +108,9 @@ namespace Garnet.server
             ActiveThreadSession = storageSession;
             try
             {
-                var keyHash = storageSession.basicContext.GetKeyHash(ref key);
+                var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
 
-                var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+                var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
                 var readCmd = input.header.cmd;
 
@@ -124,8 +124,8 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        readRes = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
-                        Debug.Assert(indexConfig.IsSpanByte, "Should never need to move index onto the heap");
+                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
@@ -137,7 +137,7 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
                         {
                             status = GarnetStatus.BADSTATE;
 
@@ -145,7 +145,7 @@ namespace Garnet.server
                             return default;
                         }
 
-                        needsRecreate = NeedsRecreate(indexConfig.AsReadOnlySpan());
+                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
                     {
@@ -178,15 +178,15 @@ namespace Garnet.server
                         input.parseState.EnsureCapacity(12);
 
                         // Save off for recreation
-                        input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
-                        input.parseState.SetArgument(11, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                        input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                        input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
 
                         GarnetStatus writeRes;
                         try
                         {
                             try
                             {
-                                writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
 
                                 if (writeRes != GarnetStatus.OK)
                                 {
@@ -252,8 +252,8 @@ namespace Garnet.server
         /// </summary>
         internal ReadVectorLock ReadOrCreateVectorIndex(
             StorageSession storageSession,
-            ref SpanByte key,
-            ref RawStringInput input,
+            ReadOnlySpan<byte> key,
+            ref StringInput input,
             scoped Span<byte> indexSpan,
             out GarnetStatus status
         )
@@ -264,9 +264,9 @@ namespace Garnet.server
             ActiveThreadSession = storageSession;
             try
             {
-                var keyHash = storageSession.basicContext.GetKeyHash(ref key);
+                var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
 
-                var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+                var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
                 while (true)
                 {
@@ -277,8 +277,8 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        readRes = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
-                        Debug.Assert(indexConfig.IsSpanByte, "Should never need to move index onto the heap");
+                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
@@ -290,7 +290,7 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
                         {
                             status = GarnetStatus.BADSTATE;
 
@@ -298,7 +298,7 @@ namespace Garnet.server
                             return default;
                         }
 
-                        needsRecreate = NeedsRecreate(indexConfig.AsReadOnlySpan());
+                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
                     {
@@ -331,8 +331,8 @@ namespace Garnet.server
                             input.parseState.EnsureCapacity(12);
 
                             // Save off for recreation
-                            input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
-                            input.parseState.SetArgument(11, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                            input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                            input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
                         }
                         else
                         {
@@ -340,7 +340,7 @@ namespace Garnet.server
 
                             // We must associate the index with a hash slot at creation time to enable future migrations
                             // TODO: RENAME and friends need to also update this data
-                            var slot = HashSlotUtils.HashSlot(ref key);
+                            var slot = HashSlotUtils.HashSlot(key);
 
                             indexContext = NextVectorSetContext(slot);
 
@@ -363,8 +363,8 @@ namespace Garnet.server
                             input.parseState.EnsureCapacity(12);
 
                             // Save off for insertion
-                            input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
-                            input.parseState.SetArgument(11, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                            input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
+                            input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
                         }
 
                         GarnetStatus writeRes;
@@ -372,7 +372,7 @@ namespace Garnet.server
                         {
                             try
                             {
-                                writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
 
                                 if (writeRes != GarnetStatus.OK)
                                 {
@@ -382,7 +382,7 @@ namespace Garnet.server
                                     // If the failure was for a brand new index, free up the context too
                                     if (!needsRecreate)
                                     {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorContext, indexContext);
+                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
                                     }
                                 }
                             }
@@ -396,7 +396,7 @@ namespace Garnet.server
                                     // If the failure was for a brand new index, free up the context too
                                     if (!needsRecreate)
                                     {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorContext, indexContext);
+                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
                                     }
                                 }
 
@@ -405,7 +405,7 @@ namespace Garnet.server
 
                             if (!needsRecreate)
                             {
-                                UpdateContextMetadata(ref storageSession.vectorContext);
+                                UpdateContextMetadata(ref storageSession.vectorBasicContext);
                             }
                         }
                         catch
@@ -455,9 +455,9 @@ namespace Garnet.server
         /// <summary>
         /// Acquire exclusive lock over a given key.
         /// </summary>
-        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ref SpanByte key)
+        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key)
         {
-            var keyHash = storageSession.lockableContext.GetKeyHash(key);
+            var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
             vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
 
@@ -469,20 +469,21 @@ namespace Garnet.server
         /// 
         /// If the index is partially deleted, <paramref name="status"/> will be set to <see cref="GarnetStatus.BADSTATE"/> but the locks will be still acquired.
         /// </summary>
-        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
-            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
             // Get the index
-            var acquiredLock = AcquireExclusiveLocks(storageSession, ref key);
+            var acquiredLock = AcquireExclusiveLocks(storageSession, key);
             try
             {
-                status = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
             }
             catch
             {
@@ -494,7 +495,7 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
             {
                 // Even if we read the value, it might be in a bad state due to a prior delete
-                if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
                 {
                     status = GarnetStatus.BADSTATE;
                 }

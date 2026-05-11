@@ -10,14 +10,14 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
     internal class MoreLogCompactionTests : AllureTestBase
     {
-        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
 
         [SetUp]
@@ -29,9 +29,9 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -53,34 +53,34 @@ namespace Tsavorite.test
 
         public void DeleteCompactLookup([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
             long compactUntil = 0;
 
-            for (int i = 0; i < totalRecords; i++)
+            for (long key = 0; key < totalRecords; key++)
             {
-                if (i == 1010)
+                if (key == 1010)
                     compactUntil = store.Log.TailAddress;
-                _ = bContext.Upsert(i, i);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
             }
 
-            for (int i = 0; i < totalRecords / 2; i++)
-                _ = bContext.Delete(i);
+            for (long key = 0; key < totalRecords / 2; key++)
+                _ = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
 
             compactUntil = session.Compact(compactUntil, compactionType);
 
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
-            using var session2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session2 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext2 = session2.BasicContext;
 
             // Verify records by reading
-            for (int i = 0; i < totalRecords; i++)
+            for (long key = 0; key < totalRecords; key++)
             {
-                (var status, var output) = bContext2.Read(i);
+                (var status, var output) = bContext2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 if (status.IsPending)
                 {
                     _ = bContext2.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -89,14 +89,14 @@ namespace Tsavorite.test
                     ClassicAssert.IsFalse(completedOutputs.Next());
                 }
 
-                if (i < totalRecords / 2)
+                if (key < totalRecords / 2)
                 {
                     ClassicAssert.IsTrue(status.NotFound);
                 }
                 else
                 {
                     ClassicAssert.IsTrue(status.Found);
-                    ClassicAssert.AreEqual(i, output);
+                    ClassicAssert.AreEqual(key, output);
                 }
             }
         }

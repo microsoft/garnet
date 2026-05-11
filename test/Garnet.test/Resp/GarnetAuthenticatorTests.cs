@@ -60,21 +60,25 @@ namespace Garnet.test.Resp
             auth.HasACLSupport = false;
             auth.IsAuthenticated = false;
 
-            var authCalls = 0;
-            var authingAsFoo = false;
-            var authedAsFoo = false;
+            var serverStarted = false;
+            int authCalls = 0;
 
             auth.AuthenticateCallback =
                 (p, u) =>
                 {
-                    if (!authingAsFoo)
+                    if (!serverStarted)
+                    {
+                        auth.IsAuthenticated = true;
+                        return true;
+                    }
+
+                    if (authCalls == 0)
                     {
                         ClassicAssert.AreEqual("default", Encoding.UTF8.GetString(u));
                     }
                     else
                     {
                         ClassicAssert.AreEqual("foo", Encoding.UTF8.GetString(u));
-                        authedAsFoo = true;
                     }
 
                     authCalls++;
@@ -86,22 +90,23 @@ namespace Garnet.test.Resp
             using GarnetServer server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
             server.Start();
 
+            serverStarted = true;
+
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
             // Initial command runs under default user
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, authCalls);
 
             // Auth as proper user, should get another call
-            authingAsFoo = true;
             _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
-            ClassicAssert.IsTrue(authedAsFoo);
+            ClassicAssert.AreEqual(2, authCalls);
 
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual(2, authCalls);
 
             // Command after auth invalidation fails as no auth
-
-            var oldAuthCalls = authCalls;
             auth.IsAuthenticated = false;
             try
             {
@@ -114,7 +119,7 @@ namespace Garnet.test.Resp
             }
 
             _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
-            ClassicAssert.True(authCalls > oldAuthCalls);
+            ClassicAssert.AreEqual(3, authCalls);
         }
     }
 }

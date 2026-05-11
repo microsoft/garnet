@@ -126,7 +126,7 @@ namespace Garnet.test.cluster
             context.CreateConnection(clientCreds: context.credManager.GetUserCredentials("admin"));
 
             // Assign slots
-            _ = context.clusterTestUtils.AddSlotsRange(0, new List<(int, int)> { (0, 16383) }, logger: context.logger);
+            _ = context.clusterTestUtils.AddSlotsRange(0, [(0, 16383)], logger: context.logger);
 
             // Retrieve credentials
             var cred = context.credManager.GetUserCredentials("admin");
@@ -141,13 +141,13 @@ namespace Garnet.test.cluster
             }
 
             // Initiate meet now that we know the credentatial
-            for (int i = 1; i < shards; i++)
+            for (var i = 1; i < shards; i++)
                 context.clusterTestUtils.Meet(0, i, logger: context.logger);
 
             // Wait for config convergence
             context.clusterTestUtils.WaitAll(logger: context.logger);
 
-            context.kvPairs = new();
+            context.kvPairs = [];
             //Populate Primary
             context.PopulatePrimary(ref context.kvPairs, keyLength: 8, kvpairCount: 100, primaryIndex: 0);
 
@@ -188,8 +188,8 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(replicaNodeIndex: 1, logger: context.logger);
 
             // Reconfigure slotMap to reflect new primary
-            int[] slotMap = new int[16384];
-            for (int i = 0; i < 16384; i++)
+            var slotMap = new int[16384];
+            for (var i = 0; i < 16384; i++)
                 slotMap[i] = 1;
 
             context.PopulatePrimary(ref context.kvPairs, keyLength: 8, kvpairCount: 100, primaryIndex: 1);

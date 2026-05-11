@@ -2,29 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
-        BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
-            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
-        LockableContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
-            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
-
     /// <summary>
     /// Represents a logical database session in Garnet
     /// </summary>
@@ -46,9 +26,19 @@ namespace Garnet.server
         public BasicGarnetApi GarnetApi { get; }
 
         /// <summary>
+        /// Consistent Garnet API
+        /// </summary>
+        public ConsistentReadGarnetApi ConsistentGarnetApi { get; }
+
+        /// <summary>
         /// Lockable Garnet API
         /// </summary>
-        public LockableGarnetApi LockableGarnetApi { get; }
+        public TransactionalGarnetApi TransactionalGarnetApi { get; }
+
+        /// <summary>
+        /// Lockable Consistent Garnet API
+        /// </summary>
+        public TransactionalConsistentReadGarnetApi TransactionalConsistentGarnetApi { get; }
 
         /// <summary>
         /// Transaction manager
@@ -57,13 +47,22 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabaseSession(int id, StorageSession storageSession, BasicGarnetApi garnetApi, LockableGarnetApi lockableGarnetApi, TransactionManager txnManager)
+        public GarnetDatabaseSession(
+            int id,
+            StorageSession storageSession,
+            BasicGarnetApi garnetApi,
+            TransactionalGarnetApi lockableGarnetApi,
+            TransactionManager txnManager,
+            ConsistentReadGarnetApi consistentGarnetApi = default,
+            TransactionalConsistentReadGarnetApi transactionalConsistentGarnetApi = default)
         {
             this.Id = id;
             this.StorageSession = storageSession;
             this.GarnetApi = garnetApi;
-            this.LockableGarnetApi = lockableGarnetApi;
+            this.TransactionalGarnetApi = lockableGarnetApi;
             this.TransactionManager = txnManager;
+            this.ConsistentGarnetApi = consistentGarnetApi;
+            this.TransactionalConsistentGarnetApi = transactionalConsistentGarnetApi;
         }
 
         public GarnetDatabaseSession(int id, GarnetDatabaseSession srcSession)
@@ -71,7 +70,7 @@ namespace Garnet.server
             this.Id = id;
             this.StorageSession = srcSession.StorageSession;
             this.GarnetApi = srcSession.GarnetApi;
-            this.LockableGarnetApi = srcSession.LockableGarnetApi;
+            this.TransactionalGarnetApi = srcSession.TransactionalGarnetApi;
             this.TransactionManager = srcSession.TransactionManager;
         }
 
