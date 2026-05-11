@@ -5636,6 +5636,374 @@
     ]
   },
   {
+    "Command": "XACK",
+    "Name": "XACK",
+    "Arity": -4,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "XAUTOCLAIM",
+    "Name": "XAUTOCLAIM",
+    "Arity": -7,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "XCLAIM",
+    "Name": "XCLAIM",
+    "Arity": -6,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "XGROUP",
+    "Name": "XGROUP",
+    "Arity": -2,
+    "AclCategories": "Slow, Stream",
+    "SubCommands": [
+      {
+        "Command": "XGROUP_CREATE",
+        "Name": "XGROUP|CREATE",
+        "Arity": -5,
+        "Flags": "Write",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Slow, Stream, Write",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RW, Insert"
+          }
+        ]
+      },
+      {
+        "Command": "XGROUP_CREATECONSUMER",
+        "Name": "XGROUP|CREATECONSUMER",
+        "Arity": 5,
+        "Flags": "Write",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Slow, Stream, Write",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RW, Insert"
+          }
+        ]
+      },
+      {
+        "Command": "XGROUP_DELCONSUMER",
+        "Name": "XGROUP|DELCONSUMER",
+        "Arity": 5,
+        "Flags": "Write",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Slow, Stream, Write",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RW, Delete"
+          }
+        ]
+      },
+      {
+        "Command": "XGROUP_DESTROY",
+        "Name": "XGROUP|DESTROY",
+        "Arity": 4,
+        "Flags": "Write",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Slow, Stream, Write",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RW, Delete"
+          }
+        ]
+      },
+      {
+        "Command": "XGROUP_SETID",
+        "Name": "XGROUP|SETID",
+        "Arity": -5,
+        "Flags": "Write",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Slow, Stream, Write",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RW, Update"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "XINFO",
+    "Name": "XINFO",
+    "Arity": -2,
+    "AclCategories": "Slow, Stream",
+    "SubCommands": [
+      {
+        "Command": "XINFO_CONSUMERS",
+        "Name": "XINFO|CONSUMERS",
+        "Arity": 4,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Read, Slow, Stream",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO, Access"
+          }
+        ]
+      },
+      {
+        "Command": "XINFO_GROUPS",
+        "Name": "XINFO|GROUPS",
+        "Arity": 3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Read, Slow, Stream",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO, Access"
+          }
+        ]
+      },
+      {
+        "Command": "XINFO_STREAM",
+        "Name": "XINFO|STREAM",
+        "Arity": -3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Read, Slow, Stream",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO, Access"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "XPENDING",
+    "Name": "XPENDING",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Stream",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "XREAD",
+    "Name": "XREAD",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Read, Slow, Stream",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchKeyword",
+          "Keyword": "STREAMS",
+          "StartFrom": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 2
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "XREADGROUP",
+    "Name": "XREADGROUP",
+    "Arity": -7,
+    "Flags": "Write",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow, Stream, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchKeyword",
+          "Keyword": "STREAMS",
+          "StartFrom": 4
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 2
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Arity": -4,

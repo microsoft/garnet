@@ -365,6 +365,16 @@ namespace Garnet.server
         SLOWLOG_GET,
         SLOWLOG_RESET,
 
+        // Stream subcommands (for command info metadata)
+        XGROUP_CREATE,
+        XGROUP_CREATECONSUMER,
+        XGROUP_DELCONSUMER,
+        XGROUP_DESTROY,
+        XGROUP_SETID,
+        XINFO_CONSUMERS,
+        XINFO_GROUPS,
+        XINFO_STREAM,
+
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,

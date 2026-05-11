@@ -8289,6 +8289,122 @@
     ]
   },
   {
+    "Command": "XACK",
+    "Name": "XACK",
+    "Summary": "Returns the number of messages that were successfully acknowledged by the consumer group member of a stream.",
+    "Group": "Stream",
+    "Complexity": "O(1) for each message ID processed."
+  },
+  {
+    "Command": "XAUTOCLAIM",
+    "Name": "XAUTOCLAIM",
+    "Summary": "Changes, or acquires, ownership of messages in a consumer group, as if the messages were delivered to as the specified consumer.",
+    "Group": "Stream",
+    "Complexity": "O(1) if COUNT is small."
+  },
+  {
+    "Command": "XCLAIM",
+    "Name": "XCLAIM",
+    "Summary": "Changes, or acquires, ownership of a message in a consumer group, as if the message was delivered a specified consumer.",
+    "Group": "Stream",
+    "Complexity": "O(log N) with N being the number of PEL entries of the consumer group."
+  },
+  {
+    "Command": "XGROUP",
+    "Name": "XGROUP",
+    "Summary": "A container for consumer groups commands.",
+    "Group": "Stream",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "XGROUP_CREATE",
+        "Name": "XGROUP|CREATE",
+        "Summary": "Creates a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "XGROUP_CREATECONSUMER",
+        "Name": "XGROUP|CREATECONSUMER",
+        "Summary": "Creates a consumer in a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "XGROUP_DELCONSUMER",
+        "Name": "XGROUP|DELCONSUMER",
+        "Summary": "Deletes a consumer from a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "XGROUP_DESTROY",
+        "Name": "XGROUP|DESTROY",
+        "Summary": "Destroys a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(N) where N is the number of entries in the group\u0027s pending entries list (PEL)."
+      },
+      {
+        "Command": "XGROUP_SETID",
+        "Name": "XGROUP|SETID",
+        "Summary": "Sets the last-delivered ID of a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      }
+    ]
+  },
+  {
+    "Command": "XINFO",
+    "Name": "XINFO",
+    "Summary": "A container for stream introspection commands.",
+    "Group": "Stream",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "XINFO_CONSUMERS",
+        "Name": "XINFO|CONSUMERS",
+        "Summary": "Returns a list of the consumers in a consumer group.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "XINFO_GROUPS",
+        "Name": "XINFO|GROUPS",
+        "Summary": "Returns a list of the consumer groups of a stream.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "XINFO_STREAM",
+        "Name": "XINFO|STREAM",
+        "Summary": "Returns information about a stream.",
+        "Group": "Stream",
+        "Complexity": "O(1)"
+      }
+    ]
+  },
+  {
+    "Command": "XPENDING",
+    "Name": "XPENDING",
+    "Summary": "Returns the information and entries from a stream consumer group\u0027s pending entries list.",
+    "Group": "Stream",
+    "Complexity": "O(N) with N being the number of elements returned, so asking for a small fixed number of entries per call is O(1)."
+  },
+  {
+    "Command": "XREAD",
+    "Name": "XREAD",
+    "Summary": "Returns messages from multiple streams with IDs greater than the ones requested. Blocks until a message is available otherwise.",
+    "Group": "Stream",
+    "Complexity": "For each stream mentioned: O(N) with N being the count of elements being returned, it means that XREAD-ing with a fixed COUNT is O(1)."
+  },
+  {
+    "Command": "XREADGROUP",
+    "Name": "XREADGROUP",
+    "Summary": "Returns new or historical messages from a stream for a consumer in a group. Blocks until a message is available otherwise.",
+    "Group": "Stream",
+    "Complexity": "For each stream mentioned: O(M) with M being the number of elements returned."
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn\u0027t exist.",
