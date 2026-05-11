@@ -263,7 +263,7 @@ namespace Garnet.server
                     StoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
-            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0, loggerFactory?.CreateLogger("StreamManager"));
+            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0, serverOptions.EnableAOF && serverOptions.WaitForCommit, loggerFactory?.CreateLogger("StreamManager"));
         }
 
         /// <summary>
@@ -286,6 +286,7 @@ namespace Garnet.server
                                                    serverOptions.StreamPageSizeBytes(),
                                                    serverOptions.StreamMemorySizeBytes(),
                                                    0,
+                                                   serverOptions.EnableAOF && serverOptions.WaitForCommit,
                                                    loggerFactory?.CreateLogger("StreamManager"));
         }
 
@@ -707,6 +708,20 @@ namespace Garnet.server
                     else
                     {
                         await databaseManager.CommitToAofAsync(token, logger);
+
+                        // Piggyback stream log commits onto the same periodic cycle so
+                        // stream data is flushed at the configured AOF frequency.
+                        if (streamManager != null)
+                        {
+                            try
+                            {
+                                await streamManager.CommitAsync(token);
+                            }
+                            catch (Exception ex)
+                            {
+                                logger?.LogError(ex, "Stream log periodic commit failed");
+                            }
+                        }
 
                         await Task.Delay(commitFrequencyMs, token);
                     }

@@ -21,6 +21,7 @@ namespace Garnet.server
         long defPageSize;
         long defMemorySize;
         int safeTailRefreshFreqMs;
+        readonly bool waitForCommit;
         readonly ILogger logger;
 
         SingleWriterMultiReaderLock _lock = new SingleWriterMultiReaderLock();
@@ -30,13 +31,17 @@ namespace Garnet.server
         /// </summary>
         /// <param name="streamsRootDir">Root directory under which per-stream subdirectories are
         ///     created. When null, all streams are kept in-memory only (no durability).</param>
-        public StreamManager(string streamsRootDir, long pageSize, long memorySize, int safeTailRefreshFreqMs, ILogger logger = null)
+        /// <param name="waitForCommit">When true, every write to a stream's log synchronously
+        ///     flushes and waits for the commit to complete before returning — matching the
+        ///     server-wide <c>--wait-for-commit</c> AOF behaviour.</param>
+        public StreamManager(string streamsRootDir, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool waitForCommit = false, ILogger logger = null)
         {
             streams = new Dictionary<byte[], StreamObject>(ByteArrayComparer.Instance);
             this.streamsRootDir = streamsRootDir;
             defPageSize = pageSize;
             defMemorySize = memorySize;
             this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;
+            this.waitForCommit = waitForCommit;
             this.logger = logger;
         }
 
@@ -65,7 +70,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                var stream = new StreamObject(streamsRootDir, hexName, defPageSize, defMemorySize, safeTailRefreshFreqMs, recover: true);
+                var stream = new StreamObject(streamsRootDir, hexName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit, recover: true);
                 streams[keyBytes] = stream;
                 logger?.LogInformation("Recovered stream '{key}' from '{dir}'", BitConverter.ToString(keyBytes), dir);
             }
@@ -253,7 +258,7 @@ namespace Garnet.server
                     // for the on-disk directory name so arbitrary key bytes are filesystem-safe and
                     // the encoding is reversible during recovery.
                     var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
-                    StreamObject newStream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs);
+                    StreamObject newStream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit);
                     newStream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     streams.TryAdd(key, newStream);
                     streamKey = key;
@@ -418,7 +423,7 @@ namespace Garnet.server
                     if (!streams.TryGetValue(key, out stream))
                     {
                         var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
-                        stream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs);
+                        stream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit);
                         streams[key] = stream;
                     }
                 }

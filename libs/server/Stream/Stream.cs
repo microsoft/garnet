@@ -63,6 +63,7 @@ namespace Garnet.server
         readonly IDevice device;
         readonly TsavoriteLog log;
         readonly BTree index;
+        readonly bool waitForCommit;
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
@@ -97,9 +98,12 @@ namespace Garnet.server
         /// <param name="pageSize">Page size of the log used for the stream.</param>
         /// <param name="memorySize">Memory budget for the log.</param>
         /// <param name="safeTailRefreshFreqMs">Safe tail refresh frequency, milliseconds.</param>
+        /// <param name="waitForCommit">When true, every write (XADD, XDEL, XTRIM) synchronously
+        ///     flushes and waits for the commit to complete before returning. This mirrors the
+        ///     server-wide <c>--wait-for-commit</c> AOF behaviour for the stream's own log.</param>
         /// <param name="recover">If true and a disk-backed log exists at the path, recover the
         ///     log and rebuild the in-memory BTree by scanning all entries.</param>
-        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool recover = false)
+        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool waitForCommit = false, bool recover = false)
         {
             if (streamsRootDir == null || streamDirName == null)
             {
@@ -117,6 +121,7 @@ namespace Garnet.server
             index = new BTree((uint)BTreeNode.PAGE_SIZE);
             totalEntriesAdded = 0;
             lastId = default;
+            this.waitForCommit = waitForCommit;
             _lock = new SingleWriterMultiReaderLock();
 
             if (recover)
@@ -378,6 +383,9 @@ namespace Garnet.server
 
                 log.Enqueue<StreamLogEntryHeader>(header, item: rawFieldValuePairs, out long returnedLogicalAddr);
 
+                if (waitForCommit)
+                    log.Commit(spinWait: true);
+
                 // BTree append-only insert. parseIDString already enforces strict monotonic IDs,
                 // so this never collides with an existing key.
                 index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value((ulong)returnedLogicalAddr));
@@ -445,6 +453,9 @@ namespace Garnet.server
                     // Persist a tombstone marker so recovery doesn't resurrect this entry.
                     var marker = new StreamLogEntryHeader { id = entryID, numPairs = ControlRecordKind.Tombstone };
                     log.Enqueue<StreamLogEntryHeader>(marker, item: [], out _);
+
+                    if (waitForCommit)
+                        log.Commit(spinWait: true);
                 }
             }
             finally
@@ -702,6 +713,9 @@ namespace Garnet.server
                     // If everything was trimmed, push past the current tail so nothing replays.
                     long target = newHead.Valid ? (long)newHead.address : log.TailAddress;
                     log.TruncateUntil(target);
+
+                    if (waitForCommit)
+                        log.Commit(spinWait: true);
                 }
                 // Note: BTree leaves still reference tombstoned entries at addresses below the
                 // new BeginAddress. Range reads handle this by clamping scanStart to BeginAddress
