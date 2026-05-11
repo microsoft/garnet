@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Net;
+using Allure.NUnit;
 using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
@@ -11,7 +12,8 @@ namespace Garnet.test.cluster
 {
     [TestFixture]
     [NonParallelizable]
-    public class AofSyncTaskInfoTests
+    [AllureNUnit]
+    public class AofSyncTaskInfoTests : AllureTestBase
     {
         /// <summary>
         /// Verifies that AofSyncTaskInfo.Dispose() disposes
