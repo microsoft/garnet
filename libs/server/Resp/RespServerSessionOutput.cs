@@ -272,17 +272,25 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        private void WriteLargeVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
         {
             if (respProtocolVersion >= 3)
             {
-                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? RespStrings.VerbatimTxt : ext, ref dcurr, dend))
+                ext = ext.IsEmpty ? RespStrings.VerbatimTxt : ext;
+
+                while (!RespWriteUtils.TryWriteVerbatimStringHeader(item, ext, ref dcurr, dend))
+                    SendAndReset();
+
+                // Write out item
+                WriteDirectLarge(item);
+
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                    SendAndReset();
+                // RESP2 just gets a bulk string
+                WriteDirectLargeRespString(item);
             }
         }
     }

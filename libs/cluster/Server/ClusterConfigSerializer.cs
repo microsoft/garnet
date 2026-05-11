@@ -1,20 +1,40 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
-using System.Text;
 
 namespace Garnet.cluster
 {
     internal sealed partial class ClusterConfig
     {
         /// <summary>
+        /// Peek the serialization version from a config byte array without full deserialization.
+        /// </summary>
+        /// <param name="data">Serialized cluster config payload.</param>
+        /// <param name="version">The version byte at the start of the payload.</param>
+        /// <returns>True if the payload is large enough to contain a version byte; false otherwise.</returns>
+        public static bool TryPeekVersion(ReadOnlySpan<byte> data, out byte version)
+        {
+            if (data.Length < 1)
+            {
+                version = 0;
+                return false;
+            }
+            version = data[0];
+            return true;
+        }
+
+        /// <summary>
         /// Serialize config to byte array
         /// </summary>
         public byte[] ToByteArray()
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms, Encoding.ASCII);
+            var writer = new BinaryWriter(ms);
+
+            // Write serialization format version
+            writer.Write(ClusterConfigVersion);
 
             SerializeSlotMap(ref ms, ref writer);
 
@@ -60,6 +80,7 @@ namespace Garnet.cluster
         private void SerializeSlotMap(ref MemoryStream ms, ref BinaryWriter writer)
         {
             //serialize slotMap
+            var segmentCountPosition = ms.Position;
             ms.Position += 2;
             ushort segmentCount = 0;
             ushort count = 1;
@@ -93,9 +114,9 @@ namespace Garnet.cluster
             writer.Write(workerId);
             writer.Write(state);
 
-            //Write segment count in the beginning of memory stream
+            //Write segment count at the reserved position
             var _position = ms.Position;
-            ms.Position = 0;
+            ms.Position = segmentCountPosition;
             writer.Write(segmentCount);
             ms.Position = _position;
         }
@@ -107,6 +128,13 @@ namespace Garnet.cluster
         {
             var ms = new MemoryStream(other);
             var reader = new BinaryReader(ms);
+
+            // Read and validate serialization format version
+            if (other.Length < 1)
+                throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
+            var version = reader.ReadByte();
+            if (version != ClusterConfigVersion)
+                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
 
             var newSlotMap = DeserializeSlotMap(ref reader);
 
