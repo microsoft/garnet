@@ -85,9 +85,9 @@ jobs:
       - name: Check style format
         run: dotnet format libs/storage/Tsavorite/cs/Tsavorite.slnx --no-restore --verify-no-changes --verbosity diagnostic
   
-  # Job to build and test Garnet code
-  build-test-garnet:
-    name: Garnet
+  # Job to build Garnet code (once per os/framework/configuration)
+  build-garnet:
+    name: Build Garnet
     needs: [changes, format-garnet]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -96,7 +96,6 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -114,7 +113,38 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
-        run: dotnet build --configuration ${{ matrix.configuration }}
+        run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: |
+            **/bin/${{ matrix.configuration }}/
+            **/obj/
+          retention-days: 1
+
+  # Job to test Garnet code (downloads build artifacts, no rebuild)
+  test-garnet:
+    name: Garnet
+    needs: [changes, build-garnet]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        framework: [ 'net8.0' , 'net10.0']
+        configuration: [ 'Debug', 'Release' ]
+        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+    if: needs.changes.outputs.garnet == 'true'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
   
       - name: Verify Allure wiring (${{ matrix.test }})
         shell: pwsh
@@ -176,7 +206,7 @@ jobs:
           }
             
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --no-build --no-restore --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -308,7 +338,7 @@ jobs:
   pipeline-success:
     name: Garnet CI (Complete)
     runs-on: ubuntu-latest
-    needs: [ build-test-garnet,  build-test-tsavorite, build-website ]
+    needs: [ test-garnet,  build-test-tsavorite, build-website ]
     steps:
     - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}
