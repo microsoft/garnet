@@ -64,19 +64,64 @@ namespace Garnet.server.BTreeIndex
             {
                 // find the first slot > start and subtract one index to get the start index
                 startIndex = startLeaf->UpperBound(start) - 1;
+                if (startIndex < 0)
+                {
+                    // start key is less than all keys in startLeaf — move to previous leaf
+                    startLeaf = startLeaf->info->previous;
+                    if (startLeaf == null)
+                    {
+                        startVal = endVal = default;
+                        return 0;
+                    }
+                    startIndex = startLeaf->info->count - 1;
+                }
                 startVal = startLeaf->GetValue(startIndex);
 
                 // find the first value greater than equal to key and that will be the last index 
                 endIndex = endLeaf->LowerBound(end);
+                if (endIndex >= endLeaf->info->count)
+                {
+                    // end key is greater than all keys in endLeaf — move to next leaf
+                    endLeaf = endLeaf->info->next;
+                    if (endLeaf == null)
+                    {
+                        startVal = endVal = default;
+                        return 0;
+                    }
+                    endIndex = 0;
+                }
                 endVal = endLeaf->GetValue(endIndex);
             }
             else
             {
                 // find the first key in the start leaf that is greater than or equal to the start key
                 startIndex = startLeaf->LowerBound(start);
+                if (startIndex >= startLeaf->info->count)
+                {
+                    // start key is greater than all keys in startLeaf — move to next leaf
+                    startLeaf = startLeaf->info->next;
+                    if (startLeaf == null)
+                    {
+                        startVal = endVal = default;
+                        return 0;
+                    }
+                    startIndex = 0;
+                }
                 startVal = startLeaf->GetValue(startIndex);
+
                 // find the last key in the end leaf that is less than or equal to the end key
                 endIndex = endLeaf->UpperBound(end) - 1;
+                if (endIndex < 0)
+                {
+                    // end key is less than all keys in endLeaf — move to previous leaf
+                    endLeaf = endLeaf->info->previous;
+                    if (endLeaf == null)
+                    {
+                        startVal = endVal = default;
+                        return 0;
+                    }
+                    endIndex = endLeaf->info->count - 1;
+                }
                 endVal = endLeaf->GetValue(endIndex);
             }
 

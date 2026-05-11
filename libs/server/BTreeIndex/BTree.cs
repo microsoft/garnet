@@ -63,7 +63,7 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                NativeMemory.Free(node->memoryHandle);
+                NativeMemory.AlignedFree(node->memoryHandle);
                 stats.numDeallocates++;
                 node = null;
             }
@@ -92,7 +92,7 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                NativeMemory.Free(node->memoryHandle);
+                NativeMemory.AlignedFree(node->memoryHandle);
                 node = null;
             }
         }
@@ -102,12 +102,8 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                NativeMemory.Free(node->memoryHandle);
-                node->info = null;
-                node->keys = null;
-                node->data.values = null;
-                node->data.children = null;
-                node->memoryHandle = null;
+                NativeMemory.AlignedFree(node->memoryHandle);
+                node = null;
             }
         }
 
