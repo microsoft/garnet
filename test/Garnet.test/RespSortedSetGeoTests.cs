@@ -221,7 +221,7 @@ namespace Garnet.test
 
             var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
             ClassicAssert.AreEqual(1, responseHash.Length);
-            ClassicAssert.AreEqual("sqc8b49rnys", responseHash[0]);
+            ClassicAssert.AreEqual("sqc8b49rny0", responseHash[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
@@ -590,16 +590,16 @@ namespace Garnet.test
             var response = lightClientRequest.Execute("GEOADD Sicily 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", "PING", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n+PONG\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rny0\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n+PONG\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", "PING", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rny0\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
 
             // Execute command in chunks
-            expectedResponse = "*1\r\n$11\r\nsqc8b49rnys\r\n";
+            expectedResponse = "*1\r\n$11\r\nsqc8b49rny0\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
         }
