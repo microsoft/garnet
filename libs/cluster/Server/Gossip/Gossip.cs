@@ -180,27 +180,39 @@ namespace Garnet.cluster
 
                 // Initialize GarnetServerNode
                 // Thread-Safe initialization executes only once
-                await gsn.InitializeAsync();
+                await gsn.InitializeAsync().ConfigureAwait(false);
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray());
+                resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
-                    var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
-                    nodeId = other.LocalNodeId;
-                    gsn.NodeId = nodeId;
+                    var respArray = resp.Span.ToArray();
 
-                    logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
-                    // Merge without a check because node is trusted as meet was issued by admin
-                    _ = TryMerge(other, acquireLock);
+                    // Validate config version before full deserialization
+                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    {
+                        logger?.LogWarning("MEET response has incompatible config version: {version}", version);
+                        if (created) gsn?.Dispose();
+                        gossipStats.UpdateMeetRequestsFailed();
+                    }
+                    else
+                    {
+                        var other = ClusterConfig.FromByteArray(respArray);
+                        nodeId = other.LocalNodeId;
+                        gsn.NodeId = nodeId;
 
-                    gossipStats.UpdateMeetRequestsSucceed();
+                        logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
+                        // Merge without a check because node is trusted as meet was issued by admin
+                        _ = TryMerge(other, acquireLock);
 
-                    // If failed to add newly created connection dispose of it to reclaim resources
-                    // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
-                    // After connection is added we are no longer the owner. Background gossip task will be owner
-                    if (created && !await clusterConnectionStore.AddConnectionAsync(gsn))
-                        gsn.Dispose();
+                        gossipStats.UpdateMeetRequestsSucceed();
+
+                        // If failed to add newly created connection dispose of it to reclaim resources
+                        // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
+                        // After connection is added we are no longer the owner. Background gossip task will be owner
+                        if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
+                            gsn.Dispose();
+                    }
                 }
             }
             catch (Exception ex)
@@ -236,99 +248,81 @@ namespace Garnet.cluster
 
             for (var entryIx = 0; entryIx < nodeEntries.Count; entryIx++)
             {
-                try
+                var (nodeId, endpoint) = nodeEntries[entryIx];
+
+                var getOrAddTask = clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger);
+
+                GarnetServerNode gsn;
+                if (getOrAddTask.IsCompletedSuccessfully)
+                {
+                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
+                    (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                }
+                else
+                {
+                    // Otherwise copy channel & message and go async
+                    return new(GoAsyncHelperAsync(getOrAddTask, default, entryIx, null, cmd, channel.ToArray(), message.ToArray()));
+                }
+
+                if (gsn == null)
+                    continue;
+
+                // Initialize GarnetServerNode
+                // Thread-Safe initialization executes only once
+                var initTask = gsn.InitializeAsync();
+                if (initTask.IsCompletedSuccessfully)
+                {
+                    // Can stay sync, so proceed
+                    gsn.TryClusterPublish(cmd, channel, message);
+                }
+                else
+                {
+                    // Copy channel & message and go async
+                    return new(GoAsyncHelperAsync(default, initTask, entryIx, gsn, cmd, channel.ToArray(), message.ToArray()));
+                }
+            }
+
+            // Completed synchronously
+            return default;
+
+            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
+            {
+                // Finish the task which caused us to go async
+                if (lastGsn == null)
+                {
+                    (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
+
+                    if (lastGsn != null)
+                    {
+                        await lastGsn.InitializeAsync().ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    await initTask.ConfigureAwait(false);
+                }
+
+                if (lastGsn != null)
+                {
+                    lastGsn.TryClusterPublish(cmd, channel.Span, message.Span);
+                }
+
+                // Process remainder of entries, staying async
+                for (var entryIx = lastEntryIx + 1; entryIx < nodeEntries.Count; entryIx++)
                 {
                     var (nodeId, endpoint) = nodeEntries[entryIx];
 
-                    var getOrAddTask = clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger);
-
-                    GarnetServerNode gsn;
-                    if (getOrAddTask.IsCompletedSuccessfully)
-                    {
-                        // Cannot avoid blocking, but it's gated by IsCompletedSuccessfully so safe
-                        (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
-                    }
-                    else
-                    {
-                        // Otherwise copy channel & message and go async
-                        return new(GoAsyncHelperAsync(getOrAddTask, default, entryIx, null, cmd, channel.ToArray(), message.ToArray()));
-                    }
+                    var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
 
                     if (gsn == null)
                         continue;
 
                     // Initialize GarnetServerNode
                     // Thread-Safe initialization executes only once
-                    var initTask = gsn.InitializeAsync();
-                    if (initTask.IsCompletedSuccessfully)
-                    {
-                        // Can stay sync, so proceed
-                        gsn.TryClusterPublish(cmd, channel, message);
-                    }
-                    else
-                    {
-                        // Copy channel & message and go async
-                        return new(GoAsyncHelperAsync(default, initTask, entryIx, gsn, cmd, channel.ToArray(), message.ToArray()));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)}");
-                }
-            }
+                    await gsn.InitializeAsync().ConfigureAwait(false);
 
-            // Completed synchrously
-            return default;
-
-            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
-            {
-                // Finish the task which caused us to go async
-                try
-                {
-                    if (lastGsn == null)
-                    {
-                        (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
-
-                        if (lastGsn != null)
-                        {
-                            await lastGsn.InitializeAsync().ConfigureAwait(false);
-                        }
-                    }
-                    else
-                    {
-                        await initTask.ConfigureAwait(false);
-                    }
-
-                    lastGsn?.TryClusterPublish(cmd, channel.Span, message.Span);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)} -> {nameof(GoAsyncHelperAsync)} initial completion");
-                }
-
-                // Process remainder of entries, staying async
-                for (var entryIx = lastEntryIx + 1; entryIx < nodeEntries.Count; entryIx++)
-                {
-                    try
-                    {
-                        var (nodeId, endpoint) = nodeEntries[entryIx];
-
-                        var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
-
-                        if (gsn == null)
-                            continue;
-
-                        // Initialize GarnetServerNode
-                        // Thread-Safe initialization executes only once
-                        await gsn.InitializeAsync().ConfigureAwait(false);
-
-                        // Publish to remote nodes
-                        gsn.TryClusterPublish(cmd, channel.Span, message.Span);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)} -> {nameof(GoAsyncHelperAsync)} loop");
-                    }
+                    // Publish to remote nodes
+                    gsn.TryClusterPublish(cmd, channel.Span, message.Span);
                 }
             }
         }
@@ -343,7 +337,7 @@ namespace Garnet.cluster
             {
                 while (true)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) return;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     await InitConnectionsAsync().ConfigureAwait(false);
 
                     // Choose between full broadcast or sample gossip to few nodes
@@ -386,7 +380,7 @@ namespace Garnet.cluster
 
                 foreach (var a in addresses)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) break;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     var nodeId = a.Item1;
                     var address = a.Item2;
                     var port = a.Item3;
@@ -401,7 +395,9 @@ namespace Garnet.cluster
                             if (gsn == null)
                             {
                                 logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+
                                 _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
+
                                 continue;
                             }
 
@@ -419,7 +415,7 @@ namespace Garnet.cluster
                 {
                     foreach (var w in workerBanList)
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
                         var nodeId = w.Key;
                         var expiry = w.Value;
 
@@ -446,7 +442,7 @@ namespace Garnet.cluster
                 {
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
@@ -496,7 +492,7 @@ namespace Garnet.cluster
 
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())

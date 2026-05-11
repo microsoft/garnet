@@ -87,32 +87,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Check if read/write is permitted on an array of keys and generate appropriate resp response.
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="sessionAsking"></param>
-        /// <param name="waitForStableSlot"></param>
-        /// <param name="dcurr"></param>
-        /// <param name="dend"></param>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool waitForStableSlot, ref byte* dcurr, ref byte* dend, int count = -1)
-        {
-            // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
-
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, waitForStableSlot, count);
-
-            if (vres.state == SlotVerifiedState.OK)
-                return false;
-            else
-                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-            return true;
-        }
-
-        /// <summary>
         /// Verify multi-key slot ownership
         /// </summary>
         /// <param name="parseState"></param>
@@ -120,13 +94,13 @@ namespace Garnet.cluster
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
@@ -142,14 +116,15 @@ namespace Garnet.cluster
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             return vres.state != SlotVerifiedState.OK;
         }

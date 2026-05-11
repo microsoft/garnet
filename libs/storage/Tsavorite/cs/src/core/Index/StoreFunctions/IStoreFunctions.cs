@@ -9,57 +9,80 @@ namespace Tsavorite.core
     /// <summary>
     /// The interface to define functions on the TsavoriteKV store itself (rather than a session).
     /// </summary>
-    public interface IStoreFunctions<TKey, TValue>
+    public interface IStoreFunctions
     {
         #region Key Comparer
         /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(ref TKey key);
+        long GetKeyHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(ref TKey k1, ref TKey k2);
+        bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
         #endregion Key Comparer
 
-        #region Key Serializer
-        /// <summary>Indicates whether the Key Serializer is to be used</summary>
-        bool HasKeySerializer { get; }
-
-        /// <summary>Instatiate a KeySerializer and begin Key serialization to the given stream.</summary>
-        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TKey> BeginSerializeKey(Stream stream);
-
-        /// <summary>Instatiate a KeySerializer and begin Key deserialization from the given stream.</summary>
-        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TKey> BeginDeserializeKey(Stream stream);
-        #endregion Key Serializer
-
         #region Value Serializer
+        /// <summary>Creates an instance of the Value Serializer</summary>
+        IObjectSerializer<IHeapObject> CreateValueObjectSerializer();
+
         /// <summary>Indicates whether the Value Serializer is to be used</summary>
         bool HasValueSerializer { get; }
 
         /// <summary>Instatiate a ValueSerializer and begin Value serialization to the given stream.</summary>
         /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TValue> BeginSerializeValue(Stream stream);
+        IObjectSerializer<IHeapObject> BeginSerializeValue(Stream stream);
 
         /// <summary>Instatiate a ValueSerializer and begin Value deserialization from the given stream.</summary>
         /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TValue> BeginDeserializeValue(Stream stream);
+        IObjectSerializer<IHeapObject> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 
-        #region Record Disposer
-        /// <summary>
-        /// If true, <see cref="DisposeRecord(ref TKey, ref TValue, DisposeReason, int)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
-        /// do any needed disposal there.
-        /// </summary>
-        bool DisposeOnPageEviction { get; }
+        #region Record Triggers
+        /// <inheritdoc cref="IRecordTriggers.CallOnFlush"/>
+        bool CallOnFlush { get; }
 
-        /// <summary>Dispose the Key and Value of a record, if necessary.</summary>
-        /// <param name="key">The key for the record</param>
-        /// <param name="value">The value for the record</param>
-        /// <param name="newKeySize">For <see cref="DisposeReason.RevivificationFreeList"/> only, this is a record from the freelist and we may be disposing the key as well as value
-        ///     (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
-        void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize = -1);
-        #endregion Record Disposer
+        /// <inheritdoc cref="IRecordTriggers.CallOnEvict"/>
+        bool CallOnEvict { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
+        bool CallOnDiskRead { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
+        void OnDispose(ref LogRecord logRecord, DisposeReason reason);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDisposeDiskRecord"/>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
+
+        /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
+        void OnFlush(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
+        void OnEvict(ref LogRecord logRecord, EvictionSource source);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
+        void OnDiskRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecovery"/>
+        void OnRecovery(System.Guid checkpointToken);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecoverySnapshotRead"/>
+        void OnRecoverySnapshotRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnCheckpoint"/>
+        void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken);
+        #endregion Record Triggers
 
         #region Checkpoint Completion
         /// <summary>Set the parameterless checkpoint completion callback.</summary>

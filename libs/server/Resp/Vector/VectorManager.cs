@@ -16,9 +16,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     public enum VectorManagerResult
     {
         Invalid = 0,
@@ -37,6 +34,9 @@ namespace Garnet.server
         // MUST BE A POWER OF 2
         public const ulong ContextStep = 8;
 
+        // We reserve the first 7 namespaces (we can't use 0, so it's off limits) for store-wide metadata about Vector Sets
+        internal const byte MetadataNamespace = 1;
+
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
@@ -44,6 +44,12 @@ namespace Garnet.server
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
+
+        /// <summary>
+        /// Byte stored on log records to distinguish the INDEX key as a Vector Set
+        /// Element keys are tracked in separate namespaces and are not marked with a special RecordType
+        /// </summary>
+        public const byte RecordType = 1;
 
         /// <summary>
         /// Minimum size of an id is assumed to be at least 8 bytes + a length prefix.
@@ -85,7 +91,8 @@ namespace Garnet.server
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
 
             replicationBlockEvent = CountingEventSlim.Create();
-            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
+            // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
+            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
 
             if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
@@ -118,23 +125,19 @@ namespace Garnet.server
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-            Span<byte> keySpan = stackalloc byte[1];
+            VectorElementKey key = new(MetadataNamespace, []);
+
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
-            var key = SpanByte.FromPinnedSpan(keySpan);
+            VectorOutput data = new(dataSpan);
 
-            key.MarkNamespace();
-            key.SetNamespaceInPayload(0);
+            ref var ctx = ref session.storageSession.vectorBasicContext;
 
-            var data = SpanByte.FromPinnedSpan(dataSpan);
-
-            ref var ctx = ref session.storageSession.vectorContext;
-
-            var status = ctx.Read(ref key, ref data);
+            var status = ctx.Read(key, ref data);
 
             if (status.IsPending)
             {
-                SpanByte ignored = default;
+                VectorOutput ignored = new();
                 CompletePending(ref status, ref ignored, ref ctx);
             }
 
@@ -146,7 +149,6 @@ namespace Garnet.server
                     contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
                 }
             }
-
         }
 
         /// <summary>
@@ -158,7 +160,7 @@ namespace Garnet.server
 
             using var session = (RespServerSession)getCleanupSession();
 
-            ref var ctx = ref session.storageSession.vectorContext;
+            ref var ctx = ref session.storageSession.vectorBasicContext;
 
             // If we come up and contexts are marked for migration, that means the migration FAILED
             // and we'd like those contexts back ASAP
@@ -193,10 +195,10 @@ namespace Garnet.server
                     {
                         var toDeleteKeySpanByte = SpanByte.FromPinnedPointer(toDeleteKeyPtr, toDeleteKey.Span.Length);
 
-                        RawStringInput input = new(RespCommand.VADD);
+                        StringInput input = new(RespCommand.VADD);
 
                         // Check if delete got far enough that we should re-apply it
-                        using (ReadForDeleteVectorIndex(session.storageSession, ref toDeleteKeySpanByte, ref input, indexSpan, out var garnetStatus))
+                        using (ReadForDeleteVectorIndex(session.storageSession, toDeleteKeySpanByte, ref input, indexSpan, out var garnetStatus))
                         {
                             if (garnetStatus is not (GarnetStatus.BADSTATE or GarnetStatus.NOTFOUND))
                             {
@@ -207,7 +209,7 @@ namespace Garnet.server
 
                         try
                         {
-                            if (TryDeleteVectorSet(session.storageSession, ref toDeleteKeySpanByte, out var garnetStatus).IsCompletedSuccessfully && garnetStatus != GarnetStatus.BADSTATE)
+                            if (TryDeleteVectorSet(session.storageSession, toDeleteKeySpanByte, out var garnetStatus).IsCompletedSuccessfully && garnetStatus != GarnetStatus.BADSTATE)
                             {
                                 // Normal delete worked, easy enough
                                 //
@@ -228,8 +230,8 @@ namespace Garnet.server
                         //   4. Mark the context as needing cleanup
 
                         // Zero out the index (which may already be zero'd, but that's fine to redo)
-                        RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
-                        var update = session.storageSession.basicContext.RMW(ref toDeleteKeySpanByte, ref updateToDroppableVectorSet);
+                        StringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
+                        var update = session.storageSession.stringBasicContext.RMW((FixedSpanByteKey)toDeleteKeySpanByte, ref updateToDroppableVectorSet);
                         if (!update.IsCompletedSuccessfully)
                         {
                             throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
@@ -238,7 +240,7 @@ namespace Garnet.server
                         // Note that we don't need to DROP the index because we know we haven't re-created it yet
 
                         // Actually delete the value
-                        var del = session.storageSession.basicContext.Delete(ref toDeleteKeySpanByte);
+                        var del = session.storageSession.stringBasicContext.Delete((FixedSpanByteKey)toDeleteKeySpanByte);
                         if (!(del.Found || del.NotFound))
                         {
                             logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
@@ -246,16 +248,8 @@ namespace Garnet.server
                             continue;
                         }
 
-                        // Cleanup incidental additional state
-                        if (!TryDropVectorSetReplicationKey(toDeleteKeySpanByte, ref session.storageSession.basicContext))
-                        {
-                            logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-                            clearInProgressDeletes = false;
-                            continue;
-                        }
-
                         // Schedule cleanup of element data
-                        CleanupDroppedIndex(ref session.storageSession.vectorContext, toDeleteCtx);
+                        CleanupDroppedIndex(ref session.storageSession.vectorBasicContext, toDeleteCtx);
 
                         logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
                     }
@@ -265,15 +259,11 @@ namespace Garnet.server
             if (clearInProgressDeletes)
             {
                 // We successfully dealt with all pending deletes, we can delete the metadata key
-                Span<byte> toDeleteKeySpan = stackalloc byte[2];
-                var toDeleteKey = SpanByte.FromPinnedSpan(toDeleteKeySpan);
 
-                // 0:1 is InProgressDeletes
-                toDeleteKey.MarkNamespace();
-                toDeleteKey.SetNamespaceInPayload(0);
-                toDeleteKey.AsSpan()[0] = 1;
+                // [1] is InProgressDeletes
+                VectorElementKey toDeleteKey = new(MetadataNamespace, [1]);
 
-                var deleteStatus = session.storageSession.vectorContext.Delete(ref toDeleteKey);
+                var deleteStatus = session.storageSession.vectorBasicContext.Delete(toDeleteKey);
                 Debug.Assert(!deleteStatus.IsPending, "Delete shouldn't go async");
             }
 
@@ -291,20 +281,34 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
-            // Wait for any in progress cleanup to finish
+            // Wait for any in progress cleanup to finish. PauseCleanupAsync callers MUST
+            // have called ResumeCleanup before reaching here, otherwise the cleanup task
+            // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
             cleanupTaskChannel.Writer.Complete();
             AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
             AsyncUtils.BlockingWait(cleanupTask);
+
+            // Cleanup task has fully drained, so nothing else can take this gate.
+            cleanupGate.Dispose();
         }
 
-        private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext ctx)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
+            Debug.Assert(!completedOutputs.Next());
+            completedOutputs.Dispose();
+        }
+
+        private static void CompletePending(ref Status status, ref StringBasicContext ctx)
+        {
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
             Debug.Assert(!completedOutputs.Next());
             completedOutputs.Dispose();
         }
@@ -406,19 +410,25 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Used in deletion code to determine if a naive delete in the Tsavorite log can be performed on a record with RecordType == VectorSet.
+        /// </summary>
+        internal static bool CanDeleteIndex(ReadOnlySpan<byte> indexValue)
+        => !indexValue.ContainsAnyExcept((byte)0);
+
+        /// <summary>
         /// Deletion of a Vector Set needs special handling.
         /// 
         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
         /// </summary>
-        internal Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key, out GarnetStatus status)
+        internal Status TryDeleteVectorSet(StorageSession storageSession, ReadOnlySpan<byte> key, out GarnetStatus status)
         {
-            storageSession.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            storageSession.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(key));
 
-            var input = new RawStringInput(RespCommand.VADD, ref storageSession.parseState);
+            var input = new StringInput(RespCommand.VADD, ref storageSession.parseState);
 
             Span<byte> indexSpan = stackalloc byte[Index.Size];
 
-            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, out status))
+            using (ReadForDeleteVectorIndex(storageSession, key, ref input, indexSpan, out status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -428,7 +438,7 @@ namespace Garnet.server
 
                 ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
-                if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, ref key, context))
+                if (!TryMarkDeleteInProgress(ref storageSession.vectorBasicContext, key, context))
                 {
                     // We can't recover from a crash or error, so fail the delete for safety
                     return Status.CreateError();
@@ -437,9 +447,9 @@ namespace Garnet.server
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
                 // Update the index to be delete-able
-                RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
+                StringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
 
-                var update = storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
+                var update = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref updateToDroppableVectorSet);
                 if (!update.IsCompletedSuccessfully)
                 {
                     throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
@@ -451,7 +461,7 @@ namespace Garnet.server
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
                 // Actually delete the value
-                var del = storageSession.basicContext.Delete(ref key);
+                var del = storageSession.unifiedBasicContext.Delete((FixedSpanByteKey)key);
                 if (!del.IsCompletedSuccessfully)
                 {
                     throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
@@ -459,19 +469,13 @@ namespace Garnet.server
 
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
-                // Cleanup incidental additional state
-                if (!TryDropVectorSetReplicationKey(key, ref storageSession.basicContext))
-                {
-                    logger?.LogCritical("Couldn't synthesize Vector Set delete operation for replication, data loss will occur");
-                }
-
                 // Schedule cleanup of element data
-                CleanupDroppedIndex(ref storageSession.vectorContext, context);
+                CleanupDroppedIndex(ref storageSession.vectorBasicContext, context);
 
                 // Delete has finished, so remove the in progress metadata
                 //
                 // A crash or error before this will cause some work to be retried, but no correctness issues
-                ClearDeleteInProgress(ref storageSession.vectorContext, ref key, context);
+                ClearDeleteInProgress(ref storageSession.vectorBasicContext, key, context);
 
                 return Status.CreateFound();
             }
@@ -594,7 +598,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -721,7 +725,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -753,11 +757,11 @@ namespace Garnet.server
         /// IMPORTANT: outputAttributes may be replaced with an allocated memory, so the caller needs to check
         /// if the buffer is stack-based or heap-based, and dispose if it's the latter.
         /// </summary>
-        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, SpanByte element, ref SpanByteAndMemory outputAttributes)
+        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element.AsReadOnlySpan(), ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
@@ -768,7 +772,7 @@ namespace Garnet.server
         /// </summary>
         private void FetchVectorElementAttributes(ulong context, int numIds, SpanByteAndMemory ids, ref SpanByteAndMemory attributes)
         {
-            var remainingIds = ids.AsReadOnlySpan();
+            var remainingIds = ids.ReadOnlySpan;
 
             GCHandle idPin = default;
             byte[] idWithNamespaceArr = null;
@@ -817,25 +821,25 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (found ? attributeMem.Length : 0);
 
-                    var destSpan = attributes.AsSpan()[attributesNextIx..];
+                    var destSpan = attributes.Span[attributesNextIx..];
                     if (destSpan.Length < neededSpace)
                     {
                         var newAttrArr = MemoryPool<byte>.Shared.Rent(attributes.Length + neededSpace);
-                        attributes.AsReadOnlySpan().CopyTo(newAttrArr.Memory.Span);
+                        attributes.ReadOnlySpan.CopyTo(newAttrArr.Memory.Span);
 
                         attributes.Memory?.Dispose();
 
                         attributes = new SpanByteAndMemory(newAttrArr, newAttrArr.Memory.Length);
-                        destSpan = attributes.AsSpan()[attributesNextIx..];
+                        destSpan = attributes.Span[attributesNextIx..];
                     }
 
                     BinaryPrimitives.WriteInt32LittleEndian(destSpan, attributeMem.Length);
-                    attributeMem.AsReadOnlySpan().CopyTo(destSpan[sizeof(int)..]);
+                    attributeMem.ReadOnlySpan.CopyTo(destSpan[sizeof(int)..]);
 
                     attributesNextIx += neededSpace;
 
@@ -884,7 +888,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -900,14 +904,14 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
                 {
                     return false;
                 }
 
-                var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+                var into = MemoryMarshal.Cast<byte, float>(outputDistances.Span);
 
-                var from = asBytes.AsReadOnlySpan();
+                var from = asBytes.ReadOnlySpan;
                 if (quantType == VectorQuantType.NoQuant)
                 {
                     var fromFloat = MemoryMarshal.Cast<byte, float>(from);

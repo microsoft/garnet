@@ -15,41 +15,20 @@ namespace Garnet.cluster
     {
         ClusterConfig lastSentConfig;
 
-        private int CountKeysInSessionStore(int slot)
+        private int CountKeysInSlot(int slot)
         {
-            ClusterKeyIterationFunctions.MainStoreCountKeys iterFuncs = new(slot);
+            ClusterKeyIterationFunctions.CountKeys iterFuncs = new(slot);
             var cursor = 0L;
-            _ = basicGarnetApi.IterateMainStore(ref iterFuncs, ref cursor);
+            _ = basicGarnetApi.IterateStore(ref iterFuncs, ref cursor);
             return iterFuncs.KeyCount;
         }
-
-        private int CountKeysInObjectStore(int slot)
-        {
-            if (!clusterProvider.serverOptions.DisableObjects)
-            {
-                ClusterKeyIterationFunctions.ObjectStoreCountKeys iterFuncs = new(slot);
-                var cursor = 0L;
-                _ = basicGarnetApi.IterateObjectStore(ref iterFuncs, ref cursor);
-                return iterFuncs.KeyCount;
-            }
-            return 0;
-        }
-
-        private int CountKeysInSlot(int slot) => CountKeysInSessionStore(slot) + CountKeysInObjectStore(slot);
 
         private List<byte[]> GetKeysInSlot(int slot, int keyCount)
         {
             List<byte[]> keys = [];
-            ClusterKeyIterationFunctions.MainStoreGetKeysInSlot mainIterFuncs = new(keys, slot, keyCount);
+            ClusterKeyIterationFunctions.GetKeysInSlot iterFuncs = new(keys, slot, keyCount);
             var cursor = 0L;
-            _ = basicGarnetApi.IterateMainStore(ref mainIterFuncs, ref cursor);
-
-            if (!clusterProvider.serverOptions.DisableObjects)
-            {
-                ClusterKeyIterationFunctions.ObjectStoreGetKeysInSlot objectIterFuncs = new(keys, slot);
-                var objectCursor = 0L;
-                _ = basicGarnetApi.IterateObjectStore(ref objectIterFuncs, ref objectCursor);
-            }
+            _ = basicGarnetApi.IterateStore(ref iterFuncs, ref cursor);
             return keys;
         }
 
@@ -141,7 +120,7 @@ namespace Garnet.cluster
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
+                RespCommand.CLUSTER_ADVANCE_TIME => NetworkClusterAdvanceTime(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
@@ -183,6 +162,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                RespCommand.CLUSTER_MLOG_KEY_TIME => NetworkClusterMlogKeyTime(out invalidParameters),
                 RespCommand.CLUSTER_SYNC => NetworkClusterSync(out invalidParameters),
                 _ => throw new Exception($"Unexpected cluster subcommand: {command}")
             };

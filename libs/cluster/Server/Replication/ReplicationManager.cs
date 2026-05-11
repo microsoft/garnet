@@ -2,10 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +21,7 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly StoreWrapper storeWrapper;
+        public AofProcessor AofProcessor => aofProcessor;
         readonly AofProcessor aofProcessor;
         readonly CheckpointStore checkpointStore;
         readonly ReplicationSyncManager replicationSyncManager;
@@ -28,6 +29,7 @@ namespace Garnet.cluster
         CancellationTokenSource resetHandler = new();
 
         readonly int pageSizeBits;
+        public int PageSizeBits => pageSizeBits;
 
         readonly ILogger logger;
         bool _disposed;
@@ -47,68 +49,76 @@ namespace Garnet.cluster
 
         public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
 
-        private long replicationOffset;
+        private AofAddress replicationOffset;
 
-        public long ReplicationOffset
+        public AofAddress ReplicationOffset
         {
             get
             {
+                if (!storeWrapper.serverOptions.EnableAOF)
+                    return replicationOffset;
+
                 // Primary tracks replicationOffset indirectly through AOF tailAddress
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
-                return role == NodeRole.PRIMARY ?
-                    (clusterProvider.serverOptions.EnableAOF && storeWrapper.appendOnlyFile.TailAddress > kFirstValidAofAddress ? storeWrapper.appendOnlyFile.TailAddress : kFirstValidAofAddress) :
-                    replicationOffset;
+                if (role == NodeRole.PRIMARY)
+                    return storeWrapper.appendOnlyFile.Log.TailAddress;
+                return replicationOffset;
             }
-
-            set { replicationOffset = value; }
         }
+
+        /// <summary>
+        /// Return the replication offset for a specific sublog without copying the full AofAddress struct.
+        /// </summary>
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The replication offset of the specified sublog.</returns>
+        public long GetReplicationOffset(int sublogIdx)
+        {
+            if (!storeWrapper.serverOptions.EnableAOF)
+                return replicationOffset[sublogIdx];
+
+            var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
+            if (role == NodeRole.PRIMARY)
+                return storeWrapper.appendOnlyFile.Log.GetTailAddress(sublogIdx);
+            return replicationOffset[sublogIdx];
+        }
+
+        public void SetSublogReplicationOffset(int sublogIdx, long offset)
+            => replicationOffset[sublogIdx] = offset;
+        public long GetSublogReplicationOffset(int sublogIdx)
+            => replicationOffset[sublogIdx];
 
         /// <summary>
         /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
         /// is taken only when we encounter a checkpoint end marker).
         /// </summary>
-        public long ReplicationCheckpointStartOffset;
+        public AofAddress ReplicationCheckpointStartOffset;
 
         /// <summary>
         /// Replication offset until which AOF address is valid for old primary if failover has occurred
         /// </summary>
-        public long ReplicationOffset2
-        {
-            get { return currentReplicationConfig.replicationOffset2; }
-        }
+        public AofAddress ReplicationOffset2 => currentReplicationConfig.replicationOffset2;
 
-        public string PrimaryReplId => currentReplicationConfig.primary_replid;
-        public string PrimaryReplId2 => currentReplicationConfig.primary_replid2;
+        public string PrimaryReplId => currentReplicationConfig.PrimaryReplId;
+        public string PrimaryReplId2 => currentReplicationConfig.PrimaryReplId2;
 
         /// <summary>
         /// Recovery status
         /// </summary>
         public RecoveryStatus currentRecoveryStatus;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public GarnetClusterCheckpointManager GetCkptManager(StoreType storeType)
+        public GarnetClusterCheckpointManager CheckpointManager => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+
+        public AofAddress GetRecoveredSafeAofAddress()
         {
-            return storeType switch
-            {
-                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
-                _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
-            };
+            var storeAofAddress = clusterProvider.replicationManager.CheckpointManager.RecoveredSafeAofAddress;
+            return storeAofAddress;
         }
 
-        public long GetRecoveredSafeAofAddress()
+        public AofAddress GetCurrentSafeAofAddress()
         {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).RecoveredSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).RecoveredSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
-        }
-
-        public long GetCurrentSafeAofAddress()
-        {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).CurrentSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).CurrentSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
+            var storeAofAddress = clusterProvider.replicationManager.CheckpointManager.CurrentSafeAofAddress;
+            return storeAofAddress;
         }
 
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
@@ -117,33 +127,29 @@ namespace Garnet.cluster
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
-            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
+            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
 
             networkBufferSettings.Log(logger, nameof(ReplicationManager));
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Replication, logger: logger);
             ValidateNetworkBufferSettings();
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, clusterProvider: clusterProvider, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
-            ReplicationOffset = 0;
+            replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, kFirstValidAofAddress);
+            ReplicationCheckpointStartOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, kFirstValidAofAddress);
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
-            if (storeWrapper.objectStore != null)
-            {
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftStart = CheckpointVersionShiftStart;
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
-            }
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, upgradeLock: false))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
-            aofTaskStore = new(clusterProvider, 1, logger);
+            aofSyncDriverStore = new(clusterProvider, 1, logger);
 
             var clusterFolder = "/cluster";
             var clusterDataPath = opts.CheckpointDir + clusterFolder;
@@ -164,12 +170,11 @@ namespace Garnet.cluster
                 logger?.LogTrace("Initializing new in-memory checkpoint registry");
                 // If recover option is not enabled or replication history is not available
                 // initialize new empty replication history.
-                InitializeReplicationHistory();
+                InitializeReplicationHistory(storeWrapper.serverOptions.AofPhysicalSublogCount);
             }
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
-            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
         }
 
         /// <summary>
@@ -486,7 +491,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             _disposed = true;
-
+            ctsRepManager.Cancel();
             replicationConfigDevice?.Dispose();
             replicationConfigDevicePool?.Free();
 
@@ -494,14 +499,9 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
-            replicaReplayTaskCts.Cancel();
-            activeReplay.WriteLock();
-            replicaReplayTaskCts.Dispose();
-            ctsRepManager.Cancel();
+            ReplicaReplayDriverStore?.Dispose();
             ctsRepManager.Dispose();
-            resetHandler.Cancel();
-            resetHandler.Dispose();
-            aofTaskStore.Dispose();
+            aofSyncDriverStore.Dispose();
             aofProcessor?.Dispose();
             networkPool?.Dispose();
         }
@@ -543,16 +543,14 @@ namespace Garnet.cluster
             {
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
-                if (storeWrapper.appendOnlyFile.TailAddress < recoveredSafeAofAddress)
-                    storeWrapper.appendOnlyFile.Initialize(recoveredSafeAofAddress, recoveredSafeAofAddress);
-                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-
-                var replayAofOffset = storeWrapper.ReplayAOF();
+                storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
+                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
+                var replayedUntil = storeWrapper.ReplayAOF(AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1));
 
                 // Before advertising new replication offset, wait for any queued Vector Set ops to complete
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
-                ReplicationOffset = replayAofOffset;
+                replicationOffset.SetValue(ref replayedUntil);
             }
 
             // First recover and then load latest checkpoint info in-memory
@@ -565,11 +563,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="primaryReplicationOffset"></param>
         /// <returns></returns>
-        public async Task<long> WaitForReplicationOffsetAsync(long primaryReplicationOffset)
+        public async Task<AofAddress> WaitForReplicationOffsetAsync(AofAddress primaryReplicationOffset)
         {
-            while (ReplicationOffset < primaryReplicationOffset)
+            while (ReplicationOffset.AnyLesser(primaryReplicationOffset))
             {
-                if (ctsRepManager.IsCancellationRequested) return -1;
+                if (ctsRepManager.IsCancellationRequested) return AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
                 await Task.Yield();
             }
             return ReplicationOffset;
@@ -611,20 +609,106 @@ namespace Garnet.cluster
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {
-                var replicaIds = current.GetLocalNodeReplicaIds();
-                foreach (var replicaId in replicaIds)
-                {
-                    // TODO: Initiate AOF sync task correctly when restarting primary
-                    if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
-                    {
-                        if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
-                            logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                    }
-                }
+                // Restarting as a primary we do nothing.
+                // The replica will have to initiate the recovery process.
             }
             else
             {
                 logger?.LogWarning("Replication manager starting configuration inconsistent role:{role} replicaOfId:{replicaOfNodeId}", replicaOfNodeId, localNodeRole);
+            }
+        }
+
+        struct AdvanceTimeEvent
+        {
+            public long sequenceNumber;
+            public AofAddress tailAddress;
+        }
+
+        ConcurrentStack<AdvanceTimeEvent> advanceTimeWorkQueue;
+        SingleWaiterAutoResetEvent onAdvanceTimeSignal;
+        SingleWaiterAutoResetEvent onAdvanceTimeWorkerStart;
+
+        /// <summary>
+        /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp).
+        /// </summary>
+        /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
+        /// <param name="tailAddress">Tail address snapshot.</param>
+        /// <seealso cref="T:Garnet.cluster.AofSyncDriver.AdvancePhysicalSublogTime"/>
+        /// <returns></returns>
+        public void SignalAdvanceTime(long sequenceNumber, AofAddress tailAddress)
+        {
+            advanceTimeWorkQueue?.Push(new() { sequenceNumber = sequenceNumber, tailAddress = tailAddress });
+            onAdvanceTimeSignal?.Signal();
+        }
+
+        /// <summary>
+        /// Start replica background task to process advance time signals from the primary.
+        /// </summary>
+        /// <exception cref="GarnetException"></exception>
+        public void StartAdvanceTimeBackgroundTask()
+        {
+            // NOTE: At this point the AdvanceTimeReplicaTask should not be running. This applies to both Single and MultiLog cases.
+            // In SingleLog the task should not be spawned and for multi-log it should have been disposed at the beginning of sync.
+            Debug.Assert(!storeWrapper.TaskManager.IsRunning(TaskType.AdvanceTimeReplicaTask), "AdvanceTimeReplicaTask should be not running at this stage!");
+            onAdvanceTimeWorkerStart = new();
+            if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1 &&
+                !clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeWorkerAsync(token)))
+            {
+                logger?.LogError("Failed to register AdvanceTime task at the replica");
+                throw new GarnetException("Failed to register AdvanceTime task at the replica");
+            }
+
+            _ = onAdvanceTimeWorkerStart?.WaitAsync().AsTask().WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout);
+
+            async Task AdvanceTimeWorkerAsync(CancellationToken token)
+            {
+                var appendOnlyFile = storeWrapper.appendOnlyFile;
+                advanceTimeWorkQueue = new();
+                onAdvanceTimeSignal = new() { RunContinuationsAsynchronously = true };
+                onAdvanceTimeWorkerStart.Signal();
+                try
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        var advanceTimeSignalTask = onAdvanceTimeSignal.WaitAsync().AsTask();
+                        await advanceTimeSignalTask.WaitAsync(token).ConfigureAwait(false);
+
+                        while (advanceTimeWorkQueue.TryPop(out var result))
+                        {
+                            var observationSequenceNumber = result.sequenceNumber;
+                            var observedTailAddress = result.tailAddress;
+                            var converged = false;
+                            while (!converged)
+                            {
+                                converged = true;
+                                for (var i = 0; i < observedTailAddress.Length; i++)
+                                {
+                                    // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
+                                    if (observedTailAddress[i] <= replicationOffset[i])
+                                        appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
+                                    else
+                                        converged = false;
+                                }
+                                await Task.Delay(storeWrapper.serverOptions.AofTailWitnessFreqMs, token).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                }
+                catch (TaskCanceledException) when (token.IsCancellationRequested)
+                {
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Failed at {method}", nameof(AdvanceTimeWorkerAsync));
+                }
+                finally
+                {
+                    advanceTimeWorkQueue.Clear();
+                    advanceTimeWorkQueue = null;
+                    onAdvanceTimeWorkerStart = null;
+                    onAdvanceTimeSignal = null;
+                }
             }
         }
     }

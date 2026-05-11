@@ -50,6 +50,7 @@ namespace Garnet.common
         /// <param name="onResponseDelegateUnsafe">Callback that takes in a byte array and length, and returns the number of bytes read and the number of requests processed</param>
         /// <param name="BufferSize">Message buffer size.</param>
         /// <param name="sslOptions">SSL options</param>
+        /// <param name="logger">ILogger instance</param>
         public unsafe LightClient(
             EndPoint endpoint,
             int opType,
@@ -60,7 +61,7 @@ namespace Garnet.common
             : base(endpoint, BufferSize)
         {
             this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool();
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.LightClient, logger: logger);
             this.onResponseDelegateUnsafe = onResponseDelegateUnsafe ?? new OnResponseDelegateUnsafe(DefaultLightReceiveUnsafe);
             this.opType = opType;
             this.BufferSize = BufferSize;
@@ -168,7 +169,7 @@ namespace Garnet.common
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -178,7 +179,7 @@ namespace Garnet.common
                 if (endpoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                if (await TryConnectSocketAsync(socket, endpoint, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 

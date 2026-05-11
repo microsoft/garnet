@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Text;
+using Garnet.client;
 using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
@@ -153,7 +155,7 @@ namespace Garnet.cluster
 
             invalidParameters = false;
 
-            if (!vectorManager.TryReserveContextsForMigration(ref vectorContext, numVectorSetContexts, out var newContexts))
+            if (!vectorManager.TryReserveContextsForMigration(ref vectorBasicContext, numVectorSetContexts, out var newContexts))
             {
                 while (!RespWriteUtils.TryWriteError("Insufficients contexts available to reserve"u8, ref dcurr, dend))
                     SendAndReset();
@@ -174,63 +176,17 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER aofsync command (only for internode use)
-        /// </summary>
-        /// <param name="invalidParameters"></param>
-        /// <returns></returns>
-        private bool NetworkClusterAOFSync(out bool invalidParameters)
-        {
-            invalidParameters = false;
-
-            if (parseState.Count != 2)
-            {
-                invalidParameters = true;
-                return true;
-            }
-
-            var nodeId = parseState.GetString(0);
-
-            if (!parseState.TryGetLong(1, out var nextAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            if (clusterProvider.serverOptions.EnableAOF)
-            {
-                clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
-                if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Implements CLUSTER appendlog command (only for internode use)
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAppendLog"/>
         private bool NetworkClusterAppendLog(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 5 arguments (5-th argument is AOF page parsed later)
-            if (parseState.Count != 5)
+            // Expecting exactly 6 arguments (6-th argument is AOF page parsed later)
+            if (parseState.Count > 6 || parseState.Count < 5)
             {
                 invalidParameters = true;
                 return true;
@@ -238,16 +194,31 @@ namespace Garnet.cluster
 
             var nodeId = parseState.GetString(0);
 
-            if (!parseState.TryGetLong(1, out var previousAddress) ||
-                !parseState.TryGetLong(2, out var currentAddress) ||
-                !parseState.TryGetLong(3, out var nextAddress))
+            if (!parseState.TryGetInt(1, out var physicalSublogIdx) ||
+                !parseState.TryGetLong(2, allowLeadingZeros: true, out var previousAddress) ||
+                !parseState.TryGetLong(3, allowLeadingZeros: true, out var currentAddress) ||
+                !parseState.TryGetLong(4, allowLeadingZeros: true, out var nextAddress))
             {
                 logger?.LogError("{str}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER));
                 return true;
             }
 
-            var sbRecord = parseState.GetArgSliceByRef(4).SpanByte;
+            LogPrimaryStream(physicalSublogIdx, previousAddress, currentAddress, nextAddress, logger);
 
+            // This is an initialization message
+            if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
+            {
+                if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
+                    replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
+                else
+                    throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var sbRecord = parseState.GetArgSliceByRef(5);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
             var primaryId = currentConfig.LocalNodePrimaryId;
@@ -263,11 +234,23 @@ namespace Garnet.cluster
             {
                 IsReplicating = true;
 
-                clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
+                ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
 
             return true;
+
+            [Conditional("DEBUG")]
+            static void LogPrimaryStream(int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, ILogger logger)
+            {
+                var state = new GarnetTestLoggingEvent()
+                {
+                    Type = GarnetTestLoggingEventType.LogPrimaryStreamType,
+                    Message = $"physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
+                };
+
+                logger?.LogTesting(state);
+            }
         }
 
         /// <summary>
@@ -275,6 +258,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterInitiateReplicaSync"/>
         private bool NetworkClusterInitiateReplicaSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -288,19 +272,14 @@ namespace Garnet.cluster
 
             var replicaNodeId = parseState.GetString(0);
             var replicaAssignedPrimaryId = parseState.GetString(1);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).ToArray();
 
-            if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
-                !parseState.TryGetLong(4, out var replicaAofTailAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            var replicaAofBeginAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(3).Span);
+            var replicaAofTailAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(4).Span);
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginPrimarySyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
+            var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginDiskbasedSyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
 
             // No choice but to block here, we're on the network thread
             var (success, errorMessage) = AsyncUtils.BlockingWait(beginPrimarySyncTask);
@@ -324,6 +303,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointMetadata"/>
         private bool NetworkClusterSendCheckpointMetadata(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -344,7 +324,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointMetadata = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointMetadata = parseState.GetArgSliceByRef(2).ToArray();
 
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
@@ -360,6 +340,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
         private bool NetworkClusterSendCheckpointFileSegment(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -400,51 +381,44 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterBeginReplicaRecover"/>
         private bool NetworkClusterBeginReplicaRecover(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 7 arguments
-            if (parseState.Count != 7)
+            // Expecting exactly 6 arguments
+            if (parseState.Count != 6)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
-                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) ||
-                !parseState.TryGetBool(2, out var replayAOF))
+            if (!parseState.TryGetBool(0, out var recoverStoreFromToken) || !parseState.TryGetLong(1, out var replayAOFMap))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var primaryReplicaId = parseState.GetString(3);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).SpanByte.ToByteArray();
+            var primaryReplicaId = parseState.GetString(2);
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(3).ToArray();
 
-            if (!parseState.TryGetLong(5, out var beginAddress) ||
-                !parseState.TryGetLong(6, out var tailAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            var beginAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(4).Span);
+            var tailAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(5).Span);
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
-            var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
-                recoverMainStoreFromToken,
-                recoverObjectStoreFromToken,
-                replayAOF,
+            var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(
+                recoverStoreFromToken,
+                (ulong)replayAOFMap,
                 primaryReplicaId,
                 entry,
                 beginAddress,
-                tailAddress,
+                ref tailAddress,
                 out var errorMessage);
 
             if (errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -461,6 +435,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAttachSync"/>
         private bool NetworkClusterAttachSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -472,30 +447,30 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).ToArray();
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
-            ReadOnlySpan<byte> errorMessage = default;
-            long replicationOffset = -1;
+            ReadOnlySpan<byte> errorMessage;
+            var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
             {
-                var attachTask = clusterProvider.replicationManager.TryAttachSyncAsync(syncMetadata);
+                var attachTask = clusterProvider.replicationManager.TryBeginDisklessSyncAsync(syncMetadata);
 
                 // Must block here because we're on the network thread
                 var (_, err) = AsyncUtils.BlockingWait(attachTask);
                 errorMessage = err.Span;
             }
             else
-                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata, out errorMessage);
+                replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
 
-            if (!errorMessage.IsEmpty)
+            if (errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -507,54 +482,70 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.SnapshotIteratorManager"/>
+        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteRecordSpan"/>        
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.SetClusterSyncHeader"/>
         private bool NetworkClusterSync(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 3 arguments
-            if (parseState.Count != 3)
+            // Expecting exactly 2 arguments
+            if (parseState.Count != 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var primaryNodeId = parseState.GetString(0);
-            var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(2).SpanByte;
+            var payload = parseState.GetArgSliceByRef(1);
             var payloadPtr = payload.ToPointer();
-            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
-            var keyValuePairCount = *(int*)payloadPtr;
+            var recordCount = *(int*)payloadPtr;
             var i = 0;
             payloadPtr += 4;
-            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
-            {
-                TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
-                {
-                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                    payloadPtr += key.TotalSize;
-                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                    payloadPtr += value.TotalSize;
 
-                    _ = basicGarnetApi.SET(ref key, ref value);
+            TrackImportProgress(recordCount, recordCount == 0);
+            var storeWrapper = clusterProvider.storeWrapper;
+            var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
+
+            DiskLogRecord diskLogRecord = default;
+            try
+            {
+                while (i < recordCount)
+                {
+                    var kind = (MigrationRecordSpanType)(*payloadPtr);
+                    payloadPtr++;
+
+                    if (kind == MigrationRecordSpanType.LogRecord)
+                    {
+
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord);
+                        storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                        diskLogRecord.Dispose();
+                        diskLogRecord = default; // prevent double-trigger in catch
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
+                    }
+
                     i++;
                 }
             }
-            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
+            catch
             {
-                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
+                // Dispose the diskLogRecord if there was an exception in SET
+                if (diskLogRecord.IsSet)
                 {
-                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
-                        return false;
-
-                    var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    value.Expiration = expiration;
-                    _ = basicGarnetApi.SET(key, value);
-                    i++;
+                    storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    diskLogRecord.Dispose();
                 }
+                throw;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -567,6 +558,7 @@ namespace Garnet.cluster
         /// Implements CLUSTER FLUSHALL
         /// </summary>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.IssueFlushAllAsync"/>
         private bool NetworkClusterFlushAll(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -583,6 +575,80 @@ namespace Garnet.cluster
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER_ADVANCE_TIME
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAdvanceTime"/>
+        private bool NetworkClusterAdvanceTime(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 2
+            if (parseState.Count != 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var sequenceNumber = parseState.GetLong(0);
+            var tailAddressSpan = parseState.GetArgSliceByRef(1).Span;
+            clusterProvider.replicationManager.SignalAdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER MLOG_KEY_TIME command.
+        /// If node is replica, it returns the sequence number associated with the provided key otherwise the latest sequence number as generated by the sequence number generator.
+        /// For nodes configured with single log it returns an error.
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterMlogKeyTime(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting 1 or 2 arguments (key and optional FRONTIER)
+            if (parseState.Count < 1 || parseState.Count > 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            // Check if multi-log is enabled
+            if (!clusterProvider.serverOptions.MultiLogEnabled)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_MULTI_LOG_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).Span;
+
+            long sequenceNumber;
+            // Return sequence number for the specific key
+            // Check if this node is a replica
+            if (!clusterProvider.clusterManager.CurrentConfig.IsPrimary)
+            {
+                var getFrontier = parseState.Count == 2 ? parseState.GetBool(1) : false;
+                // Get sequence number from the replay state
+                var sn = clusterProvider.storeWrapper.appendOnlyFile.readConsistencyManager?.GetKeySequenceNumber(sbKey, getFrontier);
+                sequenceNumber = sn.GetValueOrDefault(-1);
+            }
+            else
+            {
+                // Get sequence number from the primary's sequence number generator
+                sequenceNumber = clusterProvider.storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber();
+            }
+            while (!RespWriteUtils.TryWriteInt64(sequenceNumber, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
     }

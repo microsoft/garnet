@@ -157,5 +157,88 @@ namespace Garnet.test.cluster
             resp = client.QuitAsync().GetAwaiter().GetResult();
             ClassicAssert.AreEqual("OK", resp);
         }
+
+        [Test, Order(4)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigVersionRoundTripTest()
+        {
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
+
+            var configBytes = config.ToByteArray();
+
+            // Verify version byte at start of payload
+            Assert.That(ClusterConfig.TryPeekVersion(configBytes, out var version), Is.True);
+            Assert.That(version, Is.EqualTo(ClusterConfig.ClusterConfigVersion));
+
+            // Round-trip should succeed
+            var restored = ClusterConfig.FromByteArray(configBytes);
+            Assert.That(restored.LocalNodeId, Is.EqualTo(config.LocalNodeId));
+        }
+
+        [Test, Order(5)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigVersionMismatchThrowsTest()
+        {
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
+
+            var configBytes = config.ToByteArray();
+
+            // Corrupt the version byte (at index 0)
+            configBytes[0] = (byte)(ClusterConfig.ClusterConfigVersion + 1);
+
+            // Deserialization should throw
+            Assert.Throws<System.IO.InvalidDataException>(() => ClusterConfig.FromByteArray(configBytes));
+        }
+
+        [Test, Order(6)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigTryPeekVersionEmptyDataTest()
+        {
+            Assert.That(ClusterConfig.TryPeekVersion([], out _), Is.False);
+        }
+
+        [Test, Order(7)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ReplicationHistoryVersionRoundTripTest()
+        {
+            var history = new ReplicationHistory(1);
+            var bytes = history.ToByteArray();
+
+            // Verify version byte at start of payload
+            Assert.That(bytes[0], Is.EqualTo(ReplicationHistory.ReplicationHistoryVersion));
+
+            // Round-trip should succeed and preserve fields
+            var restored = ReplicationHistory.FromByteArray(bytes);
+            Assert.That(restored.PrimaryReplId, Is.EqualTo(history.PrimaryReplId));
+            Assert.That(restored.PrimaryReplId2, Is.EqualTo(history.PrimaryReplId2));
+        }
+
+        [Test, Order(9)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ReplicationHistoryVersionMismatchThrowsTest()
+        {
+            var history = new ReplicationHistory(1);
+            var bytes = history.ToByteArray();
+
+            // Corrupt the version byte (at index 0)
+            bytes[0] = (byte)(ReplicationHistory.ReplicationHistoryVersion + 1);
+
+            // Deserialization should throw
+            Assert.Throws<System.IO.InvalidDataException>(() => ReplicationHistory.FromByteArray(bytes));
+        }
     }
 }

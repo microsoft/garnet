@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
@@ -12,7 +13,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.spanbyte
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -25,22 +26,22 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void VLVectorSingleKeyTest()
+        public void VLVectorSingleKeyTest()
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 17,
+                    LogMemorySize = 1L << 17,
                     PageSize = 1L << 12
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-            var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             // Single alloc outside the loop, to the max length we'll need.
@@ -51,14 +52,11 @@ namespace Tsavorite.test.spanbyte
             for (int i = 0; i < 5000; i++)
             {
                 keySpan[0] = i;
-                var keySpanByte = keySpan.AsSpanByte();
-
                 var len = GetRandomLength(rng);
                 for (int j = 0; j < len; j++)
                     valueSpan[j] = len;
-                var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, len)), Empty.Default);
             }
 
             // Reset rng to get the same sequence of value lengths
@@ -66,11 +64,10 @@ namespace Tsavorite.test.spanbyte
             for (int i = 0; i < 5000; i++)
             {
                 keySpan[0] = i;
-                var keySpanByte = keySpan.AsSpanByte();
 
                 var valueLen = GetRandomLength(rng);
                 int[] output = null;
-                var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
+                var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -92,22 +89,22 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void VLVectorMultiKeyTest()
+        public void VLVectorMultiKeyTest()
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 17,
+                    LogMemorySize = 1L << 17,
                     PageSize = 1L << 12
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             // Single alloc outside the loop, to the max length we'll need.
@@ -120,14 +117,12 @@ namespace Tsavorite.test.spanbyte
                 var keyLen = GetRandomLength(rng);
                 for (int j = 0; j < keyLen; j++)
                     keySpan[j] = i;
-                var keySpanByte = keySpan.AsSpanByte();
 
                 var valueLen = GetRandomLength(rng);
                 for (int j = 0; j < valueLen; j++)
                     valueSpan[j] = valueLen;
-                var valueSpanByte = valueSpan.Slice(0, valueLen).AsSpanByte();
 
-                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), MemoryMarshal.Cast<int, byte>(valueSpan.Slice(0, valueLen)), Empty.Default);
             }
 
             // Reset rng to get the same sequence of key and value lengths
@@ -137,11 +132,10 @@ namespace Tsavorite.test.spanbyte
                 var keyLen = GetRandomLength(rng);
                 for (int j = 0; j < keyLen; j++)
                     keySpan[j] = i;
-                var keySpanByte = keySpan.AsSpanByte();
 
                 var valueLen = GetRandomLength(rng);
                 int[] output = null;
-                var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
+                var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), ref output, Empty.Default);
 
                 if (status.IsPending)
                 {

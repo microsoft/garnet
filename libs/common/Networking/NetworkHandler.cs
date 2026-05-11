@@ -129,11 +129,11 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = this.networkPool.Get(this.networkBufferSettings.initialReceiveBufferSize);
+                transportReceiveBufferEntry = this.networkPool.Get(this.networkBufferSettings.initialReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = this.networkPool.Get(this.networkBufferSettings.sendBufferSize);
+                transportSendBufferEntry = this.networkPool.Get(this.networkBufferSettings.sendBufferSize, PoolEntryBufferType.TransportSendBuffer);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
@@ -516,7 +516,7 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2);
+            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleNetworkReceiveBuffer);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -530,7 +530,7 @@ namespace Garnet.networking
         {
             Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
 
-            var tmp = networkPool.Get(networkBufferSettings.maxReceiveBufferSize);
+            var tmp = networkPool.Get(networkBufferSettings.maxReceiveBufferSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
             if (networkBytesRead > 0)
             {
                 Array.Copy(networkReceiveBuffer, tmp.entry, networkBytesRead);
@@ -558,7 +558,7 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2);
+                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleTransportReceiveBuffer);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;

@@ -41,6 +41,7 @@ namespace Garnet.test
         public long ReadOnlyAddress;
         public long TailAddress;
         public long MemorySize;
+        public long ReadCacheHeadAddress;
         public long ReadCacheBeginAddress;
         public long ReadCacheTailAddress;
     }
@@ -229,8 +230,8 @@ namespace Garnet.test
             bool tryRecover = false,
             bool lowMemory = false,
             string memorySize = default,
-            string objectStoreLogMemorySize = default,
             string pageSize = default,
+            int pageCount = 0,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -243,11 +244,6 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string objectStorePageSize = default,
-            string objectStoreHeapMemorySize = default,
-            string objectStoreIndexSize = "16k",
-            string objectStoreIndexMaxSize = default,
-            string objectStoreReadCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -259,7 +255,9 @@ namespace Garnet.test
             ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
-            bool enableObjectStoreReadCache = false,
+            string readCacheMemorySize = default,
+            string readCachePageSize = default,
+            int readCachePageCount = 0,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
@@ -279,9 +277,10 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
+            bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m",
             string aofPageSize = null
-        )
+            )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -289,48 +288,44 @@ namespace Garnet.test
             if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice)
+                logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
                 checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage)
+                checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             if (useAcl)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(useAcl)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(defaultPassword)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new PasswordAuthenticationSettings(defaultPassword);
             }
 
             // Increase minimum thread pool size to 16 if needed
             int threadPoolMinThreads = 0;
             ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
-            if (workerThreads < 16 || completionPortThreads < 16) threadPoolMinThreads = 16;
+            if (workerThreads < 16 || completionPortThreads < 16)
+                threadPoolMinThreads = 16;
 
             GarnetServerOptions opts = new(logger)
             {
                 EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoints = endpoints ?? ([EndPoint]),
+                EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
-                IndexSize = indexSize,
-                ObjectStoreIndexSize = objectStoreIndexSize,
+                IndexMemorySize = indexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 AofMemorySize = aofMemorySize,
@@ -363,58 +358,60 @@ namespace Garnet.test
                 EnableDebugCommand = enableDebugCommand,
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
-                EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
-                EnableVectorSetPreview = enableVectorSetPreview
+                EnableVectorSetPreview = enableVectorSetPreview,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
-                opts.MemorySize = memorySize;
-
-            if (!string.IsNullOrEmpty(objectStoreLogMemorySize))
-                opts.ObjectStoreLogMemorySize = objectStoreLogMemorySize;
+                opts.LogMemorySize = memorySize;
 
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 
+            if (pageCount != 0)
+            {
+                opts.PageCount = pageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (string.IsNullOrEmpty(memorySize))
+                    opts.LogMemorySize = string.Empty;
+            }
+
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
 
-            if (!string.IsNullOrEmpty(objectStorePageSize))
-                opts.ObjectStorePageSize = objectStorePageSize;
-
-            if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
-                opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
-
-            if (!string.IsNullOrEmpty(objectStoreReadCacheHeapMemorySize))
-                opts.ObjectStoreReadCacheHeapMemorySize = objectStoreReadCacheHeapMemorySize;
-
-            if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
-            if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
+            if (indexMaxSize != default)
+                opts.IndexMaxMemorySize = indexMaxSize;
 
             if (!string.IsNullOrEmpty(aofPageSize))
                 opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
-                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
-                if (enableReadCache)
-                {
-                    opts.ReadCacheMemorySize = opts.MemorySize;
-                    opts.ReadCachePageSize = opts.PageSize;
-                }
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? "512" : pageSize;
 
-                if (enableObjectStoreReadCache)
-                {
-                    opts.ObjectStoreReadCacheLogMemorySize = opts.MemorySize;
-                    opts.ObjectStoreReadCachePageSize = opts.PageSize;
-                }
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
+                if (pageCount != 0 && memorySize == default)
+                    opts.LogMemorySize = string.Empty;
+            }
+
+            if (enableReadCache)
+            {
+                opts.ReadCacheMemorySize = readCacheMemorySize ?? opts.LogMemorySize;
+                opts.ReadCachePageSize = readCachePageSize ?? opts.PageSize;
+                opts.ReadCachePageCount = readCachePageCount != 0 ? readCachePageCount : opts.PageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (opts.ReadCachePageCount != 0 && string.IsNullOrEmpty(opts.ReadCacheMemorySize))
+                    opts.ReadCacheMemorySize = string.Empty;
             }
 
             ILoggerFactory loggerFactory = null;
@@ -445,7 +442,6 @@ namespace Garnet.test
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];
                 opts.RevivBinRecordSizes = [];
-                opts.RevivObjBinRecordCount = 256;
             }
 
             if (useInChainRevivOnly)
@@ -467,13 +463,20 @@ namespace Garnet.test
         /// <param name="recvOnly"></param>
         /// <param name="matchLevel"></param>
         /// <returns></returns>
-        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "", HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false)
+        public static (ILoggerFactory, NUnitLoggerProvider) CreateLoggerFactoryInstance(
+            TextWriter textWriter,
+            LogLevel logLevel,
+            string scope = "",
+            HashSet<string> skipCmd = null,
+            bool recvOnly = false,
+            bool matchLevel = false)
         {
-            return LoggerFactory.Create(builder =>
+            var provider = new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel);
+            return (LoggerFactory.Create(builder =>
             {
-                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel));
+                builder.AddProvider(provider);
                 builder.SetMinimumLevel(logLevel);
-            });
+            }), provider);
         }
 
         public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
@@ -499,7 +502,6 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
@@ -529,6 +531,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
@@ -567,7 +571,6 @@ namespace Garnet.test
                     commitFrequencyMs: CommitFrequencyMs,
                     useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
-                    enableIncrementalSnapshots: EnableIncrementalSnapshots,
                     fastCommit: FastCommit,
                     authUsername: authUsername,
                     authPassword: authPassword,
@@ -596,6 +599,8 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
+                    sublogCount: sublogCount,
+                    replayTaskCount: replayTaskCount,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
@@ -609,7 +614,7 @@ namespace Garnet.test
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
                     {
-                        ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
+                        ClassicAssert.Less(iter, 30, "Failed to connect within 30 seconds");
                         TestContext.Progress.WriteLine($"Waiting for Port {ipEndpoint.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
                         Thread.Sleep(1000);
                     }
@@ -644,7 +649,6 @@ namespace Garnet.test
             int commitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool disableStorageTier = false,
-            bool enableIncrementalSnapshots = false,
             bool fastCommit = true,
             string authUsername = null,
             string authPassword = null,
@@ -677,11 +681,14 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
+            bool enableRangeIndexPreview = false,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -731,7 +738,6 @@ namespace Garnet.test
             {
                 ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
-                ObjectStoreSegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
@@ -741,14 +747,13 @@ namespace Garnet.test
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
-                IndexSize = "1m",
-                ObjectStoreIndexSize = "16k",
+                IndexMemorySize = "1m",
                 EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
                 EnableAOF = enableAOF,
-                MemorySize = "1g",
+                LogMemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
@@ -782,7 +787,6 @@ namespace Garnet.test
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
                 UseAofNullDevice = useAofNullDevice,
-                EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
@@ -806,16 +810,19 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                AofPhysicalSublogCount = sublogCount,
+                AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
-                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? "512" : pageSize;
             }
 
             return opts;
@@ -997,7 +1004,7 @@ namespace Garnet.test
 
             // Incorporate arguments (as a hash code) so different runs of the same method get different folders
             //
-            // Using hashes instead of the arugments themselves to keep length down
+            // Using hashes instead of the arguments themselves to keep length down
             if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
             {
                 HashCode hash = new();
@@ -1035,6 +1042,8 @@ namespace Garnet.test
                 {
                     if (!Directory.Exists(path))
                         return;
+
+                    // Recursively delete subdirectories, then fall through to delete this directory.
                     foreach (string directory in Directory.GetDirectories(path))
                         DeleteDirectory(directory, wait);
                     break;
@@ -1044,7 +1053,7 @@ namespace Garnet.test
                 }
             }
 
-            bool retry = true;
+            var retry = true;
             while (retry)
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
@@ -1054,9 +1063,9 @@ namespace Garnet.test
                     if (Directory.Exists(path))
                         Directory.Delete(path, true);
                 }
-                catch (Exception ex) when (ex is IOException ||
-                                           ex is UnauthorizedAccessException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
+                    // If we're not waiting, try once more then give up.
                     if (!wait)
                     {
                         try { Directory.Delete(path, true); }
@@ -1064,6 +1073,7 @@ namespace Garnet.test
                         return;
                     }
                     retry = true;
+                    _ = Thread.Yield();
                 }
             }
         }
@@ -1157,10 +1167,10 @@ using System.Threading.Tasks;
             }
         }
 
-        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false)
         {
             StoreAddressInfo result = default;
-            var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
+            var info = server.Info("STORE");
             foreach (var section in info)
             {
                 foreach (var entry in section)
@@ -1175,6 +1185,8 @@ using System.Threading.Tasks;
                         result.TailAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.MemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.HeadAddress"))
+                        result.ReadCacheHeadAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))
@@ -1193,9 +1205,8 @@ using System.Threading.Tasks;
         /// <returns>Effective memory size</returns>
         public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
         {
-            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
-            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
-            return parsedMemorySize - (epc * parsedPageSize);
+            parsedPageSize = ServerOptions.PreviousPowerOf2(ServerOptions.ParseSize(pageSize, out _));
+            return ServerOptions.ParseSize(memorySize, out _);
         }
 
         /// <summary>
@@ -1213,15 +1224,12 @@ using System.Threading.Tasks;
         {
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
-
-            var failMessage = "";
-
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
                 Tsavorite.core.LightEpoch.ResetAllInstances();
                 logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                failMessage += $"Tsavorite.core.LightEpoch instances still active: {count}; ";
+                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();
@@ -1230,12 +1238,7 @@ using System.Threading.Tasks;
                 // Reset all instances to avoid impacting other tests
                 client.LightEpoch.ResetAllInstances();
                 logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
-                failMessage += $"Garnet.client.LightEpoch instances still active: {count2}; ";
-            }
-
-            if (failMessage != "")
-            {
-                ClassicAssert.Fail(failMessage);
+                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
             }
         }
     }

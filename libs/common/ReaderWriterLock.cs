@@ -77,14 +77,22 @@ namespace Garnet.common
         /// Acquires a reader lock, allowing concurrent read access to the resource.
         /// </summary>
         public void ReadLock()
-            => ReaderLock(default);
+            => ReadLock(default);
 
         /// <summary>
         /// Acquires a reader lock, allowing concurrent read access to the resource.
         /// </summary>
         /// <param name="token">The cancellation token used to signal the operation's cancellation.</param>
-        public void ReaderLock(CancellationToken token)
+        public void ReadLock(CancellationToken token)
             => Acquire(LockOperation.Reader, token);
+
+        /// <summary>
+        /// Acquires a reader lock, allowing concurrent read access to the resource.
+        /// </summary>
+        /// <param name="token">The cancellation token used to signal the operation's cancellation.</param>
+        [Obsolete("Use ReadLock(CancellationToken) instead.")]
+        public void ReaderLock(CancellationToken token)
+            => ReadLock(token);
 
         /// <summary>
         /// Release reader lock and wake one writer when this was the last active reader.

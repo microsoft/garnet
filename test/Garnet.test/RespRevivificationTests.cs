@@ -186,7 +186,8 @@ namespace Garnet.test
 
             await db.ExecuteAsync("SET", "foo", "c", "PX", 500).ConfigureAwait(false);
             await db.ExecuteAsync("SET", "michael", "jordan").ConfigureAwait(false);
-            await db.ExecuteAsync("SET", "johnny", "x", "PX", 500).ConfigureAwait(false); // big record, that we need to make sure active exp picks up for revivification
+            // A big record that is above minRevivifiable address; after active exp tombstones it, revivification should pick it up
+            await db.ExecuteAsync("SET", "arnold", "schwarzenegger", "PX", 500).ConfigureAwait(false);
 
             await Task.Delay(600).ConfigureAwait(false); // wait for the keys to expire
 
@@ -195,21 +196,21 @@ namespace Garnet.test
             // when deleting via above, are we potentially resetting the value and it's metadata and stuff?
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
-            // attempt to do an RCU operation that will reuse the tombstoned record via Recordpool
-            await db.ExecuteAsync("SETIFGREATER", "michael", "j", 23).ConfigureAwait(false);
+            // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
+            await db.ExecuteAsync("SETIFGREATER", "the", "terminator", 23).ConfigureAwait(false);
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
-            ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected in-chain revivification to happen, but it did not.");
+            ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "michael").ConfigureAwait(false);
+            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "the").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
-            ClassicAssert.AreEqual("j", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual("terminator", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
         }
 
         [Test]
-        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmwAndClearEtagState()
+        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmw()
         {
             server.Dispose(false);
             SetupServerWithReviv(inChainOnly: true);
@@ -218,24 +219,25 @@ namespace Garnet.test
 
             var db = redis.GetDatabase(0);
 
-            long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
 
             await db.StringSetAsync("arnold", "schwarzeneggar").ConfigureAwait(false);
-            long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterInsert > startingAddr, "Expected AOF tail address to move forward on initial SET");
 
             // setup keys for revivifying
             await db.StringSetAsync("hoo", "kachakahookahooka").ConfigureAwait(false);
             // both would move the tail address of the AOF forward
-            long tailAddrAfterInsert2 = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterInsert2 = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterInsert2 > tailAddrAfterInsert, "Expected AOF tail address to move forward on initial SET");
+
             await db.KeyDeleteAsync("hoo").ConfigureAwait(false);
-            long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert2, "Expected AOF tail address to move forward on DELETE");
 
             // inchain revivification of the exact same key should take place 
             await db.ExecuteAsync("SETIFGREATER", "hoo", "b", "1").ConfigureAwait(false);
-            long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterRevivifyRmw > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification RMW");
 
             // the unrelated read should not be affected by revivification state
@@ -259,22 +261,22 @@ namespace Garnet.test
 
             await db.StringSetAsync("fizz", "buzz").ConfigureAwait(false);
 
-            long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
 
             // setup keys for revivifying
             await db.StringSetAsync("hoo", "kachakahookahooka").ConfigureAwait(false);
             // both would move the tail address of the AOF forward
-            long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterInsert > startingAddr, "Expected AOF tail address to move forward on initial SET");
 
             // in-chain tombstone
             await db.KeyDeleteAsync("hoo").ConfigureAwait(false);
-            long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert, "Expected AOF tail address to move forward on DELETE");
 
             // do an in-chain revivification
             await db.StringSetAsync("hoo", "b").ConfigureAwait(false);
-            long tailAddrAfterRevivifySet = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
+            long tailAddrAfterRevivifySet = server.Provider.StoreWrapper.appendOnlyFile.Log.TailAddress[0];
             ClassicAssert.IsTrue(tailAddrAfterRevivifySet > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification SET");
 
             // make sure revivification stats reflect that things were indeed revivified

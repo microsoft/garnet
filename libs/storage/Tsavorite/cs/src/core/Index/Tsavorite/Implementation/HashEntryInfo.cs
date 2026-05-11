@@ -3,10 +3,12 @@
 
 using System.Runtime.CompilerServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+    using static Utility;
+
     /// <summary>Hash table entry information for a key</summary>
     public unsafe struct HashEntryInfo
     {
@@ -38,14 +40,13 @@ namespace Tsavorite.core
             slot = default;
             entry = default;
             this.hash = hash;
-            tag = (ushort)((ulong)this.hash >> Constants.kHashTagShift);
+            tag = HashBucketEntry.GetTag(hash);
         }
 
         /// <summary>
         /// The original address of this hash entry (at the time of FindTag, etc.)
         /// </summary>
         internal readonly long Address => entry.Address;
-        internal readonly long AbsoluteAddress => Utility.AbsoluteAddress(Address);
 
         /// <summary>
         /// The current address of this hash entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
@@ -56,28 +57,20 @@ namespace Tsavorite.core
             get { return new HashBucketEntry() { word = bucket->bucket_entries[slot] }.Address; }
         }
 
-        internal readonly long AbsoluteCurrentAddress => Utility.AbsoluteAddress(CurrentAddress);
-
-        /// <summary>
-        /// Return whether the <see cref="HashBucketEntry"/> has been updated
-        /// </summary>
-        internal readonly bool IsCurrent => CurrentAddress == Address;
-
         /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
         /// </summary>
-        internal readonly bool IsReadCache => entry.ReadCache;
-
-        /// <summary>
-        /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
-        /// </summary>
-        internal readonly bool IsCurrentReadCache => IsReadCache(CurrentAddress);
+        internal readonly bool IsReadCache
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => entry.IsReadCache;
+        }
 
         /// <summary>
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetToCurrent() => entry = new() { word = bucket->bucket_entries[slot] };
+        internal void SetToCurrent() => entry.word = bucket->bucket_entries[slot];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCAS(long newLogicalAddress)
@@ -86,9 +79,8 @@ namespace Tsavorite.core
             HashBucketEntry updatedEntry = new()
             {
                 Tag = tag,
-                Address = newLogicalAddress & Constants.kAddressMask,
+                Address = newLogicalAddress & kAddressBitMask,
                 Tentative = false
-                // .ReadCache is included in newLogicalAddress
             };
 
             if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
@@ -102,27 +94,26 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryElide()
         {
-            if (entry.word != Interlocked.CompareExchange(ref bucket->bucket_entries[slot], 0L, entry.word))
+            if (entry.word != Interlocked.CompareExchange(ref bucket->bucket_entries[slot], kInvalidAddress, entry.word))
                 return false;
-            entry.word = 0L;
+
+            // We have successfully updated the actual bucket; set the local copy of the entry to match.
+            entry.word = kInvalidAddress;
             return true;
         }
 
-        public override string ToString()
+        /// <inheritdoc/>
+        public override readonly string ToString()
         {
             var hashStr = GetHashString(hash);
 
             if (bucket == null)
                 return $"hash {hashStr} <no bucket>";
 
-            var isRC = "(rc)";
-            var addrRC = IsReadCache ? isRC : string.Empty;
-            var currAddrRC = IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = Address == CurrentAddress ? string.Empty : "*";
 
-            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot},";
-            result += $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
-            return result;
+            return $"addr {AddressString(Address)}, currAddr {AddressString(CurrentAddress)}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot},"
+                 + $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
         }
     }
 }

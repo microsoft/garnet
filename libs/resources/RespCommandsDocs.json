@@ -131,7 +131,7 @@
   {
     "Command": "APPEND",
     "Name": "APPEND",
-    "Summary": "Appends a string to the value of a key. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Appends a string to the value of a key. Creates the key if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1). The amortized time complexity is O(1) assuming the appended value is small and the already present value is of any size, since the dynamic string library used by Redis will double the free space available on every reallocation.",
     "Arguments": [
@@ -682,7 +682,7 @@
     "Name": "BLMPOP",
     "Summary": "Pops the first element from one of multiple lists. Blocks until an element is available otherwise. Deletes the list if the last element was popped.",
     "Group": "List",
-    "Complexity": "O(N\u002BM) where N is the number of provided keys and M is the number of elements returned.",
+    "Complexity": "O(N+M) where N is the number of provided keys and M is the number of elements returned.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -788,7 +788,7 @@
     "Group": "List",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060BLMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
+    "ReplacedBy": "`BLMOVE` with the `RIGHT` and `LEFT` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -817,7 +817,7 @@
     "Name": "BZMPOP",
     "Summary": "Removes and returns a member by score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
     "Group": "SortedSet",
-    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Complexity": "O(K) + O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -1630,12 +1630,19 @@
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of Cluster nodes",
         "DocFlags": "Deprecated",
-        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
+        "ReplacedBy": "`CLUSTER SHARDS`"
       },
       {
         "Command": "CLUSTER_SPUBLISH",
         "Name": "CLUSTER|SPUBLISH",
         "Summary": "Processes a forwarded published message from a node in the same shard",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Summary": "Returns sequence number for provided key.",
         "Group": "Cluster",
         "Complexity": "O(1)"
       }
@@ -1866,7 +1873,7 @@
   {
     "Command": "DECR",
     "Name": "DECR",
-    "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -1882,7 +1889,7 @@
   {
     "Command": "DECRBY",
     "Name": "DECRBY",
-    "Summary": "Decrements a number from the integer value of a key. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Summary": "Decrements a number from the integer value of a key. Uses 0 as initial value if the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -1952,7 +1959,7 @@
     "Name": "DUMP",
     "Summary": "Returns a serialized representation of the value stored at a key.",
     "Group": "Generic",
-    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1).",
+    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)+O(1*M) where M is small, so simply O(1).",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -2346,7 +2353,7 @@
   {
     "Command": "GEOADD",
     "Name": "GEOADD",
-    "Summary": "Adds one or more members to a geospatial index. The key is created if it doesn\u0027t exist.",
+    "Summary": "Adds one or more members to a geospatial index. The key is created if it doesn't exist.",
     "Group": "Geo",
     "Complexity": "O(log(N)) for each item added, where N is the number of elements in the sorted set.",
     "Arguments": [
@@ -2530,9 +2537,9 @@
     "Name": "GEORADIUS",
     "Summary": "Queries a geospatial index for members within a distance from a coordinate, optionally stores the result.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "Complexity": "O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060GEOSEARCH\u0060 and \u0060GEOSEARCHSTORE\u0060 with the \u0060BYRADIUS\u0060 argument",
+    "ReplacedBy": "`GEOSEARCH` and `GEOSEARCHSTORE` with the `BYRADIUS` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -2694,9 +2701,9 @@
     "Name": "GEORADIUS_RO",
     "Summary": "Returns members from a geospatial index that are within a distance from a coordinate.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "Complexity": "O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060GEOSEARCH\u0060 with the \u0060BYRADIUS\u0060 argument",
+    "ReplacedBy": "`GEOSEARCH` with the `BYRADIUS` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -2834,9 +2841,9 @@
     "Name": "GEORADIUSBYMEMBER",
     "Summary": "Queries a geospatial index for members within a distance from a member, optionally stores the result.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "Complexity": "O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060GEOSEARCH\u0060 and \u0060GEOSEARCHSTORE\u0060 with the \u0060BYRADIUS\u0060 and \u0060FROMMEMBER\u0060 arguments",
+    "ReplacedBy": "`GEOSEARCH` and `GEOSEARCHSTORE` with the `BYRADIUS` and `FROMMEMBER` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -2992,9 +2999,9 @@
     "Name": "GEORADIUSBYMEMBER_RO",
     "Summary": "Returns members from a geospatial index that are within a distance from a member.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "Complexity": "O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060GEOSEARCH\u0060 with the \u0060BYRADIUS\u0060 and \u0060FROMMEMBER\u0060 arguments",
+    "ReplacedBy": "`GEOSEARCH` with the `BYRADIUS` and `FROMMEMBER` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -3126,7 +3133,7 @@
     "Name": "GEOSEARCH",
     "Summary": "Queries a geospatial index for members inside an area of a box or a circle.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
+    "Complexity": "O(N+log(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -3356,7 +3363,7 @@
     "Name": "GEOSEARCHSTORE",
     "Summary": "Queries a geospatial index for members inside an area of a box or a circle, optionally stores the result.",
     "Group": "Geo",
-    "Complexity": "O(N\u002Blog(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
+    "Complexity": "O(N+log(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -3688,7 +3695,7 @@
   {
     "Command": "GETIFNOTMATCH",
     "Name": "GETIFNOTMATCH",
-    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
+    "Summary": "Gets the ETag and value if the key's current etag does not match the given etag.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -3742,7 +3749,7 @@
     "Group": "String",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
+    "ReplacedBy": "`SET` with the `!GET` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -4114,7 +4121,7 @@
   {
     "Command": "HINCRBY",
     "Name": "HINCRBY",
-    "Summary": "Increments the integer value of a field in a hash by a number. Uses 0 as initial value if the field doesn\u0027t exist.",
+    "Summary": "Increments the integer value of a field in a hash by a number. Uses 0 as initial value if the field doesn't exist.",
     "Group": "Hash",
     "Complexity": "O(1)",
     "Arguments": [
@@ -4142,7 +4149,7 @@
   {
     "Command": "HINCRBYFLOAT",
     "Name": "HINCRBYFLOAT",
-    "Summary": "Increments the floating point value of a field by a number. Uses 0 as initial value if the field doesn\u0027t exist.",
+    "Summary": "Increments the floating point value of a field by a number. Uses 0 as initial value if the field doesn't exist.",
     "Group": "Hash",
     "Complexity": "O(1)",
     "Arguments": [
@@ -4229,7 +4236,7 @@
     "Group": "Hash",
     "Complexity": "O(N) where N is the number of fields being set.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060HSET\u0060 with multiple field-value pairs",
+    "ReplacedBy": "`HSET` with multiple field-value pairs",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -4644,7 +4651,7 @@
   {
     "Command": "HSETNX",
     "Name": "HSETNX",
-    "Summary": "Sets the value of a field in a hash only when the field doesn\u0027t exist.",
+    "Summary": "Sets the value of a field in a hash only when the field doesn't exist.",
     "Group": "Hash",
     "Complexity": "O(1)",
     "Arguments": [
@@ -4747,7 +4754,7 @@
   {
     "Command": "INCR",
     "Name": "INCR",
-    "Summary": "Increments the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Summary": "Increments the integer value of a key by one. Uses 0 as initial value if the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -4763,7 +4770,7 @@
   {
     "Command": "INCRBY",
     "Name": "INCRBY",
-    "Summary": "Increments the integer value of a key by a number. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Summary": "Increments the integer value of a key by a number. Uses 0 as initial value if the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -4785,7 +4792,7 @@
   {
     "Command": "INCRBYFLOAT",
     "Name": "INCRBYFLOAT",
-    "Summary": "Increment the floating point value of a key by a number. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Summary": "Increment the floating point value of a key by a number. Uses 0 as initial value if the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -5112,7 +5119,7 @@
     "Name": "LMPOP",
     "Summary": "Returns multiple elements from a list after removing them. Deletes the list if the last element was popped.",
     "Group": "List",
-    "Complexity": "O(N\u002BM) where N is the number of provided keys and M is the number of elements returned.",
+    "Complexity": "O(N+M) where N is the number of provided keys and M is the number of elements returned.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -5231,7 +5238,7 @@
   {
     "Command": "LPUSH",
     "Name": "LPUSH",
-    "Summary": "Prepends one or more elements to a list. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Prepends one or more elements to a list. Creates the key if it doesn't exist.",
     "Group": "List",
     "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
     "Arguments": [
@@ -5279,7 +5286,7 @@
     "Name": "LRANGE",
     "Summary": "Returns a range of elements from a list.",
     "Group": "List",
-    "Complexity": "O(S\u002BN) where S is the distance of start offset from HEAD for small lists, from nearest end (HEAD or TAIL) for large lists; and N is the number of elements in the specified range.",
+    "Complexity": "O(S+N) where S is the distance of start offset from HEAD for small lists, from nearest end (HEAD or TAIL) for large lists; and N is the number of elements in the specified range.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -5307,7 +5314,7 @@
     "Name": "LREM",
     "Summary": "Removes elements from a list. Deletes the list if the last element was removed.",
     "Group": "List",
-    "Complexity": "O(N\u002BM) where N is the length of the list and M is the number of elements removed.",
+    "Complexity": "O(N+M) where N is the length of the list and M is the number of elements removed.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -5441,7 +5448,7 @@
     "Name": "MIGRATE",
     "Summary": "Atomically transfers a key from one Redis instance to another.",
     "Group": "Generic",
-    "Complexity": "This command actually executes a DUMP\u002BDEL in the source instance, and a RESTORE in the target instance. See the pages of these commands for time complexity. Also an O(N) data transfer between the two instances is performed.",
+    "Complexity": "This command actually executes a DUMP+DEL in the source instance, and a RESTORE in the target instance. See the pages of these commands for time complexity. Also an O(N) data transfer between the two instances is performed.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -5621,7 +5628,7 @@
   {
     "Command": "MSETNX",
     "Name": "MSETNX",
-    "Summary": "Atomically modifies the string values of one or more keys only when all keys don\u0027t exist.",
+    "Summary": "Atomically modifies the string values of one or more keys only when all keys don't exist.",
     "Group": "String",
     "Complexity": "O(N) where N is the number of keys to set.",
     "Arguments": [
@@ -5806,7 +5813,7 @@
   {
     "Command": "PFADD",
     "Name": "PFADD",
-    "Summary": "Adds elements to a HyperLogLog key. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Adds elements to a HyperLogLog key. Creates the key if it doesn't exist.",
     "Group": "HyperLogLog",
     "Complexity": "O(1) to add every element.",
     "Arguments": [
@@ -5870,7 +5877,7 @@
   {
     "Command": "PING",
     "Name": "PING",
-    "Summary": "Returns the server\u0027s liveliness response.",
+    "Summary": "Returns the server's liveliness response.",
     "Group": "Connection",
     "Complexity": "O(1)",
     "Arguments": [
@@ -5886,11 +5893,11 @@
   {
     "Command": "PSETEX",
     "Name": "PSETEX",
-    "Summary": "Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn\u0027t exist.",
+    "Summary": "Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060SET\u0060 with the \u0060PX\u0060 argument",
+    "ReplacedBy": "`SET` with the `PX` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -5950,7 +5957,7 @@
     "Name": "PUBLISH",
     "Summary": "Posts a message to a channel.",
     "Group": "PubSub",
-    "Complexity": "O(N\u002BM) where N is the number of clients subscribed to the receiving channel and M is the total number of subscribed patterns (by any client).",
+    "Complexity": "O(N+M) where N is the number of clients subscribed to the receiving channel and M is the total number of subscribed patterns (by any client).",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -6320,7 +6327,7 @@
     "Name": "RESTORE",
     "Summary": "Creates a key from the serialized representation of a value.",
     "Group": "Generic",
-    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
+    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)+O(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -6376,6 +6383,321 @@
     ]
   },
   {
+    "Command": "RICREATE",
+    "Name": "RI.CREATE",
+    "Summary": "Creates a new RangeIndex backed by a BfTree. Returns an error if the key already exists.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BACKEND",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DISK",
+            "DisplayText": "path",
+            "Type": "String",
+            "Token": "DISK"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMORY",
+            "DisplayText": "memory",
+            "Type": "PureToken",
+            "Token": "MEMORY"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CACHESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "CACHESIZE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MINRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MINRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXKEYLEN",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXKEYLEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PAGESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "PAGESIZE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "RICONFIG",
+    "Name": "RI.CONFIG",
+    "Summary": "Returns the configuration of a RangeIndex as alternating field-value pairs.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIDEL",
+    "Name": "RI.DEL",
+    "Summary": "Deletes an entry from a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RIEXISTS",
+    "Name": "RI.EXISTS",
+    "Summary": "Checks whether a key exists and is a RangeIndex. Returns 1 if true, 0 otherwise.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIGET",
+    "Name": "RI.GET",
+    "Summary": "Gets the value of an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RIMETRICS",
+    "Name": "RI.METRICS",
+    "Summary": "Returns runtime metrics for a RangeIndex including tree handle status and flags.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIRANGE",
+    "Name": "RI.RANGE",
+    "Summary": "Scans entries in a closed key range [start, end] from a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N + M) where M is the number of entries in the range",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "OneOf",
+        "Token": "FIELDS",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY_FIELD",
+            "DisplayText": "key",
+            "Type": "PureToken",
+            "Token": "KEY"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE_FIELD",
+            "DisplayText": "value",
+            "Type": "PureToken",
+            "Token": "VALUE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BOTH_FIELD",
+            "DisplayText": "both",
+            "Type": "PureToken",
+            "Token": "BOTH"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RISCAN",
+    "Name": "RI.SCAN",
+    "Summary": "Scans entries from a RangeIndex starting at a key, returning up to COUNT entries.",
+    "Group": "Generic",
+    "Complexity": "O(log N + M) where M is the count",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "OneOf",
+        "Token": "FIELDS",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY_FIELD",
+            "DisplayText": "key",
+            "Type": "PureToken",
+            "Token": "KEY"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE_FIELD",
+            "DisplayText": "value",
+            "Type": "PureToken",
+            "Token": "VALUE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BOTH_FIELD",
+            "DisplayText": "both",
+            "Type": "PureToken",
+            "Token": "BOTH"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RISET",
+    "Name": "RI.SET",
+    "Summary": "Inserts or updates an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "ROLE",
     "Name": "ROLE",
     "Summary": "Returns the replication role.",
@@ -6412,7 +6734,7 @@
     "Group": "List",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060LMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
+    "ReplacedBy": "`LMOVE` with the `RIGHT` and `LEFT` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -6433,7 +6755,7 @@
   {
     "Command": "RPUSH",
     "Name": "RPUSH",
-    "Summary": "Appends one or more elements to a list. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Appends one or more elements to a list. Creates the key if it doesn't exist.",
     "Group": "List",
     "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
     "Arguments": [
@@ -6502,7 +6824,7 @@
   {
     "Command": "SADD",
     "Name": "SADD",
-    "Summary": "Adds one or more members to a set. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Adds one or more members to a set. Creates the key if it doesn't exist.",
     "Group": "Set",
     "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
     "Arguments": [
@@ -6780,7 +7102,7 @@
   {
     "Command": "SET",
     "Name": "SET",
-    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn\u0027t exist.",
+    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -6883,7 +7205,7 @@
   {
     "Command": "SETBIT",
     "Name": "SETBIT",
-    "Summary": "Sets or clears the bit at offset of the string value. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Sets or clears the bit at offset of the string value. Creates the key if it doesn't exist.",
     "Group": "Bitmap",
     "Complexity": "O(1)",
     "Arguments": [
@@ -6911,11 +7233,11 @@
   {
     "Command": "SETEX",
     "Name": "SETEX",
-    "Summary": "Sets the string value and expiration time of a key. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Sets the string value and expiration time of a key. Creates the key if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060SET\u0060 with the \u0060EX\u0060 argument",
+    "ReplacedBy": "`SET` with the `EX` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -7055,13 +7377,57 @@
     ]
   },
   {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Summary": "Sets a key-value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented. Returns the ETag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "SETNX",
     "Name": "SETNX",
-    "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
+    "Summary": "Set the string value of a key only when the key doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
+    "ReplacedBy": "`SET` with the `NX` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -7081,7 +7447,7 @@
   {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
-    "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1), not counting the time taken to copy the new string in place. Usually, this string is very small so the amortized complexity is O(1). Otherwise, complexity is O(M) with M being the length of the value argument.",
     "Arguments": [
@@ -7207,7 +7573,7 @@
     "Group": "Server",
     "Complexity": "O(1)",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060REPLICAOF\u0060",
+    "ReplacedBy": "`REPLICAOF`",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
@@ -7268,7 +7634,7 @@
       {
         "Command": "SLOWLOG_GET",
         "Name": "SLOWLOG|GET",
-        "Summary": "Returns the slow log\u0027s entries.",
+        "Summary": "Returns the slow log's entries.",
         "Group": "Server",
         "Complexity": "O(N) where N is the number of entries returned",
         "Arguments": [
@@ -7555,7 +7921,7 @@
     "Group": "String",
     "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060GETRANGE\u0060",
+    "ReplacedBy": "`GETRANGE`",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -7971,7 +8337,7 @@
   {
     "Command": "ZADD",
     "Name": "ZADD",
-    "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn\u0027t exist.",
+    "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn't exist.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)) for each item added, where N is the number of elements in the sorted set.",
     "Arguments": [
@@ -8119,7 +8485,7 @@
     "Name": "ZDIFF",
     "Summary": "Returns the difference between multiple sorted sets.",
     "Group": "SortedSet",
-    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Complexity": "O(L + (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -8150,7 +8516,7 @@
     "Name": "ZDIFFSTORE",
     "Summary": "Stores the difference of multiple sorted sets in a key.",
     "Group": "SortedSet",
-    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Complexity": "O(L + (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -8403,7 +8769,7 @@
     "Name": "ZINTER",
     "Summary": "Returns the intersect of multiple sorted sets.",
     "Group": "SortedSet",
-    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Complexity": "O(N*K)+O(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -8503,7 +8869,7 @@
     "Name": "ZINTERSTORE",
     "Summary": "Stores the intersect of multiple sorted sets in a key.",
     "Group": "SortedSet",
-    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Complexity": "O(N*K)+O(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -8599,7 +8965,7 @@
     "Name": "ZMPOP",
     "Summary": "Returns the highest- or lowest-scoring members from one or more sorted sets after removing them. Deletes the sorted set if the last member was popped.",
     "Group": "SortedSet",
-    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Complexity": "O(K) + O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -9027,7 +9393,7 @@
     "Name": "ZRANGE",
     "Summary": "Returns members in a sorted set within a range of indexes.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements returned.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9114,9 +9480,9 @@
     "Name": "ZRANGEBYLEX",
     "Summary": "Returns members in a sorted set within a lexicographical range.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYLEX\u0060 argument",
+    "ReplacedBy": "`ZRANGE` with the `BYLEX` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9165,9 +9531,9 @@
     "Name": "ZRANGEBYSCORE",
     "Summary": "Returns members in a sorted set within a range of scores.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYSCORE\u0060 argument",
+    "ReplacedBy": "`ZRANGE` with the `BYSCORE` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9224,7 +9590,7 @@
     "Name": "ZRANGESTORE",
     "Summary": "Stores a range of members from sorted set in a key.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements stored into the destination key.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements stored into the destination key.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9363,7 +9729,7 @@
     "Name": "ZREMRANGEBYLEX",
     "Summary": "Removes members in a sorted set within a lexicographical range. Deletes the sorted set if all members were removed.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9391,7 +9757,7 @@
     "Name": "ZREMRANGEBYRANK",
     "Summary": "Removes members in a sorted set within a range of indexes. Deletes the sorted set if all members were removed.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9419,7 +9785,7 @@
     "Name": "ZREMRANGEBYSCORE",
     "Summary": "Removes members in a sorted set within a range of scores. Deletes the sorted set if all members were removed.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9447,9 +9813,9 @@
     "Name": "ZREVRANGE",
     "Summary": "Returns members in a sorted set within a range of indexes in reverse order.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements returned.",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 argument",
+    "ReplacedBy": "`ZRANGE` with the `REV` argument",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9485,9 +9851,9 @@
     "Name": "ZREVRANGEBYLEX",
     "Summary": "Returns members in a sorted set within a lexicographical range in reverse order.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYLEX\u0060 arguments",
+    "ReplacedBy": "`ZRANGE` with the `REV` and `BYLEX` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9536,9 +9902,9 @@
     "Name": "ZREVRANGEBYSCORE",
     "Summary": "Returns members in a sorted set within a range of scores in reverse order.",
     "Group": "SortedSet",
-    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "Complexity": "O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
     "DocFlags": "Deprecated",
-    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYSCORE\u0060 arguments",
+    "ReplacedBy": "`ZRANGE` with the `REV` and `BYSCORE` arguments",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -9722,7 +10088,7 @@
     "Name": "ZUNION",
     "Summary": "Returns the union of multiple sorted sets.",
     "Group": "SortedSet",
-    "Complexity": "O(N)\u002BO(M*log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Complexity": "O(N)+O(M*log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
@@ -9791,7 +10157,7 @@
     "Name": "ZUNIONSTORE",
     "Summary": "Stores the union of multiple sorted sets in a key.",
     "Group": "SortedSet",
-    "Complexity": "O(N)\u002BO(M log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Complexity": "O(N)+O(M log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",

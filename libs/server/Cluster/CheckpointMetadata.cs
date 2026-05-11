@@ -10,28 +10,25 @@ namespace Garnet.server
         public long storeVersion;
         public Guid storeHlogToken;
         public Guid storeIndexToken;
-        public long storeCheckpointCoveredAofAddress;
+        public AofAddress storeCheckpointCoveredAofAddress;
         public string storePrimaryReplId;
-
-        public long objectStoreVersion;
-        public Guid objectStoreHlogToken;
-        public Guid objectStoreIndexToken;
-        public long objectCheckpointCoveredAofAddress;
-        public string objectStorePrimaryReplId;
 
         public CheckpointMetadata()
         {
             storeVersion = -1;
             storeHlogToken = default;
             storeIndexToken = default;
-            storeCheckpointCoveredAofAddress = long.MaxValue;
+            storeCheckpointCoveredAofAddress = default;
             storePrimaryReplId = null;
+        }
 
-            objectStoreVersion = -1;
-            objectStoreHlogToken = default;
-            objectStoreIndexToken = default;
-            objectCheckpointCoveredAofAddress = long.MaxValue;
-            objectStorePrimaryReplId = null;
+        public CheckpointMetadata(int sublogCount)
+        {
+            storeVersion = -1;
+            storeHlogToken = default;
+            storeIndexToken = default;
+            storeCheckpointCoveredAofAddress = AofAddress.Create(sublogCount, 0);
+            storePrimaryReplId = null;
         }
 
         /// <summary>
@@ -45,12 +42,7 @@ namespace Garnet.server
                 $"storeHlogToken={storeHlogToken}," +
                 $"storeIndexToken={storeIndexToken}," +
                 $"storeCheckpointCoveredAofAddress={storeCheckpointCoveredAofAddress}," +
-                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}," +
-                $"objectStoreVersion={objectStoreVersion}," +
-                $"objectStoreHlogToken={objectStoreHlogToken}," +
-                $"objectStoreIndexToken={objectStoreIndexToken}," +
-                $"objectCheckpointCoveredAofAddress={objectCheckpointCoveredAofAddress}," +
-                $"objectStorePrimaryReplId={objectStorePrimaryReplId ?? "(empty)"}";
+                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}";
         }
     }
 }

@@ -148,7 +148,7 @@ namespace Tsavorite.core
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = ram_segment_ptrs[segmentId % parallelism] + destinationAddress,
+                dstAddress = ram_segment_ptrs[segmentId] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
                 context = context

@@ -67,28 +67,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void OversizedRejected()
-        {
-            var options = GetOpts(server);
-
-            var overflowSizeBytes = (int)(GarnetServerOptions.ParseSize(options.PageSize, out _) * 2);
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var oversizedVectorData = Enumerable.Repeat<byte>(1, overflowSizeBytes).ToArray();
-            var oversideAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
-
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", oversizedVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Vector exceed configured page size", exc1.Message);
-
-            var basicVectorData = Enumerable.Repeat<byte>(3, 75).ToArray();
-
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", basicVectorData, new byte[] { 0, 0, 0, 1 }, "XPREQ8", "SETATTR", oversideAttribute]));
-            ClassicAssert.AreEqual("ERR Attribute exceed configured page size", exc2.Message);
-        }
-
-        [Test]
         public void WrongTypeForVectorSetOpsOnNonVectorSetKeys()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -884,7 +862,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterMark()
+        public void InterruptedVectorSetDelete_AfterMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
@@ -1070,11 +1048,11 @@ namespace Garnet.test
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public Task InterruptedVectorSetDelete_AfterZeroingOut_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_AfterZeroingOut_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public Task InterruptedVectorSetDelete_AfterDelete_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_AfterDelete_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
         private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
@@ -1232,8 +1210,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1248,8 +1226,8 @@ namespace Garnet.test
 
                         // Validate key
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(64, keyCopy.GetNamespaceInPayload());
-                        ClassicAssert.IsTrue(keyCopy.AsReadOnlySpan().SequenceEqual(MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(1, 1))));
+                        ClassicAssert.AreEqual(64, keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(1, 1))));
 
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
@@ -1270,8 +1248,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1286,10 +1264,10 @@ namespace Garnet.test
 
                         // Validate key
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(32, keyCopy.GetNamespaceInPayload());
+                        ClassicAssert.AreEqual(32, keyCopy.NamespaceBytes[0]);
 
                         var offset = i * 2 + 1;
-                        var keyCopyData = keyCopy.AsReadOnlySpan();
+                        var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(offset, 1));
                         ClassicAssert.IsTrue(keyCopyData.SequenceEqual(expectedData));
 
@@ -1312,8 +1290,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1329,10 +1307,10 @@ namespace Garnet.test
 
                         // Validate key
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(16, keyCopy.GetNamespaceInPayload());
+                        ClassicAssert.AreEqual(16, keyCopy.NamespaceBytes[0]);
 
                         var offset = i * 2 + 1;
-                        var keyCopyData = keyCopy.AsReadOnlySpan();
+                        var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(offset, 1));
                         ClassicAssert.IsTrue(keyCopyData.SequenceEqual(expectedData));
 
@@ -1358,8 +1336,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1387,8 +1365,8 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(8, keyCopy.GetNamespaceInPayload());
-                        var keyCopyData = keyCopy.AsReadOnlySpan();
+                        ClassicAssert.AreEqual(8, keyCopy.NamespaceBytes[0]);
+                        var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
 
@@ -1465,8 +1443,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1508,8 +1486,8 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(4, keyCopy.GetNamespaceInPayload());
-                        var keyCopyData = keyCopy.AsReadOnlySpan();
+                        ClassicAssert.AreEqual(4, keyCopy.NamespaceBytes[0]);
+                        var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
 
@@ -1586,8 +1564,8 @@ namespace Garnet.test
                 var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
-                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -1630,8 +1608,8 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(4, keyCopy.GetNamespaceInPayload());
-                        var keyCopyData = keyCopy.AsReadOnlySpan();
+                        ClassicAssert.AreEqual(4, keyCopy.NamespaceBytes[0]);
+                        var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
 
@@ -1644,18 +1622,16 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void MarkWithNamespace()
+        public unsafe void MakeVectorElementKey()
         {
             var data = new int[] { 4, 1234 };
             var dataCopy = data.ToArray();
             fixed (int* intPtr = data)
             {
                 var bytePtr = (byte*)intPtr;
-                var span = VectorManager.MarkDiskANNKeyWithNamespace(8, (nint)(bytePtr + 4), 4);
-                ClassicAssert.AreEqual(8, span.GetNamespaceInPayload());
-                ClassicAssert.AreEqual(1234, *(int*)span.ToPointer());
-
-                VectorManager.UnmarkDiskANNKey(span);
+                var span = VectorManager.MakeVectorElementKey(8, (nint)(bytePtr + 4), 4);
+                ClassicAssert.AreEqual(8, span.NamespaceBytes[0]);
+                ClassicAssert.AreEqual(1234, MemoryMarshal.Cast<byte, int>(span.KeyBytes)[0]);
             }
             ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
         }

@@ -1,6 +1,6 @@
 <Project>
 	<!-- VersionPrefix property for builds and packages -->
 	<PropertyGroup>
-		<VersionPrefix>1.1.6</VersionPrefix>
+		<VersionPrefix>2.0.0-beta.3</VersionPrefix>
 	</PropertyGroup>
 </Project>

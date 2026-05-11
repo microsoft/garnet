@@ -98,7 +98,6 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |
-| **EnableIncrementalSnapshots** | ```--incsnap``` | ```bool``` |  | Enable incremental snapshots. |
 | **PubSubPageSize** | ```--pubsub-pagesize``` | ```string``` | Memory size | Page size of log used for pub/sub (rounds down to power of 2) |
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |

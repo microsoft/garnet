@@ -29,10 +29,13 @@ namespace Garnet.common
         /// </summary>
         public readonly int maxReceiveBufferSize;
 
+        /// <summary>Reserve some space for overhead in send buffer when determining the max size of a single send buffer (e.g. for object serialization during migration)</summary>
+        public const int SendBufferOverheadReserve = 64;    // TODO verify this value
+
         /// <summary>
         /// Default constructor
         /// </summary>
-        public NetworkBufferSettings() : this(1 << 17, 1 << 17, 1 << 20) { }
+        public NetworkBufferSettings() : this(sendBufferSize: 1 << 17, initialReceiveBufferSize: 1 << 17, maxReceiveBufferSize: 1 << 20) { }
 
         /// <summary>
         /// Set network buffer sizes without allocating them
@@ -70,9 +73,10 @@ namespace Garnet.common
         /// Allocate network buffer pool
         /// </summary>
         /// <param name="maxEntriesPerLevel"></param>
+        /// <param name="ownerType"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
@@ -80,7 +84,7 @@ namespace Garnet.common
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
             Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
+            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger, ownerType: ownerType);
         }
 
         public void Log(ILogger logger, string category)

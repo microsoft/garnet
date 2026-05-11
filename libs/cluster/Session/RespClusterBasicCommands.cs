@@ -374,12 +374,10 @@ namespace Garnet.cluster
 
                 Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
                 if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
-                {
                     gossipWithMeet = true;
-                }
             }
 
-            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).ToArray();
 
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -387,29 +385,35 @@ namespace Garnet.cluster
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
             {
-                var other = ClusterConfig.FromByteArray(gossipMessage);
-                // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
-                // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
-                if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
+                // Validate config version before full deserialization
+                if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || version != ClusterConfig.ClusterConfigVersion)
                 {
-                    // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
-                    ReleaseCurrentEpoch();
-                    try
-                    {
-                        _ = clusterProvider.clusterManager.TryMerge(other);
-                    }
-                    finally
-                    {
-                        AcquireCurrentEpoch();
-                    }
-
-                    // Remember that this connection is being used for another cluster node to talk to us
-                    Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
-                    RemoteNodeId = other.LocalNodeId;
+                    logger?.LogWarning("Received gossip with incompatible config version: {version}", version);
                 }
                 else
                 {
-                    logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
+                    var other = ClusterConfig.FromByteArray(gossipMessage);
+                    // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
+                    // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
+                    if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
+                    {
+                        // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
+                        ReleaseCurrentEpoch();
+                        try
+                        {
+                            _ = clusterProvider.clusterManager.TryMerge(other);
+                        }
+                        finally
+                        {
+                            AcquireCurrentEpoch();
+                        }
+
+                        // Remember that this connection is being used for another cluster node to talk to us
+                        Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+                        RemoteNodeId = other.LocalNodeId;
+                    }
+                    else
+                        logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }
             }
 
@@ -496,6 +500,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="M:Garnet.client.GarnetClientExtensions.ExecuteClusterPublishNoResponse"/>
         private bool NetworkClusterPublish(out bool invalidParameters)
         {
             invalidParameters = false;

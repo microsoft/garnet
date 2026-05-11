@@ -26,6 +26,12 @@ namespace Garnet.common
         bool disposed;
 
         /// <summary>
+        /// Packed source identifier: low byte = <see cref="PoolEntryBufferType"/>, byte 1 = <see cref="PoolOwnerType"/>.
+        /// Set when the entry is acquired via <see cref="LimitedFixedBufferPool.Get"/>.
+        /// </summary>
+        internal int source;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public PoolEntry(int size, LimitedFixedBufferPool pool)

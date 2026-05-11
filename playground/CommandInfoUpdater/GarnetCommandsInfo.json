@@ -26,19 +26,6 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
-        "Command": "CLUSTER_AOFSYNC",
-        "Name": "CLUSTER|AOFSYNC",
-        "IsInternal": true,
-        "Arity": 3,
-        "Flags": "Admin, NoScript, NoMulti",
-        "FirstKey": 0,
-        "LastKey": 0,
-        "Step": 0,
-        "AclCategories": "Admin, Dangerous, Slow, Garnet",
-        "KeySpecifications": null,
-        "SubCommands": null
-      },
-      {
         "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,
@@ -216,15 +203,15 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER_RESERVE",
-        "Name": "CLUSTER|RESERVE",
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
         "IsInternal": true,
-        "Arity": 4,
+        "Arity": -2,
         "Flags": "Admin, NoScript, NoMulti",
         "FirstKey": 0,
         "LastKey": 0,
         "Step": 0,
-        "AclCategories": "Admin, Dangerous, Garnet",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
         "KeySpecifications": null,
         "SubCommands": null
       },
@@ -1077,6 +1064,32 @@
     ]
   },
   {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert, Update"
+      }
+    ]
+  },
+  {
     "Command": "SPUBLISH",
     "Name": "SPUBLISH",
     "Arity": 3,
@@ -1426,5 +1439,255 @@
         "Flags": "RO, Access"
       }
     ]
+  },
+  {
+    "Command": "RICREATE",
+    "Name": "RI.CREATE",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Write, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RICONFIG",
+    "Name": "RI.CONFIG",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RIDEL",
+    "Name": "RI.DEL",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RIEXISTS",
+    "Name": "RI.EXISTS",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RIGET",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RIMETRICS",
+    "Name": "RI.METRICS",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RIRANGE",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RISCAN",
+    "Name": "RI.SCAN",
+    "IsInternal": false,
+    "Arity": -5,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Read, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RISET",
+    "Name": "RI.SET",
+    "IsInternal": false,
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Garnet",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ],
+    "StoreType": "Main"
   }
 ]
