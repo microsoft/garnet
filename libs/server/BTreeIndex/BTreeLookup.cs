@@ -195,6 +195,30 @@ namespace Garnet.server.BTreeIndex
         }
 
         /// <summary>
+        /// Retrieves the first undeleted entry in the B+Tree (smallest non-tombstoned key)
+        /// </summary>
+        /// <returns>entry fetched</returns>
+        public KeyValuePair<byte[], Value> FirstAlive()
+        {
+            BTreeNode* leaf = head;
+            while (leaf != null)
+            {
+                int count = leaf->info->count;
+                for (int i = 0; i < count; i++)
+                {
+                    var value = leaf->GetValue(i);
+                    if (value.Valid)
+                    {
+                        byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(i), BTreeNode.KEY_SIZE).ToArray();
+                        return new KeyValuePair<byte[], Value>(keyBytes, value);
+                    }
+                }
+                leaf = leaf->info->next;
+            }
+            return default;
+        }
+
+        /// <summary>
         /// Retrieves the last Undeleted entry in the B+Tree (largest non-tombstoned key)
         /// </summary>
         /// <returns>entry fetched</returns>

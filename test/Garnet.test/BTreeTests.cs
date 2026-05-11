@@ -167,5 +167,67 @@ namespace Garnet.test
 
             tree.Deallocate();
         }
+
+        /// <summary>
+        /// Validates that Range Get returns the same addresses as point Get for 100K entries.
+        /// Reproduces the crash where BTree returns corrupted addresses under high entry count.
+        /// </summary>
+        [Test]
+        [Category("LOOKUP")]
+        public void RangeLookupAddressIntegrity100K()
+        {
+            // First, print sizeof(Value) to check alignment
+            int valueSize = sizeof(Value);
+            TestContext.Out.WriteLine($"sizeof(Value) = {valueSize}");
+            TestContext.Out.WriteLine($"LEAF_CAPACITY = {BTreeNode.LEAF_CAPACITY}");
+            ClassicAssert.AreEqual(9, valueSize, "sizeof(Value) should be 9");
+        }
+
+        /// <summary>
+        /// Tests Range Get with keys that fall on leaf node boundaries.
+        /// </summary>
+        [Test]
+        [Category("LOOKUP")]
+        public void RangeLookupCrossLeafBoundary()
+        {
+            const ulong entryCount = 100_000;
+            var ids = new StreamID[entryCount];
+            const ulong firstAddr = 64;
+            const ulong recordSize = 44;
+
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+
+            for (ulong i = 0; i < entryCount; i++)
+            {
+                ids[i] = new StreamID(i + 1, 0);
+                ulong addr = firstAddr + i * recordSize;
+                tree.Insert((byte*)Unsafe.AsPointer(ref ids[i].idBytes[0]), new Value(addr));
+            }
+
+            int leafCapacity = BTreeNode.LEAF_CAPACITY;
+
+            // Test ranges that cross leaf boundaries
+            for (int boundary = leafCapacity - 5; boundary < (int)entryCount - leafCapacity; boundary += leafCapacity)
+            {
+                ulong startIdx = (ulong)Math.Max(0, boundary - 10);
+                ulong endIdx = (ulong)Math.Min((int)entryCount - 1, boundary + 10);
+
+                ulong expectedStartAddr = firstAddr + startIdx * recordSize;
+                ulong expectedEndAddr = firstAddr + endIdx * recordSize;
+
+                int count = tree.Get(
+                    (byte*)Unsafe.AsPointer(ref ids[startIdx].idBytes[0]),
+                    (byte*)Unsafe.AsPointer(ref ids[endIdx].idBytes[0]),
+                    out Value startVal, out Value endVal,
+                    out List<Value> tombstones);
+
+                ClassicAssert.AreEqual(expectedStartAddr, startVal.address,
+                    $"Cross-boundary startVal mismatch at boundary {boundary}: expected {expectedStartAddr}, got {startVal.address}");
+                ClassicAssert.AreEqual(expectedEndAddr, endVal.address,
+                    $"Cross-boundary endVal mismatch at boundary {boundary}: expected {expectedEndAddr}, got {endVal.address}");
+            }
+
+            tree.Deallocate();
+        }
     }
 }

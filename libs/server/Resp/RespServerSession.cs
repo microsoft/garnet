@@ -253,6 +253,10 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
+
+            this.streamManager = storeWrapper.streamManager;
+            this.sessionStreamCache = new SessionStreamCache();
+
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 
             // Create the default DB session (for DB 0) & add it to the session map
@@ -287,13 +291,6 @@ namespace Garnet.server
             {
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
-            }
-
-            // grab stream manager from storeWrapper
-            if (storeWrapper.serverOptions.EnableStreams)
-            {
-                this.streamManager = storeWrapper.streamManager;
-                sessionStreamCache = new SessionStreamCache();
             }
         }
 
@@ -949,6 +946,14 @@ namespace Garnet.server
                 RespCommand.XREVRANGE => StreamRange(respProtocolVersion, isReverse: true),
                 RespCommand.XTRIM => StreamTrim(),
                 RespCommand.XLAST => StreamLast(respProtocolVersion),
+                RespCommand.XGROUP => StreamGroup(respProtocolVersion),
+                RespCommand.XREADGROUP => StreamReadGroup(respProtocolVersion),
+                RespCommand.XACK => StreamAck(respProtocolVersion),
+                RespCommand.XPENDING => StreamPending(respProtocolVersion),
+                RespCommand.XCLAIM => StreamClaim(respProtocolVersion),
+                RespCommand.XAUTOCLAIM => StreamAutoClaim(respProtocolVersion),
+                RespCommand.XINFO => StreamInfoCmd(respProtocolVersion),
+                RespCommand.XREAD => StreamRead(respProtocolVersion),
                 // Vector Commands
                 RespCommand.VADD => NetworkVADD(ref storageApi),
                 RespCommand.VCARD => NetworkVCARD(ref storageApi),

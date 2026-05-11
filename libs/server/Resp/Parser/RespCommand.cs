@@ -214,6 +214,14 @@ namespace Garnet.server
         XDEL,
         XTRIM,
         XLAST,
+        XGROUP,
+        XREADGROUP,
+        XACK,
+        XPENDING,
+        XCLAIM,
+        XAUTOCLAIM,
+        XINFO,
+        XREAD,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -1024,6 +1032,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.XDEL;
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXACK\r\n"u8))
+                                        {
+                                            return RespCommand.XACK;
+                                        }
                                         break;
 
                                     case 'Z':
@@ -1232,6 +1244,14 @@ namespace Garnet.server
                                         {
                                             return RespCommand.XLAST;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXREAD\r\n"u8))
+                                        {
+                                            return RespCommand.XREAD;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXINFO\r\n"u8))
+                                        {
+                                            return RespCommand.XINFO;
+                                        }
                                         break;
 
                                     case 'Z':
@@ -1433,6 +1453,14 @@ namespace Garnet.server
                                         {
                                             return RespCommand.XRANGE;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XGROUP\r\n"u8))
+                                        {
+                                            return RespCommand.XGROUP;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XCLAIM\r\n"u8))
+                                        {
+                                            return RespCommand.XCLAIM;
+                                        }
                                         break;
 
                                     case 'Z':
@@ -1618,6 +1646,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.VSETATTR;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XPENDING"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.XPENDING;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1741,6 +1773,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZPEX"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PIREAT\r\n"u8))
                                 {
                                     return RespCommand.ZPEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nXAUT"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("OCLAIM\r\n"u8))
+                                {
+                                    return RespCommand.XAUTOCLAIM;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nXREA"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("DGROUP\r\n"u8))
+                                {
+                                    return RespCommand.XREADGROUP;
                                 }
                                 break;
                             case 11:

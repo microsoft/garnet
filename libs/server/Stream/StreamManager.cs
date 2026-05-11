@@ -3,7 +3,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,18 +17,88 @@ namespace Garnet.server
     {
         private readonly Dictionary<byte[], StreamObject> streams;
 
+        readonly string streamsRootDir;
         long defPageSize;
         long defMemorySize;
         int safeTailRefreshFreqMs;
+        readonly ILogger logger;
 
         SingleWriterMultiReaderLock _lock = new SingleWriterMultiReaderLock();
 
-        public StreamManager(long pageSize, long memorySize, int safeTailRefreshFreqMs)
+        /// <summary>
+        /// Creates a stream manager.
+        /// </summary>
+        /// <param name="streamsRootDir">Root directory under which per-stream subdirectories are
+        ///     created. When null, all streams are kept in-memory only (no durability).</param>
+        public StreamManager(string streamsRootDir, long pageSize, long memorySize, int safeTailRefreshFreqMs, ILogger logger = null)
         {
             streams = new Dictionary<byte[], StreamObject>(ByteArrayComparer.Instance);
+            this.streamsRootDir = streamsRootDir;
             defPageSize = pageSize;
             defMemorySize = memorySize;
             this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;
+            this.logger = logger;
+        }
+
+        /// <summary>
+        /// Recover streams from <see cref="streamsRootDir"/>: enumerate hex-named subdirectories,
+        /// decode their names back into stream keys, and replay each log to rebuild its BTree.
+        /// Must be called once at startup, before any traffic is served.
+        /// </summary>
+        public void Recover()
+        {
+            if (streamsRootDir == null) return;
+            if (!Directory.Exists(streamsRootDir)) return;
+
+            foreach (var dir in Directory.EnumerateDirectories(streamsRootDir))
+            {
+                var hexName = Path.GetFileName(dir);
+                byte[] keyBytes;
+                try
+                {
+                    keyBytes = Convert.FromHexString(hexName);
+                }
+                catch (FormatException)
+                {
+                    // Not one of ours — skip.
+                    logger?.LogWarning("Skipping non-hex stream directory '{dir}'", dir);
+                    continue;
+                }
+
+                var stream = new StreamObject(streamsRootDir, hexName, defPageSize, defMemorySize, safeTailRefreshFreqMs, recover: true);
+                streams[keyBytes] = stream;
+                logger?.LogInformation("Recovered stream '{key}' from '{dir}'", BitConverter.ToString(keyBytes), dir);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously commit every stream's log to disk. Snapshots the current set of streams
+        /// under a brief read lock and then awaits all <see cref="StreamObject.CommitAsync"/> tasks
+        /// concurrently — readers/writers continue to operate against the BTrees throughout.
+        /// </summary>
+        public async Task CommitAsync(CancellationToken token = default)
+        {
+            StreamObject[] snapshot;
+            _lock.ReadLock();
+            try
+            {
+                snapshot = streams.Values.ToArray();
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+
+            // No streams (or all in-memory): the awaits below are still cheap (NullDevice commit returns immediately).
+            if (snapshot.Length == 0) return;
+
+            // ValueTask awaits don't compose with Task.WhenAll; use one Task per stream so we can fan-out.
+            var tasks = new Task[snapshot.Length];
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                tasks[i] = snapshot[i].CommitAsync(token).AsTask();
+            }
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         /*
@@ -43,7 +118,7 @@ namespace Garnet.server
             {
                 int currentPosition = 0;  // Tracks absolute position in dictionary
                 int matchedCount = 0;     // Tracks number of keys added to results
-                
+
                 foreach (byte[] key in streams.Keys)
                 {
                     // Skip keys before cursor position
@@ -66,7 +141,7 @@ namespace Garnet.server
                     {
                         keys.Add(key);
                         matchedCount++;
-                        
+
                         // Stop if we've reached the requested count
                         if (matchedCount >= remainingCount)
                         {
@@ -74,7 +149,7 @@ namespace Garnet.server
                             break;
                         }
                     }
-                    
+
                     currentPosition++;
                 }
 
@@ -174,8 +249,11 @@ namespace Garnet.server
                 foundStream = streams.TryGetValue(key, out stream);
                 if (!foundStream && !noMkStream)
                 {
-                    // stream was not found with this key so create a new one 
-                    StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize, safeTailRefreshFreqMs);
+                    // stream was not found with this key so create a new one. Encode the key as hex
+                    // for the on-disk directory name so arbitrary key bytes are filesystem-safe and
+                    // the encoding is reversible during recovery.
+                    var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
+                    StreamObject newStream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs);
                     newStream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     streams.TryAdd(key, newStream);
                     streamKey = key;
@@ -290,7 +368,7 @@ namespace Garnet.server
             }
             return true; // no keys removed so return true
         }
-    
+
         public bool StreamLast(PinnedSpanByte key, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var keyArr = key.ToArray();
@@ -305,6 +383,163 @@ namespace Garnet.server
             }
             return false;
         }
+
+        #region Consumer Group Forwarding
+
+        /// <summary>
+        /// Look up a stream by key. Returns null if not found.
+        /// Caller must handle the "stream not found" error.
+        /// </summary>
+        StreamObject FindStream(byte[] key)
+        {
+            _lock.ReadLock();
+            try
+            {
+                streams.TryGetValue(key, out var stream);
+                return stream;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+        public bool StreamGroupCreate(PinnedSpanByte keySlice, string groupName, StreamID startId, long entriesRead, bool mkStream, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var key = keySlice.ToArray();
+            var stream = FindStream(key);
+
+            if (stream == null && mkStream)
+            {
+                // Create the stream first
+                _lock.WriteLock();
+                try
+                {
+                    if (!streams.TryGetValue(key, out stream))
+                    {
+                        var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
+                        stream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs);
+                        streams[key] = stream;
+                    }
+                }
+                finally
+                {
+                    _lock.WriteUnlock();
+                }
+            }
+
+            if (stream == null)
+                return false; // stream doesn't exist
+
+            return stream.CreateGroup(groupName, startId, entriesRead);
+        }
+
+        public bool StreamGroupDestroy(PinnedSpanByte keySlice, string groupName)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.DestroyGroup(groupName);
+        }
+
+        public bool StreamGroupSetId(PinnedSpanByte keySlice, string groupName, StreamID id, long entriesRead)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.SetGroupId(groupName, id, entriesRead);
+        }
+
+        public bool? StreamGroupCreateConsumer(PinnedSpanByte keySlice, string groupName, string consumerName)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return null;
+            return stream.CreateConsumer(groupName, consumerName);
+        }
+
+        public int StreamGroupDeleteConsumer(PinnedSpanByte keySlice, string groupName, string consumerName)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return -1;
+            return stream.DeleteConsumer(groupName, consumerName);
+        }
+
+        public bool StreamReadGroup(PinnedSpanByte keySlice, string groupName, string consumerName,
+            string id, int count, bool noAck, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.ReadGroup(groupName, consumerName, id, count, noAck, ref output, respProtocolVersion);
+        }
+
+        public int StreamAcknowledge(PinnedSpanByte keySlice, string groupName, ReadOnlySpan<StreamID> ids)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return -1;
+            return stream.Acknowledge(groupName, ids);
+        }
+
+        public bool StreamPending(PinnedSpanByte keySlice, string groupName, string start, string end,
+            int count, long minIdleTime, string consumerFilter,
+            ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.GetPending(groupName, start, end, count, minIdleTime, consumerFilter, ref output, respProtocolVersion);
+        }
+
+        public bool StreamClaim(PinnedSpanByte keySlice, string groupName, string consumerName,
+            long minIdleTime, StreamID[] ids, long? idleMs, long? timeMs, int? retryCount,
+            bool force, bool justId, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.ClaimEntries(groupName, consumerName, minIdleTime, ids, idleMs, timeMs, retryCount, force, justId, ref output, respProtocolVersion);
+        }
+
+        public bool StreamAutoClaim(PinnedSpanByte keySlice, string groupName, string consumerName,
+            long minIdleTime, StreamID start, int count, bool justId,
+            ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.AutoClaim(groupName, consumerName, minIdleTime, start, count, justId, ref output, respProtocolVersion);
+        }
+
+        public bool StreamInfo(PinnedSpanByte keySlice, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            stream.GetStreamInfo(ref output, respProtocolVersion);
+            return true;
+        }
+
+        public bool StreamInfoGroups(PinnedSpanByte keySlice, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.GetGroupsInfo(ref output, respProtocolVersion);
+        }
+
+        public bool StreamInfoConsumers(PinnedSpanByte keySlice, string groupName, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null) return false;
+            return stream.GetConsumersInfo(groupName, ref output, respProtocolVersion);
+        }
+
+        public void StreamRead(PinnedSpanByte keySlice, StreamID afterId, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var stream = FindStream(keySlice.ToArray());
+            if (stream == null)
+            {
+                // Stream not found — write empty array
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+                writer.WriteNull();
+                return;
+            }
+            stream.ReadAfter(afterId, count, ref output, respProtocolVersion);
+        }
+
+        #endregion Consumer Group Forwarding
 
         /// <inheritdoc/>
         public void Dispose()

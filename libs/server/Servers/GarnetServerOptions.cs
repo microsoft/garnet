@@ -537,9 +537,6 @@ namespace Garnet.server
         public string GetAppendOnlyFileDirectory(int dbId) =>
             Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
 
-        // Enable STREAMS on server
-        public bool EnableStreams = false;
-
         /// <summary>
         /// Page size for BTree index for STREAM
         /// </summary>
@@ -549,6 +546,14 @@ namespace Garnet.server
         /// Memory for STREAM
         /// </summary>
         public string StreamMemorySize = "1g";
+
+        /// <summary>
+        /// Directory under which per-stream Tsavorite logs are stored. When null/empty, all
+        /// streams remain in-memory only (no durability across restarts). Set to a writable
+        /// directory to enable durability — SAVE will commit each stream's log, and on startup
+        /// each subdirectory is replayed to rebuild the BTree index.
+        /// </summary>
+        public string StreamLogDir = null;
 
         /// <summary>
         /// Constructor
@@ -786,6 +791,15 @@ namespace Garnet.server
             if (size != adjustedSize)
                 logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
             return adjustedSize;
+        }
+
+        /// <summary>
+        /// Resolved root directory for per-stream logs. Returns null when persistence is disabled
+        /// (i.e. <see cref="StreamLogDir"/> is null/empty).
+        /// </summary>
+        public string StreamLogDirectory()
+        {
+            return string.IsNullOrEmpty(StreamLogDir) ? null : StreamLogDir;
         }
 
         /// <summary>

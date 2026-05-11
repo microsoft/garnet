@@ -12,7 +12,7 @@ namespace Garnet.server
     ///  Represents a GarnetStreamID, which is a 128-bit identifier for an entry in a stream.
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct StreamID
+    public unsafe struct StreamID : IComparable<StreamID>
     {
         [FieldOffset(0)]
         public ulong ms;
@@ -44,6 +44,16 @@ namespace Garnet.server
         public ulong getSeq()
         {
             return BinaryPrimitives.ReadUInt64BigEndian(new Span<byte>(Unsafe.AsPointer(ref this.seq), 8));
+        }
+
+        public int CompareTo(StreamID obj)
+        {
+            int cmp = getMS().CompareTo(obj.getMS());
+            if (cmp != 0)
+            {
+                return cmp;
+            }
+            return getSeq().CompareTo(obj.getSeq());
         }
 
         public unsafe StreamID(byte[] inputBytes)

@@ -271,7 +271,7 @@ namespace Garnet.test
             int slowLogThreshold = 0,
             TextWriter logTo = null,
             bool enableCluster = false,
-            bool enableStreams = false,
+            string streamLogDir = null,
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
             bool useInChainRevivOnly = false,
@@ -361,7 +361,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
-                EnableStreams = enableStreams,
+                StreamLogDir = streamLogDir,
                 EnableVectorSetPreview = enableVectorSetPreview,
             };
 

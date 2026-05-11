@@ -2,12 +2,16 @@
 // Licensed under the MIT license.
 
 using System;
-using Tsavorite.core;
-using Garnet.server.BTreeIndex;
-using Garnet.common;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.common;
+using Garnet.server.BTreeIndex;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -31,12 +35,27 @@ namespace Garnet.server
         NOT_GREATER,
     }
 
-    // This is the layout that is put in the log for each stream entry
+    // This is the layout that is put in the log for each stream entry. The numPairs field
+    // doubles as a kind discriminator: non-negative values are data records carrying that
+    // many field-value pairs, negative values are control records (see ControlRecordKind).
     [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 20)]
     public struct StreamLogEntryHeader
     {
         public StreamID id;
         public int numPairs;
+    }
+
+    /// <summary>
+    /// Negative <see cref="StreamLogEntryHeader.numPairs"/> sentinels for control records.
+    /// XDEL writes a tombstone (an arbitrary entry can be deleted from the middle of the
+    /// stream, so we can't represent it by truncating the log prefix). XTRIM is *not* logged
+    /// here — it always drops the oldest entries, which is a contiguous log prefix, so
+    /// <c>log.TruncateUntil</c> is the persistence mechanism for it.
+    /// </summary>
+    internal static class ControlRecordKind
+    {
+        // XDEL marker: header.id = the deleted entry's id, payload empty.
+        public const int Tombstone = -1;
     }
 
     public class StreamObject : IDisposable
@@ -47,6 +66,9 @@ namespace Garnet.server
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
+
+        /// <summary>Consumer groups attached to this stream, keyed by group name.</summary>
+        readonly Dictionary<string, ConsumerGroup> consumerGroups = new(StringComparer.Ordinal);
 
         public StreamID LastId
         {
@@ -66,18 +88,87 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Constructor
+        /// Constructor.
         /// </summary>
-        /// <param name="logDir">Directory where the log will be stored</param>
-        /// <param name="pageSize">Page size of the log used for the stream</param>
-        public StreamObject(string logDir, long pageSize, long memorySize, int safeTailRefreshFreqMs)
+        /// <param name="streamsRootDir">Root directory under which all stream subdirectories live.
+        ///     If null, the stream is in-memory only (NullDevice) — no durability.</param>
+        /// <param name="streamDirName">Per-stream subdirectory name (typically a hex-encoded key).
+        ///     If null, the stream is in-memory only.</param>
+        /// <param name="pageSize">Page size of the log used for the stream.</param>
+        /// <param name="memorySize">Memory budget for the log.</param>
+        /// <param name="safeTailRefreshFreqMs">Safe tail refresh frequency, milliseconds.</param>
+        /// <param name="recover">If true and a disk-backed log exists at the path, recover the
+        ///     log and rebuild the in-memory BTree by scanning all entries.</param>
+        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool recover = false)
         {
-            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice("streamLogs/" + logDir + "/streamLog", preallocateFile: false);
+            if (streamsRootDir == null || streamDirName == null)
+            {
+                device = new NullDevice();
+            }
+            else
+            {
+                var streamDir = Path.Combine(streamsRootDir, streamDirName);
+                Directory.CreateDirectory(streamDir);
+                device = Devices.CreateLogDevice(Path.Combine(streamDir, "streamLog"), preallocateFile: false);
+            }
+            // TsavoriteLog auto-recovers when TryRecoverLatest=true (the default), so simply
+            // re-opening a log device with prior commits replays its in-memory state.
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize, SafeTailRefreshFrequencyMs = safeTailRefreshFreqMs });
-            index = new BTree(device.SectorSize);
+            index = new BTree((uint)BTreeNode.PAGE_SIZE);
             totalEntriesAdded = 0;
             lastId = default;
             _lock = new SingleWriterMultiReaderLock();
+
+            if (recover)
+            {
+                RebuildIndexFromLog();
+            }
+        }
+
+        /// <summary>
+        /// Walk the recovered log from BeginAddress to TailAddress and replay every record into
+        /// the BTree, preserving deletes and trims via control-record markers. Called once during
+        /// recovery before the stream is exposed to traffic, so no locking is needed.
+        /// </summary>
+        unsafe void RebuildIndexFromLog()
+        {
+            long begin = log.BeginAddress;
+            long end = log.TailAddress;
+            if (begin >= end) return;
+
+            using var iter = log.Scan(begin, end, scanUncommitted: true);
+            while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
+            {
+                if (entry == null || entry.Length < sizeof(StreamLogEntryHeader)) continue;
+                StreamLogEntryHeader header = MemoryMarshal.Read<StreamLogEntryHeader>(
+                    new ReadOnlySpan<byte>(entry, 0, sizeof(StreamLogEntryHeader)));
+
+                if (header.numPairs == ControlRecordKind.Tombstone)
+                {
+                    // XDEL of an entry that was later trimmed will fail to find anything in the
+                    // BTree (its data record was pruned by log truncation). That's fine — Delete
+                    // returns false and the recovered state already excludes the entry.
+                    index.Delete((byte*)Unsafe.AsPointer(ref header.id.idBytes[0]));
+                }
+                else if (header.numPairs >= 0)
+                {
+                    // Data record.
+                    index.Insert((byte*)Unsafe.AsPointer(ref header.id.idBytes[0]), new Value((ulong)currentAddress));
+                    lastId = header.id;
+                    totalEntriesAdded++;
+                }
+                // Else: unknown negative kind. Skip defensively — could be a legacy marker.
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously commit all pending log entries to disk. Does not block AddEntry/Read/Trim
+        /// — the BTree continues to operate while pages flush in the background.
+        /// </summary>
+        public ValueTask CommitAsync(CancellationToken token = default)
+        {
+            // For NullDevice, commit is a no-op and returns immediately.
+            return log.CommitAsync(cookie: null, token: token);
         }
 
         /// <summary>
@@ -120,16 +211,16 @@ namespace Garnet.server
 
             // read existing timestamp in big endian format
             var lastTs = lastId.getMS();
-            // if this is the first entry or timestamp is greater than last added entry 
+            // if this is the first entry or timestamp is greater than last added entry
             if (totalEntriesAdded == 0 || timestamp > lastTs)
             {
-                // this will write timestamp in big endian format 
+                // this will write timestamp in big endian format
                 id.setMS(timestamp);
                 id.setSeq(0);
                 return;
             }
             // if timestamp is same as last added entry, increment the sequence number
-            // if seq overflows, increment timestamp and reset the sequence number 
+            // if seq overflows, increment timestamp and reset the sequence number
             IncrementID(ref id);
         }
 
@@ -145,7 +236,7 @@ namespace Garnet.server
             var lastIdDecodedTs = lastId.getMS();
 
             // parse user-defined ID
-            // can be of following formats: 
+            // can be of following formats:
             // 1. ts (seq = 0)
             // 2. ts-* (auto-generate seq number)
             // 3. ts-seq
@@ -244,7 +335,7 @@ namespace Garnet.server
                             return ParsedStreamEntryID.INVALID;
                         }
                     }
-                    // use ID and seq given by user 
+                    // use ID and seq given by user
                     // encode while storing
                     id.setMS(timestamp);
                     id.setSeq(seq);
@@ -259,7 +350,6 @@ namespace Garnet.server
         /// </summary>
         public unsafe void AddEntry(PinnedSpanByte idSlice, int numPairs, ReadOnlySpan<byte> rawFieldValuePairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
-            byte* tmpPtr = null;
             StreamID id = default;
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
 
@@ -288,15 +378,9 @@ namespace Garnet.server
 
                 log.Enqueue<StreamLogEntryHeader>(header, item: rawFieldValuePairs, out long returnedLogicalAddr);
 
-                var streamValue = new Value((ulong)returnedLogicalAddr);
-
-                bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
-
-                if (!added)
-                {
-                    writer.WriteNull();
-                    return;
-                }
+                // BTree append-only insert. parseIDString already enforces strict monotonic IDs,
+                // so this never collides with an existing key.
+                index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value((ulong)returnedLogicalAddr));
 
                 // copy encoded ms and seq
                 lastId.ms = id.ms;
@@ -322,16 +406,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get current length of the stream (number of entries in the stream)
+        /// Get current length of the stream (number of non-tombstoned entries in the stream)
         /// </summary>
         /// <returns>length of stream</returns>
         public ulong Length()
         {
-            ulong len = 0;
+            ulong len;
             _lock.ReadLock();
             try
             {
-                // get length of the stream from the index excluding tombstones
                 len = index.ValidCount;
             }
             finally
@@ -348,17 +431,21 @@ namespace Garnet.server
         /// <returns>true if entry was deleted successfully</returns>
         public unsafe bool DeleteEntry(PinnedSpanByte idSlice)
         {
-            // first parse the idString
             if (!parseCompleteID(idSlice, out StreamID entryID))
             {
                 return false;
             }
-            bool deleted = false;
-            // take a lock to delete from the index
+            bool deleted;
             _lock.WriteLock();
             try
             {
                 deleted = index.Delete((byte*)Unsafe.AsPointer(ref entryID.idBytes[0]));
+                if (deleted)
+                {
+                    // Persist a tombstone marker so recovery doesn't resurrect this entry.
+                    var marker = new StreamLogEntryHeader { id = entryID, numPairs = ControlRecordKind.Tombstone };
+                    log.Enqueue<StreamLogEntryHeader>(marker, item: [], out _);
+                }
             }
             finally
             {
@@ -377,25 +464,35 @@ namespace Garnet.server
                 _lock.ReadLock();
                 try
                 {
-                    if (index.Count() == 0)
+                    if (index.ValidCount == 0)
                     {
                         writer.WriteNull();
                         return;
                     }
 
-                    // LastAlive to skip tombstoned entries
-                    long addressOnLog = (long)index.LastAlive().Value.address;
-                    (byte[] entry, int len) = (null, 0); // log.Read(addressOnLog, readUncommitted: true);
-
-                    if (entry == null)
+                    // BTree retains tombstones until trim, so use LastAlive() to skip them.
+                    var lastEntry = index.LastAlive();
+                    if (!lastEntry.Value.Valid)
                     {
                         writer.WriteNull();
                         return;
                     }
 
-                    ReadOnlySpan<byte> entrySp = entry.AsSpan(sizeof(long), len - sizeof(long)); // skip the previousEntryAddress part
-                    // HK TODO: this is broken atm
-                    //WriteEntryToWriter(entrySp, ref writer, len);
+                    long addressOnLog = (long)lastEntry.Value.address;
+
+                    using (var iter = log.Scan(addressOnLog, addressOnLog + 1, scanUncommitted: true))
+                    {
+                        if (iter.GetNext(out byte[] entry, out _, out _, out _))
+                        {
+                            // Wrap in array of 1 entry
+                            writer.WriteArrayLength(1);
+                            WriteEntryToWriter(entry, ref writer);
+                        }
+                        else
+                        {
+                            writer.WriteNull();
+                        }
+                    }
                 }
                 finally
                 {
@@ -423,22 +520,24 @@ namespace Garnet.server
                 _lock.ReadLock();
                 try
                 {
-                    if (index.Count() == 0)
+                    if (index.ValidCount == 0)
                     {
                         return;
                     }
 
-                    long startAddr, endAddr;
+                    // Sentinels for "-" and "+". StreamID is stored big-endian, so byte-wise
+                    // comparison (used by BTree) gives the same ordering as numeric comparison.
+                    StreamID minStreamID = new StreamID(0UL, 0UL);
+                    StreamID maxStreamID = new StreamID(ulong.MaxValue, ulong.MaxValue);
+
                     StreamID startID, endID;
                     if (min == "-")
                     {
-                        byte[] idBytes = index.First().Key;
-                        startID = new StreamID(idBytes);
+                        startID = minStreamID;
                     }
-                    else if (min == "+") // this can happen in reverse range queries
+                    else if (min == "+")
                     {
-                        byte[] idBytes = index.Last().Key;
-                        startID = new StreamID(idBytes);
+                        startID = maxStreamID;
                     }
                     else if (!ParseStreamIDFromString(min, out startID))
                     {
@@ -447,69 +546,104 @@ namespace Garnet.server
 
                     if (max == "+")
                     {
-                        byte[] idBytes = index.Last().Key;
-                        endID = new StreamID(idBytes);
+                        endID = maxStreamID;
                     }
-                    else if (max == "-") // this can happen in reverse range queries
+                    else if (max == "-")
                     {
-                        byte[] idBytes = index.First().Key;
-                        endID = new StreamID(idBytes);
+                        endID = minStreamID;
                     }
                     else if (!ParseStreamIDFromString(max, out endID))
                     {
                         return;
                     }
 
-                    int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit, isReverse);
+                    // BTree.Get asserts ordering. For reverse, start (larger) >= end (smaller).
+                    int cmp = startID.CompareTo(endID);
+                    if (isReverse ? cmp < 0 : cmp > 0)
+                    {
+                        writer.WriteArrayLength(0);
+                        return;
+                    }
+
+                    byte* startPtr = (byte*)Unsafe.AsPointer(ref startID.idBytes[0]);
+                    byte* endPtr = (byte*)Unsafe.AsPointer(ref endID.idBytes[0]);
+                    int actualLimit = limit > 0 ? limit : -1;
+
+                    int validCount = index.Get(startPtr, endPtr, out Value startVal, out Value endVal,
+                        out List<Value> tombstones, actualLimit, isReverse);
+
+                    if (validCount == 0)
+                    {
+                        writer.WriteArrayLength(0);
+                        return;
+                    }
+
+                    HashSet<ulong> tombstoneAddrs = null;
+                    if (tombstones != null && tombstones.Count > 0)
+                    {
+                        tombstoneAddrs = new HashSet<ulong>(tombstones.Count);
+                        foreach (var t in tombstones)
+                        {
+                            tombstoneAddrs.Add(t.address);
+                        }
+                    }
+
+                    // For reverse: startVal is at the higher address, endVal at the lower.
+                    // For forward: startVal is at the lower address, endVal at the higher.
+                    long scanStart = (long)(isReverse ? endVal.address : startVal.address);
+                    long scanEnd = (long)(isReverse ? startVal.address : endVal.address);
+
+                    // After XTRIM, BTree leaves still reference addresses below the new
+                    // log.BeginAddress. Clamp so log.Scan never tries to read truncated pages.
+                    long beginAddr = log.BeginAddress;
+                    if (scanStart < beginAddr) scanStart = beginAddr;
+                    if (scanEnd < beginAddr)
+                    {
+                        // Whole requested window was truncated; nothing to emit.
+                        writer.WriteArrayLength(0);
+                        return;
+                    }
+
+                    writer.WriteArrayLength(validCount);
 
                     if (isReverse)
                     {
-                        startAddr = (long)startVal.address;
-                        endAddr = (long)endVal.address;
+                        // Log scans are forward-only; buffer entries and emit reversed.
+                        var entries = new List<byte[]>(validCount);
+                        using (var iter = log.Scan(scanStart, scanEnd + 1, scanUncommitted: true))
+                        {
+                            while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
+                            {
+                                if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
+                                    continue;
+                                if (IsControlRecord(entry)) continue;
+                                entries.Add(entry);
+                                if (entries.Count >= validCount)
+                                    break;
+                            }
+                        }
+                        for (int i = entries.Count - 1; i >= 0; i--)
+                        {
+                            WriteEntryToWriter(entries[i], ref writer);
+                        }
                     }
                     else
                     {
-                        startAddr = (long)startVal.address;
-                        endAddr = (long)endVal.address + 1;
-                    }
-
-                    long readCount = 0;
-                    try
-                    {
-                        using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true)) // isReverseStreamIter: isReverse))
+                        using (var iter = log.Scan(scanStart, scanEnd + 1, scanUncommitted: true))
                         {
-                            writer.WriteArrayLength(count);
-
-                            while (iter.GetNext(out byte[] entry, out _, out long currentAddress, out long nextAddress))
+                            int written = 0;
+                            while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
                             {
-                                var current = new Value((ulong)currentAddress);
-                                // check if any tombstone t.address matches current
-                                var tombstoneFound = false;
-                                foreach (var tombstone in tombstones)
-                                {
-                                    if (tombstone.address == current.address)
-                                    {
-                                        tombstoneFound = true;
-                                        break;
-                                    }
-                                }
-                                if (tombstoneFound)
-                                {
+                                if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
                                     continue;
-                                }
-
+                                if (IsControlRecord(entry)) continue;
                                 WriteEntryToWriter(entry, ref writer);
-
-                                readCount++;
-                                if (limit != -1 && readCount == limit)
-                                {
+                                written++;
+                                if (written >= validCount)
                                     break;
-                                }
                             }
                         }
                     }
-                    finally
-                    { }
                 }
                 finally
                 {
@@ -531,11 +665,10 @@ namespace Garnet.server
         /// <returns></returns>
         public unsafe bool Trim(PinnedSpanByte trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
         {
-            uint numLeavesDeleted = 0;
-            Value headValue = default;
             _lock.WriteLock();
             try
             {
+                Value newHead = default;
                 switch (optType)
                 {
                     case StreamTrimOpts.MAXLEN:
@@ -544,7 +677,7 @@ namespace Garnet.server
                             entriesTrimmed = 0;
                             return false;
                         }
-                        index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted, approximate);
+                        index.TrimByLength(maxLen, out entriesTrimmed, out newHead, out _, out _, approximate);
                         break;
                     case StreamTrimOpts.MINID:
                         if (!parseCompleteID(trimArg, out StreamID minID))
@@ -552,27 +685,45 @@ namespace Garnet.server
                             entriesTrimmed = 0;
                             return false;
                         }
-                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
+                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]),
+                            out entriesTrimmed, out newHead, out _, out _);
                         break;
                     default:
                         entriesTrimmed = 0;
                         break;
                 }
 
-                if (numLeavesDeleted == 0)
+                if (entriesTrimmed > 0)
                 {
-                    // didn't delete any leaf nodes so done here 
-                    return true;
+                    // XTRIM always drops the oldest entries (a contiguous prefix of both the
+                    // BTree key order and the log address order, since IDs and log addresses
+                    // both grow monotonically). Truncating the log past the new head IS the
+                    // persistence of the trim — recovery just won't see the dropped entries.
+                    // If everything was trimmed, push past the current tail so nothing replays.
+                    long target = newHead.Valid ? (long)newHead.address : log.TailAddress;
+                    log.TruncateUntil(target);
                 }
-                // truncate log to new head 
-                var newHeadAddress = (long)headValue.address;
-                log.TruncateUntil(newHeadAddress);
+                // Note: BTree leaves still reference tombstoned entries at addresses below the
+                // new BeginAddress. Range reads handle this by clamping scanStart to BeginAddress
+                // before calling log.Scan — see ReadRange.
             }
             finally
             {
                 _lock.WriteUnlock();
             }
             return true;
+        }
+
+        /// <summary>
+        /// True if the log entry is a control record (tombstone or trim marker) rather than a
+        /// data entry. Control records can appear inside a forward log scan window between two
+        /// data entries' addresses, so range-read paths must filter them out.
+        /// </summary>
+        static unsafe bool IsControlRecord(ReadOnlySpan<byte> entryBytes)
+        {
+            if (entryBytes.Length < sizeof(StreamLogEntryHeader)) return false;
+            var header = MemoryMarshal.Read<StreamLogEntryHeader>(entryBytes.Slice(0, sizeof(StreamLogEntryHeader)));
+            return header.numPairs < 0;
         }
 
         unsafe void WriteEntryToWriter(ReadOnlySpan<byte> entryBytes, ref RespMemoryWriter writer)
@@ -698,11 +849,898 @@ namespace Garnet.server
             writer.WriteBulkString(outputBuffer.Slice(0, len));
         }
 
+        #region Consumer Group Operations
+
+        static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        /// <summary>
+        /// Create a consumer group on this stream.
+        /// </summary>
+        /// <param name="groupName">Name of the group.</param>
+        /// <param name="startId">The ID after which new entries will be delivered.
+        /// Use <c>0-0</c> to deliver all existing entries, or pass the stream's last ID
+        /// for "$" semantics.</param>
+        /// <param name="entriesRead">Initial entries-read counter (-1 = unknown).</param>
+        /// <returns>True if created; false if a group with that name already exists.</returns>
+        public bool CreateGroup(string groupName, StreamID startId, long entriesRead)
+        {
+            _lock.WriteLock();
+            try
+            {
+                if (consumerGroups.ContainsKey(groupName))
+                    return false;
+                consumerGroups[groupName] = new ConsumerGroup(groupName, startId, entriesRead);
+                return true;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Destroy a consumer group. Returns true if the group existed.
+        /// </summary>
+        public bool DestroyGroup(string groupName)
+        {
+            _lock.WriteLock();
+            try
+            {
+                return consumerGroups.Remove(groupName);
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Set the last-delivered-id for a consumer group.
+        /// </summary>
+        public bool SetGroupId(string groupName, StreamID id, long entriesRead)
+        {
+            _lock.WriteLock();
+            try
+            {
+                if (!consumerGroups.TryGetValue(groupName, out var group))
+                    return false;
+                group.LastDeliveredId = id;
+                if (entriesRead >= 0)
+                    group.EntriesRead = entriesRead;
+                return true;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Explicitly create a consumer in a group. Returns false if it already exists.
+        /// Returns null (via out bool?) if the group doesn't exist.
+        /// </summary>
+        public bool? CreateConsumer(string groupName, string consumerName)
+        {
+            _lock.WriteLock();
+            try
+            {
+                if (!consumerGroups.TryGetValue(groupName, out var group))
+                    return null;
+                return group.CreateConsumer(consumerName, NowMs());
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Delete a consumer from a group. Returns the number of pending entries removed,
+        /// or -1 if the group doesn't exist.
+        /// </summary>
+        public int DeleteConsumer(string groupName, string consumerName)
+        {
+            _lock.WriteLock();
+            try
+            {
+                if (!consumerGroups.TryGetValue(groupName, out var group))
+                    return -1;
+                return group.DeleteConsumer(consumerName);
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Read entries from the stream for a consumer group (XREADGROUP).
+        /// When <paramref name="id"/> is "&gt;", delivers new entries after the group's
+        /// last-delivered-id. Otherwise, returns pending entries for the consumer starting
+        /// from the given ID.
+        /// </summary>
+        /// <param name="groupName">Consumer group name.</param>
+        /// <param name="consumerName">Consumer name (auto-created if needed).</param>
+        /// <param name="id">"&gt;" for new entries, or a specific ID for pending re-read.</param>
+        /// <param name="count">Max entries to return (-1 = unlimited).</param>
+        /// <param name="noAck">If true, do not add to PEL on new delivery.</param>
+        /// <param name="output">RESP output buffer.</param>
+        /// <param name="respProtocolVersion">RESP protocol version.</param>
+        /// <returns>True if group was found, false otherwise.</returns>
+        public unsafe bool ReadGroup(string groupName, string consumerName, string id,
+            int count, bool noAck, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.WriteLock();
+                try
+                {
+                    if (!consumerGroups.TryGetValue(groupName, out var group))
+                        return false;
+
+                    long nowMs = NowMs();
+                    var consumer = group.GetOrCreateConsumer(consumerName, nowMs);
+
+                    if (id == ">")
+                    {
+                        ReadGroupNewEntries(group, consumer, count, noAck, nowMs, ref writer);
+                    }
+                    else
+                    {
+                        ReadGroupPendingEntries(group, consumer, id, count, ref writer);
+                    }
+                    return true;
+                }
+                finally
+                {
+                    _lock.WriteUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Deliver new entries (after group.LastDeliveredId) to the consumer.
+        /// </summary>
+        unsafe void ReadGroupNewEntries(ConsumerGroup group, StreamConsumer consumer,
+            int count, bool noAck, long nowMs, ref RespMemoryWriter writer)
+        {
+            // Find entries after LastDeliveredId
+            StreamID startID = group.LastDeliveredId;
+            // We want entries strictly after LastDeliveredId. Increment seq to get exclusive start.
+            ulong startSeq = startID.getSeq();
+            if (startSeq < ulong.MaxValue)
+            {
+                startID.setSeq(startSeq + 1);
+            }
+            else
+            {
+                ulong startMs = startID.getMS();
+                if (startMs < ulong.MaxValue)
+                {
+                    startID.setMS(startMs + 1);
+                    startID.setSeq(0);
+                }
+                else
+                {
+                    // At the absolute maximum ID, nothing can follow
+                    writer.WriteArrayLength(0);
+                    return;
+                }
+            }
+
+            StreamID endID = new StreamID(ulong.MaxValue, ulong.MaxValue);
+            int actualLimit = count > 0 ? count : -1;
+
+            byte* startPtr = (byte*)Unsafe.AsPointer(ref startID.idBytes[0]);
+            byte* endPtr = (byte*)Unsafe.AsPointer(ref endID.idBytes[0]);
+
+            int validCount = index.Get(startPtr, endPtr, out Value startVal, out Value endVal,
+                out List<Value> tombstones, actualLimit, reverse: false);
+
+            if (validCount == 0)
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            HashSet<ulong> tombstoneAddrs = null;
+            if (tombstones != null && tombstones.Count > 0)
+            {
+                tombstoneAddrs = new HashSet<ulong>(tombstones.Count);
+                foreach (var t in tombstones)
+                    tombstoneAddrs.Add(t.address);
+            }
+
+            long scanStart = (long)startVal.address;
+            long scanEnd = (long)endVal.address;
+            long beginAddr = log.BeginAddress;
+            if (scanStart < beginAddr) scanStart = beginAddr;
+            if (scanEnd < beginAddr)
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            // Collect entries to deliver
+            var entries = new List<(StreamID id, byte[] data)>(validCount);
+            using (var iter = log.Scan(scanStart, scanEnd + 1, scanUncommitted: true))
+            {
+                while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
+                {
+                    if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
+                        continue;
+                    if (IsControlRecord(entry)) continue;
+
+                    var header = MemoryMarshal.Read<StreamLogEntryHeader>(
+                        new ReadOnlySpan<byte>(entry, 0, sizeof(StreamLogEntryHeader)));
+                    entries.Add((header.id, entry));
+                    if (entries.Count >= validCount) break;
+                }
+            }
+
+            writer.WriteArrayLength(entries.Count);
+            foreach (var (entryId, entryData) in entries)
+            {
+                WriteEntryToWriter(entryData, ref writer);
+
+                // Update group state
+                group.LastDeliveredId = entryId;
+                group.EntriesRead++;
+
+                if (!noAck)
+                {
+                    group.AddPendingEntry(entryId, consumer, nowMs);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Return pending entries for the consumer starting at the given ID.
+        /// </summary>
+        unsafe void ReadGroupPendingEntries(ConsumerGroup group, StreamConsumer consumer,
+            string idStr, int count, ref RespMemoryWriter writer)
+        {
+            StreamID startID;
+            if (idStr == "0" || idStr == "0-0")
+            {
+                startID = new StreamID(0, 0);
+            }
+            else if (!ParseCompleteStreamIDFromString(idStr, out startID))
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            // Walk consumer's pending IDs from startID
+            var pendingView = consumer.PendingIds.GetViewBetween(startID, new StreamID(ulong.MaxValue, ulong.MaxValue));
+            var pendingIds = new List<StreamID>(pendingView);
+
+            if (count > 0 && pendingIds.Count > count)
+                pendingIds.RemoveRange(count, pendingIds.Count - count);
+
+            if (pendingIds.Count == 0)
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            // Read each pending entry from the log
+            writer.WriteArrayLength(pendingIds.Count);
+            foreach (var pendingId in pendingIds)
+            {
+                if (!group.PEL.TryGetValue(pendingId, out var pe))
+                    continue;
+
+                // Update delivery metadata
+                pe.DeliveryCount++;
+                pe.DeliveryTime = NowMs();
+
+                // Look up address from BTree and read from log
+                var lookupId = pendingId;
+                byte* keyPtr = (byte*)Unsafe.AsPointer(ref lookupId.idBytes[0]);
+                var result = index.Get(keyPtr);
+                if (!result.Valid)
+                {
+                    // Entry was trimmed/deleted; still in PEL but data gone
+                    writer.WriteNull();
+                    continue;
+                }
+
+                long addr = (long)result.address;
+                using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
+                if (iter.GetNext(out byte[] entry, out _, out _))
+                {
+                    WriteEntryToWriter(entry, ref writer);
+                }
+                else
+                {
+                    writer.WriteNull();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Acknowledge entries in a consumer group (XACK).
+        /// </summary>
+        /// <returns>Number of entries acknowledged, or -1 if group not found.</returns>
+        public int Acknowledge(string groupName, ReadOnlySpan<StreamID> ids)
+        {
+            _lock.WriteLock();
+            try
+            {
+                if (!consumerGroups.TryGetValue(groupName, out var group))
+                    return -1;
+                return group.Acknowledge(ids, NowMs());
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Get pending entries summary or detail (XPENDING).
+        /// </summary>
+        /// <param name="groupName">Consumer group name.</param>
+        /// <param name="start">Start ID for range query (null for summary form).</param>
+        /// <param name="end">End ID for range query.</param>
+        /// <param name="count">Max entries to return.</param>
+        /// <param name="minIdleTime">Minimum idle time filter in ms (-1 = no filter).</param>
+        /// <param name="consumerFilter">Filter by consumer name (null = all consumers).</param>
+        /// <param name="output">RESP output buffer.</param>
+        /// <param name="respProtocolVersion">RESP protocol version.</param>
+        /// <returns>True if group found, false otherwise.</returns>
+        public bool GetPending(string groupName, string start, string end,
+            int count, long minIdleTime, string consumerFilter,
+            ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.ReadLock();
+                try
+                {
+                    if (!consumerGroups.TryGetValue(groupName, out var group))
+                        return false;
+
+                    long nowMs = NowMs();
+
+                    if (start == null)
+                    {
+                        // Summary form
+                        WritePendingSummary(group, nowMs, ref writer);
+                    }
+                    else
+                    {
+                        // Detail form
+                        WritePendingDetail(group, start, end, count, minIdleTime, consumerFilter, nowMs, ref writer);
+                    }
+                    return true;
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        void WritePendingSummary(ConsumerGroup group, long nowMs, ref RespMemoryWriter writer)
+        {
+            int total = group.PEL.Count;
+            writer.WriteArrayLength(4);
+            writer.WriteInt64(total);
+
+            if (total == 0)
+            {
+                writer.WriteNull();
+                writer.WriteNull();
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            // Min and max IDs in PEL
+            WriteStreamIdToWriter(group.PEL.Keys[0], ref writer);
+            WriteStreamIdToWriter(group.PEL.Keys[group.PEL.Count - 1], ref writer);
+
+            // Per-consumer counts
+            var consumerCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var pe in group.PEL.Values)
+            {
+                consumerCounts.TryGetValue(pe.ConsumerName, out int c);
+                consumerCounts[pe.ConsumerName] = c + 1;
+            }
+
+            writer.WriteArrayLength(consumerCounts.Count);
+            foreach (var kvp in consumerCounts)
+            {
+                writer.WriteArrayLength(2);
+                writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(kvp.Key));
+                writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(kvp.Value.ToString()));
+            }
+        }
+
+        void WritePendingDetail(ConsumerGroup group, string startStr, string endStr,
+            int count, long minIdleTime, string consumerFilter, long nowMs,
+            ref RespMemoryWriter writer)
+        {
+            StreamID startID = startStr == "-" ? new StreamID(0, 0) : default;
+            StreamID endID = endStr == "+" ? new StreamID(ulong.MaxValue, ulong.MaxValue) : default;
+            if (startStr != "-" && !ParseStreamIDFromString(startStr, out startID))
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+            if (endStr != "+" && !ParseStreamIDFromString(endStr, out endID))
+            {
+                writer.WriteArrayLength(0);
+                return;
+            }
+
+            var results = new List<PendingEntry>();
+            foreach (var kvp in group.PEL)
+            {
+                if (kvp.Key.CompareTo(startID) < 0) continue;
+                if (kvp.Key.CompareTo(endID) > 0) break;
+
+                var pe = kvp.Value;
+                if (consumerFilter != null && pe.ConsumerName != consumerFilter) continue;
+                if (minIdleTime >= 0 && (nowMs - pe.DeliveryTime) < minIdleTime) continue;
+
+                results.Add(pe);
+                if (count > 0 && results.Count >= count) break;
+            }
+
+            writer.WriteArrayLength(results.Count);
+            foreach (var pe in results)
+            {
+                writer.WriteArrayLength(4);
+                WriteStreamIdToWriter(pe.Id, ref writer);
+                writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(pe.ConsumerName));
+                writer.WriteInt64(nowMs - pe.DeliveryTime);
+                writer.WriteInt64(pe.DeliveryCount);
+            }
+        }
+
+        /// <summary>
+        /// Claim pending entries (XCLAIM).
+        /// </summary>
+        /// <returns>List of claimed entry data, or null if group not found.</returns>
+        public unsafe bool ClaimEntries(string groupName, string consumerName, long minIdleTime,
+            StreamID[] ids, long? idleMs, long? timeMs, int? retryCount, bool force, bool justId,
+            ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.WriteLock();
+                try
+                {
+                    if (!consumerGroups.TryGetValue(groupName, out var group))
+                        return false;
+
+                    long nowMs = NowMs();
+                    var consumer = group.GetOrCreateConsumer(consumerName, nowMs);
+                    var claimed = new List<(StreamID id, byte[] data)>();
+
+                    foreach (var id in ids)
+                    {
+                        if (!group.PEL.TryGetValue(id, out var pe))
+                        {
+                            if (!force) continue;
+                            // FORCE: create a new PEL entry even if it doesn't exist
+                            pe = new PendingEntry(id, consumerName, nowMs);
+                            group.PEL[id] = pe;
+                            consumer.PendingIds.Add(id);
+                        }
+                        else
+                        {
+                            long idle = nowMs - pe.DeliveryTime;
+                            if (idle < minIdleTime && !force) continue;
+
+                            // Transfer ownership: remove from old consumer
+                            if (group.Consumers.TryGetValue(pe.ConsumerName, out var oldConsumer))
+                            {
+                                oldConsumer.PendingIds.Remove(id);
+                            }
+
+                            pe.ConsumerName = consumerName;
+                            consumer.PendingIds.Add(id);
+                        }
+
+                        // Apply optional overrides
+                        pe.DeliveryTime = timeMs ?? (idleMs.HasValue ? (nowMs - idleMs.Value) : nowMs);
+                        if (retryCount.HasValue)
+                            pe.DeliveryCount = retryCount.Value;
+                        else
+                            pe.DeliveryCount++;
+
+                        if (!justId)
+                        {
+                            // Read entry data from log
+                            var lookupId = id;
+                            byte* keyPtr = (byte*)Unsafe.AsPointer(ref lookupId.idBytes[0]);
+                            var result = index.Get(keyPtr);
+                            if (result.Valid)
+                            {
+                                long addr = (long)result.address;
+                                using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
+                                if (iter.GetNext(out byte[] entry, out _, out _))
+                                {
+                                    claimed.Add((id, entry));
+                                    continue;
+                                }
+                            }
+                        }
+                        claimed.Add((id, null));
+                    }
+
+                    writer.WriteArrayLength(claimed.Count);
+                    foreach (var (claimedId, data) in claimed)
+                    {
+                        if (justId)
+                        {
+                            WriteStreamIdToWriter(claimedId, ref writer);
+                        }
+                        else if (data != null)
+                        {
+                            WriteEntryToWriter(data, ref writer);
+                        }
+                        else
+                        {
+                            writer.WriteNull();
+                        }
+                    }
+                    return true;
+                }
+                finally
+                {
+                    _lock.WriteUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Auto-claim idle pending entries (XAUTOCLAIM).
+        /// </summary>
+        public unsafe bool AutoClaim(string groupName, string consumerName, long minIdleTime,
+            StreamID start, int count, bool justId,
+            ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.WriteLock();
+                try
+                {
+                    if (!consumerGroups.TryGetValue(groupName, out var group))
+                        return false;
+
+                    long nowMs = NowMs();
+                    var consumer = group.GetOrCreateConsumer(consumerName, nowMs);
+                    var claimed = new List<(StreamID id, byte[] data)>();
+                    var deletedIds = new List<StreamID>();
+                    StreamID nextCursor = new StreamID(0, 0);
+                    bool hasMore = false;
+
+                    // Scan PEL from start
+                    int scanned = 0;
+                    foreach (var kvp in group.PEL)
+                    {
+                        if (kvp.Key.CompareTo(start) < 0) continue;
+
+                        if (scanned >= count)
+                        {
+                            nextCursor = kvp.Key;
+                            hasMore = true;
+                            break;
+                        }
+
+                        var pe = kvp.Value;
+                        long idle = nowMs - pe.DeliveryTime;
+                        if (idle < minIdleTime)
+                        {
+                            scanned++;
+                            continue;
+                        }
+
+                        // Check if entry still exists in the stream
+                        var lookupId = kvp.Key;
+                        byte* keyPtr = (byte*)Unsafe.AsPointer(ref lookupId.idBytes[0]);
+                        var result = index.Get(keyPtr);
+                        if (!result.Valid)
+                        {
+                            deletedIds.Add(kvp.Key);
+                            scanned++;
+                            continue;
+                        }
+
+                        // Transfer ownership
+                        if (group.Consumers.TryGetValue(pe.ConsumerName, out var oldConsumer))
+                        {
+                            oldConsumer.PendingIds.Remove(kvp.Key);
+                        }
+
+                        pe.ConsumerName = consumerName;
+                        pe.DeliveryTime = nowMs;
+                        pe.DeliveryCount++;
+                        consumer.PendingIds.Add(kvp.Key);
+
+                        if (!justId)
+                        {
+                            long addr = (long)result.address;
+                            using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
+                            if (iter.GetNext(out byte[] entry, out _, out _))
+                            {
+                                claimed.Add((kvp.Key, entry));
+                            }
+                            else
+                            {
+                                claimed.Add((kvp.Key, null));
+                            }
+                        }
+                        else
+                        {
+                            claimed.Add((kvp.Key, null));
+                        }
+                        scanned++;
+                    }
+
+                    // Remove deleted entries from PEL
+                    foreach (var did in deletedIds)
+                    {
+                        if (group.PEL.TryGetValue(did, out var dpe))
+                        {
+                            if (group.Consumers.TryGetValue(dpe.ConsumerName, out var dc))
+                                dc.PendingIds.Remove(did);
+                            group.PEL.Remove(did);
+                        }
+                    }
+
+                    // Write response: [nextCursor, claimedEntries, deletedIds]
+                    writer.WriteArrayLength(3);
+
+                    // Next cursor (0-0 if scan complete)
+                    if (!hasMore)
+                        nextCursor = new StreamID(0, 0);
+                    WriteStreamIdToWriter(nextCursor, ref writer);
+
+                    // Claimed entries
+                    writer.WriteArrayLength(claimed.Count);
+                    foreach (var (claimedId, data) in claimed)
+                    {
+                        if (justId)
+                        {
+                            WriteStreamIdToWriter(claimedId, ref writer);
+                        }
+                        else if (data != null)
+                        {
+                            WriteEntryToWriter(data, ref writer);
+                        }
+                        else
+                        {
+                            writer.WriteNull();
+                        }
+                    }
+
+                    // Deleted IDs
+                    writer.WriteArrayLength(deletedIds.Count);
+                    foreach (var did in deletedIds)
+                    {
+                        WriteStreamIdToWriter(did, ref writer);
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    _lock.WriteUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Get stream info (XINFO STREAM).
+        /// </summary>
+        public void GetStreamInfo(ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.ReadLock();
+                try
+                {
+                    // Return as a flat array of field-value pairs (like Redis XINFO STREAM)
+                    writer.WriteArrayLength(14);
+
+                    writer.WriteBulkString("length"u8);
+                    writer.WriteInt64((long)index.ValidCount);
+
+                    writer.WriteBulkString("radix-tree-keys"u8);
+                    writer.WriteInt64(0); // N/A for BTree
+
+                    writer.WriteBulkString("radix-tree-nodes"u8);
+                    writer.WriteInt64(0); // N/A for BTree
+
+                    writer.WriteBulkString("last-generated-id"u8);
+                    WriteStreamIdToWriter(lastId, ref writer);
+
+                    writer.WriteBulkString("groups"u8);
+                    writer.WriteInt64(consumerGroups.Count);
+
+                    writer.WriteBulkString("entries-added"u8);
+                    writer.WriteInt64(totalEntriesAdded);
+
+                    writer.WriteBulkString("recorded-first-entry-id"u8);
+                    if (index.ValidCount > 0)
+                    {
+                        var first = index.FirstAlive();
+                        if (first.Value.Valid)
+                            WriteStreamIdToWriter(MemoryMarshal.Read<StreamID>(first.Key.AsSpan()), ref writer);
+                        else
+                            WriteStreamIdToWriter(new StreamID(0, 0), ref writer);
+                    }
+                    else
+                    {
+                        WriteStreamIdToWriter(new StreamID(0, 0), ref writer);
+                    }
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Get consumer groups info (XINFO GROUPS).
+        /// </summary>
+        public bool GetGroupsInfo(ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.ReadLock();
+                try
+                {
+                    writer.WriteArrayLength(consumerGroups.Count);
+                    foreach (var group in consumerGroups.Values)
+                    {
+                        writer.WriteArrayLength(10);
+
+                        writer.WriteBulkString("name"u8);
+                        writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(group.Name));
+
+                        writer.WriteBulkString("consumers"u8);
+                        writer.WriteInt64(group.Consumers.Count);
+
+                        writer.WriteBulkString("pending"u8);
+                        writer.WriteInt64(group.PEL.Count);
+
+                        writer.WriteBulkString("last-delivered-id"u8);
+                        WriteStreamIdToWriter(group.LastDeliveredId, ref writer);
+
+                        writer.WriteBulkString("entries-read"u8);
+                        writer.WriteInt64(group.EntriesRead);
+                    }
+                    return true;
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Get consumers info for a group (XINFO CONSUMERS).
+        /// </summary>
+        public bool GetConsumersInfo(string groupName, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.ReadLock();
+                try
+                {
+                    if (!consumerGroups.TryGetValue(groupName, out var group))
+                        return false;
+
+                    long nowMs = NowMs();
+                    writer.WriteArrayLength(group.Consumers.Count);
+                    foreach (var consumer in group.Consumers.Values)
+                    {
+                        writer.WriteArrayLength(6);
+
+                        writer.WriteBulkString("name"u8);
+                        writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(consumer.Name));
+
+                        writer.WriteBulkString("pending"u8);
+                        writer.WriteInt64(consumer.PendingIds.Count);
+
+                        writer.WriteBulkString("idle"u8);
+                        writer.WriteInt64(nowMs - consumer.SeenTime);
+                    }
+                    return true;
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Read entries from the stream after the given ID (for XREAD, non-group).
+        /// </summary>
+        public unsafe void ReadAfter(StreamID afterId, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            // Compute exclusive start: afterId + 1
+            StreamID startID = afterId;
+            ulong seq = startID.getSeq();
+            if (seq < ulong.MaxValue)
+            {
+                startID.setSeq(seq + 1);
+            }
+            else
+            {
+                ulong ms = startID.getMS();
+                if (ms < ulong.MaxValue)
+                {
+                    startID.setMS(ms + 1);
+                    startID.setSeq(0);
+                }
+                else
+                {
+                    using var w = new RespMemoryWriter(respProtocolVersion, ref output);
+                    w.WriteArrayLength(0);
+                    return;
+                }
+            }
+
+            StreamID endID = new StreamID(ulong.MaxValue, ulong.MaxValue);
+            // Reuse ReadRange infrastructure
+            string startStr = $"{startID.getMS()}-{startID.getSeq()}";
+            string endStr = "+";
+            ReadRange(startStr, endStr, count, ref output, respProtocolVersion, isReverse: false);
+        }
+
+        #endregion Consumer Group Operations
+
         /// <inheritdoc/>
         public void Dispose()
         {
             try
             {
+                index.Deallocate();
                 log.Dispose();
                 device.Dispose();
             }

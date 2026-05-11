@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -12,7 +13,8 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     [TestFixture]
-    public class RespStreamTests
+    [AllureNUnit]
+    public class RespStreamTests : AllureTestBase
     {
         protected GarnetServer server;
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -23,7 +25,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableStreams: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
             server.Start();
             random = new Random();
 
@@ -259,7 +261,7 @@ namespace Garnet.test
             ClassicAssert.GreaterOrEqual(trimCount, 1);
             ClassicAssert.GreaterOrEqual(count - trimCount, maxLen);
         }
-        
+
         [Test]
         [Category("Trim")]
         public void StreamTrimFullTest()
@@ -281,60 +283,60 @@ namespace Garnet.test
             // Trim in random steps from 1-150 until we have 0 entries
             long currentLength = count;
             var random = new Random(42); // Fixed seed for reproducibility
-            
+
             while (currentLength > 0)
             {
                 // Determine how many to keep (trim to this length)
                 long trimAmount = random.Next(1, Math.Min(151, (int)currentLength + 1));
                 long newLength = Math.Max(0, currentLength - trimAmount);
-                
+
                 // Verify stream length before trim
                 long lengthBefore = db.StreamLength(streamKey);
                 ClassicAssert.AreEqual(currentLength, lengthBefore, "Stream length mismatch before trim");
-                
+
                 // Get first and last entries before trim
                 var rangeBefore = db.StreamRange(streamKey, "-", "+");
                 var firstIdBefore = rangeBefore.Length > 0 ? rangeBefore[0].Id.ToString() : null;
                 var lastIdBefore = rangeBefore.Length > 0 ? rangeBefore[rangeBefore.Length - 1].Id.ToString() : null;
-                
+
                 // Perform the trim
                 long trimmed = db.StreamTrim(streamKey, newLength);
-                
+
                 // Verify the correct number of entries were trimmed
                 ClassicAssert.AreEqual(trimAmount, trimmed, $"Expected to trim {trimAmount} entries");
-                
+
                 // Verify new stream length
                 long lengthAfter = db.StreamLength(streamKey);
                 ClassicAssert.AreEqual(newLength, lengthAfter, "Stream length mismatch after trim");
-                
+
                 if (newLength > 0)
                 {
                     // Get first and last entries after trim
                     var rangeAfter = db.StreamRange(streamKey, "-", "+");
                     ClassicAssert.AreEqual(newLength, rangeAfter.Length, "Range length should match stream length");
-                    
+
                     var firstIdAfter = rangeAfter[0].Id.ToString();
                     var lastIdAfter = rangeAfter[rangeAfter.Length - 1].Id.ToString();
-                    
+
                     // First entry should have changed (oldest entries were removed)
                     ClassicAssert.AreNotEqual(firstIdBefore, firstIdAfter, "First entry should change after trim");
-                    
+
                     // Last entry should remain the same (we keep newest entries)
                     ClassicAssert.AreEqual(lastIdBefore, lastIdAfter, "Last entry should not change after trim");
-                    
+
                     // Verify the new first entry is from the expected position in ids array
                     long expectedFirstIndex = count - newLength;
                     string expectedFirstId = ids[expectedFirstIndex];
                     ClassicAssert.AreEqual(expectedFirstId, firstIdAfter, "First entry ID should match expected from ids array");
-                    
+
                     // Verify the last entry is still the original last entry from ids array
                     string expectedLastId = ids[count - 1];
                     ClassicAssert.AreEqual(expectedLastId, lastIdAfter, "Last entry should still be the original last from ids array");
                 }
-                
+
                 currentLength = newLength;
             }
-            
+
             // Final verification: stream should be empty or minimal
             long finalLength = db.StreamLength(streamKey);
             ClassicAssert.AreEqual(0, finalLength, "Stream should be empty at the end");
@@ -909,6 +911,442 @@ namespace Garnet.test
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:list:1"));
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:stream:1"));
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:stream:2"));
+        }
+
+        #endregion
+
+        #region Persistence
+        [Test]
+        [Category("Persistence")]
+        public void StreamSaveAndRecoverTest()
+        {
+            // Stand up an isolated server with a per-stream log directory, write entries, SAVE,
+            // tear it down, restart against the same directory, and confirm the stream was rebuilt
+            // by replaying its log.
+            var saveDir = System.IO.Path.Combine(TestUtils.MethodTestDir, "streams");
+
+            // Tear down the auto-setup server (uses default in-memory streams) and stand up a
+            // disk-backed one for this test only.
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+
+            const string streamKey = "persist";
+            const int entryCount = 25;
+            var addedIds = new string[entryCount];
+
+            using (var firstServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir))
+            {
+                firstServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                var s = redis.GetServers()[0];
+
+                for (int i = 0; i < entryCount; i++)
+                {
+                    var id = db.StreamAdd(streamKey, $"f{i}", $"v{i}", $"{i + 1}-0");
+                    addedIds[i] = id.ToString();
+                }
+
+                // Trigger a stream commit; SAVE fans out to streams via StoreWrapper.TakeCheckpoint.
+                s.Execute("SAVE");
+                // Give the fire-and-forget commit task a moment to drain to disk before we tear down.
+                System.Threading.Thread.Sleep(500);
+            }
+
+            // Re-stand the server pointing at the same streamLogDir. The BTree is rebuilt by
+            // scanning the recovered Tsavorite log.
+            using (var secondServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir, tryRecover: true))
+            {
+                secondServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                ClassicAssert.AreEqual(entryCount, db.StreamLength(streamKey),
+                    "Recovered stream length must match what was added");
+
+                var range = db.StreamRange(streamKey, "-", "+");
+                ClassicAssert.AreEqual(entryCount, range.Length);
+                for (int i = 0; i < entryCount; i++)
+                {
+                    ClassicAssert.AreEqual(addedIds[i], range[i].Id.ToString(),
+                        $"Entry {i} ID mismatch after recovery");
+                }
+            }
+
+            // Re-create the auto-setup server so [TearDown] has something to dispose.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+
+        [Test]
+        [Category("Persistence")]
+        public void StreamRecoveryPreservesDeletesAndTrim()
+        {
+            // Add 20 entries, XDEL a few, XTRIM MAXLEN to drop the oldest, restart, and
+            // confirm the recovered stream matches what was visible before the restart —
+            // i.e. control records (tombstones and trim markers) survive recovery.
+            var saveDir = System.IO.Path.Combine(TestUtils.MethodTestDir, "streams");
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+
+            const string streamKey = "delAndTrim";
+            const int initialCount = 20;
+            // Entries XDEL'd before the trim; the trim will remove some of these implicitly
+            // anyway, but we want to prove the explicit delete is recorded.
+            var deletedIds = new[] { "5-0", "12-0" };
+            // Trim to keep the newest 8.
+            const int trimTo = 8;
+
+            using (var firstServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir))
+            {
+                firstServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                var s = redis.GetServers()[0];
+
+                for (int i = 0; i < initialCount; i++)
+                {
+                    db.StreamAdd(streamKey, $"f{i}", $"v{i}", $"{i + 1}-0");
+                }
+
+                foreach (var id in deletedIds)
+                {
+                    var deleted = db.StreamDelete(streamKey, [(RedisValue)id]);
+                    ClassicAssert.AreEqual(1, deleted, $"XDEL {id} should remove one entry");
+                }
+
+                // After 2 deletes from 20 entries, validCount = 18. After XTRIM MAXLEN 8,
+                // validCount = 8 (only the newest 8 ids: 13-0 through 20-0).
+                long trimmed = db.StreamTrim(streamKey, trimTo);
+                ClassicAssert.AreEqual(10, trimmed, "XTRIM should remove 18 - 8 = 10 entries");
+                ClassicAssert.AreEqual(trimTo, db.StreamLength(streamKey));
+
+                s.Execute("SAVE");
+                System.Threading.Thread.Sleep(500);
+            }
+
+            using (var secondServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir, tryRecover: true))
+            {
+                secondServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                ClassicAssert.AreEqual(trimTo, db.StreamLength(streamKey),
+                    "Recovered length must match — without tombstone/trim markers, validCount would balloon back to 20");
+
+                var range = db.StreamRange(streamKey, "-", "+");
+                ClassicAssert.AreEqual(trimTo, range.Length);
+                // The surviving entries are 13-0 .. 20-0 (the newest 8).
+                for (int i = 0; i < trimTo; i++)
+                {
+                    var expectedId = $"{initialCount - trimTo + i + 1}-0";
+                    ClassicAssert.AreEqual(expectedId, range[i].Id.ToString(),
+                        $"Entry {i} id mismatch after recovery");
+                }
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+        #endregion
+
+        #region BenchmarkRepro
+
+        [Test]
+        public void StreamXRangeExplicitIdsScanCrashRepro()
+        {
+            // Reproduces the crash from StreamBenchmark:
+            // "Invalid length of record found: 83886080 at address 252"
+            // Prepopulate with explicit IDs like the benchmark, then XRANGE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var streamKey = "benchRepro";
+
+            const int count = 1000;
+            // Add entries with explicit IDs 1-0 through count-0
+            for (int i = 1; i <= count; i++)
+            {
+                db.Execute("XADD", streamKey, $"{i}-0", "f", "v");
+            }
+
+            // Do XRANGE over various windows (including the one that crashed at ID 5-0)
+            for (int start = 1; start <= count - 50; start += 47)
+            {
+                int end = start + 49;
+                var result = db.Execute("XRANGE", streamKey, $"{start}-0", $"{end}-0", "COUNT", "50");
+                ClassicAssert.IsNotNull(result);
+            }
+
+            // Specifically test the range that includes the problematic ID 5-0
+            var result2 = db.Execute("XRANGE", streamKey, "1-0", "10-0");
+            ClassicAssert.IsNotNull(result2);
+        }
+
+        [Test]
+        public void StreamXRangeSequentialPageBoundaryScanRepro()
+        {
+            // Tests XRANGE across page boundaries (100K entries span 2 pages at 4MB/page).
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var streamKey = "pageBoundaryScan";
+
+            const int count = 100000;
+            for (int i = 1; i <= count; i++)
+            {
+                db.Execute("XADD", streamKey, $"{i}-0", "f", "v");
+            }
+
+            var len = (long)db.Execute("XLEN", streamKey);
+            ClassicAssert.AreEqual(count, len, "Prepopulation failed");
+
+            // Scan within page 0 (should be safe)
+            var result0 = db.Execute("XRANGE", streamKey, "1-0", "100-0");
+            ClassicAssert.IsNotNull(result0, "Page 0 scan failed");
+
+            // Cross-page scan — use new connection in case first one dies
+            try
+            {
+                using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db2 = redis2.GetDatabase(0);
+                var result2 = db2.Execute("XRANGE", streamKey, "95300-0", "95350-0");
+                ClassicAssert.IsNotNull(result2, "Cross-page scan failed");
+            }
+            catch (Exception ex)
+            {
+                ClassicAssert.Fail($"Cross-page scan threw: {ex.Message}");
+            }
+        }
+
+        [Test]
+        public void StreamXRangeConcurrentScanCrashRepro()
+        {
+            // Tests concurrent XRANGE like the benchmark (16 threads)
+            // The crash was "Invalid length of record found: 83886080 at address 252"
+            // which suggests scanner misalignment during page transitions with ~100K entries.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var streamKey = "benchReproConcurrent";
+
+            const int count = 100000;
+            // Add entries
+            for (int i = 1; i <= count; i++)
+            {
+                db.Execute("XADD", streamKey, $"{i}-0", "f", "v");
+            }
+
+            // Verify prepopulation
+            var len = (long)db.Execute("XLEN", streamKey);
+            ClassicAssert.AreEqual(count, len, "Prepopulation failed");
+
+            // Concurrent XRANGE from multiple connections (like the benchmark)
+            var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+            var tasks = new Task[16];
+            for (int t = 0; t < 16; t++)
+            {
+                int seed = 42 + t;
+                tasks[t] = Task.Run(() =>
+                {
+                    try
+                    {
+                        using var conn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                        var tdb = conn.GetDatabase(0);
+                        var localRng = new Random(seed);
+                        for (int i = 0; i < 500; i++)
+                        {
+                            int s = 1 + localRng.Next(count - 50);
+                            int e = s + 49;
+                            tdb.Execute("XRANGE", streamKey, $"{s}-0", $"{e}-0", "COUNT", "50");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        exceptions.Add(ex);
+                    }
+                });
+            }
+            Task.WaitAll(tasks);
+            ClassicAssert.IsEmpty(exceptions, $"Got {exceptions.Count} exceptions: {string.Join("; ", exceptions.Select(e => e.Message).Take(5))}");
+        }
+
+        #endregion
+
+        #region Consumer Group Tests
+
+        [Test]
+        public async Task XGroupCreateAndDestroyTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            // Add entry first
+            await c.ExecuteAsync("XADD", "cg-stream", "*", "field1", "value1");
+
+            // Create a consumer group
+            var result = await c.ExecuteAsync("XGROUP", "CREATE", "cg-stream", "mygroup", "0-0");
+            ClassicAssert.AreEqual("OK", result);
+
+            // Destroy the group
+            result = await c.ExecuteAsync("XGROUP", "DESTROY", "cg-stream", "mygroup");
+            ClassicAssert.AreEqual("1", result);
+
+            // Destroy again should return 0
+            result = await c.ExecuteAsync("XGROUP", "DESTROY", "cg-stream", "mygroup");
+            ClassicAssert.AreEqual("0", result);
+        }
+
+        [Test]
+        public async Task XGroupCreateConsumerAndDelConsumerTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-consumers", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-consumers", "grp1", "0-0");
+
+            // Create consumer
+            var result = await c.ExecuteAsync("XGROUP", "CREATECONSUMER", "cg-consumers", "grp1", "myConsumer");
+            ClassicAssert.AreEqual("1", result);
+
+            // Create same consumer again
+            result = await c.ExecuteAsync("XGROUP", "CREATECONSUMER", "cg-consumers", "grp1", "myConsumer");
+            ClassicAssert.AreEqual("0", result);
+
+            // Delete consumer
+            result = await c.ExecuteAsync("XGROUP", "DELCONSUMER", "cg-consumers", "grp1", "myConsumer");
+            ClassicAssert.AreEqual("0", result); // 0 pending entries removed
+        }
+
+        [Test]
+        public async Task XReadGroupBasicTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-readgroup", "*", "f1", "v1");
+            await c.ExecuteAsync("XADD", "cg-readgroup", "*", "f2", "v2");
+            await c.ExecuteAsync("XADD", "cg-readgroup", "*", "f3", "v3");
+
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-readgroup", "grp1", "0-0");
+
+            // Read new entries with ">"
+            var result = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "COUNT", "2", "STREAMS", "cg-readgroup", ">");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.IsTrue(result.Length > 0); // Multi-stream format wraps results
+        }
+
+        [Test]
+        public async Task XAckTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var id1 = await c.ExecuteAsync("XADD", "cg-ack", "*", "f1", "v1");
+            var id2 = await c.ExecuteAsync("XADD", "cg-ack", "*", "f2", "v2");
+
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-ack", "grp1", "0-0");
+
+            // Read all entries
+            await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "STREAMS", "cg-ack", ">");
+
+            // Acknowledge first entry
+            var result = await c.ExecuteAsync("XACK", "cg-ack", "grp1", id1);
+            ClassicAssert.AreEqual("1", result);
+
+            // Acknowledge second
+            result = await c.ExecuteAsync("XACK", "cg-ack", "grp1", id2);
+            ClassicAssert.AreEqual("1", result);
+
+            // Acknowledge non-existent
+            result = await c.ExecuteAsync("XACK", "cg-ack", "grp1", "999-999");
+            ClassicAssert.AreEqual("0", result);
+        }
+
+        [Test]
+        public async Task XReadGroupPendingRereadTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-pending", "*", "f1", "v1");
+            await c.ExecuteAsync("XADD", "cg-pending", "*", "f2", "v2");
+
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-pending", "grp1", "0-0");
+
+            // Deliver to consumer
+            await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "STREAMS", "cg-pending", ">");
+
+            // Re-read pending entries with "0"
+            var result = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "STREAMS", "cg-pending", "0");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.IsTrue(result.Length > 0); // Should have pending entries
+        }
+
+        [Test]
+        public async Task XReadGroupNoAckTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-noack", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-noack", "grp1", "0-0");
+
+            // Read with NOACK
+            await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "NOACK", "STREAMS", "cg-noack", ">");
+
+            // No pending entries since NOACK was used — re-read should give empty entries
+            var result = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp1", "consumer1", "STREAMS", "cg-noack", "0");
+            // Result should still be valid (not error)
+            ClassicAssert.IsNotNull(result);
+        }
+
+        [Test]
+        public async Task XInfoStreamTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-info", "*", "f1", "v1");
+            await c.ExecuteAsync("XADD", "cg-info", "*", "f2", "v2");
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-info", "grp1", "0-0");
+
+            var result = await c.ExecuteForArrayAsync("XINFO", "STREAM", "cg-info");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.IsTrue(result.Length >= 12); // at least 6 field-value pairs
+        }
+
+        [Test]
+        public async Task XInfoGroupsTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "cg-infogroups", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-infogroups", "grp1", "0-0");
+            await c.ExecuteAsync("XGROUP", "CREATE", "cg-infogroups", "grp2", "$");
+
+            var result = await c.ExecuteForArrayAsync("XINFO", "GROUPS", "cg-infogroups");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(2, result.Length);
+        }
+
+        [Test]
+        public async Task XReadBasicTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var id1 = await c.ExecuteAsync("XADD", "cg-xread", "*", "f1", "v1");
+            await c.ExecuteAsync("XADD", "cg-xread", "*", "f2", "v2");
+            await c.ExecuteAsync("XADD", "cg-xread", "*", "f3", "v3");
+
+            // Read entries after id1 via XREAD
+            var result = await c.ExecuteForArrayAsync("XREAD", "COUNT", "10", "STREAMS", "cg-xread", id1);
+            ClassicAssert.IsNotNull(result);
         }
 
         #endregion

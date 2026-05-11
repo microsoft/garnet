@@ -263,10 +263,7 @@ namespace Garnet.server
                     StoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
-            if (serverOptions.EnableStreams)
-            {
-                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
-            }
+            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0, loggerFactory?.CreateLogger("StreamManager"));
         }
 
         /// <summary>
@@ -285,11 +282,11 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
-            // initialize stream manager
-            if (serverOptions.EnableStreams)
-            {
-                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
-            }
+            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(),
+                                                   serverOptions.StreamPageSizeBytes(),
+                                                   serverOptions.StreamMemorySizeBytes(),
+                                                   0,
+                                                   loggerFactory?.CreateLogger("StreamManager"));
         }
 
         /// <summary>
@@ -359,6 +356,11 @@ namespace Garnet.server
             }
 
             databaseManager.RecoverVectorSets();
+
+            // Streams persist as their own logs under StreamLogDir; rebuild the BTree indexes from
+            // the disk-backed logs. Always-on (independent of `--recover`) because a stream's
+            // existence is tracked entirely in those directories.
+            streamManager?.Recover();
         }
 
         /// <summary>
@@ -381,6 +383,11 @@ namespace Garnet.server
         /// <returns>False if another checkpointing process is already in progress</returns>
         public bool TakeCheckpoint(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
         {
+            // Fan out a stream commit alongside the main store checkpoint. CommitAsync does not
+            // touch the BTree lock, so reads/writes proceed unhindered while pages flush.
+            // Failures here are logged and swallowed: a stream commit shouldn't block SAVE.
+            FireAndForgetStreamCommit(token, logger);
+
             if (dbId == -1)
             {
                 return databaseManager.TakeCheckpoint(background, logger, token);
@@ -390,6 +397,22 @@ namespace Garnet.server
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
 
             return databaseManager.TakeCheckpoint(background, dbId, logger, token);
+        }
+
+        void FireAndForgetStreamCommit(CancellationToken token, ILogger logger)
+        {
+            if (streamManager == null) return;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await streamManager.CommitAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Stream log commit failed during checkpoint");
+                }
+            }, token);
         }
 
         /// <summary>
@@ -403,7 +426,14 @@ namespace Garnet.server
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
 
-            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
+            // Fan out the main checkpoint and the stream commits concurrently. Stream commit
+            // exceptions are isolated so a stream-level failure doesn't fail the whole checkpoint.
+            var streamTask = streamManager == null
+                ? Task.CompletedTask
+                : streamManager.CommitAsync()
+                    .ContinueWith(t => { /* observe to avoid UnobservedTaskException; logged elsewhere */ var _ = t.Exception; },
+                                  TaskContinuationOptions.OnlyOnFaulted);
+            await Task.WhenAll(databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId), streamTask).ConfigureAwait(false);
         }
 
         /// <summary>
