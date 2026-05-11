@@ -189,11 +189,19 @@ namespace Garnet.cluster
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
                     var returnedConfigArray = resp.Span.ToArray();
+
+                    // Validate config version before full deserialization
+                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    {
+                        logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
+                        return;
+                    }
+
                     var other = ClusterConfig.FromByteArray(returnedConfigArray);
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     // Check if gossip is from a node that is known and trusted before merging
                     if (current.IsKnown(other.LocalNodeId))
-                        clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                        clusterProvider.clusterManager.TryMerge(other);
                     else
                         logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }

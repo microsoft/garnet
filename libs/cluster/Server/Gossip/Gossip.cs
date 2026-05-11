@@ -186,21 +186,33 @@ namespace Garnet.cluster
                 resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
-                    var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
-                    nodeId = other.LocalNodeId;
-                    gsn.NodeId = nodeId;
+                    var respArray = resp.Span.ToArray();
 
-                    logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
-                    // Merge without a check because node is trusted as meet was issued by admin
-                    _ = TryMerge(other, acquireLock);
+                    // Validate config version before full deserialization
+                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    {
+                        logger?.LogWarning("MEET response has incompatible config version: {version}", version);
+                        if (created) gsn?.Dispose();
+                        gossipStats.UpdateMeetRequestsFailed();
+                    }
+                    else
+                    {
+                        var other = ClusterConfig.FromByteArray(respArray);
+                        nodeId = other.LocalNodeId;
+                        gsn.NodeId = nodeId;
 
-                    gossipStats.UpdateMeetRequestsSucceed();
+                        logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
+                        // Merge without a check because node is trusted as meet was issued by admin
+                        _ = TryMerge(other, acquireLock);
 
-                    // If failed to add newly created connection dispose of it to reclaim resources
-                    // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
-                    // After connection is added we are no longer the owner. Background gossip task will be owner
-                    if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
-                        gsn.Dispose();
+                        gossipStats.UpdateMeetRequestsSucceed();
+
+                        // If failed to add newly created connection dispose of it to reclaim resources
+                        // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
+                        // After connection is added we are no longer the owner. Background gossip task will be owner
+                        if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
+                            gsn.Dispose();
+                    }
                 }
             }
             catch (Exception ex)
