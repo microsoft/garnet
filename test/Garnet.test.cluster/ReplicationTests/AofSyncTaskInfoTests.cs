@@ -22,6 +22,7 @@ namespace Garnet.test.cluster
         /// fail to be added to the AofTaskStore.
         /// </summary>
         [Test]
+        [Category("REPLICATION")]
         public void DisposeReleasesGarnetClientSession()
         {
             // Arrange: create a GarnetClientSession (unconnected)
