@@ -136,7 +136,8 @@ namespace Tsavorite.core
                     DoManualUnlock(clientSession, keys[..keyIdx]);
 
                     // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
-                    if (cancellationToken.IsCancellationRequested || Stopwatch.GetElapsedTime(startTimestamp) > timeout)
+                    // A negative timeout (e.g. Timeout.InfiniteTimeSpan) means wait indefinitely until cancellation.
+                    if (cancellationToken.IsCancellationRequested || (timeout >= TimeSpan.Zero && Stopwatch.GetElapsedTime(startTimestamp) > timeout))
                         return false;
 
                     // No cancellation and we're within the timeout. We've released our locks so this refresh will let other threads advance
@@ -168,8 +169,9 @@ namespace Tsavorite.core
                     return true;
                 }
 
-                // CancellationToken can accompany either of the other two mechanisms
-                if (cancellationToken.IsCancellationRequested || Stopwatch.GetElapsedTime(startTimestamp) > timeout)
+                // CancellationToken can accompany either of the other two mechanisms.
+                // A negative timeout (e.g. Timeout.InfiniteTimeSpan) means wait indefinitely until cancellation.
+                if (cancellationToken.IsCancellationRequested || (timeout >= TimeSpan.Zero && Stopwatch.GetElapsedTime(startTimestamp) > timeout))
                     break;  // out of the retry loop
 
                 // Lock failed, must retry
