@@ -191,6 +191,16 @@ namespace Garnet
             if (opts.EnableCluster && opts.EnableRangeIndexPreview)
                 throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
 
+            // CopyReadsToTail is incompatible with EnableRangeIndexPreview: ReadRangeIndex holds
+            // a per-key shared RI lock during Read_MainStore, which under CopyReadsToTail can
+            // synchronously trigger ConditionalCopyToTail → PostCopyToTail-cold →
+            // PreStageAndRegisterPending, which tries to acquire the per-key X-lock and
+            // self-deadlocks against the shared lock our same thread is still holding.
+            if (opts.EnableRangeIndexPreview && opts.CopyReadsToTail)
+                throw new GarnetException(
+                    "EnableRangeIndexPreview is incompatible with CopyReadsToTail=true. " +
+                    "Set CopyReadsToTail=false or disable EnableRangeIndexPreview.");
+
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
                 version, IntPtr.Size == 8 ? "64" : "32",
@@ -323,7 +333,9 @@ namespace Garnet
 
             var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview,
                 riLogRoot: riLogRoot, cprDir: cprDir,
-                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
+                removeOutdatedCheckpoints: removeOutdated,
+                storeEpoch: storeEpoch,
+                logger: loggerFactory?.CreateLogger("RangeIndexManager"));
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 

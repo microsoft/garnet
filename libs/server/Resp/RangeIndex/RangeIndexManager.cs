@@ -73,9 +73,17 @@ namespace Garnet.server
         private readonly ILogger logger;
 
         /// <summary>
+        /// Tsavorite store epoch, used for deferred BfTree disposal via
+        /// <c>storeEpoch.BumpCurrentEpoch(...)</c>. Ensures concurrent readers using a
+        /// TreeHandle are not affected by a concurrent DEL — the actual dispose runs
+        /// only after all current epoch holders move past.
+        /// </summary>
+        private readonly LightEpoch storeEpoch;
+
+        /// <summary>
         /// Log-tied root directory (without trailing separator). Holds the working file
-        /// (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
-        /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
+        /// (<c>&lt;hash&gt;.data.bftree</c>), CPR scratch files (<c>&lt;hash&gt;.scratch.cpr</c>),
+        /// and immutable per-flush snapshots (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
         private readonly string riLogRoot;
 
@@ -126,6 +134,32 @@ namespace Garnet.server
             /// </summary>
             public int SnapshotPending;
 
+            /// <summary>
+            /// Per-tree snapshot serialization atomic. 0 = idle; 1 = a snapshot is in flight.
+            /// Both <see cref="GarnetRecordTriggers.OnFlush"/> and
+            /// <see cref="SnapshotAllTreesForCheckpoint"/> claim this before calling
+            /// <c>cpr_snapshot</c> so the two callers do not race for bftree's internal
+            /// <c>snapshot_in_progress</c> flag (which would no-op one of them silently).
+            /// </summary>
+            public int SnapshotInProgress;
+
+            /// <summary>Try to claim the per-tree snapshot atomic. Returns true if claimed.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool TryClaimSnapshot()
+                => Interlocked.CompareExchange(ref SnapshotInProgress, 1, 0) == 0;
+
+            /// <summary>Release the per-tree snapshot atomic.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void ReleaseSnapshot()
+                => Volatile.Write(ref SnapshotInProgress, 0);
+
+            /// <summary>Spin-wait until the per-tree snapshot atomic is released.</summary>
+            public void WaitForSnapshot()
+            {
+                while (Volatile.Read(ref SnapshotInProgress) != 0)
+                    Thread.Yield();
+            }
+
             public TreeEntry(BfTreeService tree, long keyHash, string hashPrefix)
             {
                 Tree = tree;
@@ -155,12 +189,13 @@ namespace Garnet.server
         /// per-flush snapshots whose address is below the new BeginAddress.</param>
         /// <param name="logger">Optional logger.</param>
         public RangeIndexManager(bool enabled, string riLogRoot = null, string cprDir = null,
-            bool removeOutdatedCheckpoints = true, ILogger logger = null)
+            bool removeOutdatedCheckpoints = true, LightEpoch storeEpoch = null, ILogger logger = null)
         {
             IsEnabled = enabled;
             this.riLogRoot = riLogRoot;
             this.cprDir = cprDir;
             this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
+            this.storeEpoch = storeEpoch;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
 
@@ -193,6 +228,10 @@ namespace Garnet.server
         internal string LogDataPath(string hashPrefix)
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree");
 
+        /// <summary>{logRoot}/&lt;hash&gt;.scratch.cpr — bftree CPR snapshot scratch file (overwritten each cpr_snapshot).</summary>
+        internal string LogScratchPath(string hashPrefix)
+            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".scratch.cpr");
+
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
         internal string LogFlushPath(string hashPrefix, long logicalAddress)
             => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
@@ -207,6 +246,7 @@ namespace Garnet.server
 
         // -- Convenience helpers used outside this class (RangeIndexOps via raw key) --
         internal string LogDataPathFor(ReadOnlySpan<byte> keyBytes) => LogDataPath(HashKeyToPrefix(keyBytes));
+        internal string LogScratchPathFor(ReadOnlySpan<byte> keyBytes) => LogScratchPath(HashKeyToPrefix(keyBytes));
 
         /// <summary>
         /// Creates a new BfTree instance via the native interop layer.
@@ -221,16 +261,29 @@ namespace Garnet.server
             uint maxKeyLen,
             uint leafPageSize)
         {
+            var hashPrefix = HashKeyToPrefix(keyBytes);
             string filePath = null;
+            string snapshotFilePath = null;
+
             if (storageBackend == StorageBackendType.Disk)
             {
-                filePath = LogDataPathFor(keyBytes);
+                filePath = LogDataPath(hashPrefix);
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            }
+
+            // Configure the bftree's CPR snapshot scratch path. cpr_snapshot writes here;
+            // OnFlush / SnapshotAllTreesForCheckpoint File.Move scratch -> final destination.
+            // Required for both backends; leave null only if riLogRoot is unset (test scenarios).
+            if (!string.IsNullOrEmpty(riLogRoot))
+            {
+                snapshotFilePath = LogScratchPath(hashPrefix);
+                Directory.CreateDirectory(riLogRoot);
             }
 
             return new BfTreeService(
                 storageBackend: storageBackend,
                 filePath: filePath,
+                snapshotFilePath: snapshotFilePath,
                 cbSizeByte: cacheSize,
                 cbMinRecordSize: minRecordSize,
                 cbMaxRecordSize: maxRecordSize,
@@ -299,10 +352,25 @@ namespace Garnet.server
                 return existing;
             });
             // If we lost the race (existing.Tree non-null), dispose our duplicate.
+            // Defer via storeEpoch — concurrent readers may already have observed the winner's
+            // TreeHandle, and bfTree has its own native resources that may overlap (e.g. file
+            // handles to data.bftree).
             if (liveIndexes.TryGetValue(keyId, out var winner) && !ReferenceEquals(winner.Tree, bfTree))
             {
-                try { bfTree.Dispose(); }
-                catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
+                if (storeEpoch != null)
+                {
+                    var loser = bfTree;
+                    storeEpoch.BumpCurrentEpoch(() =>
+                    {
+                        try { loser.Dispose(); }
+                        catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
+                    });
+                }
+                else
+                {
+                    try { bfTree.Dispose(); }
+                    catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
+                }
             }
         }
 
@@ -493,34 +561,31 @@ namespace Garnet.server
         /// Snapshot a BfTree's current contents to its per-flush snapshot file. Called from
         /// <see cref="GarnetRecordTriggers.OnFlush"/> when a page transitions to read-only.
         ///
-        /// <para>Acquires the per-key exclusive lock for the duration of the snapshot/copy so
-        /// that the native call serializes against:</para>
+        /// <para><b>Live case</b> (<c>stub.TreeHandle != 0</c>): take a CPR snapshot via the
+        /// native handle. CPR is concurrent-safe with workers (no per-key X-lock needed).
+        /// Per-tree atomic <see cref="TreeEntry.SnapshotInProgress"/> serializes against
+        /// concurrent <see cref="SnapshotAllTreesForCheckpoint"/> for the same tree (otherwise
+        /// bftree's internal <c>snapshot_in_progress</c> would no-op one of them).</para>
+        ///
+        /// <para><b>Cold case</b> (<c>stub.TreeHandle == 0</c>): the stub was just CAS'd at the
+        /// tail by PostCopyToTail-cold or RIPROMOTE-PostCopyUpdater-cold; PreStage already
+        /// copied <c>&lt;srcAddr&gt;.flush.bftree → data.bftree</c> but RestoreTree hasn't
+        /// activated a live tree yet. ANOTHER stub for the same key may have a live tree in
+        /// <see cref="liveIndexes"/> (RestoreTree ran against a different addr's stub) — workers
+        /// using that tree would write to <c>data.bftree</c> concurrently, making
+        /// <c>File.Copy(data.bftree)</c> unsafe. So:
         /// <list type="bullet">
-        /// <item>Concurrent worker <c>InsertByPtr</c> / <c>DeleteByPtr</c> on the same TreeHandle
-        /// (workers using a chain-head record whose page just rolled but whose TreeHandle still
-        /// points at the live native tree).</item>
-        /// <item>Concurrent <c>SnapshotAllTreesForCheckpoint</c> on the same TreeHandle
-        /// (which holds the same per-key exclusive lock).</item>
-        /// <item>Concurrent <c>PreStageAndRegisterPending</c> on the same key (which holds the
-        /// same per-key exclusive lock around its <c>data.bftree</c> rewrite — relevant to the
-        /// cold branch's <c>File.Copy(data.bftree → flush.bftree)</c>).</item>
-        /// </list>
+        /// <item>Acquire per-key SHARED RI lock — blocks RestoreTree's X-lock from registering
+        /// a new tree during our copy. Deadlock-free: S-vs-S compatible with hot path; no path
+        /// holds an RI X-lock across a Tsavorite op that fires deferred OnFlush.</item>
+        /// <item>If <see cref="liveIndexes"/> has a live tree under another stub → use
+        /// CPR snapshot (concurrent-safe with workers).</item>
+        /// <item>Else → safe to <c>File.Copy(data.bftree → flushPath)</c>.</item>
+        /// </list></para>
         ///
         /// <para>Sets <see cref="RangeIndexStub.IsFlushed"/> on the in-memory stub on success so
         /// the next data operation routes through <see cref="GarnetRecordTriggers.PostCopyToTail"/>
         /// or RIPROMOTE PostCopyUpdater to re-anchor the tree at the tail.</para>
-        ///
-        /// <para>Memory-backed trees: snapshot is skipped (not yet supported by native lib);
-        /// <see cref="RangeIndexStub.IsFlushed"/> is still set so the live re-anchor path
-        /// (RIPROMOTE-live transfer) keeps the in-memory tree alive across page rolls. The
-        /// tree dies on first eviction post-flush; data loss on recovery is expected.</para>
-        ///
-        /// <para>Cold case (<c>TreeHandle==0</c>): no live native tree to snapshot. The
-        /// pre-staged <c>data.bftree</c> is the only correct source. If it is missing, the
-        /// per-flush snapshot invariant has been violated — log error and DO NOT set
-        /// <see cref="RangeIndexStub.IsFlushed"/> (a subsequent RIPROMOTE-cold routing would
-        /// silently produce an unrestorable record). The next access routes through
-        /// <c>RestoreTree</c> which surfaces NOTFOUND for the affected key.</para>
         /// </summary>
         /// <param name="key">The raw key bytes (used for hash prefix + lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
@@ -530,57 +595,109 @@ namespace Garnet.server
             ref readonly var stub = ref ReadIndex(valueSpan);
 
             // Stale source whose ownership was transferred to a newer record at the tail: no-op.
-            // The destination owns the tree; snapshotting from this stale source would either be
-            // a no-op (TreeHandle was cleared) or capture a stale view of data.bftree (which the
-            // destination is now actively mutating).
             if (stub.IsTransferred)
                 return;
 
-            if (stub.StorageBackend == (byte)StorageBackendType.Memory)
-            {
-                // Memory-only trees: no disk artifacts to write (snapshot-to-file not yet
-                // supported by the native library). Set IsFlushed unconditionally — including
-                // when riLogRoot is null/empty — so the next access triggers RIPROMOTE-live
-                // which re-anchors the in-memory tree to a fresh tail record. Without this
-                // flag the tree would be disposed on first page eviction with no recourse.
-                SetFlushedFlag(valueSpan);
-                return;
-            }
-
-            // Disk-backed paths require riLogRoot.
+            // Need riLogRoot for any disk artifact (both backends use it as staging directory).
             if (string.IsNullOrEmpty(riLogRoot))
                 return;
 
             var hashPrefix = HashKeyToPrefix(key);
             var dataPath = LogDataPath(hashPrefix);
+            var scratchPath = LogScratchPath(hashPrefix);
             var flushPath = LogFlushPath(hashPrefix, logicalAddress);
-            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
+            var keyId = KeyId(key);
 
-            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+            Directory.CreateDirectory(riLogRoot);
+
+            if (stub.TreeHandle != nint.Zero)
+            {
+                // Live case: stub directly references a live tree. CPR snapshot via the handle.
+                if (!liveIndexes.TryGetValue(keyId, out var entry) || entry?.Tree == null)
+                {
+                    // Edge case: stub.TreeHandle points at a tree no longer in liveIndexes
+                    // (DEL deferred-disposed it but stub bytes weren't updated). Treat as cold.
+                    SnapshotForFlushCold(key, hashPrefix, dataPath, flushPath, valueSpan, logicalAddress);
+                    return;
+                }
+                SnapshotForFlushViaCpr(entry, scratchPath, flushPath);
+                SetFlushedFlag(valueSpan);
+            }
+            else
+            {
+                SnapshotForFlushCold(key, hashPrefix, dataPath, flushPath, valueSpan, logicalAddress);
+            }
+        }
+
+        /// <summary>
+        /// Take a CPR snapshot via the live tree's native handle and copy the produced scratch
+        /// file to the addr-tagged per-flush destination. We <b>copy</b> rather than move because
+        /// bftree's internal VFS keeps a file descriptor for the configured snapshot path; a move
+        /// would not invalidate the descriptor and the next cpr_snapshot would write through the
+        /// stale FD into the moved-away file (overwriting our finalized flush snapshot).
+        /// Per-tree atomic serializes against concurrent
+        /// <see cref="SnapshotAllTreesForCheckpoint"/> on the same tree.
+        /// </summary>
+        private void SnapshotForFlushViaCpr(TreeEntry entry, string scratchPath, string flushPath)
+        {
+            if (!entry.TryClaimSnapshot())
+            {
+                // Concurrent SnapshotAllTreesForCheckpoint owns the snapshot. Wait for it,
+                // then copy the produced scratch file to our addr-tagged location.
+                entry.WaitForSnapshot();
+                File.Copy(scratchPath, flushPath, overwrite: false);
+                return;
+            }
             try
             {
-                Directory.CreateDirectory(riLogRoot);
+                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
+                File.Copy(scratchPath, flushPath, overwrite: false);
+            }
+            finally
+            {
+                entry.ReleaseSnapshot();
+            }
+        }
 
-                if (stub.TreeHandle != nint.Zero)
+        /// <summary>
+        /// OnFlush cold-case: stub.TreeHandle == 0. The pre-staged <c>data.bftree</c> is the
+        /// only candidate source for capturing this flush. We must serialize against any
+        /// concurrent RestoreTree (X-lock) that could activate a tree mid-copy and start
+        /// writing to data.bftree from a worker thread. Use SHARED RI lock — deadlock-free
+        /// because no firing-thread holds an X-lock across a Tsavorite op that fires deferred
+        /// OnFlush (RestoreTree releases X before its RMW; PreStage / DisposeTreeUnderLock
+        /// don't issue Tsavorite ops while holding X; OnFlush itself doesn't take X).
+        /// </summary>
+        private void SnapshotForFlushCold(ReadOnlySpan<byte> key, string hashPrefix,
+            string dataPath, string flushPath, Span<byte> valueSpan, long logicalAddress)
+        {
+            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
+            rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+            try
+            {
+                // Re-check: a tree may have become live under a different stub for this key
+                // (RestoreTree completed before we acquired the shared lock).
+                if (liveIndexes.TryGetValue(KeyId(key), out var entry) && entry?.Tree != null)
                 {
-                    // Live tree active — snapshot via the native handle.
-                    BfTreeService.SnapshotToFileByPtr(stub.TreeHandle, dataPath, flushPath);
-                }
-                else
-                {
-                    if (!File.Exists(dataPath))
-                    {
-                        LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
-                        return;
-                    }
-                    File.Copy(dataPath, flushPath, overwrite: false);
+                    var scratchPath = LogScratchPath(hashPrefix);
+                    SnapshotForFlushViaCpr(entry, scratchPath, flushPath);
+                    SetFlushedFlag(valueSpan);
+                    return;
                 }
 
+                // No live tree exists for this key (S-lock blocks RestoreTree from activating
+                // one mid-copy). data.bftree is stable — no concurrent writer.
+                if (!File.Exists(dataPath))
+                {
+                    LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
+                    return; // do NOT set IsFlushed
+                }
+                File.Copy(dataPath, flushPath, overwrite: false);
                 SetFlushedFlag(valueSpan);
             }
             finally
             {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
             }
         }
 
@@ -607,9 +724,24 @@ namespace Garnet.server
 
         /// <summary>
         /// Snapshot all live BfTrees for a checkpoint. Called at FlushBegin.
-        /// Activated entries → <c>Tree.SnapshotToFile</c>. Pending entries (Tree=null) →
-        /// <c>File.Copy(data.bftree → snapshot path)</c>.
-        /// Failure is fatal — the exception propagates to the state machine driver.
+        ///
+        /// <para>For each entry with <see cref="TreeEntry.SnapshotPending"/> set:
+        /// <list type="bullet">
+        /// <item>Activated entries (Tree != null) → take CPR snapshot via the tree handle and
+        /// <c>File.Move</c> the produced scratch file to the checkpoint destination.</item>
+        /// <item>Pending entries (Tree == null) → <c>File.Copy(data.bftree)</c> (no live tree
+        /// to snapshot from; data.bftree was pre-staged by PreStage).</item>
+        /// </list></para>
+        ///
+        /// <para>Uses the per-tree atomic <see cref="TreeEntry.SnapshotInProgress"/> to serialize
+        /// against concurrent <see cref="SnapshotTreeForFlush"/> for the same tree. Per-key
+        /// X-lock is NOT taken here — that lock would deadlock if any deferred OnFlush fired
+        /// on the checkpoint thread while it held S-locks on hot-path readers' shards.</para>
+        ///
+        /// <para>Memory-backed trees are also captured via CPR snapshot (bftree 0.5.0 supports
+        /// CPR for memory-backed trees uniformly with disk-backed).</para>
+        ///
+        /// <para>Failure is fatal — the exception propagates to the state machine driver.</para>
         /// </summary>
         internal void SnapshotAllTreesForCheckpoint(Guid checkpointToken)
         {
@@ -627,26 +759,36 @@ namespace Garnet.server
                     if (Volatile.Read(ref entry.SnapshotPending) == 0)
                         continue;
 
-                    if (entry.Tree?.StorageBackend == StorageBackendType.Memory)
-                    {
-                        Volatile.Write(ref entry.SnapshotPending, 0);
-                        continue;
-                    }
-
-                    rangeIndexLocks.AcquireExclusiveLock(entry.KeyHash, out var lockToken);
                     try
                     {
                         Directory.CreateDirectory(snapshotDir);
                         var checkpointPath = CheckpointSnapshotPath(entry.HashPrefix, checkpointToken);
+                        var scratchPath = LogScratchPath(entry.HashPrefix);
 
                         if (entry.Tree is not null)
                         {
-                            entry.Tree.SnapshotToFile(checkpointPath);
+                            // Per-tree atomic serializes against concurrent OnFlush on the same
+                            // tree (which would also call cpr_snapshot via the same handle —
+                            // bftree's internal snapshot_in_progress would otherwise no-op one).
+                            while (!entry.TryClaimSnapshot()) Thread.Yield();
+                            try
+                            {
+                                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
+                                // Copy scratch -> token-tagged checkpoint destination. Copy rather
+                                // than move because bftree's internal VFS keeps a file descriptor
+                                // for the scratch path (see SnapshotForFlushViaCpr docs).
+                                File.Copy(scratchPath, checkpointPath, overwrite: true);
+                            }
+                            finally
+                            {
+                                entry.ReleaseSnapshot();
+                            }
                         }
                         else
                         {
-                            // Pending entry: data.bftree is the only correct source — guaranteed
-                            // pre-staged by PreStageAndRegisterPending or RebuildFromSnapshotIfPending.
+                            // Pending entry: data.bftree was pre-staged from the source flush
+                            // file by PreStageAndRegisterPending. data.bftree is the only
+                            // correct source. No live tree means no concurrent writer.
                             var dataPath = LogDataPath(entry.HashPrefix);
                             if (File.Exists(dataPath))
                                 File.Copy(dataPath, checkpointPath, overwrite: true);
@@ -657,7 +799,6 @@ namespace Garnet.server
                     finally
                     {
                         Volatile.Write(ref entry.SnapshotPending, 0);
-                        rangeIndexLocks.ReleaseExclusiveLock(lockToken);
                     }
                 }
             }

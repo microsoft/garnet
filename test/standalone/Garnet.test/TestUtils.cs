@@ -279,7 +279,8 @@ namespace Garnet.test
             bool enableVectorSetPreview = true,
             bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m",
-            string aofPageSize = null
+            string aofPageSize = null,
+            bool copyReadsToTail = false
             )
         {
             if (useAzureStorage)
@@ -366,6 +367,7 @@ namespace Garnet.test
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
+                CopyReadsToTail = copyReadsToTail,
             };
 
             if (!string.IsNullOrEmpty(memorySize))

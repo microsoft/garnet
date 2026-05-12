@@ -2387,5 +2387,33 @@ namespace Garnet.test
                 "DisposeTreeUnderLock without IsTransferred should still remove the entry " +
                 "(pending-eviction case): proves the discriminating power of the IsTransferred check");
         }
+
+        /// <summary>
+        /// Verifies that <c>EnableRangeIndexPreview=true</c> with <c>CopyReadsToTail=true</c>
+        /// fails fast at server-startup time with a clear error. Without the guard, the
+        /// combination would deadlock as soon as a reader observed a flushed stub
+        /// (PostCopyToTail-cold under shared RI lock would attempt the X-lock).
+        /// </summary>
+        [Test]
+        public void RICopyReadsToTailIncompatibleStartupGuardTest()
+        {
+            // Tear down the auto-created server and try to construct an incompatible one.
+            server?.Dispose();
+
+            var ex = Assert.Throws<Garnet.common.GarnetException>(() =>
+            {
+                using var s = TestUtils.CreateGarnetServer(
+                    TestUtils.MethodTestDir,
+                    enableRangeIndexPreview: true,
+                    copyReadsToTail: true);
+                s.Start();
+            });
+            ClassicAssert.IsTrue(ex!.Message.Contains("CopyReadsToTail", StringComparison.OrdinalIgnoreCase),
+                $"Startup error must mention CopyReadsToTail. Actual: {ex.Message}");
+
+            // Recreate the default server so [TearDown] disposes a valid instance.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true);
+            server.Start();
+        }
     }
 }

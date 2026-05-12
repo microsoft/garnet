@@ -238,11 +238,29 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Restore a BfTree from its working file (<c>data.bftree</c>) under the exclusive lock.
+        /// Restore a BfTree from its pre-staged CPR snapshot (<c>data.bftree</c>) and publish
+        /// the resulting native pointer into the stub via a RIRESTORE RMW.
         /// </summary>
         /// <remarks>
-        /// Prevents concurrent restores by re-reading the stub under the exclusive lock — if
-        /// another thread already set TreeHandle, returns immediately with <c>true</c>.
+        /// <para><b>Split design</b> (essential for deadlock safety): the per-key X-lock is
+        /// held ONLY for the recovery + register step, then RELEASED before issuing the RMW.
+        /// Holding an RI X-lock across a Tsavorite RMW would risk firing a deferred OnFlush on
+        /// this thread (e.g., from the RMW's allocator drain), which would attempt the per-key
+        /// shared lock for the cold case and self-deadlock with the X-lock we still hold.</para>
+        ///
+        /// <para>Race between releasing X and issuing RIRESTORE RMW: a concurrent DEL could
+        /// fire, taking the X-lock, removing our entry from <see cref="liveIndexes"/>, and
+        /// queuing the bfTree for deferred disposal via <c>storeEpoch.BumpCurrentEpoch</c>. The
+        /// deferred dispose CANNOT execute until our thread's epoch advances — i.e., until the
+        /// RMW's Tsavorite session-suspend point. By that time the RMW has either:
+        /// <list type="bullet">
+        /// <item>Succeeded — our nativePtr is now in the stub bytes; subsequent readers see
+        /// it and route through ReadRangeIndex's hot path which acquires the shared RI lock
+        /// before calling the native handle. The DEL's deferred dispose fires only after all
+        /// such readers complete (epoch barrier).</item>
+        /// <item>Returned NOTFOUND on a tombstoned key (RIRESTORE.NeedInitialUpdate=false).
+        /// Caller treats this as "key was deleted concurrently" → no re-restore loop.</item>
+        /// </list></para>
         ///
         /// <para>Pre-staging of <c>data.bftree</c> always happened earlier:
         /// <list type="bullet">
@@ -250,8 +268,7 @@ namespace Garnet.server
         /// <item>RIPROMOTE <c>PostCopyUpdater</c>-cold (post-eviction or post-recovery first promote).</item>
         /// <item><c>OnRecoverySnapshotRead</c> (above-FUA-at-checkpoint stubs DURING recovery, since
         /// the checkpoint snapshot file may be deleted post-recovery).</item>
-        /// </list>
-        /// So <c>RestoreTree</c> just opens <c>data.bftree</c> directly — no branching, no file copy.</para>
+        /// </list></para>
         /// </remarks>
         private bool RestoreTree(
             StorageSession session,
@@ -260,6 +277,7 @@ namespace Garnet.server
             ref StringInput input,
             Span<byte> indexSpan)
         {
+            nint nativePtr;
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
             try
             {
@@ -280,32 +298,49 @@ namespace Garnet.server
                     return true; // Another thread already restored
 
                 var keySpan = key.ReadOnlySpan;
-                var hashPrefix = HashKeyToPrefix(keySpan);
-                var workingPath = LogDataPath(hashPrefix);
+                var keyId = KeyId(keySpan);
 
-                if (!File.Exists(workingPath))
+                // Race-resolved path: another stub for this key may already have a live tree
+                // (RestoreTree ran via a different addr). Reuse it instead of opening another.
+                if (liveIndexes.TryGetValue(keyId, out var existing) && existing?.Tree != null)
                 {
-                    // Should not happen in normal flow — pre-staging guarantees data.bftree exists
-                    // for any stub above FUA whose TreeHandle is 0. Assert in Debug builds so CI
-                    // catches violations of the pre-stage invariant; LogWarning + return false in
-                    // Release so the affected key surfaces NOTFOUND rather than crashing the process.
-                    Debug.Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
-                    logger?.LogWarning("RestoreTree: data.bftree missing for {Hash} — pre-stage invariant violated", hashPrefix);
-                    return false;
+                    nativePtr = existing.Tree.NativePtr;
                 }
+                else
+                {
+                    var hashPrefix = HashKeyToPrefix(keySpan);
+                    var workingPath = LogDataPath(hashPrefix);
+                    var scratchPath = LogScratchPath(hashPrefix);
 
-                var bfTree = BfTreeService.RecoverFromSnapshot(
-                    workingPath,
-                    (StorageBackendType)stub.StorageBackend,
-                    stub.CacheSize,
-                    stub.MinRecordSize,
-                    stub.MaxRecordSize,
-                    stub.MaxKeyLen,
-                    stub.LeafPageSize);
+                    if (!File.Exists(workingPath))
+                    {
+                        // Should not happen in normal flow — pre-staging guarantees data.bftree
+                        // exists for any stub above FUA whose TreeHandle is 0. Assert in Debug;
+                        // LogWarning + return false in Release so the affected key surfaces
+                        // NOTFOUND rather than crashing the process.
+                        Debug.Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
+                        logger?.LogWarning("RestoreTree: data.bftree missing for {Hash} — pre-stage invariant violated", hashPrefix);
+                        return false;
+                    }
 
-                RegisterIndex(bfTree, keyHash, keySpan);
-                session.RestoreRangeIndexStub(key, bfTree.NativePtr);
-                return true;
+                    var bfTree = BfTreeService.RecoverFromCprSnapshot(
+                        workingPath,
+                        scratchPath,
+                        (StorageBackendType)stub.StorageBackend);
+
+                    RegisterIndex(bfTree, keyHash, keySpan);
+
+                    // Re-look-up to use the WINNER's pointer (handles concurrent restorer race).
+                    if (!liveIndexes.TryGetValue(keyId, out var winner) || winner?.Tree == null)
+                    {
+                        // We disposed our duplicate via RegisterIndex's loser-disposal path AND
+                        // someone removed the winner before we observed it — extremely rare race
+                        // (concurrent DEL between RegisterIndex and TryGetValue). Bail out; the
+                        // next reader will retry.
+                        return false;
+                    }
+                    nativePtr = winner.Tree.NativePtr;
+                }
             }
             catch (Exception ex)
             {
@@ -315,6 +350,21 @@ namespace Garnet.server
             finally
             {
                 rangeIndexLocks.ReleaseExclusiveLock(exclusiveLockToken);
+            }
+
+            // RIRESTORE RMW WITHOUT the X-lock. Safe because OnFlush no longer takes any RI
+            // X-lock from any code path that may fire as a deferred epoch action.
+            // RIRESTORE.NeedInitialUpdate=false → if the key was concurrently DEL'd (tombstone),
+            // the RMW returns NOTFOUND and the caller does not loop.
+            try
+            {
+                session.RestoreRangeIndexStub(key, nativePtr);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "RestoreRangeIndexStub RMW failed");
+                return false;
             }
         }
     }

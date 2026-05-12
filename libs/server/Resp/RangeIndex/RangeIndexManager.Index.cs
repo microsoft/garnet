@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -230,11 +231,12 @@ namespace Garnet.server
         /// <param name="key">The raw key bytes (used to compute the key hash for lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
         /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete the working
-        /// <c>&lt;hash&gt;.data.bftree</c> file in the riLogRoot. Per-flush snapshot files
-        /// (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>) are deliberately preserved here — see
-        /// <see cref="DeleteTreeFiles"/> for rationale. Performed regardless of
-        /// <see cref="RangeIndexStub.StorageBackend"/> (idempotent). When <c>false</c> (eviction),
-        /// files are preserved for lazy restore.</param>
+        /// <c>&lt;hash&gt;.data.bftree</c> file and the CPR scratch <c>&lt;hash&gt;.scratch.cpr</c>
+        /// in the riLogRoot. Per-flush snapshot files (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>)
+        /// are deliberately preserved — they are LOG-tied (lifetime tracks BeginAddress) and may
+        /// still be needed to recover an OLDER checkpoint that pre-dates the DEL. They are
+        /// reclaimed by <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes
+        /// their address. When <c>false</c> (eviction), files are preserved for lazy restore.</param>
         internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, bool deleteFiles)
         {
             ref readonly var stub = ref ReadIndex(valueSpan);
@@ -256,6 +258,8 @@ namespace Garnet.server
             // Without it, a cold eviction concurrent with checkpoint can silently drop a
             // pending entry mid-snapshot iteration, narrowing checkpoint coverage for the key.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
+            BfTreeService disposedTree = null;
+            string hashPrefix = null;
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
@@ -266,50 +270,71 @@ namespace Garnet.server
                     return;
                 }
 
-                _ = UnregisterIndex(key);
+                // Remove entry from liveIndexes synchronously so concurrent restorers see no
+                // tree for this key. Stash the BfTree wrapper (if any) for deferred disposal.
+                if (liveIndexes.TryRemove(KeyId(key), out var entry))
+                    disposedTree = entry?.Tree;
 
                 if (deleteFiles)
-                    DeleteTreeFiles(key);
+                    hashPrefix = HashKeyToPrefix(key);
             }
             finally
             {
                 rangeIndexLocks.ReleaseExclusiveLock(lockToken);
             }
+
+            // Defer the heavyweight cleanup (native dispose + file delete) via the store epoch.
+            // The deferred action runs only after all current epoch holders have moved past, so
+            // any reader that observed a non-zero TreeHandle from this entry's stub completes
+            // its native call before the bfTree is freed.
+            if (disposedTree == null && hashPrefix == null)
+                return;
+            if (storeEpoch != null)
+            {
+                var capturedTree = disposedTree;
+                var capturedPrefix = hashPrefix;
+                storeEpoch.BumpCurrentEpoch(() => DisposeAndDeleteFilesDeferred(capturedTree, capturedPrefix));
+            }
+            else
+            {
+                // No epoch available (unit-test scenario without a Tsavorite store). Synchronous
+                // dispose is OK here because no concurrent readers exist in such tests.
+                DisposeAndDeleteFilesDeferred(disposedTree, hashPrefix);
+            }
         }
 
         /// <summary>
-        /// Delete the working file for a deleted RangeIndex key under the flat layout. Removes
-        /// only <c>{logRoot}/&lt;hash&gt;.data.bftree</c>.
-        ///
-        /// <para>Does NOT delete <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files: those are
-        /// LOG-tied (their lifetime tracks log addresses, not key existence) and may still be
-        /// required to recover an OLDER checkpoint that was taken BEFORE the DEL — at recovery
-        /// time the recovered main log would still contain a stub at some addr A_old with
-        /// IsFlushed=true, and RIPROMOTE-cold would need to find <c>&lt;hash&gt;.&lt;A_old&gt;.flush.bftree</c>
-        /// to restore the pre-delete tree state. Per-flush files are reclaimed by
-        /// <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes their address —
-        /// at which point no checkpoint can recover the pre-delete state anyway.</para>
-        ///
-        /// <para>Per-checkpoint snapshots under <c>cpr-checkpoints/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</c>
-        /// are also NOT deleted here (different root) — Tsavorite removes them when it deletes the
-        /// parent token directory.</para>
-        ///
-        /// <para>Called after a DEL/UNLINK removes the key from the main store.</para>
+        /// Deferred BfTree disposal + file deletion. Invoked from inside
+        /// <c>storeEpoch.BumpCurrentEpoch</c> action so it runs only after all readers that
+        /// could have observed the tree's TreeHandle have moved past.
         /// </summary>
-        private void DeleteTreeFiles(ReadOnlySpan<byte> key)
+        /// <param name="tree">The BfTree wrapper to dispose, or null.</param>
+        /// <param name="hashPrefix">Hash prefix for file deletion, or null to skip file deletion.</param>
+        private void DisposeAndDeleteFilesDeferred(BfTreeService tree, string hashPrefix)
         {
-            if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
-                return;
-
-            var dataPath = LogDataPath(HashKeyToPrefix(key));
-            try
+            // Order matters on Windows: dispose first so the native side closes any open
+            // file handles, then File.Delete (otherwise the unlink races with the close).
+            if (tree != null)
             {
-                if (File.Exists(dataPath))
-                    File.Delete(dataPath);
+                try { tree.Dispose(); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Deferred dispose failed for BfTree"); }
             }
-            catch (Exception ex)
+            if (hashPrefix != null && !string.IsNullOrEmpty(riLogRoot) && Directory.Exists(riLogRoot))
             {
-                logger?.LogWarning(ex, "DeleteTreeFiles: failed to delete {Path}", dataPath);
+                TryDelete(LogDataPath(hashPrefix));
+                TryDelete(LogScratchPath(hashPrefix));
+            }
+
+            void TryDelete(string p)
+            {
+                try
+                {
+                    if (File.Exists(p)) File.Delete(p);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Deferred file delete failed: {Path}", p);
+                }
             }
         }
 
