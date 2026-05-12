@@ -113,7 +113,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
-        run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
+        run: dotnet build --configuration ${{ matrix.configuration }} --no-restore -graph
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -240,7 +240,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }} --no-restore
+        run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }} --no-restore -graph
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
