@@ -33,7 +33,7 @@ namespace Garnet.server
         internal readonly string version;
         internal readonly string redisProtocolVersion;
         readonly IGarnetServer[] servers;
-        internal readonly long startupTime;
+        internal readonly long startupTimestamp;
 
         /// <summary>
         /// Default database (DB 0)
@@ -190,7 +190,7 @@ namespace Garnet.server
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.servers = servers;
-            this.startupTime = DateTimeOffset.UtcNow.Ticks;
+            this.startupTimestamp = Stopwatch.GetTimestamp();
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;

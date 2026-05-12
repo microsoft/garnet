@@ -32,11 +32,11 @@ namespace Garnet.cluster
         readonly ILogger logger;
         bool _disposed;
 
-        private long primary_sync_last_time;
+        private long primary_sync_last_timestamp;
 
-        internal long LastPrimarySyncSeconds => IsRecovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+        internal long LastPrimarySyncSeconds => IsRecovering ? (long)Stopwatch.GetElapsedTime(primary_sync_last_timestamp).TotalSeconds : 0;
 
-        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
+        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_timestamp = Stopwatch.GetTimestamp();
 
         private SingleWriterMultiReaderLock recoverLock;
         private SingleWriterMultiReaderLock recoveryStateChangeLock;
@@ -251,7 +251,7 @@ namespace Garnet.cluster
                     return;
                 }
 
-                logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
+                logger?.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
 
                 // At this point we need to hold the lock until this upcoming task completes
                 suppressUnlock = true;
@@ -270,16 +270,16 @@ namespace Garnet.cluster
 
                             if (success)
                             {
-                                logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+                                logger?.LogInformation("Resync to {primaryId} successfully started", primaryId);
                             }
                             else
                             {
-                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
+                                logger?.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
                             }
                         }
                         catch (Exception ex)
                         {
-                            logger.LogError(ex, "Error encountered on replication recovery background task");
+                            logger?.LogError(ex, "Error encountered on replication recovery background task");
                         }
                         finally
                         {
