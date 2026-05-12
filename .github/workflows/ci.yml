@@ -215,10 +215,45 @@ jobs:
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
-  # Job to build and test Tsavorite code (only if there were changes to it)
-  build-test-tsavorite:        
-    name: Tsavorite
+  # Job to build Tsavorite code (once per os/configuration)
+  build-tsavorite:
+    name: Build Tsavorite
     needs: [changes, format-tsavorite]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        configuration: [ 'Debug', 'Release' ]
+    if: needs.changes.outputs.tsavorite == 'true'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-tsavorite-${{ runner.os }}-${{ hashFiles('libs/storage/Tsavorite/**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-tsavorite-${{ runner.os }}-
+      - name: Install dependencies
+        run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
+      - name: Build Tsavorite
+        run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }} --no-restore
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsavorite-build-${{ matrix.os }}-${{ matrix.configuration }}
+          path: |
+            libs/storage/Tsavorite/cs/**/bin/${{ matrix.configuration }}/
+            libs/storage/Tsavorite/cs/**/obj/
+          retention-days: 1
+
+  # Job to test Tsavorite code (downloads build artifacts, no rebuild)
+  test-tsavorite:
+    name: Tsavorite
+    needs: [changes, build-tsavorite]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -226,7 +261,8 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
-    if: needs.changes.outputs.tsavorite == 'true'   
+        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
+    if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -247,30 +283,43 @@ jobs:
         run: |
           npm install -g azurite
           azurite --skipApiVersionCheck &
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
-          restore-keys: nuget-${{ runner.os }}-
-      - name: Install dependencies
-        run: dotnet restore
-      - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+          name: tsavorite-build-${{ matrix.os }}-${{ matrix.configuration }}
 
-      - name: Verify Allure wiring (Tsavorite)
+      - name: Verify Allure wiring (${{ matrix.test }})
         shell: pwsh
         run: |
-          $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
+          $testDir = switch ("${{ matrix.test }}") {
+            "Tsavorite.test" { "test" }
+            "Tsavorite.test.recordops" { "test.recordops" }
+            "Tsavorite.test.session" { "test.session" }
+            "Tsavorite.test.hlog" { "test.hlog" }
+            "Tsavorite.test.recovery" { "test.recovery" }
+          }
+          $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/$testDir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
 
-          # when using .Net 9.0/10.0 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception (we don't need those anyways)
+          # When using .Net 9.0/10.0 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception.
+          # Since we don't want to fail on every 9.0/10.0 run (even when has Allure inheritance), we catch it here.
           try {
-            $types = $asm.GetTypes()
+              $types = $asm.GetTypes()
           } catch [System.Reflection.ReflectionTypeLoadException] {
-            $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+              $types = $_.Exception.Types | Where-Object { $_ -ne $null }
           }
           $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
+          if (-not $allureBase) {
+            # AllureTestBase may be in a transitive dependency already loaded by the runtime during GetTypes().
+            # Search all loaded assemblies in the AppDomain rather than only direct references.
+            foreach ($loaded in [System.AppDomain]::CurrentDomain.GetAssemblies()) {
+              try {
+                try { $refTypes = $loaded.GetTypes() } catch [System.Reflection.ReflectionTypeLoadException] { $refTypes = $_.Exception.Types | Where-Object { $_ -ne $null } }
+                $allureBase = $refTypes | Where-Object { $_.Name -eq "AllureTestBase" }
+                if ($allureBase) { break }
+              } catch { }
+            }
+          }
 
           $bad = @()
           foreach ($t in $types) {
@@ -298,21 +347,21 @@ jobs:
           }
 
           if ($bad.Count -gt 0) {
-            Write-Host "These test fixtures are missing Allure setup from $asmPath"
+            Write-Host "These test fixtures are missing Allure setup from $asmPath. See Pull Request Protocol for details on how to set up Allure for new tests. https://microsoft.github.io/garnet/docs/dev/onboarding"
             $bad | ForEach-Object { Write-Host $_ }
             exit 1
           } else {
             Write-Host "All test fixtures wired to Allure in $asmPath"
           }
 
-      - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-        timeout-minutes: 45 
+      - name: Run tests ${{ matrix.test }}
+        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/${{ matrix.test }}.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --no-build --no-restore --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        timeout-minutes: 45
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
   build-website:
@@ -338,7 +387,7 @@ jobs:
   pipeline-success:
     name: Garnet CI (Complete)
     runs-on: ubuntu-latest
-    needs: [ test-garnet,  build-test-tsavorite, build-website ]
+    needs: [ test-garnet, test-tsavorite, build-website ]
     steps:
     - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}

@@ -11,5 +11,9 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Tsavorite.test.csproj" />
+    <Project Path="test.recordops/Tsavorite.test.recordops.csproj" />
+    <Project Path="test.session/Tsavorite.test.session.csproj" />
+    <Project Path="test.hlog/Tsavorite.test.hlog.csproj" />
+    <Project Path="test.recovery/Tsavorite.test.recovery.csproj" />
   </Folder>
 </Solution>

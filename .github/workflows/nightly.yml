@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test' ]
+        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
@@ -71,20 +71,28 @@ jobs:
       - name: Check style format
         run: dotnet format --verify-no-changes --verbosity diagnostic
 
-      - name: Build Tsavorite.test
-        if: ${{ matrix.test == 'Tsavorite.test' }}
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+      - name: Build Tsavorite
+        if: ${{ startsWith(matrix.test, 'Tsavorite.') }}
+        run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }}
 
       - name: Build Garnet
-        if: ${{ matrix.test != 'Tsavorite.test' }}
+        if: ${{ !startsWith(matrix.test, 'Tsavorite.') }}
         run: dotnet build --configuration ${{ matrix.configuration }}
 
       - name: Run tests ${{ matrix.test }}
         shell: pwsh
         run: |
           $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" `
+          $tsavoriteDirMap = @{
+            "Tsavorite.test" = "test"
+            "Tsavorite.test.recordops" = "test.recordops"
+            "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.hlog" = "test.hlog"
+            "Tsavorite.test.recovery" = "test.recovery"
+          }
+          if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
+            $dir = $tsavoriteDirMap["${{ matrix.test }}"]
+            dotnet test "libs/storage/Tsavorite/cs/$dir/${{ matrix.test }}.csproj" `
               -f "${{ matrix.framework }}" `
               --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
@@ -111,9 +119,17 @@ jobs:
         shell: pwsh
         run: |
           $base = $env:GITHUB_WORKSPACE
+          $tsavoriteDirMap = @{
+            "Tsavorite.test" = "test"
+            "Tsavorite.test.recordops" = "test.recordops"
+            "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.hlog" = "test.hlog"
+            "Tsavorite.test.recovery" = "test.recovery"
+          }
 
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            $source = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
+            $dir = $tsavoriteDirMap["${{ matrix.test }}"]
+            $source = Join-Path $base "libs/storage/Tsavorite/cs/$dir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           } else {
             $source = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           }
@@ -143,10 +159,20 @@ jobs:
         shell: pwsh
         run: |
           $base = $env:GITHUB_WORKSPACE
-          $paths = @(
-            "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results",
-            "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          )
+          $tsavoriteDirMap = @{
+            "Tsavorite.test" = "test"
+            "Tsavorite.test.recordops" = "test.recordops"
+            "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.hlog" = "test.hlog"
+            "Tsavorite.test.recovery" = "test.recovery"
+          }
+          $paths = @()
+          if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
+            $dir = $tsavoriteDirMap["${{ matrix.test }}"]
+            $paths += "libs/storage/Tsavorite/cs/$dir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $paths += "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
           foreach ($p in $paths) {
             $full = Join-Path $base $p
             if (Test-Path $full) {
