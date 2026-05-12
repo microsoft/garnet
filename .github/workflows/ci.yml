@@ -295,6 +295,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tsavorite-build-${{ matrix.os }}-${{ matrix.configuration }}
+          path: libs/storage/Tsavorite/cs
 
       - name: Verify Allure wiring (${{ matrix.test }})
         shell: pwsh
