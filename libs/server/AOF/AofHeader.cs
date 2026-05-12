@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
 
@@ -8,9 +9,9 @@ namespace Garnet.server
 {
     internal enum AofHeaderType : byte
     {
-        BasicHeader,
-        ShardedHeader,
-        TransactionHeader
+        BasicHeader = 0,
+        ShardedHeader = 1,
+        TransactionHeader = 2
     }
 
     /// <summary>
@@ -73,7 +74,7 @@ namespace Garnet.server
         public static unsafe byte* SkipHeader(byte* entryPtr)
         {
             var header = *(AofHeader*)entryPtr;
-            var headerType = (AofHeaderType)header.padding;
+            var headerType = header.HeaderType;
             return headerType switch
             {
                 AofHeaderType.BasicHeader => entryPtr + TotalSize,
@@ -89,12 +90,24 @@ namespace Garnet.server
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
-        const byte AofHeaderVersion = 2;
+        // Version 3 repurposes the flags byte as a bitfield containing the header type
+        // plus chunked-record and unsafe-truncate markers.
+        const byte AofHeaderVersion = 3;
 
         /// <summary>
-        /// 0-bit in padding is used to indicate that the log contains AofExtendedHeader
+        /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>
         /// </summary>
-        internal const byte ShardedLogFlag = 1;
+        internal const byte AofHeaderTypeMask = 0b0011;
+
+        /// <summary>
+        /// Bit in <see cref="flags"/> that indicates that the record is chunked
+        /// </summary>
+        internal const byte ChunkedRecordFlag = 0b0100;
+
+        /// <summary>
+        /// Bit in <see cref="flags"/> that indicates Unsafe truncate log (used with FLUSH command)
+        /// </summary>
+        internal const byte UnsafeTruncateLogFlag = 0b1000;
 
         /// <summary>
         /// Version of AOF
@@ -102,20 +115,27 @@ namespace Garnet.server
         [FieldOffset(0)]
         public byte aofHeaderVersion;
         /// <summary>
-        /// Padding, for alignment and future use
+        /// Flags, for current and future use
         /// </summary>
         [FieldOffset(1)]
-        public byte padding;
+        public byte flags;
         /// <summary>
         /// Type of operation
         /// </summary>
         [FieldOffset(2)]
         public AofEntryType opType;
+
         /// <summary>
-        /// Procedure ID
+        /// Procedure ID; union with <see cref="databaseId"/>
         /// </summary>
         [FieldOffset(3)]
         public byte procedureId;
+        /// <summary>
+        /// Database ID (used with FLUSH command); union with <see cref="procedureId"/>
+        /// </summary>
+        [FieldOffset(3)]
+        public byte databaseId;
+
         /// <summary>
         /// Store version
         /// </summary>
@@ -126,20 +146,36 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(12)]
         public int sessionID;
+
         /// <summary>
         /// Unsafe truncate log (used with FLUSH command)
         /// </summary>
-        [FieldOffset(1)]
-        public byte unsafeTruncateLog;
-        /// <summary>
-        /// Database ID (used with FLUSH command)
-        /// </summary>
-        [FieldOffset(3)]
-        public byte databaseId;
+        public bool UnsafeTruncateLog
+        {
+            get => (flags & UnsafeTruncateLogFlag) != 0;
+            set
+            {
+                if (value)
+                    flags |= UnsafeTruncateLogFlag;
+                else
+                    flags = (byte)(flags & ~UnsafeTruncateLogFlag);
+            }
+        }
+
+        public AofHeaderType HeaderType
+        {
+            get => (AofHeaderType)(flags & AofHeaderTypeMask);
+            set
+            {
+                Debug.Assert((int)value <= AofHeaderTypeMask, $"value {value} does not fit in AofHeaderTypeMask");
+                flags = (byte)((flags & ~AofHeaderTypeMask) | (byte)value);
+            }
+        }
 
         public AofHeader()
         {
-            this.aofHeaderVersion = AofHeaderVersion;
+            flags = 0;
+            aofHeaderVersion = AofHeaderVersion;
         }
     }
 }
