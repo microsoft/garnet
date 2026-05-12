@@ -206,7 +206,7 @@ jobs:
           }
             
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --no-build --no-restore --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -364,7 +364,7 @@ jobs:
           }
 
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/${{ matrix.test }}.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --no-build --no-restore --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45
       - name: Upload test results
         uses: actions/upload-artifact@v4
