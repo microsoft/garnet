@@ -88,7 +88,7 @@ jobs:
   # Job to build Garnet code (once per os/framework/configuration)
   build-garnet:
     name: Build Garnet
-    needs: [changes, format-garnet]
+    needs: [changes]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -218,7 +218,7 @@ jobs:
   # Job to build Tsavorite code (once per os/configuration)
   build-tsavorite:
     name: Build Tsavorite
-    needs: [changes, format-tsavorite]
+    needs: [changes]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -396,7 +396,7 @@ jobs:
   pipeline-success:
     name: Garnet CI (Complete)
     runs-on: ubuntu-latest
-    needs: [ test-garnet, test-tsavorite, build-website ]
+    needs: [changes, format-garnet, format-tsavorite, test-garnet, test-tsavorite, build-website ]
     steps:
     - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}
