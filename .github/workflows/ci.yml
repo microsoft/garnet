@@ -264,32 +264,32 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
+        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
     if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-        if: ${{ matrix.os == 'ubuntu-latest' && (matrix.test == 'Tsavorite.test' || matrix.test == 'Tsavorite.test.hlog') }}
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-        if: ${{ matrix.os == 'windows-latest' && (matrix.test == 'Tsavorite.test' || matrix.test == 'Tsavorite.test.hlog') }}
+        if: ${{ matrix.os == 'windows-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
       - name: Setup Node.js for Azurite
-        if: ${{ matrix.test == 'Tsavorite.test' || matrix.test == 'Tsavorite.test.hlog' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Cache Azurite
-        if: ${{ matrix.test == 'Tsavorite.test' || matrix.test == 'Tsavorite.test.hlog' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
         uses: actions/cache@v4
         with:
           path: ${{ runner.os == 'Windows' && '%APPDATA%\npm-cache' || '~/.npm' }}
           key: azurite-${{ runner.os }}
       - name: Install and Run Azurite
-        if: ${{ matrix.test == 'Tsavorite.test' || matrix.test == 'Tsavorite.test.hlog' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
         shell: bash
         run: |
           npm install -g azurite
@@ -307,6 +307,7 @@ jobs:
             "Tsavorite.test" { "test" }
             "Tsavorite.test.recordops" { "test.recordops" }
             "Tsavorite.test.session" { "test.session" }
+            "Tsavorite.test.session.context" { "test.session.context" }
             "Tsavorite.test.hlog" { "test.hlog" }
             "Tsavorite.test.recovery" { "test.recovery" }
           }
@@ -367,7 +368,7 @@ jobs:
           }
 
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.session.context' && 'test.session.context' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45
       - name: Upload test results
         uses: actions/upload-artifact@v4

@@ -643,7 +643,7 @@ namespace Tsavorite.test.ReadCacheTests
                 store.ReadCache.FlushAndEvict(wait: true);
 
                 int xlocks = 0, slocks = 0;
-                foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
+                foreach (var idx in TransactionalUnsafeContextTestUtils.EnumActionKeyIndices(keys, LockOperationType.Unlock))
                 {
                     if (keys[idx].LockType == LockType.Exclusive)
                         ++xlocks;
@@ -652,7 +652,7 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 AssertTotalLockCounts(xlocks, slocks);
 
-                foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
+                foreach (var idx in TransactionalUnsafeContextTestUtils.EnumActionKeyIndices(keys, LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
                     HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key.Key));

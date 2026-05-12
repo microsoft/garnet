@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
+        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
@@ -93,6 +93,7 @@ jobs:
             "Tsavorite.test" = "test"
             "Tsavorite.test.recordops" = "test.recordops"
             "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.session.context" = "test.session.context"
             "Tsavorite.test.hlog" = "test.hlog"
             "Tsavorite.test.recovery" = "test.recovery"
           }
@@ -129,6 +130,7 @@ jobs:
             "Tsavorite.test" = "test"
             "Tsavorite.test.recordops" = "test.recordops"
             "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.session.context" = "test.session.context"
             "Tsavorite.test.hlog" = "test.hlog"
             "Tsavorite.test.recovery" = "test.recovery"
           }
@@ -169,6 +171,7 @@ jobs:
             "Tsavorite.test" = "test"
             "Tsavorite.test.recordops" = "test.recordops"
             "Tsavorite.test.session" = "test.session"
+            "Tsavorite.test.session.context" = "test.session.context"
             "Tsavorite.test.hlog" = "test.hlog"
             "Tsavorite.test.recovery" = "test.recovery"
           }

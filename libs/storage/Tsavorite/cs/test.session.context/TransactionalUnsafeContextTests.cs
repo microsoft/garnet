@@ -945,7 +945,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             where TFunctions : ISessionFunctions<long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
-            var (_, pa) = ChainTests.SkipReadCacheChain(store, expectedKey);
+            var (_, pa) = ReadCacheChainTestUtils.SkipReadCacheChain(store, expectedKey);
             var storedKey = LogRecord.GetInlineKey(pa);
             ClassicAssert.AreEqual(expectedKey.AsRef<long>(), storedKey.AsRef<long>());
 
@@ -1051,9 +1051,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Test]
         [Category(TransactionalUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyCountAfterUpsertToTailTest([Values] ChainTests.RecordRegion recordRegion)
+        public void VerifyCountAfterUpsertToTailTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
 
             using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
@@ -1066,7 +1066,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             {
                 long keyNum = 0;
                 var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
-                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
+                if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
                 else
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseNewKey));
@@ -1094,9 +1094,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Test]
         [Category(TransactionalUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyCountAfterRMWToTailTest([Values] ChainTests.RecordRegion recordRegion)
+        public void VerifyCountAfterRMWToTailTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
 
             using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
@@ -1109,12 +1109,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             {
                 long keyVal = 0;
                 var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
-                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
+                if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
                     var input = keyStruct.Key.KeyBytes.AsRef<long>() * ValueMult;
                     var status = luContext.RMW(keyStruct.Key, ref input);
-                    ClassicAssert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
+                    ClassicAssert.IsTrue(recordRegion == RecordRegion.OnDisk ? status.IsPending : status.Found);
                     _ = luContext.CompletePending(wait: true);
                 }
                 else
@@ -1145,9 +1145,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Test]
         [Category(TransactionalUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyCountAfterDeleteToTailTest([Values] ChainTests.RecordRegion recordRegion)
+        public void VerifyCountAfterDeleteToTailTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
 
             using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
@@ -1160,7 +1160,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             {
                 long keyVal = 0;
                 var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
-                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
+                if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
                     blt.Increment(ref keyStruct);
