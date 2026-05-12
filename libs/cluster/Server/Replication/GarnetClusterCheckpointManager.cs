@@ -41,7 +41,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Cluster mode manages checkpoint cleanup externally via CheckpointStore with reader-safety checks.
         /// </summary>
-        public override bool PerformInternalCleanup => false;
+        public override bool PerformAutomaticCleanup => false;
 
         public override void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftStart?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);

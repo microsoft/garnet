@@ -186,7 +186,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual bool PerformInternalCleanup => true;
+        public virtual bool PerformAutomaticCleanup => true;
 
         /// <inheritdoc />
         public void CleanupIndexCheckpoint(Guid indexToken)

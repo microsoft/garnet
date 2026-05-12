@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// during the checkpoint state machine. When false, cleanup of hlog segments is avoided and the external
         /// layer is responsible for managing checkpoint lifecycle (e.g., cluster mode with reader-safe deletion).
         /// </summary>
-        bool PerformInternalCleanup { get; }
+        bool PerformAutomaticCleanup { get; }
 
         /// <summary>
         /// Get current cookie
