@@ -59,6 +59,12 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Cache Azurite
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.os == 'Windows' && '%APPDATA%\npm-cache' || '~/.npm' }}
+          key: azurite-${{ runner.os }}
+
       - name: Install and Run Azurite
         shell: bash
         run: |
