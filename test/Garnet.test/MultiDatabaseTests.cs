@@ -1377,13 +1377,21 @@ namespace Garnet.test
                     db2.ListLeftPush($"k{i}o", new string('x', 256));
                 }
 
-                // Issue general background save
-                res = db1.Execute("BGSAVE");
-                ClassicAssert.AreEqual("Background saving started", res.ToString());
-
-                // Issue background save to DB 0 while general save is in progress - illegal
-                Assert.Throws<RedisServerException>(() => db1.Execute("BGSAVE", "0"),
-                    Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
+                // Issue a general BGSAVE and a per-DB BGSAVE on DB 0 as a single pipelined batch
+                // via LightClient. Pipelining eliminates the client→server roundtrip between the
+                // two commands so the per-DB BGSAVE arrives at the server while the general BGSAVE's
+                // synchronous setup is still holding DB 0's per-DB checkpoint lock — guaranteeing
+                // the "checkpoint already in progress" error regardless of how fast the actual
+                // checkpoint completes. Without pipelining, a fast in-memory checkpoint can finish
+                // before the per-DB BGSAVE arrives over the wire and the test flakes (CI Release).
+                using (var lcRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes))
+                {
+                    var expectedResponse =
+                        "+Background saving started\r\n" +
+                        $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS)}\r\n";
+                    var response = lcRequest.Execute("BGSAVE", "BGSAVE 0", expectedResponse.Length);
+                    ClassicAssert.AreEqual(expectedResponse, response);
+                }
 
                 int lastsave_old = lastsave;
                 // Wait for save to complete
