@@ -108,6 +108,66 @@ namespace Garnet.test
             ClassicAssert.AreEqual(KeyCount, keyCount2, "KEYS *");
         }
 
+        /// <summary>
+        /// Regression test for the lookup-based KEYS conversion (Task 2 of the "tempKv elimination"
+        /// change). Validates rule S2: KEYS uses IterateLookup with maxAddress = untilAddress so that
+        /// each live key is emitted exactly once even under concurrent RCUs (in-place updates) that
+        /// might otherwise either suppress an in-range record or surface duplicates.
+        /// </summary>
+        [Test]
+        public void SeKeysNoDuplicatesUnderRcu()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int KeyCount = 2_000;
+            for (int i = 0; i < KeyCount; i++)
+                db.StringSet($"rcu:{i}", "v0");
+
+            using var stop = new System.Threading.CancellationTokenSource();
+
+            // Background writer continuously SETs keys to new values, generating RCU traffic.
+            var writer = System.Threading.Tasks.Task.Run(() =>
+            {
+                using var rmwRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var rmwDb = rmwRedis.GetDatabase(0);
+                var rng = new Random(42);
+                long iter = 0;
+                while (!stop.Token.IsCancellationRequested)
+                {
+                    var idx = rng.Next(KeyCount);
+                    rmwDb.StringSet($"rcu:{idx}", $"v{iter++}");
+                }
+            });
+
+            try
+            {
+                // Issue several KEYS calls concurrent with the writer. Each call must return
+                // exactly KeyCount entries with no duplicates.
+                for (int round = 0; round < 5; round++)
+                {
+                    var res = (RedisValue[])db.Execute("KEYS", "rcu:*");
+                    ClassicAssert.IsNotNull(res);
+                    ClassicAssert.AreEqual(KeyCount, res.Length, $"KEYS round {round}: expected {KeyCount} entries, got {res.Length}");
+
+                    var unique = new HashSet<string>();
+                    foreach (var k in res)
+                        ClassicAssert.IsTrue(unique.Add(k.ToString()), $"KEYS round {round}: duplicate key returned: {k}");
+                }
+            }
+            finally
+            {
+                stop.Cancel();
+                // Ensure the background writer stops within a bounded window so it cannot leak
+                // a connection into subsequent tests, and surface any exception it threw so it
+                // doesn't get silently swallowed.
+                var stopped = writer.Wait(TimeSpan.FromSeconds(30));
+                ClassicAssert.IsTrue(stopped, "Background writer did not stop within 30s after cancellation");
+                if (writer.IsFaulted)
+                    throw writer.Exception!.Flatten();
+            }
+        }
+
         [Test]
         public void CanDoMemoryUsage()
         {
