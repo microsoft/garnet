@@ -586,17 +586,7 @@ namespace Garnet.server
 
         static void UnifiedStoreDelete<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, VectorManager vectorManager, StorageSession storageSession)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var res = unifiedContext.Delete((FixedSpanByteKey)preparedParameters.Key);
-
-            if (res.IsCanceled)
-            {
-                // Might be a vector set
-                res = vectorManager.TryDeleteVectorSet(storageSession, preparedParameters.Key, out _);
-                if (res.IsPending)
-                    _ = unifiedContext.CompletePending(true);
-            }
-        }
+        => unifiedContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.

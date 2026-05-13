@@ -2,12 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -79,7 +76,7 @@ namespace Garnet.server
             }
         }
 
-        private readonly Channel<object> cleanupTaskChannel;
+        private readonly Channel<(ulong Context, TaskCompletionSource TCS)> cleanupTaskChannel;
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
@@ -111,11 +108,46 @@ namespace Garnet.server
         {
             // Each drop index will queue a null object here
             // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
-            await foreach (var ignored in cleanupTaskChannel.Reader.ReadAllAsync())
+            await foreach (var (context, tcs) in cleanupTaskChannel.Reader.ReadAllAsync())
             {
                 await cleanupGate.WaitAsync().ConfigureAwait(false);
+
                 try
                 {
+                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                    using var cleanupSession = (RespServerSession)getCleanupSession();
+                    if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
+                    {
+                        throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                    }
+
+                    // Scan context needs to know how to handle objects and all callbacks, while VectorSessionFunctions is intentionally kept svelte
+                    //
+                    // So we use to different contexts, one to scan (strings) and one to delete (vectors)
+                    ref var scanCtx = ref cleanupSession.storageSession.stringBasicContext;
+                    ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
+
+                    // Sometimes we just want to pump the cleanup task - in that case, we use InvalidContext to indicate we don't need any real work
+                    if (context != InvalidContext)
+                    {
+                        var needsUpdate = false;
+                        lock (this)
+                        {
+                            if (!contextMetadata.IsCleaningUp(context))
+                            {
+                                contextMetadata.MarkCleaningUp(context);
+                                needsUpdate = true;
+                            }
+                        }
+
+                        if (needsUpdate)
+                        {
+                            UpdateContextMetadata(ref delCtx);
+                        }
+                    }
+
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
+
                     HashSet<ulong> needCleanup;
                     lock (this)
                     {
@@ -125,49 +157,43 @@ namespace Garnet.server
                     if (needCleanup == null)
                     {
                         // Previous run already got here, so bail
+
+                        tcs?.SetResult();
                         continue;
                     }
 
-                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
-                    using var cleanupSession = (RespServerSession)getCleanupSession();
-                    if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
+                    if (vectorSetIndexKeyRecovery != null)
                     {
-                        throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                        foreach (var toCleanupContext in needCleanup)
+                        {
+                            if (vectorSetIndexKeyRecovery.TryRemove(toCleanupContext, out var keyBytes))
+                            {
+                                unsafe
+                                {
+                                    fixed (byte* keyPtr = keyBytes)
+                                    {
+                                        var res = scanCtx.Delete((FixedSpanByteKey)SpanByte.FromPinnedPointer(keyPtr, keyBytes.Length));
+                                        if (res.IsPending)
+                                        {
+                                            CompletePending(ref res, ref scanCtx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
+                    // Cleanup state has been updated, inform whoever sent the cleanup request if they asked for that notification
+                    tcs?.SetResult();
 
-                    // Scan context needs to know how to handle objects and all callbacks, while VectorSessionFunctions is intentionally kept svelte
-                    //
-                    // So we use to different contexts, one to scan (strings) and one to delete (vectors)
-                    ref var scanCtx = ref cleanupSession.storageSession.stringBasicContext;
-                    ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
+                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
 
                     // Scan whole keyspace (sigh) and remove any associated data
                     //
                     // We don't really have a choice here, just do it
                     _ = scanCtx.Session.Iterate(ref callbacks);
 
-                    // Key is mostly ignored when deleting from InProgressDeletes
-                    // So we just need a non-empty one to use with the context
-                    Span<byte> basicKeySpan = new byte[1];
-                    unsafe
-                    {
-                        fixed (byte* basicKeyPtr = basicKeySpan)
-                        {
-                            var basicKey = SpanByte.FromPinnedPointer(basicKeyPtr, basicKeySpan.Length);
-
-                            // Generally there will already be removed, but if deletes fail in odd spots there can
-                            // be a little bit to cleanup - so go ahead and do it.
-                            //
-                            // Not really worth optimizing given that we just scanned the whole key space to remove elements
-                            // and that will dominate.
-                            foreach (var cleanedUp in needCleanup)
-                            {
-                                ClearDeleteInProgress(ref delCtx, basicKey, cleanedUp);
-                            }
-                        }
-                    }
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
                     lock (this)
                     {
@@ -182,6 +208,7 @@ namespace Garnet.server
                 catch (Exception e)
                 {
                     logger?.LogError(e, "Failure during background cleanup of deleted vector sets, implies storage leak");
+                    tcs?.TrySetException(e);
                 }
                 finally
                 {
@@ -218,227 +245,12 @@ namespace Garnet.server
         public void ResumeCleanup() => cleanupGate.Release();
 
         /// <summary>
-        /// Called in response to <see cref="TryMarkDeleteInProgress"/> or <see cref="ClearDeleteInProgress"/> to update metadata in Tsavorite.
-        /// 
-        /// Returns false if there is insufficient size for the value.
-        /// </summary>
-        internal static bool TryUpdateInProgressDeletes(Span<byte> updateMessage, ref LogRecord recordInfo, in RecordSizeInfo sizeInfo)
-        {
-            var context = BinaryPrimitives.ReadUInt64LittleEndian(updateMessage);
-            var len = BinaryPrimitives.ReadInt32LittleEndian(updateMessage[sizeof(ulong)..]);
-            var isAdding = len > 0;
-            var key = updateMessage[(sizeof(ulong) + sizeof(int))..];
-
-            Debug.Assert(key.Length == (isAdding ? len : -len), "Key length not expected");
-            Debug.Assert(context is >= ContextStep, "Special context not allowed");
-
-            var remaining = recordInfo.ValueSpan;
-            while (remaining.Length >= sizeof(ulong) + sizeof(int))
-            {
-                var curCtx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
-
-                if (curCtx == 0)
-                {
-                    // Reached uninitialized data
-                    break;
-                }
-
-                var curLen = BinaryPrimitives.ReadInt32LittleEndian(remaining[sizeof(ulong)..]);
-                if (curCtx == context)
-                {
-                    if (isAdding)
-                    {
-                        // Already added, ignore and make no other changes
-                        return true;
-                    }
-
-                    // Copy later values to cover the one we're removing
-                    var afterCur = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
-                    afterCur.CopyTo(remaining);
-
-                    // Clear everything after that so we won't think it's valid
-                    remaining[^(sizeof(ulong) + sizeof(int) + curLen)..].Clear();
-
-                    // Shrink record by removed chunk size
-                    var newSizeInfo = sizeInfo;
-                    newSizeInfo.FieldInfo.ValueSize -= sizeof(ulong) + sizeof(int) + curLen;
-                    newSizeInfo.CalculateSizes(newSizeInfo.FieldInfo.KeySize, newSizeInfo.FieldInfo.ValueSize);
-
-                    var shrinkRes = recordInfo.TrySetContentLengths(in newSizeInfo);
-                    Debug.Assert(shrinkRes, "Should never fail to shrink");
-
-                    return true;
-                }
-
-                remaining = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
-            }
-
-            if (isAdding)
-            {
-                if (remaining.Length < sizeof(ulong) + sizeof(int) + key.Length)
-                {
-                    return false;
-                }
-
-                // Not already added, so slap it in
-                BinaryPrimitives.WriteUInt64LittleEndian(remaining, context);
-                BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
-
-                key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
-
-                remaining = remaining[(sizeof(ulong) + sizeof(int) + key.Length)..];
-
-                // Record used length
-                var newSize = recordInfo.ValueSpan.Length - remaining.Length;
-                var newSizeInfo = sizeInfo;
-                newSizeInfo.FieldInfo.ValueSize = newSize;
-                newSizeInfo.CalculateSizes(newSizeInfo.FieldInfo.KeySize, newSizeInfo.FieldInfo.ValueSize);
-
-                var growRes = recordInfo.TrySetContentLengths(in newSizeInfo);
-                Debug.Assert(growRes, "Should have reserved enough space for this to not fail");
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Before we start smashing a <see cref="Index"/> for deletion, records that we started to delete it so we can recover from crashes.
-        /// </summary>
-        internal bool TryMarkDeleteInProgress(ref VectorBasicContext ctx, ReadOnlySpan<byte> key, ulong context)
-        {
-            Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
-            BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
-
-            // Positive length indicates we're adding this to the list
-            BinaryPrimitives.WriteInt32LittleEndian(dataSpan[sizeof(ulong)..], key.Length);
-            key.CopyTo(dataSpan[(sizeof(ulong) + sizeof(int))..]);
-
-            // 1 is InProgressDeletes
-            VectorElementKey inProgressDeletesKey = new(MetadataNamespace, [1]);
-
-            VectorInput input = default;
-            input.Callback = 0;
-
-            // Negative to indicate dynamic-ness
-            input.WriteDesiredSize = -(sizeof(ulong) + sizeof(int) + key.Length);
-            unsafe
-            {
-                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
-            }
-
-            var status = ctx.RMW(inProgressDeletesKey, ref input);
-
-            if (status.IsPending)
-            {
-                VectorOutput ignored = new();
-                CompletePending(ref status, ref ignored, ref ctx);
-            }
-
-            return status.IsCompletedSuccessfully;
-        }
-
-        /// <summary>
-        /// Enumerate any deletes of Vector Sets that are in progress.
-        /// 
-        /// Used with <see cref="TryMarkDeleteInProgress"/> and <see cref="ClearDeleteInProgress"/> to recover from interrupted deletes.
-        /// </summary>
-        internal List<(ReadOnlyMemory<byte> Key, ulong Context)> GetDeletesInProgress(StorageSession storageSession)
-        {
-            SpanByteAndMemory readValue = default;
-
-            List<(ReadOnlyMemory<byte> Key, ulong Context)> ret = [];
-            try
-            {
-                ActiveThreadSession = storageSession;
-                try
-                {
-                    // 1 is InProgressDeletes
-                    // Note that ReadSizeUnknown will attach the namespace for us
-                    if (!ReadSizeUnknown(context: MetadataNamespace, forceAlignment: false, [1], ref readValue))
-                    {
-                        return ret;
-                    }
-                }
-                finally
-                {
-                    ActiveThreadSession = null;
-                }
-
-                var remaining = readValue.ReadOnlySpan;
-                while (remaining.Length >= sizeof(ulong) + sizeof(int))
-                {
-                    var ctx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
-                    if (ctx == 0)
-                    {
-                        // Encountered uninitialized data
-                        break;
-                    }
-
-                    var len = BinaryPrimitives.ReadInt32LittleEndian(remaining[sizeof(ulong)..]);
-
-                    var key = remaining.Slice(sizeof(ulong) + sizeof(int), len);
-
-                    ret.Add((key.ToArray(), ctx));
-
-                    remaining = remaining[(sizeof(ulong) + sizeof(int) + len)..];
-                }
-
-                return ret;
-            }
-            finally
-            {
-                readValue.Memory?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// After a delete has completed, removes the given key from metadata.
-        /// </summary>
-        internal void ClearDeleteInProgress(ref VectorBasicContext ctx, ReadOnlySpan<byte> key, ulong context)
-        {
-            Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
-            BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
-
-            // Negative length indicates we're removing this from the list
-            BinaryPrimitives.WriteInt32LittleEndian(dataSpan[sizeof(ulong)..], -key.Length);
-            key.CopyTo(dataSpan[(sizeof(ulong) + sizeof(int))..]);
-
-            // 1 is InProgressDeletes
-            VectorElementKey inProgressDeletesKey = new(MetadataNamespace, [1]);
-
-            VectorInput input = default;
-            input.Callback = 0;
-
-            // Negative to indicate dynamic-ness
-            input.WriteDesiredSize = -(sizeof(ulong) + sizeof(int) + key.Length);
-            unsafe
-            {
-                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
-            }
-
-            var status = ctx.RMW(inProgressDeletesKey, ref input);
-
-            if (status.IsPending)
-            {
-                VectorOutput ignored = new();
-                CompletePending(ref status, ref ignored, ref ctx);
-            }
-        }
-
-        /// <summary>
         /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
         /// </summary>
         internal void CleanupDroppedIndex(ref VectorBasicContext ctx, ulong context)
         {
-            lock (this)
-            {
-                contextMetadata.MarkCleaningUp(context);
-            }
-
-            UpdateContextMetadata(ref ctx);
-
             // Wake up cleanup task
-            var writeRes = cleanupTaskChannel.Writer.TryWrite(null);
+            var writeRes = cleanupTaskChannel.Writer.TryWrite((InvalidContext, null));
             Debug.Assert(writeRes, "Request for cleanup failed, this should never happen");
         }
 

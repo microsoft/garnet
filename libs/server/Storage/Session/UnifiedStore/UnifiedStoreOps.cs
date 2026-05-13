@@ -107,12 +107,6 @@ namespace Garnet.server
         {
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
-            if (status.IsCanceled)
-            {
-                // Might be a vector set
-                status = vectorManager.TryDeleteVectorSet(this, key, out _);
-            }
-
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

@@ -27,12 +27,19 @@ namespace Garnet.server
         internal readonly RangeIndexManager rangeIndexManager;
 
         /// <summary>
+        /// Reference to the VectorManager for Vector Set lifecycle management.
+        /// May be <c>null</c> if Vector Sets are not enabled.
+        /// </summary>
+        internal readonly VectorManager vectorManager;
+
+        /// <summary>
         /// Creates a GarnetRecordTriggers with a cache size tracker and optional RangeIndexManager.
         /// </summary>
-        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager = null)
+        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager, VectorManager vectorManager)
         {
             this.cacheSizeTracker = cacheSizeTracker;
             this.rangeIndexManager = rangeIndexManager;
+            this.vectorManager = vectorManager;
         }
 
         /// <inheritdoc/>
@@ -47,12 +54,19 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Free BfTree and delete data files on key deletion.
-            if (!logRecord.Info.ValueIsObject
-                && reason == DisposeReason.Deleted
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
+                // Free BfTree and delete data files on key deletion.
+                if (reason == DisposeReason.Deleted && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
+                }
+
+                // Request Vector Set cleanup when the index key is deleted.
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager?.RequestDeletion(logRecord.ValueSpan);
+                }
             }
         }
 
@@ -97,10 +111,19 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
+                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
+                }
+
+                // A Vector Set which isn't deleted from Tsavorites perspective may still have _started_ being deleted (that is, it's deleted from VectorManager.ContextMetadata's perspective)
+                // so we need to validate that during recovery
+                if (!logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager?.QueueForInProgressDeleteCheck(ref logRecord);
+                }
             }
         }
 

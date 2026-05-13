@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -57,6 +58,11 @@ namespace Garnet.server
         private const int MinimumSpacePerId = sizeof(int) + 8;
 
         /// <summary>
+        /// Name for a context that will never be used by Vector Sets.
+        /// </summary>
+        private const ulong InvalidContext = 0;
+
+        /// <summary>
         /// The process wide instances of DiskANN.
         /// 
         /// We only need the one, even if we have multiple DBs, because all context is provided by DiskANN instances and Garnet storage.
@@ -80,6 +86,9 @@ namespace Garnet.server
         private readonly ILogger logger;
 
         private readonly int dbId;
+
+        // context -> key for Vector Sets which are were discovered during recovery
+        private ConcurrentDictionary<ulong, byte[]> vectorSetIndexKeyRecovery;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
@@ -106,8 +115,11 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getCleanupSession = getCleanupSession;
-            cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            cleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource TCS)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
+
+            // Only used during recovery
+            vectorSetIndexKeyRecovery = new();
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -180,95 +192,34 @@ namespace Garnet.server
                 }
             }
 
-            Span<byte> indexSpan = stackalloc byte[Index.Size];
-
-            // Finish any deletes that were in progress before we restarted
-            var failedDeletes = GetDeletesInProgress(session.storageSession);
-            var clearInProgressDeletes = true;
-            foreach (var (toDeleteKey, toDeleteCtx) in failedDeletes)
-            {
-                logger?.LogInformation("Cleaning up in progress Vector Set delete of {key} (context: {ctx})", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-
-                unsafe
-                {
-                    fixed (byte* toDeleteKeyPtr = toDeleteKey.Span)
-                    {
-                        var toDeleteKeySpanByte = SpanByte.FromPinnedPointer(toDeleteKeyPtr, toDeleteKey.Span.Length);
-
-                        StringInput input = new(RespCommand.VADD);
-
-                        // Check if delete got far enough that we should re-apply it
-                        using (ReadForDeleteVectorIndex(session.storageSession, toDeleteKeySpanByte, ref input, indexSpan, out var garnetStatus))
-                        {
-                            if (garnetStatus is not (GarnetStatus.BADSTATE or GarnetStatus.NOTFOUND))
-                            {
-                                // It didn't - so don't re-apply (But do remove the "we're deleting"-entry later)
-                                continue;
-                            }
-                        }
-
-                        try
-                        {
-                            if (TryDeleteVectorSet(session.storageSession, toDeleteKeySpanByte, out var garnetStatus).IsCompletedSuccessfully && garnetStatus != GarnetStatus.BADSTATE)
-                            {
-                                // Normal delete worked, easy enough
-                                //
-                                // This happens if we fail between the "remember we're deleting" and "zero everything out" steps
-                                logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-                                continue;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogError(ex, "Attempt at normal cleanup of {key} failed", Encoding.UTF8.GetString(toDeleteKey.Span));
-                        }
-
-                        // Partial delete, do these bits directly
-                        //   1. Try to zero out the index key
-                        //   2. Try to delete the index key
-                        //   3. Try to drop the replication key
-                        //   4. Mark the context as needing cleanup
-
-                        // Zero out the index (which may already be zero'd, but that's fine to redo)
-                        StringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
-                        var update = session.storageSession.stringBasicContext.RMW((FixedSpanByteKey)toDeleteKeySpanByte, ref updateToDroppableVectorSet);
-                        if (!update.IsCompletedSuccessfully)
-                        {
-                            throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
-                        }
-
-                        // Note that we don't need to DROP the index because we know we haven't re-created it yet
-
-                        // Actually delete the value
-                        var del = session.storageSession.stringBasicContext.Delete((FixedSpanByteKey)toDeleteKeySpanByte);
-                        if (!(del.Found || del.NotFound))
-                        {
-                            logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-                            clearInProgressDeletes = false;
-                            continue;
-                        }
-
-                        // Schedule cleanup of element data
-                        CleanupDroppedIndex(ref session.storageSession.vectorBasicContext, toDeleteCtx);
-
-                        logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-                    }
-                }
-            }
-
-            if (clearInProgressDeletes)
-            {
-                // We successfully dealt with all pending deletes, we can delete the metadata key
-
-                // [1] is InProgressDeletes
-                VectorElementKey toDeleteKey = new(MetadataNamespace, [1]);
-
-                var deleteStatus = session.storageSession.vectorBasicContext.Delete(toDeleteKey);
-                Debug.Assert(!deleteStatus.IsPending, "Delete shouldn't go async");
-            }
-
             // Resume any cleanups we didn't complete before recovery
-            _ = cleanupTaskChannel.Writer.TryWrite(null);
+
+            var recoveryCleanupTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            _ = cleanupTaskChannel.Writer.TryWrite((InvalidContext, recoveryCleanupTcs));
+
+            // Any in progress deletes need to complete before we can say recovery is "done"
+            AsyncUtils.BlockingWait(recoveryCleanupTcs.Task);
+
+            // We're finished cleaning up, drop to repair tracking data
+            vectorSetIndexKeyRecovery = null;
+        }
+
+        /// <summary>
+        /// Called during recovery to note any Vector Sets which might be in the process of being deleted.
+        /// </summary>
+        public void QueueForInProgressDeleteCheck(ref LogRecord logRecord)
+        {
+            if (logRecord.ValueSpan.Length != IndexSize)
+            {
+                logger?.LogWarning("Skipping Vector Set '{key}' deletion checking during recovery, index size {size} != {IndexSize}", SpanByte.ToShortString(logRecord.Key), logRecord.ValueSpan.Length, IndexSize);
+                return;
+            }
+
+            ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+
+            var added = this.vectorSetIndexKeyRecovery.TryAdd(context, logRecord.Key.ToArray());
+            Debug.Assert(added, "Recovery found multiple Vector Set indexes with same context");
         }
 
         /// <inheritdoc/>
@@ -410,75 +361,42 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Used in deletion code to determine if a naive delete in the Tsavorite log can be performed on a record with RecordType == VectorSet.
+        /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal static bool CanDeleteIndex(ReadOnlySpan<byte> indexValue)
-        => !indexValue.ContainsAnyExcept((byte)0);
-
-        /// <summary>
-        /// Deletion of a Vector Set needs special handling.
-        /// 
-        /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
-        /// </summary>
-        internal Status TryDeleteVectorSet(StorageSession storageSession, ReadOnlySpan<byte> key, out GarnetStatus status)
+        internal void RequestDeletion(Span<byte> value)
         {
-            storageSession.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(key));
-
-            var input = new StringInput(RespCommand.VADD, ref storageSession.parseState);
-
-            Span<byte> indexSpan = stackalloc byte[Index.Size];
-
-            using (ReadForDeleteVectorIndex(storageSession, key, ref input, indexSpan, out status))
+            if (value.Length != IndexSize)
             {
-                if (status != GarnetStatus.OK)
-                {
-                    // This can happen is something else successfully deleted before we acquired the lock
-                    return Status.CreateNotFound();
-                }
-
-                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-
-                if (!TryMarkDeleteInProgress(ref storageSession.vectorBasicContext, key, context))
-                {
-                    // We can't recover from a crash or error, so fail the delete for safety
-                    return Status.CreateError();
-                }
-
-                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
-
-                // Update the index to be delete-able
-                StringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
-
-                var update = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref updateToDroppableVectorSet);
-                if (!update.IsCompletedSuccessfully)
-                {
-                    throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
-                }
-
-                // Drop the native side of the index now - we can't fault between the two unless the process is torn down
-                DropIndex(indexSpan);
-
-                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
-
-                // Actually delete the value
-                var del = storageSession.unifiedBasicContext.Delete((FixedSpanByteKey)key);
-                if (!del.IsCompletedSuccessfully)
-                {
-                    throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
-                }
-
-                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
-
-                // Schedule cleanup of element data
-                CleanupDroppedIndex(ref storageSession.vectorBasicContext, context);
-
-                // Delete has finished, so remove the in progress metadata
-                //
-                // A crash or error before this will cause some work to be retried, but no correctness issues
-                ClearDeleteInProgress(ref storageSession.vectorBasicContext, key, context);
-
-                return Status.CreateFound();
+                logger?.LogWarning($"Ignored Vector Set deletion due to size mismatch");
+                return;
             }
+
+            if (vectorSetIndexKeyRecovery != null)
+            {
+                // We're in recovery mode, don't trigger deletes until we're finished
+                return;
+            }
+
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+
+            // We have to rely on the cleanup task to record the "we're being cleaned up" state for this context
+            //
+            // So prepare a TCS to communicate that
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var msg = (context, tcs);
+
+            _ = cleanupTaskChannel.Writer.TryWrite(msg);
+
+            AsyncUtils.BlockingWait(tcs.Task);
+
+            // Tell DiskANN to clean itself up right now
+            DropIndex(value);
+
+            // Clear the DiskANN index
+            ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(value)[0];
+            asIndex.IndexPtr = 0;
         }
 
         /// <summary>

@@ -110,8 +110,6 @@ namespace Garnet.server
         /// </summary>
         internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
-            AssertHaveStorageSession();
-
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr, out var indexProcessInstanceId);
 
             if (indexProcessInstanceId != processInstanceId)

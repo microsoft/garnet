@@ -77,6 +77,18 @@ namespace Garnet.server
                 return (migrating & mask) != 0;
             }
 
+            public readonly bool IsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                return (cleaningUp & mask) == mask;
+            }
+
             public readonly HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
             {
                 HashSet<ulong> ret = null;

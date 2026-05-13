@@ -862,11 +862,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterMark()
+        public void InterruptedVectorSetDelete_BeforeMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterZeroingOut()
+        public void InterruptedVectorSetDelete_AfterMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
@@ -888,11 +888,14 @@ namespace Garnet.test
                 var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
                 ClassicAssert.AreEqual(1, (int)res1);
 
-                // TODO: we could use EXISTS here... except not all non-Vector Set commands understand Vector Sets, so that's a bit flaky
                 ExceptionInjectionHelper.EnableException(faultLocation);
                 try
                 {
-                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
+                    _ = db.KeyDelete(key);
+                }
+                catch
+                {
+                    // Exception is possible (but not guarnateed) and legal
                 }
                 finally
                 {
@@ -1044,11 +1047,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task InterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        public Task InterruptedVectorSetDelete_BeforeMark_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterZeroingOut_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_AfterMark_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
@@ -1074,7 +1077,11 @@ namespace Garnet.test
                 ExceptionInjectionHelper.EnableException(faultLocation);
                 try
                 {
-                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
+                    _ = db.KeyDelete(key);
+                }
+                catch
+                {
+                    // Exception is possible (but not guarnateed) and legal
                 }
                 finally
                 {
