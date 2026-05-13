@@ -2390,9 +2390,9 @@ namespace Garnet.test
 
         /// <summary>
         /// Verifies that <c>EnableRangeIndexPreview=true</c> with <c>CopyReadsToTail=true</c>
-        /// fails fast at server-startup time with a clear error. Without the guard, the
-        /// combination would deadlock as soon as a reader observed a flushed stub
-        /// (PostCopyToTail-cold under shared RI lock would attempt the X-lock).
+        /// fails fast at server-startup time. CopyReadsToTail interacts with PromoteToTail /
+        /// RestoreTree in ways that are not yet validated; gating the combination at startup
+        /// until that work is complete.
         /// </summary>
         [Test]
         public void RICopyReadsToTailIncompatibleStartupGuardTest()

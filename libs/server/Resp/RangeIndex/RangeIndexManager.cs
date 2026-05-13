@@ -424,18 +424,26 @@ namespace Garnet.server
         /// <para>Called from RIPROMOTE PostCopyUpdater (cold case: src.TreeHandle == 0) and
         /// from <c>PostCopyToTail</c> (compaction with disk source).</para>
         ///
-        /// <para>Concurrency: takes the per-key EXCLUSIVE rangeIndex lock for the duration of the
-        /// file copy. This is required because <c>CASRecordIntoChain</c> unseals dst immediately
-        /// on CAS-success (in <c>Helpers.cs.CASRecordIntoChain</c>), so by the time this trigger
-        /// fires, concurrent readers can already observe dst with <c>TreeHandle == 0</c> and
-        /// invoke <c>RestoreTree</c>, which opens <c>data.bftree</c> under its own per-key
-        /// exclusive lock. Holding the exclusive lock here blocks <c>RestoreTree</c> until the
-        /// file is fully written, preventing it from observing a partial <c>data.bftree</c>.</para>
+        /// <para><b>Concurrency: NO RangeIndex lock is taken.</b> This trigger fires while the
+        /// invoking Tsavorite operation (CTT or RMW) holds the per-key bucket lock; no
+        /// concurrent reader can complete a lookup on this key (or even reach the chain) until
+        /// that bucket lock is released. So:</para>
+        /// <list type="bullet">
+        /// <item><c>RestoreTree</c> on dst cannot run concurrently — it requires a reader to
+        /// observe dst, which the bucket lock prevents.</item>
+        /// <item>Concurrent <c>PreStage</c> on the same key is impossible — Tsavorite serializes
+        /// upper operations on a key via the bucket lock.</item>
+        /// <item><c>OnFlush</c> on dst cannot fire concurrently — dst lives in the mutable region
+        /// while we run; the page cannot transition to read-only while an in-flight operation
+        /// holds it.</item>
+        /// </list>
         ///
-        /// <para>A direct <c>File.Copy(overwrite: true)</c> is sufficient under this lock — the
-        /// exclusive lock serializes against any reader that would open <c>data.bftree</c>, and
-        /// against other concurrent <c>PreStageAndRegisterPending</c> calls for the same key.
-        /// A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
+        /// <para>Atomic-rename via a per-srcAddr staging file is used as defense-in-depth so any
+        /// unanticipated reader of <c>data.bftree</c> sees the old or new file (never partial).
+        /// The staging filename embeds the source address so concurrent rare-path stages from
+        /// different srcAddrs would not collide on the staging file itself.</para>
+        ///
+        /// <para>A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
         /// (above-FUA stub) or the next RIPROMOTE-cold (IsFlushed=true stub) re-pre-stages and
         /// overwrites any partial file before <c>RestoreTree</c> can observe it.</para>
         /// </summary>
@@ -464,16 +472,18 @@ namespace Garnet.server
             }
 
             var dataPath = LogDataPath(hashPrefix);
+            var stagingPath = $"{dataPath}.{srcFlushAddress:x16}.staging";
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
 
-            // Acquire the per-key exclusive lock for the duration of the file copy AND the
-            // pending-entry registration. This blocks any concurrent RestoreTree (which also
-            // takes the exclusive lock) from observing a partial data.bftree.
-            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
                 Directory.CreateDirectory(riLogRoot);
-                File.Copy(snapshotPath, dataPath, overwrite: true);
+                // Stage to a per-srcAddr file then atomic-rename. Atomic at FS level (rename(2)
+                // on POSIX, MoveFileEx with MOVEFILE_REPLACE_EXISTING on Windows). The bucket
+                // lock makes this rename's lack of concurrent readers a soft invariant; the
+                // atomic-rename keeps it safe even if the invariant slips.
+                File.Copy(snapshotPath, stagingPath, overwrite: true);
+                File.Move(stagingPath, dataPath, overwrite: true);
 
                 var keyId = KeyId(keyBytes);
                 _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
@@ -483,10 +493,8 @@ namespace Garnet.server
                 logger?.LogError(ex, "PreStageAndRegisterPending: copy/register failed for {Hash}; " +
                     "destination record will have no pending entry; subsequent RestoreTree will return NOTFOUND",
                     hashPrefix);
-            }
-            finally
-            {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                // Best-effort cleanup of any stale staging file.
+                try { if (File.Exists(stagingPath)) File.Delete(stagingPath); } catch { }
             }
         }
 
