@@ -96,12 +96,16 @@ namespace Garnet.server
             {
                 vector_len = vector.Length;
             }
+            else if (vectorType == VectorValueType.SB8)
+            {
+                vector_len = vector.Length;
+            }
             else
             {
                 throw new NotImplementedException($"{vectorType}");
             }
 
-            var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
+            var attributes_data= Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
             var attributes_len = attributes.Length;
 
             return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, vectorType, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
@@ -140,12 +144,16 @@ namespace Garnet.server
             {
                 vector_len = vector.Length;
             }
+            else if (vectorType == VectorValueType.SB8)
+            {
+                vector_len = vector.Length;
+            }
             else
             {
                 throw new NotImplementedException($"{vectorType}");
             }
 
-            var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
+            var filter_data= Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;
 
             void* output_ids;

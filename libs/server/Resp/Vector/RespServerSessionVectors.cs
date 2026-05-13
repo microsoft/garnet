@@ -126,6 +126,20 @@ namespace Garnet.server
                     valueType = VectorValueType.XB8;
                     values = asBytes;
                 }
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("SB8"u8))
+                {
+                    curIx++;
+                    if (curIx >= parseState.Count)
+                    {
+                        return AbortWithWrongNumberOfArguments("VADD");
+                    }
+
+                    var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    curIx++;
+
+                    valueType = VectorValueType.SB8;
+                    values = asBytes;
+                }
 
                 if (curIx >= parseState.Count)
                 {
@@ -346,7 +360,22 @@ namespace Garnet.server
                 numLinks ??= 16;
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
-                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
+                // Validate that DiskANN is expected to succeed given data sizes
+                //
+                // Note that this goes away in store v2
+                if (values.Length > maximumVectorSetValueBytes)
+                {
+                    WriteError("ERR Vector exceed configured page size"u8);
+                    return true;
+                }
+
+                if (attributes.Value.Length > maximumVectorSetValueBytes)
+                {
+                    WriteError("ERR Attribute exceed configured page size"u8);
+                    return true;
+                }
+
+                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant && quantType != VectorQuantType.Q8)
                 {
                     WriteError("ERR Unsupported quantization type"u8);
                     return true;
@@ -505,6 +534,19 @@ namespace Garnet.server
                         var asBytes = parseState.GetArgSliceByRef(curIx).Span;
 
                         valueType = VectorValueType.XB8;
+                        values = asBytes;
+                        curIx++;
+                    }
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("SB8"u8))
+                    {
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+
+                        valueType = VectorValueType.SB8;
                         values = asBytes;
                         curIx++;
                     }
