@@ -121,8 +121,8 @@ namespace Garnet.test
 
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
-            static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var binPaths = new[] { GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster") };
+            static string GetFullExtensionBinPath(string relativePath) => Path.GetFullPath(relativePath, TestUtils.RootTestsProjectPath);
+            var binPaths = new[] { GetFullExtensionBinPath(Path.Combine("standalone", "Garnet.test")), GetFullExtensionBinPath(Path.Combine("cluster", "Garnet.test.cluster")) };
             var modules = new[] { Assembly.GetExecutingAssembly().Location };
 
             var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
@@ -180,7 +180,7 @@ namespace Garnet.test
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
-            binPaths = [GetFullExtensionBinPath("Garnet.test")];
+            binPaths = [GetFullExtensionBinPath(Path.Combine("standalone", "Garnet.test"))];
             args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--index", "256m", "--port", "0", "--no-obj", "--aof", "--reviv-bin-record-counts", "4,5", "--extension-bin-paths", string.Join(',', binPaths)];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
