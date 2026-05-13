@@ -11,7 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\..\..\..\test\Garnet.test\AllureTestBase.cs" Link="AllureTestBase.cs" />
+    <Compile Include="..\..\..\..\..\test\standalone\Garnet.test\AllureTestBase.cs" Link="AllureTestBase.cs" />
+    <Compile Remove="test.*/**" />
   </ItemGroup>
 
   <ItemGroup>

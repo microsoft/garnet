@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
   </PropertyGroup>
 
@@ -22,9 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\core\Tsavorite.core.csproj" />
-    <ProjectReference Include="..\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
-    <ProjectReference Include="..\test\Tsavorite.test.csproj" />
+    <ProjectReference Include="..\..\src\core\Tsavorite.core.csproj" />
+    <ProjectReference Include="..\..\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\Tsavorite.test.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

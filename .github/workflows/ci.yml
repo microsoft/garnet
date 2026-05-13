@@ -315,11 +315,11 @@ jobs:
         run: |
           $testDir = switch ("${{ matrix.test }}") {
             "Tsavorite.test" { "test" }
-            "Tsavorite.test.recordops" { "test.recordops" }
-            "Tsavorite.test.session" { "test.session" }
-            "Tsavorite.test.session.context" { "test.session.context" }
-            "Tsavorite.test.hlog" { "test.hlog" }
-            "Tsavorite.test.recovery" { "test.recovery" }
+            "Tsavorite.test.recordops" { "test/test.recordops" }
+            "Tsavorite.test.session" { "test/test.session" }
+            "Tsavorite.test.session.context" { "test/test.session.context" }
+            "Tsavorite.test.hlog" { "test/test.hlog" }
+            "Tsavorite.test.recovery" { "test/test.recovery" }
           }
           $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/$testDir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
@@ -378,7 +378,7 @@ jobs:
           }
 
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test.session' || matrix.test == 'Tsavorite.test.session.context' && 'test.session.context' || matrix.test == 'Tsavorite.test.hlog' && 'test.hlog' || 'test.recovery' }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        run: dotnet test libs/storage/Tsavorite/cs/${{ matrix.test == 'Tsavorite.test' && 'test' || matrix.test == 'Tsavorite.test.recordops' && 'test/test.recordops' || matrix.test == 'Tsavorite.test.session' && 'test/test.session' || matrix.test == 'Tsavorite.test.session.context' && 'test/test.session.context' || matrix.test == 'Tsavorite.test.hlog' && 'test/test.hlog' || 'test/test.recovery' }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45
       - name: Upload test results
         uses: actions/upload-artifact@v4

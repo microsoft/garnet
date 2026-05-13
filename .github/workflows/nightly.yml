@@ -91,11 +91,11 @@ jobs:
           $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
           $tsavoriteDirMap = @{
             "Tsavorite.test" = "test"
-            "Tsavorite.test.recordops" = "test.recordops"
-            "Tsavorite.test.session" = "test.session"
-            "Tsavorite.test.session.context" = "test.session.context"
-            "Tsavorite.test.hlog" = "test.hlog"
-            "Tsavorite.test.recovery" = "test.recovery"
+            "Tsavorite.test.recordops" = "test/test.recordops"
+            "Tsavorite.test.session" = "test/test.session"
+            "Tsavorite.test.session.context" = "test/test.session.context"
+            "Tsavorite.test.hlog" = "test/test.hlog"
+            "Tsavorite.test.recovery" = "test/test.recovery"
           }
           if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
             $dir = $tsavoriteDirMap["${{ matrix.test }}"]
@@ -129,11 +129,11 @@ jobs:
           $base = $env:GITHUB_WORKSPACE
           $tsavoriteDirMap = @{
             "Tsavorite.test" = "test"
-            "Tsavorite.test.recordops" = "test.recordops"
-            "Tsavorite.test.session" = "test.session"
-            "Tsavorite.test.session.context" = "test.session.context"
-            "Tsavorite.test.hlog" = "test.hlog"
-            "Tsavorite.test.recovery" = "test.recovery"
+            "Tsavorite.test.recordops" = "test/test.recordops"
+            "Tsavorite.test.session" = "test/test.session"
+            "Tsavorite.test.session.context" = "test/test.session.context"
+            "Tsavorite.test.hlog" = "test/test.hlog"
+            "Tsavorite.test.recovery" = "test/test.recovery"
           }
 
           if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
@@ -171,11 +171,11 @@ jobs:
           $base = $env:GITHUB_WORKSPACE
           $tsavoriteDirMap = @{
             "Tsavorite.test" = "test"
-            "Tsavorite.test.recordops" = "test.recordops"
-            "Tsavorite.test.session" = "test.session"
-            "Tsavorite.test.session.context" = "test.session.context"
-            "Tsavorite.test.hlog" = "test.hlog"
-            "Tsavorite.test.recovery" = "test.recovery"
+            "Tsavorite.test.recordops" = "test/test.recordops"
+            "Tsavorite.test.session" = "test/test.session"
+            "Tsavorite.test.session.context" = "test/test.session.context"
+            "Tsavorite.test.hlog" = "test/test.hlog"
+            "Tsavorite.test.recovery" = "test/test.recovery"
           }
           $paths = @()
           if ($tsavoriteDirMap.ContainsKey("${{ matrix.test }}")) {
