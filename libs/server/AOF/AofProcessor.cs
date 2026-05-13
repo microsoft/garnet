@@ -194,14 +194,14 @@ namespace Garnet.server
         /// </summary>
         unsafe void GetSynchronizedOperationParams(byte* ptr, long entryAddress, out long sequenceNumber, out short participantCount)
         {
-            var headerType = (AofHeaderType)(*(AofHeader*)ptr).padding;
+            var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
             switch (headerType)
             {
                 case AofHeaderType.SingleLogTransactionHeader:
                     sequenceNumber = entryAddress;
                     participantCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
                     break;
-                case AofHeaderType.TransactionHeader:
+                case AofHeaderType.MultiLogTransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
                     sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     participantCount = txnHeader.participantCount;
@@ -734,7 +734,7 @@ namespace Garnet.server
                     var singleLogBitVector = BitVector.CopyFrom(new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
                     return singleLogBitVector.IsSet(replayTaskIdx);
                 // Multi-physical-log: transaction header with embedded sequence number
-                case AofHeaderType.TransactionHeader:
+                case AofHeaderType.MultiLogTransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
                     sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     var bitVector = BitVector.CopyFrom(new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
@@ -768,7 +768,7 @@ namespace Garnet.server
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
                     return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
                 // Transaction headers (both types) don't have a single key for task assignment
-                case AofHeaderType.TransactionHeader:
+                case AofHeaderType.MultiLogTransactionHeader:
                 case AofHeaderType.SingleLogTransactionHeader:
                     return -1;
                 default:
@@ -805,7 +805,7 @@ namespace Garnet.server
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     entrySequenceNumber = shardedHeader.sequenceNumber;
                     return shardedHeader.sequenceNumber > untilSequenceNumber;
-                case AofHeaderType.TransactionHeader:
+                case AofHeaderType.MultiLogTransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
                     entrySequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     return txnHeader.shardedHeader.sequenceNumber > untilSequenceNumber;

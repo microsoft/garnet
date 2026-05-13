@@ -769,7 +769,7 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
-                        padding = (byte)AofHeaderType.SingleLogTransactionHeader,
+                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
                         opType = opType,
                         procedureId = procedureId,
                         storeVersion = txnVersion,
@@ -790,7 +790,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
                             opType = opType,
                             procedureId = procedureId,
                             storeVersion = txnVersion,
@@ -845,7 +845,7 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
-                        padding = (byte)AofHeaderType.SingleLogTransactionHeader,
+                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
                         opType = opType,
                         storeVersion = txnVersion,
                         sessionID = sessionId,
@@ -864,7 +864,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
                             opType = opType,
                             storeVersion = txnVersion,
                             sessionID = sessionId,
@@ -917,7 +917,7 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
-                        padding = (byte)AofHeaderType.SingleLogTransactionHeader,
+                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
                         opType = opType,
                         storeVersion = version,
                         sessionID = -1
@@ -939,7 +939,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
                             opType = opType,
                             storeVersion = version,
                             sessionID = -1
@@ -1046,11 +1046,11 @@ namespace Garnet.server
                 {
                     basicHeader = new AofHeader
                     {
-                        padding = (byte)AofHeaderType.SingleLogTransactionHeader,
+                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
                         opType = opType,
                         storeVersion = 0,
                         sessionID = -1,
-                        unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                        UnsafeTruncateLog = unsafeTruncateLog,
                         databaseId = (byte)dbId
                     },
                     participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
@@ -1067,7 +1067,7 @@ namespace Garnet.server
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.TransactionHeader,
+                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
                             opType = opType,
                             storeVersion = 0,
                             sessionID = -1,

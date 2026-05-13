@@ -11,7 +11,8 @@ namespace Garnet.server
     {
         BasicHeader = 0,
         ShardedHeader = 1,
-        TransactionHeader = 2
+        SingleLogTransactionHeader = 2,
+        MultiLogTransactionHeader = 3,
     }
 
     /// <summary>
@@ -108,7 +109,7 @@ namespace Garnet.server
             {
                 AofHeaderType.BasicHeader => entryPtr + TotalSize,
                 AofHeaderType.ShardedHeader => entryPtr + AofShardedHeader.TotalSize,
-                AofHeaderType.TransactionHeader => entryPtr + AofTransactionHeader.TotalSize,
+                AofHeaderType.MultiLogTransactionHeader => entryPtr + AofTransactionHeader.TotalSize,
                 AofHeaderType.SingleLogTransactionHeader => entryPtr + AofSingleLogTransactionHeader.TotalSize,
                 _ => throw new GarnetException($"Type not supported {headerType}"),
             };

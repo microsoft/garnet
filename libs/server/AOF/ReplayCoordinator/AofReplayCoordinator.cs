@@ -179,7 +179,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var headerType = (AofHeaderType)header.padding;
+                        var headerType = (AofHeaderType)header.HeaderType;
                         short logAccessCount = 0;
                         if (serverOptions.MultiLogEnabled)
                         {
@@ -211,7 +211,7 @@ namespace Garnet.server
             /// </summary>
             void UpdateMaxSequenceNumberFromHeader(int sublogIdx, byte* ptr, long entryAddress)
             {
-                var headerType = (AofHeaderType)(*(AofHeader*)ptr).padding;
+                var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
                 long sequenceNumber;
                 switch (headerType)
                 {
@@ -222,7 +222,7 @@ namespace Garnet.server
                     case AofHeaderType.ShardedHeader:
                         sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
                         break;
-                    case AofHeaderType.TransactionHeader:
+                    case AofHeaderType.MultiLogTransactionHeader:
                         sequenceNumber = (*(AofTransactionHeader*)ptr).shardedHeader.sequenceNumber;
                         break;
                     default:
@@ -324,7 +324,7 @@ namespace Garnet.server
                     // Wait for all participating subtasks to complete replay unless singleLog
                     if (serverOptions.MultiLogEnabled)
                     {
-                        var headerType = (AofHeaderType)(*(AofHeader*)ptr).padding;
+                        var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
                         long seqNum;
                         short partCount;
                         var sessionId = (*(AofHeader*)ptr).sessionID;
@@ -413,7 +413,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var headerType = (AofHeaderType)(*(AofHeader*)ptr).padding;
+                    var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
                     long sequenceNumber;
                     short participantCount;
                     int sessionId = (*(AofHeader*)ptr).sessionID;
