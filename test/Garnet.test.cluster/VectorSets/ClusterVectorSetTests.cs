@@ -464,6 +464,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        [CancelAfter(180_000)]
         public async Task MultipleReplicasWithVectorSetsAsync()
         {
             const int PrimaryIndex = 0;
