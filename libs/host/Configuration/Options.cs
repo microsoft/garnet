@@ -200,6 +200,10 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [MemorySizeValidation]
+        [Option("aof-segment-size", Required = false, HelpText = "Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated.")]
+        public string AofSegmentSize { get; set; }
+
         [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
@@ -236,7 +240,7 @@ namespace Garnet
         [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
         public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
-        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
+        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss; recommended for production use), Scan - scan old pages and move live records to tail (no data loss; NOT RECOMMENDED - builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use; prefer Lookup)")]
         public LogCompactionType CompactionType { get; set; }
 
         [OptionValidation]
@@ -773,12 +777,11 @@ namespace Garnet
                     throw new Exception("Revivification cannot specify RevivifiableFraction without specifying bins.");
             }
 
-            // For backwards compatibility
-            if (CompactionType == LogCompactionType.ShiftForced)
+            // Warn users who explicitly opt into Scan compaction about the memory-spike cost.
+            // Scan builds a temporary parallel KV index proportional to the keyspace; Lookup is the recommended alternative.
+            if (CompactionType == LogCompactionType.Scan)
             {
-                logger?.LogWarning("Compaction type ShiftForced is deprecated. Use Shift instead along with CompactionForceDelete.");
-                CompactionType = LogCompactionType.Shift;
-                CompactionForceDelete = true;
+                logger?.LogWarning("Compaction type Scan builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use. Use Lookup instead unless you have a specific reason for Scan.");
             }
 
             if (SlowLogThreshold > 0)
@@ -845,6 +848,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,

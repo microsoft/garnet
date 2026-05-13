@@ -1330,5 +1330,64 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, invalidOptions.Count);
             Assert.DoesNotThrow(() => options.GetServerOptions());
         }
+
+        [Test]
+        public void AofSegmentSizeFlowsToTsavoriteLogSettings()
+        {
+            // Default AofSegmentSize from defaults.conf should be 1g and applied to TsavoriteLogSettings.
+            var args = new[] { "--aof" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ClassicAssert.AreEqual("1g", options.AofSegmentSize);
+
+            var serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, out var logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 30, logSettings[0].SegmentSize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+
+            // Configured AofSegmentSize should override default and propagate to TsavoriteLogSettings.SegmentSize.
+            args = ["--aof", "--aof-segment-size", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ClassicAssert.AreEqual("64m", options.AofSegmentSize);
+
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 26, logSettings[0].SegmentSize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+
+            // AofPageSize > AofSegmentSize should throw.
+            args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("AOF Page size cannot be more than the AOF segment size."));
+        }
     }
 }
