@@ -1343,10 +1343,19 @@ namespace Garnet.test
 
             var serverOptions = options.GetServerOptions();
             serverOptions.GetAofSettings(0, out var logSettings);
-            ClassicAssert.AreEqual(1, logSettings.Length);
-            ClassicAssert.AreEqual(1L << 30, logSettings[0].SegmentSize);
-            foreach (var s in logSettings)
-                s.LogDevice?.Dispose();
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 30, logSettings[0].SegmentSize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
 
             // Configured AofSegmentSize should override default and propagate to TsavoriteLogSettings.SegmentSize.
             args = ["--aof", "--aof-segment-size", "64m"];
@@ -1357,10 +1366,19 @@ namespace Garnet.test
 
             serverOptions = options.GetServerOptions();
             serverOptions.GetAofSettings(0, out logSettings);
-            ClassicAssert.AreEqual(1, logSettings.Length);
-            ClassicAssert.AreEqual(1L << 26, logSettings[0].SegmentSize);
-            foreach (var s in logSettings)
-                s.LogDevice?.Dispose();
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 26, logSettings[0].SegmentSize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
 
             // AofPageSize > AofSegmentSize should throw.
             args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m"];
