@@ -988,10 +988,12 @@ namespace Garnet.test
         internal static string MethodTestDir => UnitTestWorkingDir();
 
         /// <summary>
-        /// Find root test based on prefix Garnet.test
+        /// Find root test directory (test/) based on prefix Garnet.test.
+        /// After splitting on "Garnet.test", we land in test/standalone/ or test/cluster/,
+        /// so navigate up one level to reach test/.
         /// </summary>
         internal static string RootTestsProjectPath =>
-            TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
+            Path.GetFullPath(Path.Combine(TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0], ".."));
 
         /// <summary>
         /// Build path for unit test working directory.
