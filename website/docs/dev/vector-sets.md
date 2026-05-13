@@ -8,8 +8,6 @@ title: Vector Sets
 
 Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](https://github.com/microsoft/DiskANN).
 
-This data type is very strange when compared to others Garnet supports.
-
 # Design
 
 Vector Sets are a combination of one "index" key, which stores metadata and a pointer to the DiskANN data structure, and many "element" keys, which store vectors/quantized vectors/attributes/etc.  All Vector Set keys are kept in the store as binary (ie. non-object) values, but only the index key is visible - this is accomplished by putting all element keys in different namespaces.
@@ -43,7 +41,6 @@ The index key (represented by the `Index` struct) contains the following data:
      > We have an extension here, `XPREQ8` which is not from Redis.
      > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
      > It forbids the `REDUCE` option and requires 4-byte element ids.
- - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after [recovery](#recovery) or [replication](#replication) to detect if `IndexPtr` is dangling
 
 The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 
@@ -80,6 +77,7 @@ Implemented commands:
  - [ ] VISMEMBER
  - [ ] VLINKS
  - [ ] VRANDMEMBER
+ - [ ] VRANGE
  - [x] VREM
  - [ ] VSETATTR
  - [x] VSIM
@@ -131,33 +129,20 @@ Metadata is handled purely on the Garnet side by reading out the [`Index`](#inde
 > We _may_ return more details of our own implementation.  What those are need to be documented, and why,
 > when we implement `VINFO`.
 
-## Deletion (via `DEL` and `UNLINK`)
+## Deletion (via `DEL`, `UNLINK`, `FLUSHDB`, `FLUSHALL`)
 
-`DEL` (and its equivalent `UNLINK`) is only non-Vector Set command to be routinely expected on a Vector Set key.  It is complicated by not knowing we're operating on a Vector Set until we get rather far into deletion.
+Deletion of Vector Sets is detected in the `GarnetTriggers.OnDispose` callback, which calls `VectorManager.RequestDeletion` to begin the process of deletion.
 
-We cope with this by _cancelling_ the Tsavorite delete operation once we have a `RecordInfo` with the `VectorSet`-bit set and a value which is not all zeros, detecting that cancellation in `MainStoreOps`, and shunting the delete attempt to `VectorManager`.
+This takes place in four steps:
+  1. The Vector Set context is marked for deletion
+     * The background cleanup task does this, as we do not have a usable storage session in the `GarnetTriggers` callback
+  2. `GarnetTriggers.OnDispose` returns, deleting the index key
+  3. The background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
+  4. The Vector Set context is marked available
 
-`VectorManager` performs the delete in five steps:
- - Acquire exclusive locks covering the Vector Set ([more locking details](#locking))
- - Add the key to an `InProgressDeletes` key (namespace 0, key=0x01)
- - If the index was initialized in the current process ([see recovery for more details](#recovery)), call DiskANN's `drop_index` function
- - Perform a write to zero out the index key in Tsavorite
- - Reattempt the Tsavorite delete
- - Cleanup ancillary metadata and schedule element data for cleanup ([more details below](#cleanup))
- - Remove the key from the `InProgressDeletes` key
+During recovery partially deleted Vector Sets are found using the `GarnetTriggers.OnRecoverySnapshotRead` callback and checking the `LogRecord`'s context to see if it's marked for cleanup.
 
-The `InProgressDeletes` key is necessary to recover from interrupted deletes.  At process start, `VectorManager` consults the `InProgressDeletes` key and completes any deletes that got as far as zero-ing out the index key.
-
-> [!IMPORTANT] Interrupted deletes are expected only during process exits, but if they occur without the process exiting they will leave the Vector Set in a partially deleted state.  We detect that and return a new `GarnetStatus.BADSTATE` which returns an explanatory error.
->
-> We _could_ resume the delete on `GarnetStatus.BADSTATE`, but like `GarnetStatus.WRONGTYPE` that needs to be done for _all_ commands not just Vector Set commands.  This work is likewise left for the future.
-
-## FlushDB
-
-`FLUSHDB` (and it's relative `FLUSHALL`) require special handling.
-
-> [!IMPORTANT]
-> This is not currently implemented.
+`FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 
 # Locking
 
@@ -284,7 +269,7 @@ During startup we read any old `ContextMetadata` out of the Main Store, cache it
 
 ## Vector Sets
 
-While reading out [`Index`](#indexes) before performing a DiskANN function call, we check the stored `ProcessInstanceId` against the (randomly generated) one in our `VectorManager` instance.  If they do not match, we know that the DiskANN `IndexPtr` is dangling and we need to recreate the index.
+While reading out [`Index`](#indexes) before performing a DiskANN function call, we check the stored `IndexPtr`.  If it is null, we know that the DiskANN side needs to be recreated.
 
 To recreate, we acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
 
@@ -384,7 +369,7 @@ The callback returns 1 if the key-value pair was found or created, and 0 if some
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
