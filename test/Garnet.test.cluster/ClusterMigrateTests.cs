@@ -2334,8 +2334,9 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Regression test for the lookup-based DeleteSlotKeys conversion (Task 4 of the
         /// "tempKv elimination" change): verifies that CLUSTER DELKEYSINSLOT removes both
-        /// raw-string keys and collection-object keys from the unified store via a single
-        /// IterateLookup pass (no parallel tempKv).
+        /// raw-string keys and collection-object keys from the targeted slot via a single
+        /// IterateLookup pass (no parallel tempKv), AND that keys in a different slot are
+        /// not collateral-deleted (the slot-set filter inside the scan callback works).
         /// </summary>
         [Test, Order(28)]
         [Category("CLUSTER")]
@@ -2345,39 +2346,63 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
-            // Pick a slot owned by node 0.
+            // Pick two distinct slots owned by node 0:
+            //   delSlot  - target of CLUSTER DELKEYSINSLOT (keys here should be deleted)
+            //   keepSlot - control (keys here must survive)
             var ownedSlots = context.clusterTestUtils.GetOwnedSlotsFromNode(0, context.logger);
-            ClassicAssert.IsTrue(ownedSlots.Count > 0);
-            var slot = ownedSlots[0];
+            ClassicAssert.IsTrue(ownedSlots.Count >= 2, "Need at least two slots on node 0 for this test");
+            var delSlot = ownedSlots[0];
+            var keepSlot = ownedSlots[1];
+            ClassicAssert.AreNotEqual(delSlot, keepSlot, "delSlot and keepSlot must differ");
 
-            // Insert one raw-string key and one collection-object key, both pinned to this slot.
-            var stringKey = new byte[16];
-            var objectKey = new byte[16];
-            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref stringKey, slot);
-            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref objectKey, slot);
+            // Populate one raw-string key and one collection-object key in EACH slot.
+            var delStringKey = new byte[16];
+            var delObjectKey = new byte[16];
+            var keepStringKey = new byte[16];
+            var keepObjectKey = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref delStringKey, delSlot);
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref delObjectKey, delSlot);
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref keepStringKey, keepSlot);
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref keepObjectKey, keepSlot);
 
             var server = context.clusterTestUtils.GetServer(0);
-            _ = server.Execute("SET", stringKey, "raw-value");
-            _ = server.Execute("SADD", objectKey, "member1", "member2", "member3");
+            _ = server.Execute("SET", delStringKey, "raw-del");
+            _ = server.Execute("SADD", delObjectKey, "del-m1", "del-m2", "del-m3");
+            _ = server.Execute("SET", keepStringKey, "raw-keep");
+            _ = server.Execute("SADD", keepObjectKey, "keep-m1", "keep-m2", "keep-m3");
 
-            // Both keys should be present and counted.
-            ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, slot, context.logger),
-                "Both string and object keys should be visible in the slot before deletion");
+            // Both slots should each contain their two keys before deletion.
+            ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, delSlot, context.logger),
+                "delSlot should contain both string and object keys before DELKEYSINSLOT");
+            ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, keepSlot, context.logger),
+                "keepSlot should contain both string and object keys before DELKEYSINSLOT");
 
-            // Run CLUSTER DELKEYSINSLOT — exercises StorageSession.DeleteSlotKeys via the
-            // unified IterateLookup path. Verifies that the unified scan covers both record types.
-            var resp = (string)server.Execute("CLUSTER", "DELKEYSINSLOT", slot.ToString());
+            // Run CLUSTER DELKEYSINSLOT on delSlot — exercises StorageSession.DeleteSlotKeys via
+            // the unified IterateLookup path. Verifies that the unified scan covers both record
+            // types AND that the slot-set filter inside DeleteSlotKeysScan.Reader correctly
+            // skips records belonging to other slots.
+            var resp = (string)server.Execute("CLUSTER", "DELKEYSINSLOT", delSlot.ToString());
             ClassicAssert.AreEqual("OK", resp);
 
-            // Both keys should be gone from the slot.
-            ClassicAssert.AreEqual(0, context.clusterTestUtils.CountKeysInSlot(0, slot, context.logger),
-                "Both string and object keys should be deleted by DELKEYSINSLOT");
+            // delSlot should be empty; keepSlot must be untouched.
+            ClassicAssert.AreEqual(0, context.clusterTestUtils.CountKeysInSlot(0, delSlot, context.logger),
+                "Both string and object keys in delSlot should be deleted by DELKEYSINSLOT");
+            ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, keepSlot, context.logger),
+                "Keys in keepSlot must NOT be collateral-deleted by DELKEYSINSLOT on delSlot");
 
-            // Direct GET / EXISTS should also confirm removal.
-            var stringRes = server.Execute("GET", stringKey);
-            ClassicAssert.IsTrue(stringRes.IsNull, "string key should no longer exist after DELKEYSINSLOT");
-            var objectRes = (long)server.Execute("EXISTS", objectKey);
-            ClassicAssert.AreEqual(0, objectRes, "object key should no longer exist after DELKEYSINSLOT");
+            // Direct GET / EXISTS confirm the delSlot keys are gone.
+            var delStringRes = server.Execute("GET", delStringKey);
+            ClassicAssert.IsTrue(delStringRes.IsNull, "delSlot string key should no longer exist after DELKEYSINSLOT");
+            var delObjectRes = (long)server.Execute("EXISTS", delObjectKey);
+            ClassicAssert.AreEqual(0, delObjectRes, "delSlot object key should no longer exist after DELKEYSINSLOT");
+
+            // Direct GET / EXISTS confirm the keepSlot keys still exist with their original payloads.
+            var keepStringRes = (string)server.Execute("GET", keepStringKey);
+            ClassicAssert.AreEqual("raw-keep", keepStringRes, "keepSlot string key value should be unchanged");
+            var keepObjectExists = (long)server.Execute("EXISTS", keepObjectKey);
+            ClassicAssert.AreEqual(1, keepObjectExists, "keepSlot object key should still exist after DELKEYSINSLOT");
+            var keepObjectCard = (long)server.Execute("SCARD", keepObjectKey);
+            ClassicAssert.AreEqual(3, keepObjectCard, "keepSlot object key should still contain all 3 members");
         }
     }
 }
