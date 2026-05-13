@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -24,6 +25,9 @@ namespace Garnet.server
 
         // Iterator for KEYS command
         private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbKeysFuncs;
+
+        // Iterator for cluster slot deletion (DeleteSlotKeys)
+        private ArrayKeyIterationFunctions.DeleteSlotKeysScan deleteSlotKeysFuncs;
 
         long lastScanCursor;
         List<byte[]> Keys;
@@ -119,10 +123,22 @@ namespace Garnet.server
             => stringBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
-        /// Iterate the contents of the store (pull based)
+        /// Delete every live key whose hash slot is in <paramref name="slots"/>.
+        /// Uses lookup-based push iteration over the unified context (no <c>tempKv</c>) with
+        /// snapshot semantics: every key live at scan-start whose slot matches is deleted.
+        /// Preserves the previous pull-iterator semantics — every matched live key is deleted,
+        /// including expired-but-not-yet-tombstoned records (no expiry filter).
         /// </summary>
-        internal ITsavoriteScanIterator IterateStore()
-            => stringBasicContext.Session.Iterate();
+        /// <param name="slots">Hash slot set to delete.</param>
+        internal void DeleteSlotKeys(HashSet<int> slots)
+        {
+            deleteSlotKeysFuncs ??= new();
+            deleteSlotKeysFuncs.Initialize(this, slots);
+
+            // Snapshot semantics: ensures records RCU'd above TailAddress during the scan are
+            // not silently suppressed (which would leave keys behind).
+            _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref deleteSlotKeysFuncs);
+        }
 
         /// <summary>
         ///  Get a list of the keys in the store and object store when using pattern
@@ -137,7 +153,11 @@ namespace Garnet.server
 
             unifiedStoreDbKeysFuncs ??= IsConsistentReadSession ? new ConsistentUnifiedStoreGetDBKeys(readSessionState) : new UnifiedStoreGetDBKeys();
             unifiedStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
-            unifiedBasicContext.Session.Iterate(ref unifiedStoreDbKeysFuncs);
+
+            // Snapshot semantics: emit each unique live key exactly once based on its latest in-range
+            // version at scan-start, even if a concurrent RCU moves the key's tail above the captured
+            // TailAddress during the scan. Equivalent to the legacy tempKv-backed Iterate(...).
+            _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
 
             return Keys;
         }
@@ -314,6 +334,75 @@ namespace Garnet.server
                     cursorRecordResult = CursorRecordResult.Skip;
                     if (!CheckExpiry(in logRecord))
                         ++info.count;
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress) => true;
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
+            /// <summary>
+            /// Lookup-based push iterator callback that deletes every live key whose hash slot is
+            /// in the supplied set. Cached on <see cref="StorageSession"/> via the
+            /// <c>deleteSlotKeysFuncs</c> field; re-initialised per call.
+            /// IMPORTANT: matches the previous pull-iterator semantics — every matched live key is
+            /// deleted, including expired-but-not-yet-tombstoned records (no expiry filter).
+            /// </summary>
+            internal sealed class DeleteSlotKeysScan : IScanIteratorFunctions
+            {
+                private StorageSession storageSession;
+                private HashSet<int> slots;
+
+                internal void Initialize(StorageSession storageSession, HashSet<int> slots)
+                {
+                    this.storageSession = storageSession;
+                    this.slots = slots;
+                }
+
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
+                {
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (slots.Contains(HashSlotUtils.HashSlot(logRecord.Key)))
+                    {
+                        _ = storageSession.DELETE(PinnedSpanByte.FromPinnedSpan(logRecord.Key), ref storageSession.unifiedBasicContext);
+                        cursorRecordResult = CursorRecordResult.Accept;
+                    }
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress) => true;
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
+            /// <summary>
+            /// Lookup-based push iterator callback that returns true from <see cref="Found"/> if
+            /// any live record's key hashes to a slot in the supplied set. Stops scanning on the
+            /// first match by returning <c>false</c> from <see cref="Reader"/>. Cached on
+            /// <see cref="StoreWrapper"/> via the <c>hasKeysInSlotsFuncs</c> field; re-initialised per call.
+            /// </summary>
+            internal sealed class HasKeysInSlotsScan : IScanIteratorFunctions
+            {
+                private List<int> slots;
+                internal bool Found;
+
+                internal void Initialize(List<int> slots)
+                {
+                    this.slots = slots;
+                    Found = false;
+                }
+
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
+                {
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (slots.Contains(HashSlotUtils.HashSlot(logRecord.Key)))
+                    {
+                        Found = true;
+                        return false; // early exit
+                    }
                     return true;
                 }
 

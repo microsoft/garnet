@@ -805,40 +805,30 @@ namespace Garnet.server
 
         private void StartSizeTrackers() => databaseManager.StartSizeTrackers(ctsCommit.Token);
 
+        /// <summary>
+        /// Cached callback for <see cref="HasKeysInSlots"/>. Allocated once per StoreWrapper, reused
+        /// across calls (cluster control-plane operations are serialised by the cluster manager).
+        /// </summary>
+        private StorageSession.ArrayKeyIterationFunctions.HasKeysInSlotsScan hasKeysInSlotsFuncs;
+
         public bool HasKeysInSlots(List<int> slots)
         {
-            if (slots.Count > 0)
-            {
-                bool hasKeyInSlots = false;
-                {
-                    using var iter = store.Iterate<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());  // TODO replace with Push iterator
-                    while (!hasKeyInSlots && iter.GetNext())
-                    {
-                        var key = iter.Key;
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key);
-                        if (slots.Contains(hashSlotForKey))
-                            hasKeyInSlots = true;
-                    }
-                }
+            if (slots.Count == 0) return false;
 
-                if (!hasKeyInSlots && !serverOptions.DisableObjects)
-                {
-                    var functionsState = databaseManager.CreateFunctionsState();
-                    var objStoreFunctions = new ObjectSessionFunctions(functionsState);
-                    using var objectStoreSession = store?.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
-                    using var iter = objectStoreSession.Iterate();
-                    while (!hasKeyInSlots && iter.GetNext())
-                    {
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key);
-                        if (slots.Contains(hashSlotForKey))
-                            hasKeyInSlots = true;
-                    }
-                }
+            // Single lookup-based push scan over the unified context. Since the migration to a
+            // single store, the unified context surfaces every record (string + object) so one
+            // scan suffices. No tempKv is allocated. IterateLookupSnapshot pins both untilAddress
+            // and maxAddress to a single captured TailAddress so the scan is a consistent
+            // point-in-time view (records RCU'd above the snapshot don't suppress in-range ones).
+            var functionsState = databaseManager.CreateFunctionsState();
+            var unifiedFunctions = new UnifiedSessionFunctions(functionsState);
+            using var unifiedSession = store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedFunctions);
 
-                return hasKeyInSlots;
-            }
+            hasKeysInSlotsFuncs ??= new StorageSession.ArrayKeyIterationFunctions.HasKeysInSlotsScan();
+            hasKeysInSlotsFuncs.Initialize(slots);
 
-            return false;
+            _ = unifiedSession.IterateLookupSnapshot(ref hasKeysInSlotsFuncs);
+            return hasKeysInSlotsFuncs.Found;
         }
 
         /// <summary>
