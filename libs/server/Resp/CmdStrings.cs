@@ -311,8 +311,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS => "ERR checkpoint already in progress"u8;
-
-        public static ReadOnlySpan<byte> RESP_ERR_STREAMS_DISABLED => "ERR STREAMS is disabled, enable it with --streams option."u8;
         public static ReadOnlySpan<byte> RESP_ERR_XADD_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xadd' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_XADD_INVALID_STREAM_ID => "ERR Invalid stream ID specified as stream command argument"u8;
         public static ReadOnlySpan<byte> RESP_ERR_XADD_ID_NOT_GREATER => "ERR The ID specified in XADD is equal or smaller than the target stream top item"u8;

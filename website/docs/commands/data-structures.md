@@ -982,6 +982,12 @@ If **destination** already exists, it is overwritten.
 
 ## Stream
 
+:::caution Experimental
+
+Stream support in Garnet is **experimental**. APIs, on-disk layout, and recovery semantics may change in future releases. Consumer group state (groups, consumers, pending entries) is currently in-memory only and is **not** preserved across server restarts. The `BLOCK` option on `XREAD`/`XREADGROUP` is parsed but not implemented and returns immediately.
+
+:::
+
 ### XADD
 
 #### Syntax
@@ -993,7 +999,7 @@ Appends given stream entry to the stream at specified key. If the key does not e
 Creation of the stream can be disabled with the `NOMKSTREAM` option. 
 
 Every entry in the stream is accompanied by a stream entry ID and consists of field-value pairs that are stored/read in the same order as provided by the user. 
-While the [XADD](#XADD) can auto-generate a unique ID using the `*` character, it is also possible to specify a user-defined ID specified by two 64-bit numbers separated by a `-` character. 
+While the [XADD](#xadd) can auto-generate a unique ID using the `*` character, it is also possible to specify a user-defined ID specified by two 64-bit numbers separated by a `-` character. 
 The IDs are guaranteed to be incremental. 
 
 **Capped Streams** are not currently supported. 
@@ -1023,12 +1029,14 @@ Returns stream entries matching a given range of IDs.
 The IDs provided can also be incomplete (i.e., with only the first part of the ID).
 Using the `COUNT` option reduces the number of entries returned. 
 
+---
+
 ### XREVRANGE
 
 #### Syntax
 
 ```bash
-    XRANGE key end start [COUNT count]
+    XREVRANGE key end start [COUNT count]
 ```
 Returns stream entries in the order from end to start matching a given range of IDs.
 `start` and `end` can be special IDs (i.e, `-` and `+`) to specify the minimum possible ID and the maximum possible ID inside a stream respectively. 
@@ -1063,6 +1071,160 @@ Trims the stream by evicting older entries using two strategies:
 
 `LIMIT` clause is not currently supported. 
 `MINID` defaults to exact trimming, meaning all entries having IDs lower than threshold will be deleted. 
+
+---
+
+### XREAD
+
+#### Syntax
+
+```bash
+    XREAD [COUNT count] [BLOCK milliseconds] STREAMS key [key ...] id [id ...]
+```
+
+Reads new entries from one or more streams, starting after the given IDs. The special ID `$` means "only entries newer than those currently in the stream at the time of the call".
+
+The optional `COUNT` argument limits the number of entries returned per stream. The `BLOCK` option is parsed for compatibility but is **not currently implemented** — `XREAD` returns immediately even when no entries are available.
+
+#### Resp Reply
+
+Array reply: one entry per stream that produced results. Each entry is a two-element array containing the stream key and an array of `[id, [field, value, ...]]` entries. Null reply if no streams have any new entries.
+
+---
+
+### XGROUP
+
+#### Syntax
+
+```bash
+    XGROUP CREATE key group <id | $> [MKSTREAM]
+    XGROUP SETID key group <id | $> [ENTRIESREAD entries-read]
+    XGROUP DESTROY key group
+    XGROUP CREATECONSUMER key group consumer
+    XGROUP DELCONSUMER key group consumer
+```
+
+Manages consumer groups associated with a stream.
+
+- **CREATE**: Creates a new consumer group `group` for the stream `key`, with delivery cursor starting at the given `id` (or the stream's current last ID if `$`). The `MKSTREAM` option creates an empty stream if `key` does not exist.
+- **SETID**: Repositions the consumer group's last delivered ID. `ENTRIESREAD` optionally sets the read counter used for lag estimation.
+- **DESTROY**: Removes the group and all its pending entries and consumers. Returns the number of groups destroyed (1 or 0).
+- **CREATECONSUMER**: Explicitly creates a consumer within a group.
+- **DELCONSUMER**: Removes a consumer from a group, returning the number of pending entries the consumer owned (which are removed from the group's PEL).
+
+Consumer group state is currently held in-memory only and is not restored after a server restart.
+
+---
+
+### XREADGROUP
+
+#### Syntax
+
+```bash
+    XREADGROUP GROUP group consumer [COUNT count] [NOACK] STREAMS key [key ...] id [id ...]
+```
+
+Reads entries from one or more streams on behalf of a consumer belonging to a consumer group.
+
+- When `id` is the special value `>`, returns new entries after the group's last-delivered ID and advances the cursor. Each delivered entry is added to the consumer's Pending Entries List (PEL) unless `NOACK` is specified.
+- When `id` is `0` or a specific ID, returns entries from the consumer's own PEL that have an ID greater than or equal to the given ID (replay mode). The group cursor is not advanced.
+
+The `COUNT` option limits the number of entries returned per stream. The `NOACK` option skips adding entries to the PEL (use with caution — no at-least-once tracking). The `BLOCK` option is **not implemented**.
+
+#### Resp Reply
+
+Array reply: the same shape as [XREAD](#xread). Null reply if no entries are available.
+
+---
+
+### XACK
+
+#### Syntax
+
+```bash
+    XACK key group id [id ...]
+```
+
+Removes the specified IDs from the consumer group's Pending Entries List, marking them as successfully processed. Returns the number of IDs that were actually acknowledged (IDs not present in the PEL are ignored).
+
+---
+
+### XPENDING
+
+#### Syntax
+
+```bash
+    XPENDING key group
+    XPENDING key group [IDLE min-idle-time] start end count [consumer]
+```
+
+Inspects the Pending Entries List (PEL) of a consumer group.
+
+- **Summary form** (no `start`/`end`): Returns a four-element array with the total pending count, the minimum and maximum pending IDs, and an array of per-consumer pending counts.
+- **Detail form** (with `start`/`end`/`count`): Returns up to `count` individual pending entries with their ID, owning consumer, milliseconds since last delivery, and delivery count. The optional `IDLE` filter excludes entries that have been idle for less than `min-idle-time` ms. The optional `consumer` argument restricts results to a specific consumer.
+
+---
+
+### XCLAIM
+
+#### Syntax
+
+```bash
+    XCLAIM key group consumer min-idle-time id [id ...]
+        [IDLE ms] [TIME unix-time-ms] [RETRYCOUNT count] [FORCE] [JUSTID]
+```
+
+Transfers ownership of pending entries to the given `consumer`. An entry is only claimed if it has been idle for at least `min-idle-time` milliseconds (unless `FORCE` is specified).
+
+Options:
+
+- **IDLE**: Override the idle time stored in the PEL entry (in ms).
+- **TIME**: Set the absolute last-delivery time (Unix timestamp in ms).
+- **RETRYCOUNT**: Set the delivery counter to a specific value.
+- **FORCE**: Claim the entry even if it is not currently in the PEL; creates a new PEL entry.
+- **JUSTID**: Return only the claimed IDs, omitting the field-value payloads.
+
+#### Resp Reply
+
+Array reply: the claimed entries (or just IDs if `JUSTID`).
+
+---
+
+### XAUTOCLAIM
+
+#### Syntax
+
+```bash
+    XAUTOCLAIM key group consumer min-idle-time start [COUNT count] [JUSTID]
+```
+
+Scans the consumer group's PEL starting from `start`, automatically claiming entries that have been idle for at least `min-idle-time` milliseconds. Useful for reclaiming work from crashed or unresponsive consumers without inspecting `XPENDING` first.
+
+#### Resp Reply
+
+Array reply containing three elements:
+
+1. The next cursor ID to resume scanning from (`0-0` when the scan completes).
+2. The claimed entries (or just IDs if `JUSTID`).
+3. A list of IDs that were in the PEL but no longer exist in the stream (these are removed from the PEL).
+
+---
+
+### XINFO
+
+#### Syntax
+
+```bash
+    XINFO STREAM key
+    XINFO GROUPS key
+    XINFO CONSUMERS key group
+```
+
+Returns introspection metadata about a stream or its consumer groups.
+
+- **STREAM**: Stream-level info — length, last-generated ID, max-deleted-entry-ID, number of groups, first and last entries, etc.
+- **GROUPS**: One entry per consumer group with the group name, consumer count, pending count, last delivered ID, etc.
+- **CONSUMERS**: One entry per consumer within `group` with the consumer name, pending count, and idle time.
 
 ---
 

@@ -52,6 +52,7 @@
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
     <Project Path="playground/SampleModule/SampleModule.csproj" />
+    <Project Path="playground/StreamBench/StreamBench.csproj" />
     <Project Path="playground/TstRunner/TstRunner.csproj" />
   </Folder>
   <Folder Name="/samples/">

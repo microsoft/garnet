@@ -1,4 +1,16 @@
+---
+id: streams-design
+sidebar_label: Streams
+title: Streams
+---
+
 # Garnet Streams — Design Document
+
+:::caution Experimental
+
+Stream support in Garnet is **experimental**. APIs, on-disk layout, and recovery semantics are subject to change. Consumer group state is currently in-memory only and is not preserved across restarts.
+
+:::
 
 ## Overview
 

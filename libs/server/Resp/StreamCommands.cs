@@ -50,14 +50,6 @@ namespace Garnet.server
             var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
                 cachedStream.AddEntry(idGiven, numPairs, streamDataSpan, ref _output, respProtocolVersion);
@@ -89,14 +81,6 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             ulong streamLength;
-
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             // check if the stream exists in cache 
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
@@ -148,14 +132,6 @@ namespace Garnet.server
 
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             bool success = false;
             // check if the stream exists in cache
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
@@ -199,14 +175,6 @@ namespace Garnet.server
             // parse the stream key
             var key = parseState.GetArgSliceByRef(0);
             int deletedCount = 0;
-
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             // for every id, parse and delete the stream entry
             for (int i = 1; i < parseState.Count; i++)
@@ -275,14 +243,6 @@ namespace Garnet.server
                     break;
             }
 
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             bool result;
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
@@ -316,14 +276,6 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
-            var disabledStreams = streamManager == null;
-            if (disabledStreams)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             bool success = false;
             // check if the stream exists in cache
@@ -360,13 +312,6 @@ namespace Garnet.server
             if (parseState.Count < 2)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             var subCommand = parseState.GetArgSliceByRef(0).ToString().ToUpperInvariant();
 
             switch (subCommand)
@@ -392,9 +337,9 @@ namespace Garnet.server
             if (parseState.Count < 4)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            var key = parseState.GetArgSliceByRef(1);
-            var groupName = parseState.GetArgSliceByRef(2).ToString();
-            var idStr = parseState.GetArgSliceByRef(3).ToString();
+            PinnedSpanByte key = parseState.GetArgSliceByRef(1);
+            string groupName = parseState.GetArgSliceByRef(2).ToString();
+            string idStr = parseState.GetArgSliceByRef(3).ToString();
 
             bool mkStream = false;
             long entriesRead = -1;
@@ -440,8 +385,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
             }
 
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            bool created = streamManager.StreamGroupCreate(key, groupName, startId, entriesRead, mkStream, ref _output, respProtocolVersion);
+            SpanByteAndMemory output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            bool created = streamManager.StreamGroupCreate(key, groupName, startId, entriesRead, mkStream, ref output, respProtocolVersion);
 
             if (!created)
             {
@@ -571,13 +516,6 @@ namespace Garnet.server
             if (parseState.Count < 6)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             int argIdx = 0;
 
             // Parse "GROUP group consumer"
@@ -676,13 +614,6 @@ namespace Garnet.server
             if (parseState.Count < 3)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             var key = parseState.GetArgSliceByRef(0);
             var groupName = parseState.GetArgSliceByRef(1).ToString();
 
@@ -715,13 +646,6 @@ namespace Garnet.server
         {
             if (parseState.Count < 2)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             var key = parseState.GetArgSliceByRef(0);
             var groupName = parseState.GetArgSliceByRef(1).ToString();
@@ -786,14 +710,7 @@ namespace Garnet.server
             if (parseState.Count < 5)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            var key = parseState.GetArgSliceByRef(0);
+            ar key = parseState.GetArgSliceByRef(0);
             var groupName = parseState.GetArgSliceByRef(1).ToString();
             var consumerName = parseState.GetArgSliceByRef(2).ToString();
 
@@ -885,13 +802,6 @@ namespace Garnet.server
             if (parseState.Count < 5)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             var key = parseState.GetArgSliceByRef(0);
             var groupName = parseState.GetArgSliceByRef(1).ToString();
             var consumerName = parseState.GetArgSliceByRef(2).ToString();
@@ -950,13 +860,6 @@ namespace Garnet.server
             if (parseState.Count < 2)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             var subCommand = parseState.GetArgSliceByRef(0).ToString().ToUpperInvariant();
             var key = parseState.GetArgSliceByRef(1);
 
@@ -1006,13 +909,6 @@ namespace Garnet.server
         {
             if (parseState.Count < 3)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-
-            if (streamManager == null)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             int argIdx = 0;
             int count = -1;

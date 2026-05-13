@@ -349,6 +349,7 @@ internal static class Program
 }
 
 internal sealed record WorkloadResult(string Workload, long TotalOps, double OpsPerSec, (long p50, long p90, long p99, long p999, long max) Pct);
+
 internal readonly record struct DriveResult(long Ops, long[] LatenciesMicros);
 
 internal sealed class ConnectionPool : IAsyncDisposable
@@ -358,13 +359,14 @@ internal sealed class ConnectionPool : IAsyncDisposable
     {
         // One multiplexer per concurrent worker. SE.Redis multiplexes many in-flight ops
         // over a single connection, but for cleaner per-thread accounting we give each
-        // worker its own. Caps at 8 multiplexers (more than that wastes sockets).
+        // worker its own.
         int multis = Math.Min(8, Math.Max(1, n));
         Pool = new ConnectionMultiplexer[multis];
         for (int i = 0; i < multis; i++)
             Pool[i] = ConnectionMultiplexer.Connect(config);
     }
     public Task ReadyAsync() => Task.WhenAll(Pool.Select(p => p.GetDatabase().PingAsync()));
+
     public async ValueTask DisposeAsync()
     {
         foreach (var c in Pool) await c.DisposeAsync();
@@ -399,6 +401,7 @@ internal sealed class Options
                 return null;
             }
         }
+
         return new Options
         {
             Endpoint = d.GetValueOrDefault("endpoint", o.Endpoint),
