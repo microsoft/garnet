@@ -112,9 +112,9 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
 
-  # Job to test Garnet code
-  test-garnet:
-    name: Garnet
+  # Job to test Garnet standalone code
+  test-garnet-standalone:
+    name: Garnet Standalone
     needs: [changes, build-garnet]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -123,7 +123,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -138,19 +138,44 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - name: Install dependencies
         run: dotnet restore
-
-      - name: Resolve test directory
-        shell: pwsh
-        run: |
-          if ("${{ matrix.test }}".StartsWith("Garnet.test.cluster")) {
-            $subdir = "cluster"
-          } else {
-            $subdir = "standalone"
-          }
-          echo "TEST_DIR=test/$subdir/${{ matrix.test }}" >> $env:GITHUB_ENV
-  
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test ${{ env.TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        timeout-minutes: 45 
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+        if: ${{ always() }}
+
+  # Job to test Garnet cluster code
+  test-garnet-cluster:
+    name: Garnet Cluster
+    needs: [changes, build-garnet]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        framework: [ 'net8.0' , 'net10.0']
+        configuration: [ 'Debug', 'Release' ]
+        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+    if: needs.changes.outputs.garnet == 'true'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Run tests ${{ matrix.test }}
+        run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -283,7 +308,7 @@ jobs:
   pipeline-success:
     name: Garnet CI (Complete)
     runs-on: ubuntu-latest
-    needs: [changes, format-garnet, format-tsavorite, build-garnet, test-garnet, build-tsavorite, test-tsavorite, build-website ]
+    needs: [changes, format-garnet, format-tsavorite, build-garnet, test-garnet-standalone, test-garnet-cluster, build-tsavorite, test-tsavorite, build-website ]
     steps:
     - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}
