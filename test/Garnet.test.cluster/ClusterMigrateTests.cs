@@ -2330,5 +2330,54 @@ namespace Garnet.test.cluster
 
             context.logger?.LogDebug("6. ClusterMigrateSetSlotRangeResilience completed");
         }
+
+        /// <summary>
+        /// Regression test for the lookup-based DeleteSlotKeys conversion (Task 4 of the
+        /// "tempKv elimination" change): verifies that CLUSTER DELKEYSINSLOT removes both
+        /// raw-string keys and collection-object keys from the unified store via a single
+        /// IterateLookup pass (no parallel tempKv).
+        /// </summary>
+        [Test, Order(22)]
+        [Category("CLUSTER")]
+        public void ClusterDelKeysInSlotRemovesStringAndObjectKeys()
+        {
+            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            // Pick a slot owned by node 0.
+            var ownedSlots = context.clusterTestUtils.GetOwnedSlotsFromNode(0, context.logger);
+            ClassicAssert.IsTrue(ownedSlots.Count > 0);
+            var slot = ownedSlots[0];
+
+            // Insert one raw-string key and one collection-object key, both pinned to this slot.
+            var stringKey = new byte[16];
+            var objectKey = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref stringKey, slot);
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref objectKey, slot);
+
+            var server = context.clusterTestUtils.GetServer(0);
+            _ = server.Execute("SET", stringKey, "raw-value");
+            _ = server.Execute("SADD", objectKey, "member1", "member2", "member3");
+
+            // Both keys should be present and counted.
+            ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, slot, context.logger),
+                "Both string and object keys should be visible in the slot before deletion");
+
+            // Run CLUSTER DELKEYSINSLOT — exercises StorageSession.DeleteSlotKeys via the
+            // unified IterateLookup path. Verifies that the unified scan covers both record types.
+            var resp = (string)server.Execute("CLUSTER", "DELKEYSINSLOT", slot.ToString());
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Both keys should be gone from the slot.
+            ClassicAssert.AreEqual(0, context.clusterTestUtils.CountKeysInSlot(0, slot, context.logger),
+                "Both string and object keys should be deleted by DELKEYSINSLOT");
+
+            // Direct GET / EXISTS should also confirm removal.
+            var stringRes = server.Execute("GET", stringKey);
+            ClassicAssert.IsTrue(stringRes.IsNull, "string key should no longer exist after DELKEYSINSLOT");
+            var objectRes = (long)server.Execute("EXISTS", objectKey);
+            ClassicAssert.AreEqual(0, objectRes, "object key should no longer exist after DELKEYSINSLOT");
+        }
     }
 }

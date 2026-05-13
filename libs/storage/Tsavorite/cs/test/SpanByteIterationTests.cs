@@ -319,5 +319,109 @@ namespace Tsavorite.test
             }
             Task.WaitAll([.. tasks]);
         }
+
+        /// <summary>
+        /// Basic correctness test for <c>IterateLookupSnapshot</c>: after a series of RCU updates
+        /// to multiple keys (each older record gets sealed when its replacement is upserted), the
+        /// snapshot variant emits each unique live key exactly once and returns the latest value
+        /// in the snapshot.
+        /// <para/>
+        /// Note: the rule-S2 protection (snapshot vs. <c>maxAddress = long.MaxValue</c> default)
+        /// only manifests during an in-flight RCU race window where the older record has not yet
+        /// been sealed. That race window is too narrow to reproduce deterministically without
+        /// test-only instrumentation hooks; the parameter pattern this API uses internally
+        /// (<c>untilAddress = maxAddress = capturedTail</c>) is exercised by
+        /// <c>MigrateOperation.Scan</c> in the cluster code path.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void SpanByteIterateLookupSnapshotBasicCorrectness()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "snapshot_basic.log"));
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                LogMemorySize = 1L << 25,
+                PageSize = 1L << 19,
+                SegmentSize = 1L << 22
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
+            Span<long> keySpan = stackalloc long[1];
+            Span<int> valueSpan = stackalloc int[1];
+            var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
+            var value = MemoryMarshal.Cast<int, byte>(valueSpan);
+
+            const int totalRecords = 200;
+
+            // Phase 1: insert keys [0, totalRecords) with value = key * 1.
+            for (int i = 0; i < totalRecords; i++)
+            {
+                keySpan[0] = i;
+                valueSpan[0] = i;
+                _ = bContext.Upsert(key, value);
+            }
+
+            // Phase 2: RCU each key to a new value (key * 10). Force RCU by flushing to read-only
+            // first so the upsert can't update in place.
+            store.Log.Flush(wait: true);
+            for (int i = 0; i < totalRecords; i++)
+            {
+                keySpan[0] = i;
+                valueSpan[0] = i * 10;
+                _ = bContext.Upsert(key, value);
+            }
+
+            // IterateLookupSnapshot should emit each unique live key exactly once, with the
+            // post-RCU value (key * 10).
+            var fns = new SnapshotProbeAllFunctions { observed = new Dictionary<long, int>() };
+            _ = session.IterateLookupSnapshot(ref fns);
+
+            ClassicAssert.AreEqual(totalRecords, fns.observed.Count,
+                "IterateLookupSnapshot should emit each unique live key exactly once");
+            for (int i = 0; i < totalRecords; i++)
+            {
+                ClassicAssert.IsTrue(fns.observed.TryGetValue(i, out var emittedValue),
+                    $"Key {i} not emitted by IterateLookupSnapshot");
+                ClassicAssert.AreEqual(i * 10, emittedValue,
+                    $"Key {i}: expected snapshot to expose post-RCU value but got {emittedValue}");
+            }
+
+            // Stable: a second IterateLookupSnapshot call returns the same set.
+            var fns2 = new SnapshotProbeAllFunctions { observed = new Dictionary<long, int>() };
+            _ = session.IterateLookupSnapshot(ref fns2);
+            ClassicAssert.AreEqual(totalRecords, fns2.observed.Count,
+                "Second IterateLookupSnapshot should emit the same number of records (snapshot is stable across calls)");
+        }
+
+        private struct SnapshotProbeAllFunctions : IScanIteratorFunctions
+        {
+            // NOTE: Must hold a reference type because the struct is boxed when stored in
+            // ScanCursorState.functions (interface field) — mutations on the boxed copy land
+            // there, not on the caller's struct. The Dictionary reference itself is shared.
+            public Dictionary<long, int> observed;
+
+            public readonly bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Accept;
+                var k = MemoryMarshal.Cast<byte, long>(logRecord.Key)[0];
+                var v = MemoryMarshal.Cast<byte, int>(logRecord.ValueSpan)[0];
+                ClassicAssert.IsFalse(observed.ContainsKey(k),
+                    $"IterateLookupSnapshot emitted key {k} more than once (snapshot semantics violated)");
+                observed[k] = v;
+                return true;
+            }
+
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
+        }
     }
 }
