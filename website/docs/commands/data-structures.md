@@ -984,7 +984,12 @@ If **destination** already exists, it is overwritten.
 
 :::caution Experimental
 
-Stream support in Garnet is **experimental**. APIs, on-disk layout, and recovery semantics may change in future releases. Consumer group state (groups, consumers, pending entries) is currently in-memory only and is **not** preserved across server restarts. The `BLOCK` option on `XREAD`/`XREADGROUP` is parsed but not implemented and returns immediately.
+Stream support in Garnet is **experimental**. Notable limitations:
+
+- **Cluster mode is not supported.** All stream commands (`XADD`, `XREAD`, `XREADGROUP`, `XGROUP`, etc.) are only available on a node started in standalone mode. Slot routing, cross-shard migration, and replication of stream entries are not yet implemented — running these commands against a node started with `--cluster` is not supported.
+- **Consumer group state is not persisted.** Groups, consumers, pending-entry lists, and the group's `LastDeliveredId` live only in memory and are lost on server restart. The stream entries themselves do recover from disk (when `--stream-log-dir` is set), but groups must be recreated by the application.
+- **`BLOCK` is parsed but not implemented** on `XREAD` / `XREADGROUP` — the call returns immediately even when no entries are available.
+- APIs, on-disk layout, and recovery semantics may change in future releases.
 
 :::
 
