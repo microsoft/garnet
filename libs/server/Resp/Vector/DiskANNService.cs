@@ -20,6 +20,18 @@ namespace Garnet.server
         internal const byte InternalIdMap = 5;
         private const byte ExternalIdMap = 6;
 
+#if DEBUG
+        /// <summary>
+        /// For testing purposes, in DEBUG builds the count of calls to <see cref="CreateIndex"/> or <see cref="RecreateIndex"/> on this instance.
+        /// </summary>
+        internal int CreateIndexCalls;
+
+        /// <summary>
+        /// For testing purposes, in DEBUG builds the count of calls to <see cref="DropIndex"/> on this instance.
+        /// </summary>
+        internal int DropIndexCalls;
+#endif
+
         public nint CreateIndex(
             ulong context,
             uint dimensions,
@@ -34,6 +46,10 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
+#if DEBUG
+            System.Threading.Interlocked.Increment(ref CreateIndexCalls);
+#endif
+
             unsafe
             {
                 return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
@@ -57,6 +73,10 @@ namespace Garnet.server
 
         public void DropIndex(ulong context, nint index)
         {
+#if DEBUG
+            System.Threading.Interlocked.Increment(ref DropIndexCalls);
+#endif
+
             NativeDiskANNMethods.drop_index(context, index);
         }
 

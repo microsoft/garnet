@@ -63,11 +63,11 @@ namespace Garnet.server
         private const ulong InvalidContext = 0;
 
         /// <summary>
-        /// The process wide instances of DiskANN.
+        /// This managers instance of <see cref="DiskANNService"/>.
         /// 
-        /// We only need the one, even if we have multiple DBs, because all context is provided by DiskANN instances and Garnet storage.
+        /// We could probably share these, but its not a big loss to scope to the <see cref="VectorManager"/> instance.
         /// </summary>
-        private DiskANNService Service { get; } = new DiskANNService();
+        internal DiskANNService Service { get; } = new DiskANNService();
 
         /// <summary>
         /// Whether or not Vector Set preview is enabled.
@@ -75,13 +75,6 @@ namespace Garnet.server
         /// TODO: This goes away once we're stable.
         /// </summary>
         public bool IsEnabled { get; }
-
-        /// <summary>
-        /// Unique id for this <see cref="VectorManager"/>.
-        /// 
-        /// Is used to determine if an <see cref="Index"/> is backed by a DiskANN index that was created in this process.
-        /// </summary>
-        private readonly Guid processInstanceId = Guid.NewGuid();
 
         private readonly ILogger logger;
 
@@ -97,7 +90,7 @@ namespace Garnet.server
             IsEnabled = serverOptions.EnableVectorSetPreview;
 
             // Include DB and id so we correlate to what's actually stored in the log
-            logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
+            logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
 
             replicationBlockEvent = CountingEventSlim.Create();
             // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
@@ -216,7 +209,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
 
             var added = this.vectorSetIndexKeyRecovery.TryAdd(context, logRecord.Key.ToArray());
             Debug.Assert(added, "Recovery found multiple Vector Set indexes with same context");
@@ -288,7 +281,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
 
             var valueDims = CalculateValueDimensions(valueType, values);
 
@@ -353,7 +346,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
             var del = Service.Remove(context, indexPtr, element);
 
@@ -379,7 +372,7 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _);
 
             // We have to rely on the cleanup task to record the "we're being cleaned up" state for this context
             //
@@ -397,6 +390,38 @@ namespace Garnet.server
             // Clear the DiskANN index
             ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(value)[0];
             asIndex.IndexPtr = 0;
+        }
+
+        /// <summary>
+        /// Ask DiskANN to drop its index.
+        /// </summary>
+        internal void DropInMemoryIndex(ReadOnlySpan<byte> value)
+        {
+            if (value.Length != IndexSize)
+            {
+                logger?.LogWarning($"Ignored Vector Set drop index due to size mismatch");
+                return;
+            }
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            Service.DropIndex(context, indexPtr);
+        }
+
+        /// <summary>
+        /// Clear out the index pointer stored in this record value.
+        /// 
+        /// Next time the record is touched, we'll recreate the index.
+        /// </summary>
+        internal static void ClearIndexPointer(Span<byte> value)
+        {
+            if (value.Length != IndexSize)
+            {
+                return;
+            }
+
+            ref var index = ref MemoryMarshal.Cast<byte, Index>(value)[0];
+            index.IndexPtr = 0;
         }
 
         /// <summary>
@@ -421,7 +446,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
             var valueDims = CalculateValueDimensions(valueType, values);
             if (dimensions != valueDims)
@@ -561,7 +586,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
             // When a filter is present, over-retrieve candidates from DiskANN
             var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
@@ -678,7 +703,7 @@ namespace Garnet.server
         internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
         {
             AssertHaveStorageSession();
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _);
             var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
@@ -785,7 +810,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)

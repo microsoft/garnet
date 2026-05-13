@@ -41,8 +41,12 @@ namespace Garnet.server
             public VectorQuantType QuantType;
             [FieldOffset(36)]
             public VectorDistanceMetricType DistanceMetric;
+
+            // There used to be a GUID here
             [FieldOffset(40)]
-            public Guid ProcessInstanceId;
+            private ulong unused0;
+            [FieldOffset(48)]
+            private ulong unused1;
         }
 
         /// <summary>
@@ -79,7 +83,6 @@ namespace Garnet.server
             asIndex.NumLinks = numLinks;
             asIndex.DistanceMetric = distanceMetric;
             asIndex.IndexPtr = (ulong)newIndexPtr;
-            asIndex.ProcessInstanceId = processInstanceId;
         }
 
         /// <summary>
@@ -97,12 +100,11 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
-            Debug.Assert(processInstanceId != indexProcessInstanceId, "Shouldn't be recreating an index that matched our instance id");
+            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            Debug.Assert(indexPtr == 0, "Shouldn't be recreating an index if we already have a pointer");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
             asIndex.IndexPtr = (ulong)newIndexPtr;
-            asIndex.ProcessInstanceId = processInstanceId;
         }
 
         /// <summary>
@@ -110,9 +112,9 @@ namespace Garnet.server
         /// </summary>
         internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr, out var indexProcessInstanceId);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-            if (indexProcessInstanceId != processInstanceId)
+            if (indexPtr == 0)
             {
                 // We never actually spun this index up, so nothing to drop
                 return;
@@ -133,8 +135,7 @@ namespace Garnet.server
             out uint buildExplorationFactor,
             out uint numLinks,
             out VectorDistanceMetricType distanceMetric,
-            out nint indexPtr,
-            out Guid processInstanceId
+            out nint indexPtr
         )
         {
             Debug.Assert(indexValue.Length == Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
@@ -149,7 +150,6 @@ namespace Garnet.server
             numLinks = asIndex.NumLinks;
             distanceMetric = asIndex.DistanceMetric;
             indexPtr = (nint)asIndex.IndexPtr;
-            processInstanceId = asIndex.ProcessInstanceId;
 
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
         }
@@ -157,7 +157,7 @@ namespace Garnet.server
         /// <summary>
         /// Update the context (which defines a range of namespaces) stored in a given index.
         /// 
-        /// Doing this also smashes the ProcessInstanceId, so the destination node won't
+        /// Doing this also smashes the index pointer, so the destination node won't
         /// think it's already creating this index.
         /// </summary>
         public static void SetContextForMigration(Span<byte> indexValue, ulong newContext)
@@ -168,7 +168,7 @@ namespace Garnet.server
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 
             asIndex.Context = newContext;
-            asIndex.ProcessInstanceId = MigratedInstanceId;
+            asIndex.IndexPtr = 0;
         }
     }
 }

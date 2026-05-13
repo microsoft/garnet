@@ -84,21 +84,37 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source)
         {
-            // Free BfTree on page eviction under exclusive lock.
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
+                // Free BfTree on page eviction under exclusive lock.
+                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
+                }
+
+                // Drop DiskANN side of index
+                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
+                }
             }
         }
 
         /// <inheritdoc/>
         public readonly void OnDiskRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
+                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
+                }
+
+                // Clear DiskANN index pointer so we'll recreate it on first touch
+                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    VectorManager.ClearIndexPointer(logRecord.ValueSpan);
+                }
             }
         }
 

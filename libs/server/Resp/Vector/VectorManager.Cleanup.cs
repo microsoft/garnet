@@ -253,14 +253,5 @@ namespace Garnet.server
             var writeRes = cleanupTaskChannel.Writer.TryWrite((InvalidContext, null));
             Debug.Assert(writeRes, "Request for cleanup failed, this should never happen");
         }
-
-        /// <summary>
-        /// Detects if a Vector Set index read out of the main store is in the middle of being deleted.
-        /// </summary>
-        private static bool PartiallyDeleted(ReadOnlySpan<byte> indexConfig)
-        {
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            return context == 0;
-        }
     }
 }

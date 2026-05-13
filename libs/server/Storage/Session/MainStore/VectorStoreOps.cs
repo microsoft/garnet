@@ -297,7 +297,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -337,7 +337,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr, out _);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr);
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;

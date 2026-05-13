@@ -862,6 +862,35 @@ namespace Garnet.test
         }
 
         [Test]
+        public void FlushDB()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var s = redis.GetServers().Single();
+            var db = redis.GetDatabase();
+
+#if DEBUG
+            var preAddCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
+#endif
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            s.FlushDatabase(0);
+
+#if DEBUG
+            var finalCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
+            var finalDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+
+            // Check we actually dropped the index despite not touching the key explicitly
+            ClassicAssert.AreEqual(preAddCreateCalls + 1, finalCreateCalls);
+            ClassicAssert.AreEqual(finalDropCalls, finalCreateCalls);
+#endif
+
+            var res2 = db.KeyExists("foo");
+            ClassicAssert.IsFalse(res2);
+        }
+
+        [Test]
         public void InterruptedVectorSetDelete_BeforeMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
