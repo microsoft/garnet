@@ -2362,8 +2362,18 @@ namespace Garnet.test
             // Call DisposeTreeUnderLock as OnEvict would, with deleteFiles=false (eviction path).
             // With IsTransferred=true, this must no-op — NOT remove the entry that belongs to
             // the live record at the tail.
-            var keyBytes = System.Text.Encoding.ASCII.GetBytes("transtest");
-            rim.DisposeTreeUnderLock(keyBytes, staleStub, deleteFiles: false);
+            // RangeIndexManager hashes the key via PinnedSpanByte.FromPinnedSpan, which captures
+            // a raw pointer assuming the source is GC-pinned. Use unsafe `fixed` blocks to pin
+            // the managed byte[] for the duration of each DisposeTreeUnderLock call.
+            unsafe
+            {
+                var keyBytes = System.Text.Encoding.ASCII.GetBytes("transtest");
+                fixed (byte* keyPtr = keyBytes)
+                {
+                    var pinnedKey = new ReadOnlySpan<byte>(keyPtr, keyBytes.Length);
+                    rim.DisposeTreeUnderLock(pinnedKey, staleStub, deleteFiles: false);
+                }
+            }
 
             ClassicAssert.AreEqual(1, rim.LiveIndexCount,
                 "DisposeTreeUnderLock on a stale (IsTransferred=true) source must NOT remove the live entry " +
@@ -2381,8 +2391,15 @@ namespace Garnet.test
             db.Execute("RI.CREATE", "pendkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
             ClassicAssert.AreEqual(2, rim.LiveIndexCount, "second tree created");
             // Now simulate eviction of a pending-entry stub for "pendkey".
-            var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
-            rim.DisposeTreeUnderLock(pendKeyBytes, pendingStub, deleteFiles: false);
+            unsafe
+            {
+                var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
+                fixed (byte* keyPtr = pendKeyBytes)
+                {
+                    var pinnedKey = new ReadOnlySpan<byte>(keyPtr, pendKeyBytes.Length);
+                    rim.DisposeTreeUnderLock(pinnedKey, pendingStub, deleteFiles: false);
+                }
+            }
             ClassicAssert.AreEqual(1, rim.LiveIndexCount,
                 "DisposeTreeUnderLock without IsTransferred should still remove the entry " +
                 "(pending-eviction case): proves the discriminating power of the IsTransferred check");

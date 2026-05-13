@@ -324,7 +324,6 @@ namespace Garnet
 
             var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview,
                 riLogRoot: riLogRoot, cprDir: cprDir,
-                removeOutdatedCheckpoints: removeOutdated,
                 storeEpoch: storeEpoch,
                 logger: loggerFactory?.CreateLogger("RangeIndexManager"));
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);

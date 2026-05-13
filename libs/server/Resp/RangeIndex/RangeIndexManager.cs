@@ -169,14 +169,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether to remove old BfTree per-flush snapshots when their addresses fall below the new
-        /// log BeginAddress. Per-checkpoint snapshots are removed by Tsavorite's checkpoint manager
-        /// when it deletes the parent token directory; this flag controls only the per-flush cleanup
-        /// performed by <see cref="OnTruncateImpl"/>.
-        /// </summary>
-        private readonly bool removeOutdatedCheckpoints;
-
-        /// <summary>
         /// Creates a new <see cref="RangeIndexManager"/>.
         /// </summary>
         /// <param name="enabled">Whether range index commands are enabled.</param>
@@ -185,16 +177,17 @@ namespace Garnet.server
         /// memory-only test scenarios; disk-backed trees will fail to open in that case.</param>
         /// <param name="cprDir">Tsavorite <c>cpr-checkpoints/</c> directory; per-checkpoint snapshots
         /// live under <c>{cprDir}/&lt;token&gt;/rangeindex/</c>. May be null if no checkpointing.</param>
-        /// <param name="removeOutdatedCheckpoints">Whether <see cref="OnTruncateImpl"/> should delete
-        /// per-flush snapshots whose address is below the new BeginAddress.</param>
+        /// <param name="storeEpoch">The store's <see cref="LightEpoch"/>; used to defer native
+        /// <c>BfTree.Dispose</c> + file deletion past any in-flight reader observing the
+        /// stub's <c>TreeHandle</c>. May be null in unit-test scenarios with no concurrent
+        /// readers; in that case disposal is performed synchronously.</param>
         /// <param name="logger">Optional logger.</param>
         public RangeIndexManager(bool enabled, string riLogRoot = null, string cprDir = null,
-            bool removeOutdatedCheckpoints = true, LightEpoch storeEpoch = null, ILogger logger = null)
+            LightEpoch storeEpoch = null, ILogger logger = null)
         {
             IsEnabled = enabled;
             this.riLogRoot = riLogRoot;
             this.cprDir = cprDir;
-            this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
             this.storeEpoch = storeEpoch;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
@@ -268,16 +261,15 @@ namespace Garnet.server
             if (storageBackend == StorageBackendType.Disk)
             {
                 filePath = LogDataPath(hashPrefix);
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             }
 
             // Configure the bftree's CPR snapshot scratch path. cpr_snapshot writes here;
             // OnFlush / SnapshotAllTreesForCheckpoint File.Move scratch -> final destination.
             // Required for both backends; leave null only if riLogRoot is unset (test scenarios).
+            // riLogRoot itself was already created in the constructor.
             if (!string.IsNullOrEmpty(riLogRoot))
             {
                 snapshotFilePath = LogScratchPath(hashPrefix);
-                Directory.CreateDirectory(riLogRoot);
             }
 
             return new BfTreeService(
@@ -469,10 +461,10 @@ namespace Garnet.server
             // Acquire the per-key exclusive lock for the duration of the file copy AND the
             // pending-entry registration. This blocks any concurrent RestoreTree (which also
             // takes the exclusive lock) from observing a partial data.bftree.
+            // riLogRoot was created in the constructor.
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
-                Directory.CreateDirectory(riLogRoot);
                 File.Copy(snapshotPath, dataPath, overwrite: true);
 
                 var keyId = KeyId(keyBytes);
@@ -520,7 +512,6 @@ namespace Garnet.server
 
             try
             {
-                Directory.CreateDirectory(riLogRoot);
                 File.Copy(snapshotPath, dataPath, overwrite: true);
             }
             catch (Exception ex)
@@ -607,8 +598,6 @@ namespace Garnet.server
             var scratchPath = LogScratchPath(hashPrefix);
             var flushPath = LogFlushPath(hashPrefix, logicalAddress);
             var keyId = KeyId(key);
-
-            Directory.CreateDirectory(riLogRoot);
 
             if (stub.TreeHandle != nint.Zero)
             {
@@ -816,8 +805,8 @@ namespace Garnet.server
         ///
         /// <para>Per-flush files are LOG-tied (their lifetime tracks log addresses), not
         /// checkpoint-tied — they are safe to delete once Tsavorite's BeginAddress passes their
-        /// address, regardless of <see cref="removeOutdatedCheckpoints"/>. This is independent
-        /// of cluster mode.</para>
+        /// address. This cleanup is unconditional and independent of cluster mode or any
+        /// checkpoint-retention policy.</para>
         /// </summary>
         internal void OnTruncateImpl(long newBeginAddress)
         {
