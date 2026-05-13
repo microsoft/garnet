@@ -1,12 +1,6 @@
 name: Garnet .NET CI
 on:
   workflow_dispatch:
-    inputs:
-      max-parallel:
-        description: 'Maximum parallel test jobs'
-        type: choice
-        options: ['4', '8', '16', '0']
-        default: '8'
   push:
     branches:
       - main
@@ -98,7 +92,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event.inputs.max-parallel == '0' && 256 || github.event.inputs.max-parallel || 8 }}
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         configuration: [ 'Debug', 'Release' ]
@@ -126,7 +119,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event.inputs.max-parallel == '0' && 256 || github.event.inputs.max-parallel || 8 }}
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
@@ -174,7 +166,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event.inputs.max-parallel == '0' && 256 || github.event.inputs.max-parallel || 8 }}
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         configuration: [ 'Debug', 'Release' ]
@@ -202,7 +193,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event.inputs.max-parallel == '0' && 256 || github.event.inputs.max-parallel || 8 }}
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]

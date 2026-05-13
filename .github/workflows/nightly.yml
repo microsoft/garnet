@@ -3,12 +3,6 @@ on:
   schedule:
     - cron:  '0 9 * * *' # Runs at 09:00 UTC, which is 1:00 AM PST
   workflow_dispatch:
-    inputs:
-      max-parallel:
-        description: 'Maximum parallel test jobs'
-        type: choice
-        options: ['4', '8', '16', '0']
-        default: '8'
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -23,7 +17,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event.inputs.max-parallel == '0' && 256 || github.event.inputs.max-parallel || 8 }}
       matrix:
         test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog', 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
         os: [ ubuntu-latest, windows-latest ]
