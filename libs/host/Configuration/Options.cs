@@ -200,6 +200,10 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [MemorySizeValidation]
+        [Option("aof-segment-size", Required = false, HelpText = "Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated.")]
+        public string AofSegmentSize { get; set; }
+
         [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
@@ -844,6 +848,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
