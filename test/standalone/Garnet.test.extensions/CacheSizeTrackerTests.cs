@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,9 +10,8 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class CacheSizeTrackerTests : AllureTestBase
+    public class CacheSizeTrackerTests : TestBase
     {
         GarnetServer server;
         TsavoriteKV<StoreFunctions, StoreAllocator> store;

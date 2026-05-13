@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -14,9 +13,8 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterRedirectTests : AllureTestBase
+    public unsafe class ClusterRedirectTests : TestBase
     {
         ClusterTestContext context;
 

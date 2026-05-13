@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -23,7 +22,7 @@ namespace Tsavorite.test.recovery
         Cloud
     }
 
-    public class RecoveryCheckBase : AllureTestBase
+    public class RecoveryCheckBase : TestBase
     {
         protected IDevice log;
         protected const int NumOps = 5000;
@@ -83,8 +82,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck1Tests : RecoveryCheckBase
     {
@@ -207,8 +204,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck2Tests : RecoveryCheckBase
     {
@@ -507,8 +502,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck3Tests : RecoveryCheckBase
     {
@@ -631,8 +624,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck4Tests : RecoveryCheckBase
     {
@@ -756,8 +747,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck5Tests : RecoveryCheckBase
     {
@@ -900,8 +889,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheckSnapshotTests : RecoveryCheckBase
     {
@@ -911,8 +898,6 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheckStreamingSnapshotTests : RecoveryCheckBase
     {

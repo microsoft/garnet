@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,9 +14,8 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespSetTest : AllureTestBase
+    public class RespSetTest : TestBase
     {
         GarnetServer server;
 

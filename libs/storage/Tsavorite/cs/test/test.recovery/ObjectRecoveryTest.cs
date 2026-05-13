@@ -4,7 +4,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -21,10 +20,8 @@ namespace Tsavorite.test.recovery.objects
         public T1 Item1;
         public T2 Item2;
     }
-
-    [AllureNUnit]
     [TestFixture]
-    internal class ObjectRecoveryTests : AllureTestBase
+    internal class ObjectRecoveryTests : TestBase
     {
         const long NumUniqueKeys = 1L << 14;
         const long KeySpace = 1L << 14;

@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -22,10 +21,8 @@ namespace Tsavorite.test
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
-
-    [AllureNUnit]
     [TestFixture]
-    internal class BasicTests : AllureTestBase
+    internal class BasicTests : TestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private ClientSession<KeyStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;

@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
-using Allure.NUnit;
 using Garnet.common.Parsing;
 using Garnet.server;
 using NUnit.Framework;
@@ -15,10 +14,9 @@ namespace Garnet.test.Resp
     /// 
     /// Accordingly these are a bit of a grab bag, but they need to go somewhere.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
     [Category("FUZZING")]
-    public class RespParseFuzzRegressionTests : AllureTestBase
+    public class RespParseFuzzRegressionTests : TestBase
     {
         [Test]
         public void MakeUpperCaseAccessViolation()

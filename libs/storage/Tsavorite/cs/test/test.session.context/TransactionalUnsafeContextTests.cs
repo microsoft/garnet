@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -154,10 +153,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class TransactionalUnsafeContextTests : AllureTestBase
+    class TransactionalUnsafeContextTests : TestBase
     {
         const int NumRecords = 1000;
         const int UseNewKey = 1010;

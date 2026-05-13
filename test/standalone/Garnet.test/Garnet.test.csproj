@@ -35,8 +35,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Allure.Net.Commons" />
-    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="diskann-garnet" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
@@ -83,7 +81,6 @@
 
 	<!-- Define compilation symbol for test project -->
 	<PropertyGroup>
-		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
 		<AspectInjector_Enabled>false</AspectInjector_Enabled>
 		<DefineConstants>$(DefineConstants);TEST_PROJECT</DefineConstants>
 	</PropertyGroup>

@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -49,10 +48,8 @@ namespace Tsavorite.test.spanbyte
 namespace Tsavorite.test.spanbyte
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparerModulo, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class SpanByteLogScanTests : AllureTestBase
+    internal class SpanByteLogScanTests : TestBase
     {
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;

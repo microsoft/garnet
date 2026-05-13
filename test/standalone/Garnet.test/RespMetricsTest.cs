@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Linq;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -13,9 +12,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespMetricsTest : AllureTestBase
+    public class RespMetricsTest : TestBase
     {
         GarnetServer server;
         ILoggerFactory loggerFactory;

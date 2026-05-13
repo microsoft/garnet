@@ -3,7 +3,6 @@
 
 using System.IO;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,10 +16,8 @@ namespace Tsavorite.test
 
     using TrackingAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTriggers>>;
     using TrackingStoreFunctions = StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class DeleteDisposeTests : AllureTestBase
+    internal class DeleteDisposeTests : TestBase
     {
         internal struct TrackingRecordTriggers : IRecordTriggers
         {
@@ -242,9 +239,8 @@ namespace Tsavorite.test
     /// <summary>
     /// Tests that <see cref="IRecordTriggers.OnDispose"/> is called exactly once for IHeapObject records through all delete and expiration paths.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    internal class ObjectDeleteDisposeTests : AllureTestBase
+    internal class ObjectDeleteDisposeTests : TestBase
     {
         internal struct ObjTrackingRecordTriggers : IRecordTriggers
         {

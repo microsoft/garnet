@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,10 +11,8 @@ namespace Tsavorite.test
 {
     using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class MoreLogCompactionTests : AllureTestBase
+    internal class MoreLogCompactionTests : TestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;

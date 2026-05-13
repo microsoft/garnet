@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Reflection;
 using System.Text;
-using Allure.NUnit;
 using Garnet.fuzz;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,9 +13,8 @@ namespace Garnet.test
     /// <summary>
     /// Tests that assert the basics of Garnet.fuzz still work, so they aren't broken between fuzzing runs.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class FuzzTargetTests : AllureTestBase
+    public class FuzzTargetTests : TestBase
     {
         [TearDown]
         public void TearDown()

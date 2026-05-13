@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,10 +14,8 @@ namespace Tsavorite.test.Cancellation
     // Use an int in these tests just to get a different length underlying the SpanByte
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    class CancellationTests : AllureTestBase
+    class CancellationTests : TestBase
     {
         internal enum CancelLocation
         {

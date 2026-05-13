@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -28,10 +27,8 @@ namespace Tsavorite.test.ReadCacheTests
     {
         internal const int PendingMod = 16;
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class ChainTests : AllureTestBase
+    class ChainTests : TestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -684,10 +681,8 @@ namespace Tsavorite.test.ReadCacheTests
             AssertTotalLockCounts(0, 0);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class LongStressChainTests : AllureTestBase
+    class LongStressChainTests : TestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -900,10 +895,8 @@ namespace Tsavorite.test.ReadCacheTests
             Task.WaitAll([.. tasks]);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class SpanByteStressChainTests : AllureTestBase
+    class SpanByteStressChainTests : TestBase
     {
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;

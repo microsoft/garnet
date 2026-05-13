@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using Allure.NUnit;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,9 +11,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    internal class ClusterAuthCommsTests : AllureTestBase
+    internal class ClusterAuthCommsTests : TestBase
     {
         ClusterTestContext context;
 

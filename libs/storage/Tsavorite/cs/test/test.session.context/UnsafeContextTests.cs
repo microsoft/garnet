@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -19,10 +18,8 @@ namespace Tsavorite.test.UnsafeContext
     using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, DefaultRecordTriggers>;
 
     //** These tests ensure the basics are fully covered - taken from BasicTests
-
-    [AllureNUnit]
     [TestFixture]
-    internal class BasicUnsafeContextTests : AllureTestBase
+    internal class BasicUnsafeContextTests : TestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private ClientSession<KeyStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;

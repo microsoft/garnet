@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Threading;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -10,9 +9,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespTransactionProcTests : AllureTestBase
+    public class RespTransactionProcTests : TestBase
     {
         GarnetServer server;
 

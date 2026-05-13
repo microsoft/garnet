@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -18,10 +17,8 @@ namespace Tsavorite.test
 {
     using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    public class CheckpointManagerTests : AllureTestBase
+    public class CheckpointManagerTests : TestBase
     {
         private readonly Random random = new(0);
 

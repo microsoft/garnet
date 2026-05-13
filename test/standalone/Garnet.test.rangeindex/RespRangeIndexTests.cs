@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -23,9 +22,8 @@ namespace Garnet.test
     /// TearDown. Tests that need low memory, AOF, or checkpoint recovery
     /// recreate the server with the appropriate options.</para>
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class RespRangeIndexTests : AllureTestBase
+    public class RespRangeIndexTests : TestBase
     {
         GarnetServer server;
 

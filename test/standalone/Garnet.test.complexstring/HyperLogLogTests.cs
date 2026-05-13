@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,9 +12,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public unsafe class HyperLogLogTests : AllureTestBase
+    public unsafe class HyperLogLogTests : TestBase
     {
         GarnetServer server;
         Random r;

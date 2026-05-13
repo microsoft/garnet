@@ -1,20 +1,18 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    class RespPubSubTests : AllureTestBase
+    class RespPubSubTests : TestBase
     {
         GarnetServer server;
 

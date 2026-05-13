@@ -1,18 +1,16 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Threading;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class IndexGrowthTests : AllureTestBase
+    public class IndexGrowthTests : TestBase
     {
         GarnetServer server;
         private int indexResizeTaskDelaySeconds = 5;

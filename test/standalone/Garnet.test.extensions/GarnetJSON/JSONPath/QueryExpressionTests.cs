@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #region License
@@ -29,7 +29,6 @@
 #endregion
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
-using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -37,9 +36,8 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.JSONPath
 {
-    [AllureNUnit]
     [TestFixture]
-    public class QueryExpressionTests : AllureTestBase
+    public class QueryExpressionTests : TestBase
     {
         [Test]
         public void AndExpressionTest()

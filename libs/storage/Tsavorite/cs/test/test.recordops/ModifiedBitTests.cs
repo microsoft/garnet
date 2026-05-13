@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,10 +14,8 @@ namespace Tsavorite.test.ModifiedBit
 {
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    class ModifiedBitTests : AllureTestBase
+    class ModifiedBitTests : TestBase
     {
         const int NumRecords = 1000;
         const int ValueMult = 1_000_000;

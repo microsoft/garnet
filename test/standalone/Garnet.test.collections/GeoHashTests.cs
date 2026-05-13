@@ -1,18 +1,16 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Globalization;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class GeoHashTests : AllureTestBase
+    public class GeoHashTests : TestBase
     {
         [Test]
         [TestCase(30.5388942218, 104.0555758833)]

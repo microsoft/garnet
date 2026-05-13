@@ -6,7 +6,6 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,9 +14,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery
 {
-    [AllureNUnit]
     [TestFixture]
-    public class LogRecoverReadOnlyTests : AllureTestBase
+    public class LogRecoverReadOnlyTests : TestBase
     {
         const int ProducerPauseMs = 1;
         const int CommitPeriodMs = 20;

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #if DEBUG
@@ -7,7 +7,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -15,9 +14,8 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class NetworkTests : AllureTestBase
+    public class NetworkTests : TestBase
     {
         GarnetServer server;
 

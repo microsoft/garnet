@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,10 +16,8 @@ namespace Tsavorite.test
 {
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class ObjectIterationTests : AllureTestBase
+    internal class ObjectIterationTests : TestBase
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
@@ -274,10 +271,8 @@ namespace Tsavorite.test
             Task.WaitAll([.. tasks]);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    internal class ObjectIterationTests2 : AllureTestBase
+    internal class ObjectIterationTests2 : TestBase
     {
         // Per issue #1630, handle 4 pages worth of records with an InsertAll-DeleteAll-ReInsertAll pattern.
         public class InsDelIns_ScanIteratorFunctions : IScanIteratorFunctions

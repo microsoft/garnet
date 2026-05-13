@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -19,9 +18,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    [AllureNUnit]
     [TestFixture]
-    internal class TsavoriteLogStandAloneTests : AllureTestBase
+    internal class TsavoriteLogStandAloneTests : TestBase
     {
         [Test]
         [Category("TsavoriteLog")]
@@ -50,7 +48,7 @@ namespace Tsavorite.test
     }
 
     // This test base class allows splitting up the tests into separate fixtures that can be run in parallel
-    internal class TsavoriteLogTestBase : AllureTestBase
+    internal class TsavoriteLogTestBase : TestBase
     {
         protected const int entryLength = 100;
         protected const int numEntries = 10000; //1000000;
@@ -181,8 +179,6 @@ namespace Tsavorite.test
             _ = await log.CommitAsync(commitTask, null, token).ConfigureAwait(false);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogGeneralTests : TsavoriteLogTestBase
     {
@@ -387,9 +383,6 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(numEntries, counter.count);
         }
     }
-
-
-    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogEnqueueTests : TsavoriteLogTestBase
     {
@@ -525,8 +518,6 @@ namespace Tsavorite.test
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogTruncateTests : TsavoriteLogTestBase
     {
@@ -1014,8 +1005,6 @@ namespace Tsavorite.test
             log.Dispose();
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogCustomCommitTests : TsavoriteLogTestBase
     {

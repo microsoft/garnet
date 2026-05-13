@@ -1,19 +1,17 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespAofAzureTests : AllureTestBase
+    public class RespAofAzureTests : TestBase
     {
         GarnetServer server;
         static readonly SortedSetEntry[] entries =

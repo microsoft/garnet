@@ -9,7 +9,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,9 +16,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class DiskANNServiceTests : AllureTestBase
+    public class DiskANNServiceTests : TestBase
     {
         private delegate void ReadCallbackDelegate(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);

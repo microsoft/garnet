@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,10 +13,8 @@ namespace Tsavorite.test
 {
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class PostOperationsTests : AllureTestBase
+    internal class PostOperationsTests : TestBase
     {
         class PostFunctions : SimpleIntSimpleFunctions
         {

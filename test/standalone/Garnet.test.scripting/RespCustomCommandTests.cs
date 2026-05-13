@@ -11,7 +11,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using GarnetJSON;
@@ -222,10 +221,8 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    public class RespCustomCommandTests : AllureTestBase
+    public class RespCustomCommandTests : TestBase
     {
         GarnetServer server;
         private string _extTestDir1;

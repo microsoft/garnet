@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -22,11 +21,9 @@ namespace Garnet.test.cluster
 
         public unsafe int GetHashCode([DisallowNull] BaseCommand obj) => obj.Command.GetHashCode();
     }
-
-    [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
-    public class ClusterSlotVerificationTests : AllureTestBase
+    public class ClusterSlotVerificationTests : TestBase
     {
         static readonly HashSet<BaseCommand> TestCommands = new(BaseCommandComparer.Instance)
             {

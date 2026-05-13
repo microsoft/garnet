@@ -8,7 +8,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using Allure.NUnit;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -23,9 +22,8 @@ using Garnet.common;
 
 namespace Garnet.test.cluster
 {
-    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterNegativeTests : AllureTestBase
+    public class ClusterNegativeTests : TestBase
     {
         ClusterTestContext context;
 

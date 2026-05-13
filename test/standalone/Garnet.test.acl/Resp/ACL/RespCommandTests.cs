@@ -10,7 +10,6 @@ using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.client;
 using Garnet.server;
 using Garnet.server.ACL;
@@ -19,9 +18,8 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp.ACL
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespCommandTests : AllureTestBase
+    public class RespCommandTests : TestBase
     {
         private const string DefaultPassword = nameof(RespCommandTests);
         private const string DefaultUser = "default";

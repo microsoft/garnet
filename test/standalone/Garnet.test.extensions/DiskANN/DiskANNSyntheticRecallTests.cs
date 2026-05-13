@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -17,9 +16,8 @@ namespace Garnet.test
     /// Generates vectors → VADD to Garnet → VSIM query every vector →
     /// compare results against brute-force nearest neighbors → assert recall ≥ threshold.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class DiskANNSyntheticRecallTests : AllureTestBase
+    public class DiskANNSyntheticRecallTests : TestBase
     {
         private GarnetServer server;
 

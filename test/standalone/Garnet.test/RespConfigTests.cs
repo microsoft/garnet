@@ -1,10 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Linq;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -18,10 +17,9 @@ namespace Garnet.test
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
-    [AllureNUnit]
     [TestFixture(RevivificationMode.NoReviv)]
     [TestFixture(RevivificationMode.UseReviv)]
-    public class RespConfigTests : AllureTestBase
+    public class RespConfigTests : TestBase
     {
         GarnetServer server;
         private readonly string memorySizeStr = "17g";
@@ -240,10 +238,9 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
-    [AllureNUnit]
     [TestFixture(RevivificationMode.NoReviv)]
     [TestFixture(RevivificationMode.UseReviv)]
-    public class RespConfigUtilizationTests : AllureTestBase
+    public class RespConfigUtilizationTests : TestBase
     {
         GarnetServer server;
         private readonly string memorySize = "3m";
@@ -541,10 +538,9 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
-    [AllureNUnit]
     [TestFixture(RevivificationMode.NoReviv)]
     [TestFixture(RevivificationMode.UseReviv)]
-    public class RespConfigIndexUtilizationTests : AllureTestBase
+    public class RespConfigIndexUtilizationTests : TestBase
     {
         GarnetServer server;
         private readonly string memorySize = "3m";
@@ -648,10 +644,9 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
-    [AllureNUnit]
     [TestFixture(RevivificationMode.NoReviv)]
     [TestFixture(RevivificationMode.UseReviv)]
-    public class RespConfigHeapUtilizationTests : AllureTestBase
+    public class RespConfigHeapUtilizationTests : TestBase
     {
         GarnetServer server;
         private readonly string memorySize = "3m";

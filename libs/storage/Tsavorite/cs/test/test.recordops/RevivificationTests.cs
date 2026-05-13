@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -9,7 +9,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -251,10 +250,8 @@ namespace Tsavorite.test.Revivification
             where TAllocator : IAllocator<TStoreFunctions>
             => numRecords - GetRevivifiableRecordCount(store, numRecords);
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class RevivificationFixedLenTests : AllureTestBase
+    class RevivificationFixedLenTests : TestBase
     {
         internal class RevivificationFixedLenFunctions : SimpleLongSimpleFunctions
         {
@@ -478,10 +475,8 @@ namespace Tsavorite.test.Revivification
             ClassicAssert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (recordPtr was not revivified)");
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class RevivificationSpanByteTests : AllureTestBase
+    class RevivificationSpanByteTests : TestBase
     {
         const int KeyLength = 10;
         const int InitialLength = 50;
@@ -1665,10 +1660,8 @@ namespace Tsavorite.test.Revivification
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class RevivificationObjectTests : AllureTestBase
+    class RevivificationObjectTests : TestBase
     {
         const int NumRecords = 1000;
         internal const int ValueMult = 1_000_000;
@@ -1759,10 +1752,8 @@ namespace Tsavorite.test.Revivification
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (recordPtr was revivified)");
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    class RevivificationSpanByteStressTests : AllureTestBase
+    class RevivificationSpanByteStressTests : TestBase
     {
         const int KeyLength = 10;
         const int InitialLength = 50;

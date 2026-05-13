@@ -7,16 +7,14 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class GarnetClientTests : AllureTestBase
+    public class GarnetClientTests : TestBase
     {
 
         readonly string[,] worldcities = new string[,] {

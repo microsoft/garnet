@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -14,9 +13,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespSortedSetGeoTests : AllureTestBase
+    public class RespSortedSetGeoTests : TestBase
     {
         GarnetServer server;
 

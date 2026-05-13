@@ -1,16 +1,14 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespSlowLogTests : AllureTestBase
+    public class RespSlowLogTests : TestBase
     {
         GarnetServer server;
         int slowLogThreshold = 3_000_000;

@@ -14,7 +14,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -23,7 +22,6 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
     [TestFixture(LuaMemoryManagementMode.Native, "", "")]
     [TestFixture(LuaMemoryManagementMode.Native, "", "00:00:02")]
@@ -31,7 +29,7 @@ namespace Garnet.test
     [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "17m", "")]
-    public class LuaScriptTests : AllureTestBase
+    public class LuaScriptTests : TestBase
     {
         /// <summary>
         /// Writes it's parameter directly into the response stream, followed by a \r\n.

@@ -1,7 +1,6 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,10 +13,8 @@ namespace Tsavorite.test
     //* is for areas / parameters not covered by the tests in other areas of the test system
     //* For completeness, setting other parameters too where possible
     //* However, the verification is pretty light. Just makes sure log file created and things be added and read from it 
-
-    [AllureNUnit]
     [TestFixture]
-    internal class LogAndDeviceConfigTests : AllureTestBase
+    internal class LogAndDeviceConfigTests : TestBase
     {
         private TsavoriteLog log;
         private IDevice device;

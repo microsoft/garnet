@@ -1,20 +1,18 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class CountingEventSlimTests : AllureTestBase
+    public class CountingEventSlimTests : TestBase
     {
         [Test]
         public void Basic()

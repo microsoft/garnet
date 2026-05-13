@@ -4,16 +4,14 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    internal class TaskManagerTests : AllureTestBase
+    internal class TaskManagerTests : TestBase
     {
         [Test]
         public async Task TestBasicRegisterAndRunAsync()

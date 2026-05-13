@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,9 +13,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class DeviceTests : AllureTestBase
+    public class DeviceTests : TestBase
     {
         const int entryLength = 1024;
         SectorAlignedBufferPool bufferPool;

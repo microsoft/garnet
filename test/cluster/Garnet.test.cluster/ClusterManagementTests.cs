@@ -10,7 +10,6 @@ using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -25,10 +24,8 @@ namespace Garnet.test.cluster
         Standalone,
         Cluster
     }
-
-    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterManagementTests : AllureTestBase
+    public class ClusterManagementTests : TestBase
     {
         ClusterTestContext context;
         readonly int defaultShards = 3;

@@ -17,8 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Allure.Net.Commons" />
-    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />

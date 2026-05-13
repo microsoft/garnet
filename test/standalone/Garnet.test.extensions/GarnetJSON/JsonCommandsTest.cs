@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.Collections.Generic;
@@ -8,7 +8,6 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.server;
 using GarnetJSON;
 using NUnit.Framework;
@@ -17,9 +16,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    class JsonCommandsTest : AllureTestBase
+    class JsonCommandsTest : TestBase
     {
         GarnetServer server;
         string binPath;

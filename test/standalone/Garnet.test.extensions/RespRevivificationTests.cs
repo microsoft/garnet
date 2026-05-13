@@ -4,16 +4,14 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    class RespRevivificationTests : AllureTestBase
+    class RespRevivificationTests : TestBase
     {
         GarnetServer server;
         Random r;

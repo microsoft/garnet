@@ -20,8 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Allure.Net.Commons" />
-    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="diskann-garnet" />
     <PackageReference Include="Microsoft.CodeAnalysis" />

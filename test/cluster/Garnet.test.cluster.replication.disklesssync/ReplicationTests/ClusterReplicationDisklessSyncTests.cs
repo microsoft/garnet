@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
-using Allure.NUnit;
 #if DEBUG
 using Garnet.common;
 #endif
@@ -13,10 +12,9 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
-    public class ClusterReplicationDisklessSyncTests : AllureTestBase
+    public class ClusterReplicationDisklessSyncTests : TestBase
     {
         ClusterTestContext context;
         readonly int keyCount = 256;

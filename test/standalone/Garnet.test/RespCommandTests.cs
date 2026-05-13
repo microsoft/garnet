@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -19,9 +18,8 @@ namespace Garnet.test
     /// <summary>
     /// This test class tests the RESP COMMAND and COMMAND INFO commands
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class RespCommandTests : AllureTestBase
+    public class RespCommandTests : TestBase
     {
         GarnetServer server;
         private string extTestDir;

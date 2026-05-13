@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -25,9 +24,8 @@ namespace Tsavorite.test
     /// of times IHeapObject.Dispose is invoked on individual value objects. This protects
     /// against double-dispose, leaked triggers, and asymmetric DiskLogRecord disposal.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    internal class RecordLifecycleTests : AllureTestBase
+    internal class RecordLifecycleTests : TestBase
     {
         /// <summary>
         /// Per-instance dispose-counting heap object. Subclasses <see cref="TestObjectValue"/> so existing

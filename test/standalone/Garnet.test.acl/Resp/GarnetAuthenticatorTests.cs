@@ -4,7 +4,6 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.server;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
@@ -16,9 +15,8 @@ namespace Garnet.test.Resp
     /// <summary>
     /// Tests generic to all <see cref="IGarnetAuthenticator"/>s.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class GarnetAuthenticatorTests : AllureTestBase
+    public class GarnetAuthenticatorTests : TestBase
     {
         private delegate bool AuthenticateDelegate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username);
 

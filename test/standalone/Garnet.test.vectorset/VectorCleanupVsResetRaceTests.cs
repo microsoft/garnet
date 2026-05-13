@@ -5,7 +5,6 @@ using System;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -29,9 +28,8 @@ namespace Garnet.test
     /// on a single Garnet server, drop it (queues a cleanup scan), then hammer
     /// <c>Pause + Reset + Resume</c> while the cleanup task runs.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class VectorCleanupVsResetRaceTests : AllureTestBase
+    public class VectorCleanupVsResetRaceTests : TestBase
     {
         private global::Garnet.GarnetServer server;
 

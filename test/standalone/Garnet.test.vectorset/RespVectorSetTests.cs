@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -9,7 +9,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -19,9 +18,8 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespVectorSetTests : AllureTestBase
+    public class RespVectorSetTests : TestBase
     {
         private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
 

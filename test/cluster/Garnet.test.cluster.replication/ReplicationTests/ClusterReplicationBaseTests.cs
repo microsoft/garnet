@@ -9,7 +9,6 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -20,10 +19,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
-    public class ClusterReplicationBaseTests : AllureTestBase
+    public class ClusterReplicationBaseTests : TestBase
     {
         public (Action, string)[] GetUnitTests()
         {

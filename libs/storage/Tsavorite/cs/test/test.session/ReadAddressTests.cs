@@ -6,7 +6,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -47,10 +46,8 @@ namespace Tsavorite.test.readaddress
 {
     using StructAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
     using StructStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class ReadAddressTests : AllureTestBase
+    internal class ReadAddressTests : TestBase
     {
         const int NumKeys = 1000;
         const int KeyMod = 100;

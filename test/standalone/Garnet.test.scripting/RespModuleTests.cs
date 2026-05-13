@@ -1,19 +1,17 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class RespModuleTests : AllureTestBase
+    public class RespModuleTests : TestBase
     {
         GarnetServer server;
         private string testModuleDir;
@@ -349,9 +347,8 @@ namespace Garnet.test
     }
 
     [NonParallelizable]
-    [AllureNUnit]
     [TestFixture]
-    public class RespModuleAdditionalTests : AllureTestBase
+    public class RespModuleAdditionalTests : TestBase
     {
         private string testModuleDir;
         string binPath;

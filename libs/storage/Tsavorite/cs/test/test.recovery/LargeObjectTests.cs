@@ -4,7 +4,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -14,10 +13,8 @@ namespace Tsavorite.test.LargeObjects
 {
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class LargeObjectTests : AllureTestBase
+    internal class LargeObjectTests : TestBase
     {
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
@@ -9,7 +9,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Base class used for all RESP ACL tests
     /// </summary>
-    abstract class AclTest : AllureTestBase
+    abstract class AclTest : TestBase
     {
         /// <summary>
         /// Dummy password used by some of the tests.

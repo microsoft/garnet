@@ -3,7 +3,6 @@
 
 using System;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -12,9 +11,8 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class GarnetObjectTests : AllureTestBase
+    public class GarnetObjectTests : TestBase
     {
         TsavoriteKV<StoreFunctions, StoreAllocator> store;
         IDevice logDevice, objectLogDevice;

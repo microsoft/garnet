@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,10 +16,8 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.ReadCacheTests
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class RandomReadCacheTests : AllureTestBase
+    internal class RandomReadCacheTests : TestBase
     {
         class Functions : SpanByteFunctions<Empty>
         {

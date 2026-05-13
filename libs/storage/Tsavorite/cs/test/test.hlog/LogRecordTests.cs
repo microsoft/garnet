@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Runtime.InteropServices;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -17,9 +16,8 @@ namespace Tsavorite.test.LogRecordTests
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
     /// which in turn tests <see cref="MultiLevelPageArray{_int_}"/>.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    unsafe class LogRecordTests : AllureTestBase
+    unsafe class LogRecordTests : TestBase
     {
         long nativePointer;
         ObjectIdMap objectIdMap;

@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,9 +12,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    [AllureNUnit]
     [TestFixture]
-    internal class LogScanTests : AllureTestBase
+    internal class LogScanTests : TestBase
     {
         private TsavoriteLog log;
         private IDevice device;

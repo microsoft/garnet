@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,10 +11,8 @@ namespace Tsavorite.test.ReadCacheTests
 {
     using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    public class NativeReadCacheTests : AllureTestBase
+    public class NativeReadCacheTests : TestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;

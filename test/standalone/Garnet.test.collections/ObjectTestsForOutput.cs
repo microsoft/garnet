@@ -2,16 +2,13 @@
 // Licensed under the MIT license.
 using System.Text;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-
-    [AllureNUnit]
     [TestFixture]
-    public class ObjectTestsForOutput : AllureTestBase
+    public class ObjectTestsForOutput : TestBase
     {
         protected GarnetServer server;
 

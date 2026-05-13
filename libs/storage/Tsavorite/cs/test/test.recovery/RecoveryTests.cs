@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -21,10 +20,8 @@ namespace Tsavorite.test.recovery.sumstore
 
     using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>>;
     using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class DeviceTypeRecoveryTests : AllureTestBase
+    internal class DeviceTypeRecoveryTests : TestBase
     {
         internal const long NumUniqueKeys = 1L << 12;
         internal const long KeySpace = 1L << 20;
@@ -212,10 +209,8 @@ namespace Tsavorite.test.recovery.sumstore
             _ = bContext.CompletePending(true);
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    internal class AllocatorTypeRecoveryTests : AllureTestBase
+    internal class AllocatorTypeRecoveryTests : TestBase
     {
         const int StackAllocMax = 12;
         const int RandSeed = 101;

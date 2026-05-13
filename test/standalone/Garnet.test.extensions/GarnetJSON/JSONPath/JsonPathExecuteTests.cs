@@ -33,16 +33,14 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test.JSONPath
 {
-    [AllureNUnit]
     [TestFixture]
-    public class JsonPathExecuteTests : AllureTestBase
+    public class JsonPathExecuteTests : TestBase
     {
         [Test]
         public void GreaterThanIssue1518()
