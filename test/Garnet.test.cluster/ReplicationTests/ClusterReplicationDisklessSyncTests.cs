@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Allure.NUnit;
 #if DEBUG
 using Garnet.common;
@@ -195,6 +196,176 @@ namespace Garnet.test.cluster
 
             // Wait for replica to catch up
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+        }
+
+        /// <summary>
+        /// Regression test for the diskless replication task dedup bug.
+        /// Repeatedly resets and re-attaches a single replica to its primary using diskless
+        /// sync and asserts that the primary's AofTaskStore deduplicates on the replica node id
+        /// (i.e. INFO REPLICATION reports exactly one slaveN entry instead of accumulating one
+        /// per attach). Prior to the fix, TryAddReplicationTasks compared against
+        /// rss.replicaNodeId (null for diskless sessions), so dedup never matched and the
+        /// AofSyncTaskInfo array grew without bound.
+        /// </summary>
+        [Test, Order(7)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncRepeatedAttachDoesNotAccumulateTasks()
+        {
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            const int reAttachCount = 4;
+            for (var i = 0; i < reAttachCount; i++)
+            {
+                ResetAndReAttach(replicaIndex, primaryIndex, soft: true);
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            }
+
+            var server = context.clusterTestUtils.GetServer(primaryIndex);
+            var infoReplication = server.InfoRawAsync("replication").GetAwaiter().GetResult();
+            var slaveLineCount = infoReplication
+                .Split('\n')
+                .Count(line => System.Text.RegularExpressions.Regex.IsMatch(line, "^slave[0-9]+:"));
+
+            ClassicAssert.AreEqual(1, slaveLineCount,
+                $"Primary INFO REPLICATION must report exactly one slaveN entry after " +
+                $"{reAttachCount + 1} attach cycles for the same replica node, but reported " +
+                $"{slaveLineCount}. This indicates AofTaskStore.TryAddReplicationTasks failed " +
+                $"to deduplicate on replicaSyncMetadata.originNodeId. Full INFO REPLICATION:\n{infoReplication}");
+        }
+
+        /// <summary>
+        /// LOCAL-ONLY stress test for the AofSyncTaskInfo.Dispose race (PR #1791 review comments #1 + #2).
+        /// Background writers hammer the primary with SET commands so the AofSyncTask's
+        /// Consume()/Throttle() loop is constantly in-flight calling garnetClient.ExecuteClusterAppendLog.
+        /// We then trigger many soft-reset + re-attach cycles. Each re-attach hits the dedup-replacement
+        /// path in AofTaskStore.TryAddReplicationTasks (line 287-288) which calls t.Dispose() on the
+        /// old AofSyncTaskInfo. Because Dispose() now also disposes the (mono-threaded, pooled-buffer)
+        /// GarnetClientSession from a foreign thread, this races with the in-flight Consume() and can
+        /// crash the process (AccessViolation, NRE, or buffer corruption).
+        ///
+        /// This test is [Explicit] and tagged STRESS — it is flaky by nature and is not pushed to CI.
+        /// Intended for local repro / hardening work only.
+        /// </summary>
+        [Test, Order(8), Explicit("Local-only stress test for AofSyncTaskInfo.Dispose race; flaky by design")]
+        [Category("STRESS")]
+        public void ClusterDisklessSyncStressReplaceDuringConsume()
+        {
+            const int nodes_count = 2;
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const int reAttachCount = 50;
+            const int writerThreadCount = 4;
+
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            using var stopWriters = new System.Threading.CancellationTokenSource();
+            var writerExceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+            var primaryDb = context.clusterTestUtils.GetDatabase();
+            var writers = new System.Threading.Tasks.Task[writerThreadCount];
+            for (var w = 0; w < writerThreadCount; w++)
+            {
+                int threadId = w;
+                writers[w] = System.Threading.Tasks.Task.Run(() =>
+                {
+                    var rng = new Random(threadId * 7919);
+                    long i = 0;
+                    while (!stopWriters.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            var key = $"stress:{threadId}:{i % 1024}";
+                            var value = new string((char)('a' + rng.Next(26)), 64);
+                            primaryDb.StringSet(key, value);
+                            i++;
+                        }
+                        catch (Exception ex)
+                        {
+                            writerExceptions.Add(ex);
+                        }
+                    }
+                });
+            }
+
+            Exception loopFailure = null;
+            try
+            {
+                for (var i = 0; i < reAttachCount; i++)
+                {
+                    ResetAndReAttach(replicaIndex, primaryIndex, soft: true);
+                    _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+                    System.Threading.Thread.Sleep(50);
+                }
+            }
+            catch (Exception ex)
+            {
+                loopFailure = ex;
+            }
+            finally
+            {
+                stopWriters.Cancel();
+                System.Threading.Tasks.Task.WaitAll(writers, TimeSpan.FromSeconds(30));
+            }
+
+            if (loopFailure != null)
+            {
+                Assert.Fail($"Re-attach loop threw on iteration: {loopFailure}");
+            }
+
+            try
+            {
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail($"Replica failed to catch up after stress run (possible corruption from dispose race): {ex.Message}");
+            }
+
+            var server = context.clusterTestUtils.GetServer(primaryIndex);
+            string infoReplication = null;
+            try
+            {
+                infoReplication = server.InfoRawAsync("replication").GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail($"Primary INFO REPLICATION failed after stress run (likely process-level corruption): {ex}");
+            }
+
+            var slaveLineCount = infoReplication
+                .Split('\n')
+                .Count(line => System.Text.RegularExpressions.Regex.IsMatch(line, "^slave[0-9]+:"));
+            ClassicAssert.AreEqual(1, slaveLineCount,
+                $"Primary INFO REPLICATION must report exactly one slaveN entry after stress; got {slaveLineCount}. INFO:\n{infoReplication}");
+
+            if (!writerExceptions.IsEmpty)
+            {
+                var sample = string.Join("\n---\n", writerExceptions.Take(5));
+                TestContext.Progress.WriteLine($"[STRESS] writer threw {writerExceptions.Count} exception(s); sample:\n{sample}");
+            }
         }
 
         /// <summary>

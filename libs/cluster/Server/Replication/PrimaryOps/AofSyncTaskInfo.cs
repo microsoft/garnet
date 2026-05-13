@@ -24,6 +24,13 @@ namespace Garnet.cluster
         readonly long startAddress;
         public long previousAddress;
 
+        // Drains in-flight ReplicaSyncTaskAsync executions before garnetClient is disposed.
+        // GarnetClientSession is mono-threaded with unsafe pooled send buffers, so disposing it
+        // while Consume()/Throttle() are mid-call (e.g. inside ExecuteClusterAppendLog) corrupts
+        // those buffers. The task body wraps its work in TryEnter()/Exit(); Dispose() blocks on
+        // monitor.Dispose() until the worker has exited before disposing the client.
+        readonly ActiveWorkerMonitor activeWorkerMonitor = new();
+
         /// <summary>
         /// Check if client connection is healthy
         /// </summary>
@@ -56,13 +63,18 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            // First cancel the token
+            // First cancel the token so any in-flight ReplicaSyncTaskAsync stops requesting work
             cts?.Cancel();
 
             // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
             iter?.Dispose();
 
-            // Dispose the GarnetClientSession to release network resources
+            // Block until any in-flight ReplicaSyncTaskAsync has called Exit() on the monitor.
+            // This guarantees no thread is inside Consume()/Throttle() when garnetClient is
+            // disposed below.
+            activeWorkerMonitor.Dispose();
+
+            // Safe to dispose now: no concurrent users of garnetClient remain.
             garnetClient?.Dispose();
 
             // Finally, dispose the cts
@@ -108,6 +120,15 @@ namespace Garnet.cluster
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, startAddress);
 
+            // Register as an active worker. If Dispose() already ran the monitor is closed and we
+            // must not touch garnetClient.
+            if (!activeWorkerMonitor.TryEnter())
+            {
+                logger?.LogInformation("ReplicaSyncTask for {remoteNodeId} aborted: AofSyncTaskInfo already disposed", remoteNodeId);
+                return;
+            }
+
+            var enteredMonitor = true;
             try
             {
                 if (!IsConnected) garnetClient.Connect();
@@ -128,6 +149,14 @@ namespace Garnet.cluster
             {
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
                 logger?.LogWarning("AofSync task terminated for remote node {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, previousAddress);
+
+                // Exit the monitor BEFORE TryRemove. TryRemove calls AofSyncTaskInfo.Dispose(),
+                // which calls activeWorkerMonitor.Dispose() and blocks until workerCount drains.
+                // If we held the monitor across TryRemove we would deadlock against ourselves.
+                if (enteredMonitor)
+                {
+                    _ = activeWorkerMonitor.Exit();
+                }
 
                 if (!aofTaskStore.TryRemove(this))
                 {
