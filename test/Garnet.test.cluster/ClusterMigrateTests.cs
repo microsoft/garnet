@@ -2337,7 +2337,7 @@ namespace Garnet.test.cluster
         /// raw-string keys and collection-object keys from the unified store via a single
         /// IterateLookup pass (no parallel tempKv).
         /// </summary>
-        [Test, Order(22)]
+        [Test, Order(28)]
         [Category("CLUSTER")]
         public void ClusterDelKeysInSlotRemovesStringAndObjectKeys()
         {

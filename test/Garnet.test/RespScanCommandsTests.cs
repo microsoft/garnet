@@ -158,7 +158,13 @@ namespace Garnet.test
             finally
             {
                 stop.Cancel();
-                writer.Wait(TimeSpan.FromSeconds(5));
+                // Ensure the background writer stops within a bounded window so it cannot leak
+                // a connection into subsequent tests, and surface any exception it threw so it
+                // doesn't get silently swallowed.
+                var stopped = writer.Wait(TimeSpan.FromSeconds(30));
+                ClassicAssert.IsTrue(stopped, "Background writer did not stop within 30s after cancellation");
+                if (writer.IsFaulted)
+                    throw writer.Exception!.Flatten();
             }
         }
 
