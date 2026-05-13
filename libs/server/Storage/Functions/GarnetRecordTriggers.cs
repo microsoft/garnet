@@ -148,10 +148,23 @@ namespace Garnet.server
 #endif
         {
             // Only act on RangeIndex records.
+            // Check the SOURCE's RecordType, not the destination's: Tsavorite's
+            // CopyReadsToTail / compaction CTT path allocates dst at tail and copies the
+            // value bytes, but does NOT carry the RecordDataHeader.RecordType through. After
+            // CTT, dst.RecordType == 0 by default. We must inspect src to recognize this is
+            // a RangeIndex record, and explicitly propagate the RecordType to dst below
+            // before the next Read-with-RangeIndex-cmd can pass the type-mismatch guard in
+            // ReadMethods.CheckRecordTypeMismatch.
             if (rangeIndexManager is null
                 || dstLogRecord.Info.ValueIsObject
-                || dstLogRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
+                || srcLogRecord.RecordType != RangeIndexManager.RangeIndexRecordType)
                 return;
+
+            // Propagate RecordType from src onto dst (CTT does not do this for us).
+            // RecordDataHeader is a wrapper struct over the header pointer, so the setter
+            // writes through to the underlying memory even on this struct value.
+            var dstHeader = dstLogRecord.RecordDataHeader;
+            dstHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
 
             var srcSpan = srcLogRecord.ValueSpan;
             var dstSpan = dstLogRecord.ValueSpan;
