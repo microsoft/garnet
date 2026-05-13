@@ -20,7 +20,6 @@ namespace Garnet.server
         readonly string streamsRootDir;
         long defPageSize;
         long defMemorySize;
-        int safeTailRefreshFreqMs;
         readonly bool waitForCommit;
         readonly ILogger logger;
 
@@ -34,13 +33,12 @@ namespace Garnet.server
         /// <param name="waitForCommit">When true, every write to a stream's log synchronously
         ///     flushes and waits for the commit to complete before returning — matching the
         ///     server-wide <c>--wait-for-commit</c> AOF behaviour.</param>
-        public StreamManager(string streamsRootDir, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool waitForCommit = false, ILogger logger = null)
+        public StreamManager(string streamsRootDir, long pageSize, long memorySize, bool waitForCommit = false, ILogger logger = null)
         {
             streams = new Dictionary<byte[], StreamObject>(ByteArrayComparer.Instance);
             this.streamsRootDir = streamsRootDir;
             defPageSize = pageSize;
             defMemorySize = memorySize;
-            this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;
             this.waitForCommit = waitForCommit;
             this.logger = logger;
         }
@@ -70,7 +68,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                var stream = new StreamObject(streamsRootDir, hexName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit, recover: true);
+                var stream = new StreamObject(streamsRootDir, hexName, defPageSize, defMemorySize, waitForCommit, recover: true);
                 streams[keyBytes] = stream;
                 logger?.LogInformation("Recovered stream '{key}' from '{dir}'", BitConverter.ToString(keyBytes), dir);
             }
@@ -258,7 +256,7 @@ namespace Garnet.server
                     // for the on-disk directory name so arbitrary key bytes are filesystem-safe and
                     // the encoding is reversible during recovery.
                     var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
-                    StreamObject newStream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit);
+                    StreamObject newStream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, waitForCommit);
                     newStream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     streams.TryAdd(key, newStream);
                     streamKey = key;
@@ -356,6 +354,61 @@ namespace Garnet.server
             return false;
         }
 
+        /// <summary>
+        /// Drop a single stream by name — the per-key counterpart to <see cref="FlushAll"/>. Used
+        /// by <c>DEL</c> / <c>UNLINK</c> so that removing a stream key also disposes its
+        /// <see cref="StreamObject"/> (deallocating the BTree, closing the TsavoriteLog and device,
+        /// and dropping all consumer groups + PELs that hung off it) and deletes the on-disk
+        /// subdirectory so a subsequent recovery sees nothing. Session-level caches detect the
+        /// stale reference via <see cref="StreamObject.IsDisposed"/> on their next lookup.
+        /// </summary>
+        /// <param name="keySlice">name of the stream to delete</param>
+        /// <returns>true if a stream with this key existed and was removed; false if no such stream</returns>
+        public bool DeleteStream(PinnedSpanByte keySlice)
+        {
+            if (streams == null) return false;
+            var key = keySlice.ToArray();
+
+            _lock.WriteLock();
+            try
+            {
+                // Remove from the dictionary first under the write lock — once we've taken the
+                // entry out, no future cache miss can resolve it. Dispose() and the directory
+                // delete are allowed to throw without leaving the dict inconsistent.
+                if (!streams.Remove(key, out var stream))
+                    return false;
+
+                try
+                {
+                    stream.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error disposing stream during DEL/UNLINK");
+                }
+
+                if (streamsRootDir != null)
+                {
+                    try
+                    {
+                        var dir = Path.Combine(streamsRootDir, Convert.ToHexString(key));
+                        if (Directory.Exists(dir))
+                            Directory.Delete(dir, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error deleting stream directory during DEL/UNLINK");
+                    }
+                }
+
+                return true;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
         public bool StreamTrim(PinnedSpanByte keySlice, PinnedSpanByte trimArg, StreamTrimOpts optType, out ulong validKeysRemoved, bool approximate = false)
         {
             bool foundStream;
@@ -423,7 +476,7 @@ namespace Garnet.server
                     if (!streams.TryGetValue(key, out stream))
                     {
                         var dirName = streamsRootDir != null ? Convert.ToHexString(key) : null;
-                        stream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, safeTailRefreshFreqMs, waitForCommit);
+                        stream = new StreamObject(streamsRootDir, dirName, defPageSize, defMemorySize, waitForCommit);
                         streams[key] = stream;
                     }
                 }
@@ -545,6 +598,59 @@ namespace Garnet.server
         }
 
         #endregion Consumer Group Forwarding
+
+        /// <summary>
+        /// Drop every stream — disposes each <see cref="StreamObject"/> (which deallocates its
+        /// BTree index and closes its TsavoriteLog + device) and deletes the per-stream on-disk
+        /// subdirectory so a subsequent recovery does not replay the data. Used by
+        /// <c>FLUSHDB</c> / <c>FLUSHALL</c>. Streams are not per-database, so flushing any
+        /// database wipes the entire stream namespace.
+        /// </summary>
+        public void FlushAll()
+        {
+            if (streams == null) return;
+
+            _lock.WriteLock();
+            try
+            {
+                foreach (var kv in streams)
+                {
+                    var key = kv.Key;
+                    var stream = kv.Value;
+
+                    try
+                    {
+                        stream.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error disposing stream during FLUSHDB/FLUSHALL");
+                    }
+
+                    // Remove the on-disk artifacts. The directory name matches the encoding used
+                    // when the stream was created (see StreamAdd / StreamGroupCreate).
+                    if (streamsRootDir != null)
+                    {
+                        try
+                        {
+                            var dir = Path.Combine(streamsRootDir, Convert.ToHexString(key));
+                            if (Directory.Exists(dir))
+                                Directory.Delete(dir, recursive: true);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogError(ex, "Error deleting stream directory during FLUSHDB/FLUSHALL");
+                        }
+                    }
+                }
+
+                streams.Clear();
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
 
         /// <inheritdoc/>
         public void Dispose()

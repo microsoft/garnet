@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -67,6 +68,14 @@ namespace Garnet.server
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
+        // Set by Dispose. Read by session caches to evict stale references after FLUSHDB/FLUSHALL.
+        // volatile because Dispose may run on the FLUSHDB thread while another session reads from
+        // its own cache without taking the stream lock.
+        volatile bool disposed;
+
+        /// <summary>True once <see cref="Dispose"/> has run. Used by session-level caches to
+        /// detect and evict references that were invalidated by FLUSHDB/FLUSHALL.</summary>
+        public bool IsDisposed => disposed;
 
         /// <summary>Consumer groups attached to this stream, keyed by group name.</summary>
         readonly Dictionary<string, ConsumerGroup> consumerGroups = new(StringComparer.Ordinal);
@@ -97,13 +106,12 @@ namespace Garnet.server
         ///     If null, the stream is in-memory only.</param>
         /// <param name="pageSize">Page size of the log used for the stream.</param>
         /// <param name="memorySize">Memory budget for the log.</param>
-        /// <param name="safeTailRefreshFreqMs">Safe tail refresh frequency, milliseconds.</param>
         /// <param name="waitForCommit">When true, every write (XADD, XDEL, XTRIM) synchronously
         ///     flushes and waits for the commit to complete before returning. This mirrors the
         ///     server-wide <c>--wait-for-commit</c> AOF behaviour for the stream's own log.</param>
         /// <param name="recover">If true and a disk-backed log exists at the path, recover the
         ///     log and rebuild the in-memory BTree by scanning all entries.</param>
-        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, int safeTailRefreshFreqMs, bool waitForCommit = false, bool recover = false)
+        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, bool waitForCommit = false, bool recover = false)
         {
             if (streamsRootDir == null || streamDirName == null)
             {
@@ -117,7 +125,9 @@ namespace Garnet.server
             }
             // TsavoriteLog auto-recovers when TryRecoverLatest=true (the default), so simply
             // re-opening a log device with prior commits replays its in-memory state.
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize, SafeTailRefreshFrequencyMs = safeTailRefreshFreqMs });
+            // SafeTailAddress is now refreshed on-demand via RefreshSafeTailAddress() (Tsavorite PR
+            // #1720); there is no longer a background-refresh-frequency setting.
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize });
             index = new BTree((uint)BTreeNode.PAGE_SIZE);
             totalEntriesAdded = 0;
             lastId = default;
@@ -1318,7 +1328,7 @@ namespace Garnet.server
             {
                 writer.WriteArrayLength(4);
                 WriteStreamIdToWriter(pe.Id, ref writer);
-                writer.WriteBulkString(System.Text.Encoding.UTF8.GetBytes(pe.ConsumerName));
+                writer.WriteBulkString(Encoding.UTF8.GetBytes(pe.ConsumerName));
                 writer.WriteInt64(nowMs - pe.DeliveryTime);
                 writer.WriteInt64(pe.DeliveryCount);
             }
@@ -1752,11 +1762,30 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            // Idempotent: BTree.Deallocate is a native free that would crash on a second call,
+            // and a session cache may still hold a reference to a disposed StreamObject until
+            // its FIFO eviction reclaims it or the next lookup detects IsDisposed and evicts.
+            // Guard with the same flag the cache uses for staleness detection.
+            if (disposed) return;
+
+            // Publish the disposed flag *before* releasing native memory so any concurrent reader
+            // that beat us to a cache lookup at least has a chance to observe it on its next
+            // operation. Subsequent cache-hit code paths must check IsDisposed and re-resolve
+            // through StreamManager.
+            disposed = true;
             try
             {
                 index.Deallocate();
                 log.Dispose();
                 device.Dispose();
+
+                // Release the heavy managed graph (consumer groups, PELs, PendingEntry instances,
+                // consumer-name strings, etc.) so it becomes GC-eligible immediately even if the
+                // wrapper is pinned by a stale SessionStreamCache entry that never sees another
+                // lookup for this key. Without this, a DELed stream that had a large pending list
+                // would keep all of that managed state alive until the session disconnects or
+                // FIFO-evicts the cache entry.
+                consumerGroups.Clear();
             }
             finally
             { }

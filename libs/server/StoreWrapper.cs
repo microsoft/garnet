@@ -294,7 +294,7 @@ namespace Garnet.server
                     StoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
-            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0, serverOptions.EnableAOF && serverOptions.WaitForCommit, loggerFactory?.CreateLogger("StreamManager"));
+            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), serverOptions.EnableAOF && serverOptions.WaitForCommit, loggerFactory?.CreateLogger("StreamManager"));
         }
 
         /// <summary>
@@ -316,7 +316,6 @@ namespace Garnet.server
             this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(),
                                                    serverOptions.StreamPageSizeBytes(),
                                                    serverOptions.StreamMemorySizeBytes(),
-                                                   0,
                                                    serverOptions.EnableAOF && serverOptions.WaitForCommit,
                                                    loggerFactory?.CreateLogger("StreamManager"));
         }
@@ -448,8 +447,11 @@ namespace Garnet.server
             var streamTask = streamManager == null
                 ? Task.CompletedTask
                 : streamManager.CommitAsync()
-                    .ContinueWith(t => { /* observe to avoid UnobservedTaskException; logged elsewhere */ var _ = t.Exception; },
-                                  TaskContinuationOptions.OnlyOnFaulted);
+                    .ContinueWith(
+                        t => { /* observe to avoid UnobservedTaskException; logged elsewhere */ var _ = t.Exception; },
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default);
             await Task.WhenAll(databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId), streamTask).ConfigureAwait(false);
         }
 
@@ -631,15 +633,22 @@ namespace Garnet.server
                 throw new GarnetException($"Unable to call {nameof(databaseManager.FlushDatabase)} with DB ID: {dbId}");
 
             databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
+
+            // Streams are not per-database — a single StreamManager backs the whole StoreWrapper —
+            // so any FLUSHDB wipes the entire stream namespace alongside the main store. This
+            // disposes each StreamObject (deallocating its BTree and closing its TsavoriteLog)
+            // and deletes the on-disk subdirectories so a subsequent recovery sees no data.
+            streamManager?.FlushAll();
         }
 
         /// <summary>
-        /// Flush all active databases 
+        /// Flush all active databases
         /// </summary>
         /// <param name="unsafeTruncateLog">Truncate log</param>
         public void FlushAllDatabases(bool unsafeTruncateLog)
         {
             databaseManager.FlushAllDatabases(unsafeTruncateLog);
+            streamManager?.FlushAll();
         }
 
         /// <summary>

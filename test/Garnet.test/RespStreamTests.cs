@@ -1053,6 +1053,220 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
             server.Start();
         }
+
+        [Test]
+        [Category("Persistence")]
+        public void StreamFlushDbRemovesInMemoryAndOnDisk(
+            [Values("FLUSHDB", "FLUSHALL")] string flushCmd)
+        {
+            // FLUSHDB / FLUSHALL must wipe streams along with the main store: dispose each
+            // StreamObject (frees its BTree and closes its TsavoriteLog) and remove the
+            // per-stream subdirectory so a subsequent recovery sees nothing.
+            var saveDir = System.IO.Path.Combine(TestUtils.MethodTestDir, "streams");
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+
+            const string streamA = "flushA";
+            const string streamB = "flushB";
+
+            // Pre-FLUSH: add entries, SAVE so data is on disk, capture the on-disk paths.
+            string dirA, dirB;
+            using (var firstServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir))
+            {
+                firstServer.Start();
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+                    var s = redis.GetServers()[0];
+
+                    for (int i = 0; i < 10; i++)
+                    {
+                        db.StreamAdd(streamA, $"f{i}", $"v{i}");
+                        db.StreamAdd(streamB, $"f{i}", $"v{i}");
+                    }
+
+                    s.Execute("SAVE");
+                    System.Threading.Thread.Sleep(500);
+
+                    // Hex of the UTF-8 key bytes — matches the subdir naming in StreamManager.
+                    dirA = System.IO.Path.Combine(saveDir,
+                        Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamA)));
+                    dirB = System.IO.Path.Combine(saveDir,
+                        Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamB)));
+
+                    ClassicAssert.IsTrue(System.IO.Directory.Exists(dirA),
+                        "Expected on-disk dir for stream A after SAVE");
+                    ClassicAssert.IsTrue(System.IO.Directory.Exists(dirB),
+                        "Expected on-disk dir for stream B after SAVE");
+
+                    // Trigger the flush.
+                    s.Execute(flushCmd);
+
+                    // In-memory state: streams are gone, XLEN reports 0.
+                    ClassicAssert.AreEqual(0, db.StreamLength(streamA));
+                    ClassicAssert.AreEqual(0, db.StreamLength(streamB));
+                }
+
+                // On-disk state: per-stream subdirs were deleted.
+                ClassicAssert.IsFalse(System.IO.Directory.Exists(dirA),
+                    "Stream A on-disk directory should be removed by " + flushCmd);
+                ClassicAssert.IsFalse(System.IO.Directory.Exists(dirB),
+                    "Stream B on-disk directory should be removed by " + flushCmd);
+            }
+
+            // Tear down and recover from the same dir: nothing should come back.
+            using (var secondServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir, tryRecover: true))
+            {
+                secondServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual(0, db.StreamLength(streamA),
+                    "Recovery must not bring back a flushed stream");
+                ClassicAssert.AreEqual(0, db.StreamLength(streamB));
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+
+        [Test]
+        [Category("Persistence")]
+        public void StreamDeleteRemovesInMemoryAndOnDisk(
+            [Values("DEL", "UNLINK")] string delCmd,
+            [Values(true, false)] bool diskBacked)
+        {
+            // DEL / UNLINK must wipe a single stream completely: drop the dictionary entry,
+            // dispose the StreamObject (free BTree, close TsavoriteLog + device, drop consumer
+            // groups), and delete the per-stream on-disk subdirectory when one exists. Other
+            // streams in the same server must be untouched.
+            var saveDir = diskBacked ? System.IO.Path.Combine(TestUtils.MethodTestDir, "streams") : null;
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+
+            const string streamA = "delA";
+            const string streamB = "delB";
+            const string missing = "doesNotExist";
+            const string stringKey = "plainString";
+
+            using (var test = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                streamLogDir: saveDir))
+            {
+                test.Start();
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+                    var s = redis.GetServers()[0];
+
+                    // Populate two streams (with a consumer group on A) and a plain string.
+                    for (int i = 0; i < 5; i++)
+                    {
+                        db.StreamAdd(streamA, $"f{i}", $"v{i}");
+                        db.StreamAdd(streamB, $"f{i}", $"v{i}");
+                    }
+                    db.Execute("XGROUP", "CREATE", streamA, "g1", "0");
+                    db.StringSet(stringKey, "value");
+
+                    string dirA = null, dirB = null;
+                    if (diskBacked)
+                    {
+                        s.Execute("SAVE");
+                        System.Threading.Thread.Sleep(500);
+
+                        dirA = System.IO.Path.Combine(saveDir,
+                            Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamA)));
+                        dirB = System.IO.Path.Combine(saveDir,
+                            Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamB)));
+                        ClassicAssert.IsTrue(System.IO.Directory.Exists(dirA), "stream A dir should exist before DEL");
+                        ClassicAssert.IsTrue(System.IO.Directory.Exists(dirB), "stream B dir should exist before DEL");
+                    }
+
+                    // 1) DEL a single existing stream — returns 1.
+                    var deleted = (int)db.Execute(delCmd, streamA);
+                    ClassicAssert.AreEqual(1, deleted, $"{delCmd} on existing stream should return 1");
+
+                    // 2) The stream is gone in memory: XLEN reports 0 and consumer-group state is
+                    //    dropped. XINFO GROUPS against a missing key errors out per Redis, which
+                    //    is the strongest signal that the dictionary entry — and therefore the
+                    //    consumerGroups dictionary on the StreamObject — is gone.
+                    ClassicAssert.AreEqual(0, db.StreamLength(streamA), "Deleted stream must be empty");
+                    var infoGroupsEx = Assert.Throws<RedisServerException>(
+                        () => db.Execute("XINFO", "GROUPS", streamA),
+                        "XINFO GROUPS on a DELed stream should error: the key no longer exists");
+                    StringAssert.Contains("no such key", infoGroupsEx.Message);
+
+                    // 3) On disk: dir for A is gone, dir for B is preserved (DEL is per-key).
+                    if (diskBacked)
+                    {
+                        ClassicAssert.IsFalse(System.IO.Directory.Exists(dirA),
+                            "Stream A on-disk directory should be removed by " + delCmd);
+                        ClassicAssert.IsTrue(System.IO.Directory.Exists(dirB),
+                            "Stream B on-disk directory must survive a DEL on A");
+                    }
+
+                    // 4) Other streams are unaffected.
+                    ClassicAssert.AreEqual(5, db.StreamLength(streamB),
+                        "Stream B must be untouched by DEL on A");
+
+                    // 5) DEL a missing key — returns 0.
+                    var notFound = (int)db.Execute(delCmd, missing);
+                    ClassicAssert.AreEqual(0, notFound, $"{delCmd} on missing key returns 0");
+
+                    // 6) Multi-arg DEL spanning a stream, a string, and a missing key — count = 2.
+                    var multi = (int)db.Execute(delCmd, streamB, stringKey, missing);
+                    ClassicAssert.AreEqual(2, multi, $"{delCmd} of [stream, string, missing] should return 2");
+                    ClassicAssert.AreEqual(0, db.StreamLength(streamB));
+                    ClassicAssert.IsFalse(db.KeyExists(stringKey));
+
+                    // 7) Session-cache invalidation: the same connection had populated its cache via
+                    //    XADD on A; XLEN after DEL must observe the eviction and return 0 (already
+                    //    asserted above, but confirm a fresh XADD recreates and works).
+                    db.StreamAdd(streamA, "fresh", "value");
+                    ClassicAssert.AreEqual(1, db.StreamLength(streamA),
+                        "Re-creating a stream by the same name after DEL must work");
+                }
+            }
+
+            // 8) Restart from the same on-disk root — the deleted streams must not come back.
+            if (diskBacked)
+            {
+                using (var restart = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                    streamLogDir: saveDir, tryRecover: true))
+                {
+                    restart.Start();
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var db = redis.GetDatabase(0);
+                    // streamB was deleted in step 6; streamA was re-created in step 7 (but we
+                    // didn't SAVE again, so the post-recreate entry won't survive recovery).
+                    ClassicAssert.AreEqual(0, db.StreamLength(streamB),
+                        "Recovery must not resurrect a DELed stream");
+                }
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+
+        [Test]
+        [Category("Persistence")]
+        public void StreamObjectDisposeIsIdempotent()
+        {
+            // Dispose must be safe to call twice. BTree.Deallocate frees native memory and would
+            // crash on a double free — but a SessionStreamCache may hold a stale reference to a
+            // disposed StreamObject until eviction, and a future change that decides to clean up
+            // such references could trigger a second Dispose. The idempotency guard on the
+            // disposed flag is what makes that safe.
+            var stream = new Garnet.server.StreamObject(
+                streamsRootDir: null, streamDirName: null, pageSize: 4096, memorySize: 8192);
+            stream.Dispose();
+            ClassicAssert.IsTrue(stream.IsDisposed);
+            // The interesting bit: this must not crash, double-free, or throw.
+            Assert.DoesNotThrow(() => stream.Dispose());
+            ClassicAssert.IsTrue(stream.IsDisposed);
+        }
         #endregion
 
         #region BenchmarkRepro

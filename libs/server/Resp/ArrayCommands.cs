@@ -90,10 +90,17 @@ namespace Garnet.server
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key);
-
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
-                if (status == GarnetStatus.OK)
+                bool storeHit = storageApi.DELETE(key) == GarnetStatus.OK;
+                // Streams live in their own namespace (StreamManager), separate from the main
+                // KV / object stores. DEL has to walk it too — otherwise the dictionary entry,
+                // the in-memory BTree, the TsavoriteLog, the on-disk segment files, and any
+                // consumer groups attached to the stream would all leak past the delete.
+                // Evaluate both sides (no short-circuit) so a name that exists in both places —
+                // a Garnet quirk, since main-store types and streams don't conflict by key —
+                // gets cleaned up in both. Count it as a single deletion to match Redis semantics.
+                bool streamHit = streamManager != null && streamManager.DeleteStream(key);
+                if (storeHit || streamHit)
                     keysDeleted++;
             }
 

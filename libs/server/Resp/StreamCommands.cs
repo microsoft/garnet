@@ -710,7 +710,7 @@ namespace Garnet.server
             if (parseState.Count < 5)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            ar key = parseState.GetArgSliceByRef(0);
+            var key = parseState.GetArgSliceByRef(0);
             var groupName = parseState.GetArgSliceByRef(1).ToString();
             var consumerName = parseState.GetArgSliceByRef(2).ToString();
 

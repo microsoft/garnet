@@ -18,14 +18,30 @@ namespace Garnet.server
         { }
 
         /// <summary>
-        /// Lookup a stream in the cahce. Since the cache is expected to be small, we can sequentially scan.
+        /// Lookup a stream in the cache. Since the cache is expected to be small, we can sequentially scan.
+        /// Stale entries (StreamObjects that were disposed by FLUSHDB/FLUSHALL while still cached
+        /// here) are evicted on detection and reported as a miss so callers re-resolve through the
+        /// StreamManager.
         /// </summary>
         /// <param name="key">name of stream to lookup</param>
         /// <param name="stream">stream found from the cache</param>
         /// <returns>true if stream exists in cache</returns>
         public bool TryGetStreamFromCache(ReadOnlySpan<byte> key, out StreamObject stream)
         {
-            return streamCache.TryGetValue(key.ToArray(), out stream);
+            var keyArr = key.ToArray();
+            if (!streamCache.TryGetValue(keyArr, out stream))
+                return false;
+
+            // FLUSHDB / FLUSHALL disposes StreamObjects out from under us. The cache holds a
+            // direct reference, so we have to validate liveness here.
+            if (stream.IsDisposed)
+            {
+                streamCache.Remove(keyArr);
+                stream = null;
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
