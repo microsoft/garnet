@@ -115,9 +115,10 @@ namespace Garnet.server
         public int IndexResizeThreshold = 50;
 
         /// <summary>
-        /// The length at which a value string becomes an overflow byte[]
+        /// The size at which a value string becomes an overflow byte[]. Accepts bytes or k/m/g suffixes (e.g. "4k", "1m").
+        /// Valid range: 64 bytes to 256m. Rounds down to previous power of 2 by Tsavorite.
         /// </summary>
-        public int ValueOverflowThreshold = 4096;   // TODO Tsavorite.core.LogSettings.MaxInlineValueSize
+        public string ValueOverflowThreshold = "4k";
 
         /// <summary>
         /// Wait for AOF to commit before returning results to client.
@@ -604,7 +605,7 @@ namespace Garnet.server
                 PageSize = 1L << PageSizeBits(),
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
-                MaxInlineValueSize = ValueOverflowThreshold,
+                MaxInlineValueSize = ValueOverflowThresholdBytes(),
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -678,7 +679,7 @@ namespace Garnet.server
                 if (ReadCachePageCount != 0)
                     kvSettings.ReadCachePageCount = ReadCachePageCount;
 
-                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize, out _);
+                kvSettings.ReadCachePageSize = 1L << ReadCachePageSizeBits();
                 kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize, out _);
 
                 if (kvSettings.ReadCacheMemorySize > 0)
@@ -787,6 +788,55 @@ namespace Garnet.server
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Get read-cache page size in bits, enforcing the shared <see cref="ServerOptions.MinPageSizeBytes"/> minimum.
+        /// </summary>
+        internal int ReadCachePageSizeBits() => ValidatedPageSizeBits(ReadCachePageSize, nameof(ReadCachePageSize));
+
+        /// <summary>
+        /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
+        /// Tsavorite requires this to be at least 64 bytes (1 &lt;&lt; LogSettings.kLowestMaxInlineSizeBits)
+        /// and at most 256 MB (1 &lt;&lt; (LogSettings.kMaxStringSizeBits - 1)). The value will be rounded down to the previous power of 2.
+        /// Additionally, the effective (power-of-2) value must be strictly less than the effective PageSize
+        /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
+        /// if not, it is clamped down to the largest valid value (with a warning).
+        /// </summary>
+        /// <returns>The byte value used for <c>KVSettings.MaxInlineValueSize</c>.</returns>
+        /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
+        public int ValueOverflowThresholdBytes()
+        {
+            const long MinBytes = 64L;                  // 1 << LogSettings.kLowestMaxInlineSizeBits
+            const long MaxBytes = 1L << 28;             // 1 << (LogSettings.kMaxStringSizeBits - 1)
+
+            if (string.IsNullOrEmpty(ValueOverflowThreshold))
+                throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");
+
+            if (!TryParseSize(ValueOverflowThreshold, out var sizeInBytes))
+                throw new Exception($"Unable to parse {nameof(ValueOverflowThreshold)} value '{ValueOverflowThreshold}'. Expected a memory size string (e.g. '4k', '1m').");
+
+            if (sizeInBytes < MinBytes || sizeInBytes > MaxBytes)
+                throw new Exception($"{nameof(ValueOverflowThreshold)} value '{ValueOverflowThreshold}' ({sizeInBytes} bytes) is outside the allowed range [{MinBytes}, {MaxBytes}] bytes.");
+
+            // Cross-property check: a value of MaxInlineValueSize plus per-record overhead must fit on a page.
+            // Both PageSize and MaxInlineValueSize are rounded down to the previous power of 2 by Tsavorite,
+            // so we require effectiveValue < effectivePage (i.e., value bits < page bits), which guarantees the
+            // value occupies at most half the page and leaves room for the record header, key, and optional fields.
+            // If not satisfied (e.g. defaults combined with an unusually small PageSize), clamp down with a warning
+            // rather than failing — this preserves the "rounds down silently" behavior of other size settings.
+            var valueBits = (int)Math.Log(PreviousPowerOf2(sizeInBytes), 2);
+            var pageBits = PageSizeBits();
+            if (valueBits >= pageBits)
+            {
+                var clampedBits = pageBits - 1;
+                var clampedBytes = 1L << clampedBits;
+                logger?.LogWarning("Warning: clamping {Name} '{Value}' (effective {EffectiveValue} bytes) down to {Clamped} bytes so it fits within PageSize '{Page}' (effective {EffectivePage} bytes).",
+                    nameof(ValueOverflowThreshold), ValueOverflowThreshold, 1L << valueBits, clampedBytes, PageSize, 1L << pageBits);
+                return (int)clampedBytes;
+            }
+
+            return (int)sizeInBytes;
         }
 
         /// <summary>
