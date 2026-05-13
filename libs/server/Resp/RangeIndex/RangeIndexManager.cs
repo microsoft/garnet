@@ -173,8 +173,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="enabled">Whether range index commands are enabled.</param>
         /// <param name="riLogRoot">Log-tied root directory for working/flush files (e.g.
-        /// <c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex</c>). May be null/empty for
-        /// memory-only test scenarios; disk-backed trees will fail to open in that case.</param>
+        /// <c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex</c>). When <paramref name="enabled"/>
+        /// is <c>true</c>, this MUST be a non-empty path and the directory MUST be creatable —
+        /// the constructor throws otherwise so misconfiguration (missing permissions, bad path,
+        /// etc.) surfaces at server startup rather than at first use. May be null/empty when
+        /// <paramref name="enabled"/> is <c>false</c> (manager is inert).</param>
         /// <param name="cprDir">Tsavorite <c>cpr-checkpoints/</c> directory; per-checkpoint snapshots
         /// live under <c>{cprDir}/&lt;token&gt;/rangeindex/</c>. May be null if no checkpointing.</param>
         /// <param name="storeEpoch">The store's <see cref="LightEpoch"/>; used to defer native
@@ -182,6 +185,10 @@ namespace Garnet.server
         /// stub's <c>TreeHandle</c>. May be null in unit-test scenarios with no concurrent
         /// readers; in that case disposal is performed synchronously.</param>
         /// <param name="logger">Optional logger.</param>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="enabled"/> is
+        /// <c>true</c> and <paramref name="riLogRoot"/> is null or empty.</exception>
+        /// <exception cref="IOException">Thrown when the riLogRoot directory cannot be
+        /// created (e.g., insufficient permissions). Wraps the underlying exception.</exception>
         public RangeIndexManager(bool enabled, string riLogRoot = null, string cprDir = null,
             LightEpoch storeEpoch = null, ILogger logger = null)
         {
@@ -192,10 +199,25 @@ namespace Garnet.server
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
 
-            if (enabled && !string.IsNullOrEmpty(riLogRoot))
+            if (enabled)
             {
-                try { Directory.CreateDirectory(riLogRoot); }
-                catch (Exception ex) { logger?.LogWarning(ex, "Failed to create RI log root: {Path}", riLogRoot); }
+                if (string.IsNullOrEmpty(riLogRoot))
+                    throw new ArgumentException(
+                        "RangeIndexManager: riLogRoot is required when range index is enabled.",
+                        nameof(riLogRoot));
+
+                try
+                {
+                    Directory.CreateDirectory(riLogRoot);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "RangeIndexManager: failed to create riLogRoot {Path}", riLogRoot);
+                    throw new IOException(
+                        $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
+                        "Check that the parent directory exists and the process has write permissions.",
+                        ex);
+                }
             }
         }
 
@@ -332,37 +354,54 @@ namespace Garnet.server
             var hashPrefix = HashKeyToPrefix(keyBytes);
             var keyId = KeyId(keyBytes);
             var newEntry = new TreeEntry(bfTree, keyHash, hashPrefix);
-            // Activate-or-add: if a pending entry already exists, upgrade it; else add new.
-            liveIndexes.AddOrUpdate(keyId, newEntry, (_, existing) =>
+            if (liveIndexes.TryAdd(keyId, newEntry))
+                return; // First registration for this key — done.
+
+            // A prior entry exists. Per caller invariants:
+            //   - RICREATE: invoked only when the underlying RMW reports Record.Created=true,
+            //     so a prior entry cannot exist for the same key on the create path.
+            //   - RestoreTree: holds the per-key rangeIndexLocks X-lock for the duration of
+            //     RegisterIndex, so concurrent RegisterIndex on the same key is impossible.
+            //     The only legitimate prior entry is a pending one (Tree==null) registered
+            //     earlier by PreStageAndRegisterPending; we activate it in place.
+            // CompareExchange makes the activation atomic so even a future caller-invariant
+            // violation cannot result in two threads both believing they activated the entry
+            // (one would observe a non-null prior in CompareExchange and dispose its duplicate).
+            if (liveIndexes.TryGetValue(keyId, out var existing))
             {
-                if (existing.Tree is null)
-                {
-                    existing.Tree = bfTree;
-                    return existing;
-                }
-                // Already activated by a racing thread — caller should dispose the duplicate.
-                return existing;
-            });
-            // If we lost the race (existing.Tree non-null), dispose our duplicate.
-            // Defer via storeEpoch — concurrent readers may already have observed the winner's
-            // TreeHandle, and bfTree has its own native resources that may overlap (e.g. file
-            // handles to data.bftree).
-            if (liveIndexes.TryGetValue(keyId, out var winner) && !ReferenceEquals(winner.Tree, bfTree))
+                var prior = Interlocked.CompareExchange(ref existing.Tree, bfTree, null);
+                if (prior is null)
+                    return; // We activated the pending entry.
+            }
+
+            logger?.LogError(
+                "RegisterIndex: liveIndexes entry for {Hash} is unexpectedly already activated. " +
+                "Caller invariant violated (RICREATE should fire only on Record.Created=true; " +
+                "RestoreTree must hold the per-key rangeIndexLocks X-lock). Disposing duplicate.",
+                hashPrefix);
+            DisposeBfTreeDeferred(bfTree, "duplicate-register");
+        }
+
+        /// <summary>
+        /// Defer-dispose a BfTree past any reader that may still be using its TreeHandle.
+        /// Falls back to synchronous dispose when no <see cref="storeEpoch"/> is wired
+        /// (unit-test scenarios with no concurrent readers).
+        /// </summary>
+        private void DisposeBfTreeDeferred(BfTreeService bfTree, string reason)
+        {
+            if (storeEpoch != null)
             {
-                if (storeEpoch != null)
+                var loser = bfTree;
+                storeEpoch.BumpCurrentEpoch(() =>
                 {
-                    var loser = bfTree;
-                    storeEpoch.BumpCurrentEpoch(() =>
-                    {
-                        try { loser.Dispose(); }
-                        catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
-                    });
-                }
-                else
-                {
-                    try { bfTree.Dispose(); }
-                    catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose duplicate BfTree on register race"); }
-                }
+                    try { loser.Dispose(); }
+                    catch (Exception ex) { logger?.LogWarning(ex, "Deferred dispose failed: {Reason}", reason); }
+                });
+            }
+            else
+            {
+                try { bfTree.Dispose(); }
+                catch (Exception ex) { logger?.LogWarning(ex, "Synchronous dispose failed: {Reason}", reason); }
             }
         }
 
@@ -493,17 +532,31 @@ namespace Garnet.server
         /// the same stub and fully overwrites any partial file before any <c>RestoreTree</c>
         /// can observe it.</para>
         /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown when this method is called without
+        /// the recovery state required to locate checkpoint snapshots
+        /// (<see cref="cprDir"/> is empty or <see cref="recoveredCheckpointToken"/> is Guid.Empty).
+        /// This indicates that <c>OnRecoverySnapshotRead</c> fired without
+        /// <c>OnRecovery(token)</c> having captured the recovered checkpoint token first —
+        /// a wiring bug that would otherwise silently lose the recovered tree.</exception>
         internal void RebuildFromSnapshotIfPending(ReadOnlySpan<byte> keyBytes)
         {
-            if (string.IsNullOrEmpty(riLogRoot) || string.IsNullOrEmpty(cprDir) || recoveredCheckpointToken == Guid.Empty)
+            if (!IsEnabled)
                 return;
+
+            if (string.IsNullOrEmpty(cprDir) || recoveredCheckpointToken == Guid.Empty)
+                throw new InvalidOperationException(
+                    "RebuildFromSnapshotIfPending: recovery state missing " +
+                    $"(cprDir empty: {string.IsNullOrEmpty(cprDir)}, recoveredCheckpointToken empty: {recoveredCheckpointToken == Guid.Empty}). " +
+                    "This indicates OnRecoverySnapshotRead fired without OnRecovery(token) " +
+                    "having captured the recovered checkpoint token. The recovered RangeIndex tree would " +
+                    "otherwise be silently lost.");
 
             var hashPrefix = HashKeyToPrefix(keyBytes);
             var snapshotPath = CheckpointSnapshotPath(hashPrefix, recoveredCheckpointToken);
             if (!File.Exists(snapshotPath))
             {
                 // Below-FUA stubs have no checkpoint snapshot; RIPROMOTE PostCopyUpdater handles
-                // them lazily via the per-flush snapshot file on first access.
+                // them lazily via the per-flush snapshot file on first access. NOT an error.
                 logger?.LogDebug("OnRecoverySnapshotRead: snapshot absent for {Hash} — RIPROMOTE will handle lazily", hashPrefix);
                 return;
             }
