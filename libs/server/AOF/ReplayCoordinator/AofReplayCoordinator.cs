@@ -181,13 +181,18 @@ namespace Garnet.server
                     case AofEntryType.TxnStart:
                         var headerType = (AofHeaderType)header.HeaderType;
                         short logAccessCount = 0;
+                        long startSeqNum = 0;
                         if (serverOptions.MultiLogEnabled)
                         {
                             logAccessCount = headerType == AofHeaderType.SingleLogTransactionHeader
                                 ? (*(AofSingleLogTransactionHeader*)ptr).participantCount
                                 : (*(AofTransactionHeader*)ptr).participantCount;
+
+                            startSeqNum = headerType == AofHeaderType.SingleLogTransactionHeader
+                                ? entryAddress
+                                : (*(AofShardedHeader*)ptr).sequenceNumber;
                         }
-                        aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
+                        aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount, startSeqNum);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
@@ -308,46 +313,67 @@ namespace Garnet.server
                     // Start by saving transaction keys for locking
                     SaveTransactionGroupKeysToLock(txnManager, txnGroup);
 
-                    // Start transaction
-                    _ = txnManager.Run(internal_txn: true);
-
-                    // Process in parallel transaction group
-                    ProcessTransactionGroupOperations(
-                        aofProcessor,
-                        txnManager.StringTransactionalContext,
-                        txnManager.ObjectTransactionalContext,
-                        txnManager.UnifiedTransactionalContext,
-                        txnGroup,
-                        asReplica,
-                        entryAddress);
-
-                    // Wait for all participating subtasks to complete replay unless singleLog
                     if (serverOptions.MultiLogEnabled)
                     {
                         var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
-                        long seqNum;
+                        long commitSeqNum;
                         short partCount;
                         var sessionId = (*(AofHeader*)ptr).sessionID;
 
                         if (headerType == AofHeaderType.SingleLogTransactionHeader)
                         {
-                            seqNum = entryAddress;
+                            commitSeqNum = entryAddress;
                             partCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
                         }
                         else
                         {
                             var shardedHeader = *(AofShardedHeader*)ptr;
-                            seqNum = shardedHeader.sequenceNumber;
+                            commitSeqNum = shardedHeader.sequenceNumber;
                             partCount = (*(AofTransactionHeader*)ptr).participantCount;
                         }
 
-                        // Synchronize replay of txn
+                        // Acquire-barrier: synchronize all participants before locking using TxnStart sequence number
                         ProcessSynchronizedOperation(
                             sublogIdx,
-                            seqNum,
+                            txnGroup.StartSequenceNumber,
                             partCount,
                             sessionId,
                             null);
+
+                        // Start transaction (acquires locks)
+                        _ = txnManager.Run(internal_txn: true);
+
+                        // Process transaction group operations
+                        ProcessTransactionGroupOperations(
+                            aofProcessor,
+                            txnManager.StringTransactionalContext,
+                            txnManager.ObjectTransactionalContext,
+                            txnManager.UnifiedTransactionalContext,
+                            txnGroup,
+                            asReplica,
+                            entryAddress);
+
+                        // Release-barrier: synchronize all participants before committing using TxnCommit sequence number
+                        ProcessSynchronizedOperation(
+                            sublogIdx,
+                            commitSeqNum,
+                            partCount,
+                            sessionId,
+                            null);
+                    }
+                    else
+                    {
+                        // Single-log: no synchronization needed
+                        _ = txnManager.Run(internal_txn: true);
+
+                        ProcessTransactionGroupOperations(
+                            aofProcessor,
+                            txnManager.StringTransactionalContext,
+                            txnManager.ObjectTransactionalContext,
+                            txnManager.UnifiedTransactionalContext,
+                            txnGroup,
+                            asReplica,
+                            entryAddress);
                     }
 
                     // Commit (NOTE: need to ensure that we do not write to log here)
