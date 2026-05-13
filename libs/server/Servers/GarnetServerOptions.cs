@@ -796,14 +796,32 @@ namespace Garnet.server
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
         public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
+            // Validate sizes up-front (invariant across sublogs) so we don't allocate devices
+            // or commit managers that would need to be disposed if validation fails.
+            var memorySizeBits = AofMemorySizeBits();
+            var pageSizeBits = AofPageSizeBits();
+            var segmentSizeBits = AofSegmentSizeBits();
+
+            if (pageSizeBits > memorySizeBits)
+            {
+                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
+                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+            }
+
+            if (pageSizeBits > segmentSizeBits)
+            {
+                logger?.LogError("AOF Page size cannot be more than the AOF segment size.");
+                throw new Exception("AOF Page size cannot be more than the AOF segment size.");
+            }
+
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
             for (var i = 0; i < AofPhysicalSublogCount; i++)
             {
                 tsavoriteLogSettings[i] = new TsavoriteLogSettings
                 {
-                    MemorySizeBits = AofMemorySizeBits(),
-                    PageSizeBits = AofPageSizeBits(),
-                    SegmentSizeBits = AofSegmentSizeBits(),
+                    MemorySizeBits = memorySizeBits,
+                    PageSizeBits = pageSizeBits,
+                    SegmentSizeBits = segmentSizeBits,
                     LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
                     FastCommitMode = EnableFastCommit,
@@ -811,18 +829,6 @@ namespace Garnet.server
                     MutableFraction = 0.9,
                     Epoch = null
                 };
-
-                if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)
-                {
-                    logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                    throw new Exception("AOF Page size cannot be more than the AOF memory size.");
-                }
-
-                if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].SegmentSize)
-                {
-                    logger?.LogError("AOF Page size cannot be more than the AOF segment size.");
-                    throw new Exception("AOF Page size cannot be more than the AOF segment size.");
-                }
 
                 var aofDir = GetAppendOnlyFileDirectory(dbId);
                 // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
