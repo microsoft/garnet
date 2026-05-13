@@ -41,12 +41,12 @@ namespace Garnet.server
             public VectorQuantType QuantType;
             [FieldOffset(36)]
             public VectorDistanceMetricType DistanceMetric;
-
-            // There used to be a GUID here
             [FieldOffset(40)]
-            private ulong unused0;
+            public bool NeedsCleanup;
+
+            // These used to be allocated as well
             [FieldOffset(48)]
-            private ulong unused1;
+            private ulong unused0;
         }
 
         /// <summary>

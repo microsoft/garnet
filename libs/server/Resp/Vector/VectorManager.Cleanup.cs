@@ -76,7 +76,7 @@ namespace Garnet.server
             }
         }
 
-        private readonly Channel<(ulong Context, TaskCompletionSource TCS)> cleanupTaskChannel;
+        private readonly Channel<ulong> cleanupTaskChannel;
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
@@ -108,7 +108,7 @@ namespace Garnet.server
         {
             // Each drop index will queue a null object here
             // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
-            await foreach (var (context, tcs) in cleanupTaskChannel.Reader.ReadAllAsync())
+            await foreach (var requestedContext in cleanupTaskChannel.Reader.ReadAllAsync())
             {
                 await cleanupGate.WaitAsync().ConfigureAwait(false);
 
@@ -127,15 +127,16 @@ namespace Garnet.server
                     ref var scanCtx = ref cleanupSession.storageSession.stringBasicContext;
                     ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
 
-                    // Sometimes we just want to pump the cleanup task - in that case, we use InvalidContext to indicate we don't need any real work
-                    if (context != InvalidContext)
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
+
+                    if (requestedContext != InvalidContext)
                     {
                         var needsUpdate = false;
                         lock (this)
                         {
-                            if (!contextMetadata.IsCleaningUp(context))
+                            if (!contextMetadata.IsCleaningUp(requestedContext))
                             {
-                                contextMetadata.MarkCleaningUp(context);
+                                contextMetadata.MarkCleaningUp(requestedContext);
                                 needsUpdate = true;
                             }
                         }
@@ -146,8 +147,6 @@ namespace Garnet.server
                         }
                     }
 
-                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
-
                     HashSet<ulong> needCleanup;
                     lock (this)
                     {
@@ -157,11 +156,10 @@ namespace Garnet.server
                     if (needCleanup == null)
                     {
                         // Previous run already got here, so bail
-
-                        tcs?.SetResult();
                         continue;
                     }
 
+                    // If this is our first cleanup pass after recovery, we might have some extra work to do
                     if (vectorSetIndexKeyRecovery != null)
                     {
                         foreach (var toCleanupContext in needCleanup)
@@ -181,10 +179,9 @@ namespace Garnet.server
                                 }
                             }
                         }
-                    }
 
-                    // Cleanup state has been updated, inform whoever sent the cleanup request if they asked for that notification
-                    tcs?.SetResult();
+                        vectorSetIndexKeyRecovery = null;
+                    }
 
                     PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
 
@@ -210,7 +207,6 @@ namespace Garnet.server
                 catch (Exception e)
                 {
                     logger?.LogError(e, "Failure during background cleanup of deleted vector sets, implies storage leak");
-                    tcs?.TrySetException(e);
                 }
                 finally
                 {
@@ -252,7 +248,7 @@ namespace Garnet.server
         internal void CleanupDroppedIndex(ref VectorBasicContext ctx, ulong context)
         {
             // Wake up cleanup task
-            var writeRes = cleanupTaskChannel.Writer.TryWrite((InvalidContext, null));
+            var writeRes = cleanupTaskChannel.Writer.TryWrite(InvalidContext);
             Debug.Assert(writeRes, "Request for cleanup failed, this should never happen");
         }
     }

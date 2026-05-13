@@ -108,10 +108,8 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getCleanupSession = getCleanupSession;
-            cleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource TCS)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            cleanupTaskChannel = Channel.CreateUnbounded<ulong>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
-
-            // Only used during recovery
             vectorSetIndexKeyRecovery = new();
 
             logger?.LogInformation("Created VectorManager");
@@ -186,16 +184,7 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-
-            var recoveryCleanupTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            _ = cleanupTaskChannel.Writer.TryWrite((InvalidContext, recoveryCleanupTcs));
-
-            // Any in progress deletes need to complete before we can say recovery is "done"
-            AsyncUtils.BlockingWait(recoveryCleanupTcs.Task);
-
-            // We're finished cleaning up, drop to repair tracking data
-            vectorSetIndexKeyRecovery = null;
+            _ = cleanupTaskChannel.Writer.TryWrite(InvalidContext);
         }
 
         /// <summary>
@@ -211,8 +200,14 @@ namespace Garnet.server
 
             ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
 
-            var added = this.vectorSetIndexKeyRecovery.TryAdd(context, logRecord.Key.ToArray());
-            Debug.Assert(added, "Recovery found multiple Vector Set indexes with same context");
+            ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(logRecord.ValueSpan)[0];
+            if (asIndex.NeedsCleanup)
+            {
+                var added = vectorSetIndexKeyRecovery.TryAdd(context, logRecord.Key.ToArray());
+                Debug.Assert(added, "Recovery found multiple Vector Set indexes with same context");
+
+                _ = cleanupTaskChannel.Writer.TryWrite(context);
+            }
         }
 
         /// <inheritdoc/>
@@ -364,25 +359,9 @@ namespace Garnet.server
                 return;
             }
 
-            if (vectorSetIndexKeyRecovery != null)
-            {
-                // We're in recovery mode, don't trigger deletes until we're finished
-                return;
-            }
-
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _);
-
-            // We have to rely on the cleanup task to record the "we're being cleaned up" state for this context
-            //
-            // So prepare a TCS to communicate that
-            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var msg = (context, tcs);
-
-            _ = cleanupTaskChannel.Writer.TryWrite(msg);
-
-            AsyncUtils.BlockingWait(tcs.Task);
 
             // Tell DiskANN to clean itself up right now
             DropIndex(value);
@@ -390,6 +369,9 @@ namespace Garnet.server
             // Clear the DiskANN index
             ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(value)[0];
             asIndex.IndexPtr = 0;
+            asIndex.NeedsCleanup = true;
+
+            _ = cleanupTaskChannel.Writer.TryWrite(context);
         }
 
         /// <summary>
