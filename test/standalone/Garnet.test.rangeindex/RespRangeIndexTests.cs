@@ -2389,31 +2389,43 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that <c>EnableRangeIndexPreview=true</c> with <c>CopyReadsToTail=true</c>
-        /// fails fast at server-startup time. Reasoning: cold-CTT path's
-        /// PostCopyToTail → PreStageAndRegisterPending takes a per-key X-lock under the
-        /// reader's shared RI lock → self-deadlock on the same shard.
+        /// Verifies that <c>EnableRangeIndexPreview=true</c> works correctly with
+        /// <c>CopyReadsToTail=true</c>. RangeIndex Reads go through the dedicated
+        /// <c>Read_RangeIndex</c> API which suppresses Tsavorite's automatic CTT
+        /// (RangeIndex performs its own controlled promotion via RIPROMOTE). This test
+        /// is bounded by <c>[CancelAfter]</c> so a regression that lets CTT reach a
+        /// RangeIndex stub would surface as a hang/timeout.
         /// </summary>
         [Test]
-        public void RICopyReadsToTailIncompatibleStartupGuardTest()
+        [CancelAfter(60_000)]
+        public void RICopyReadsToTailCompatibleTest(System.Threading.CancellationToken cancellationToken)
         {
-            // Tear down the auto-created server and try to construct an incompatible one.
+            // Recreate the server with CopyReadsToTail=true.
             server?.Dispose();
-
-            var ex = Assert.Throws<Garnet.common.GarnetException>(() =>
-            {
-                using var s = TestUtils.CreateGarnetServer(
-                    TestUtils.MethodTestDir,
-                    enableRangeIndexPreview: true,
-                    copyReadsToTail: true);
-                s.Start();
-            });
-            ClassicAssert.IsTrue(ex!.Message.Contains("CopyReadsToTail", StringComparison.OrdinalIgnoreCase),
-                $"Startup error must mention CopyReadsToTail. Actual: {ex.Message}");
-
-            // Recreate the default server so [TearDown] disposes a valid instance.
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                enableRangeIndexPreview: true,
+                copyReadsToTail: true);
             server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.Execute("RI.CREATE", "rikey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            for (int i = 0; i < 50; i++)
+                db.Execute("RI.SET", "rikey", $"field-{i:000}", $"value-{i:000}-pad");
+
+            // Force the records into the read-only / flushed region so subsequent reads
+            // would otherwise trigger CTT for the RI stub. With Read_RangeIndex suppressing
+            // CTT, the read should route through PromoteToTail (RIPROMOTE) instead.
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            for (int i = 0; i < 50 && !cancellationToken.IsCancellationRequested; i++)
+            {
+                var got = (string)db.Execute("RI.GET", "rikey", $"field-{i:000}");
+                ClassicAssert.AreEqual($"value-{i:000}-pad", got, $"field-{i:000}");
+            }
         }
     }
 }

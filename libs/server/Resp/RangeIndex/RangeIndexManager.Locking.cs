@@ -123,7 +123,7 @@ namespace Garnet.server
             GarnetStatus readRes;
             try
             {
-                readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+                readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
             }
             catch
             {
@@ -283,7 +283,7 @@ namespace Garnet.server
             {
                 // Re-read stub under exclusive lock to check if another thread already restored.
                 var output = StringOutput.FromPinnedSpan(indexSpan);
-                var readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+                var readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
                 if (readRes != GarnetStatus.OK)
                     return false;
 
