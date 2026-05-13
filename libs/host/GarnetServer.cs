@@ -191,14 +191,14 @@ namespace Garnet
             if (opts.EnableCluster && opts.EnableRangeIndexPreview)
                 throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
 
-            // CopyReadsToTail interacts with the RangeIndex PromoteToTail / RestoreTree paths in
-            // ways that are not yet validated. Empirically, enabling both produces hangs after
-            // ShiftReadOnlyAddress when the first read CTTs a flushed stub and ReadRangeIndex
-            // subsequently routes through PromoteToTail. Investigation tracked separately;
-            // gating the combination at startup until that is resolved.
+            // CopyReadsToTail is incompatible with EnableRangeIndexPreview: ReadRangeIndex holds
+            // a per-key shared RI lock during Read_MainStore, which under CopyReadsToTail can
+            // synchronously trigger ConditionalCopyToTail → PostCopyToTail-cold →
+            // PreStageAndRegisterPending, which tries to acquire the per-key X-lock and
+            // self-deadlocks against the shared lock our same thread is still holding.
             if (opts.EnableRangeIndexPreview && opts.CopyReadsToTail)
                 throw new GarnetException(
-                    "EnableRangeIndexPreview is not yet compatible with CopyReadsToTail=true. " +
+                    "EnableRangeIndexPreview is incompatible with CopyReadsToTail=true. " +
                     "Set CopyReadsToTail=false or disable EnableRangeIndexPreview.");
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
