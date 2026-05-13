@@ -148,11 +148,21 @@ jobs:
       - name: Restore execute permissions
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: find . -name 'GarnetServer' -type f -exec chmod +x {} +
+
+      - name: Resolve test directory
+        shell: pwsh
+        run: |
+          if ("${{ matrix.test }}".StartsWith("Garnet.test.cluster")) {
+            $subdir = "cluster"
+          } else {
+            $subdir = "standalone"
+          }
+          echo "TEST_DIR=test/$subdir/${{ matrix.test }}" >> $env:GITHUB_ENV
   
       - name: Verify Allure wiring (${{ matrix.test }})
         shell: pwsh
         run: |
-          $asmPath = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
+          $asmPath = "${{ github.workspace }}/${{ env.TEST_DIR }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
 
           # When using .Net 9.0/10.0 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception.
@@ -209,7 +219,7 @@ jobs:
           }
             
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test ${{ env.TEST_DIR }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4

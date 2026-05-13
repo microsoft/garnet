@@ -106,7 +106,8 @@ jobs:
               --logger "trx" `
               --results-directory "$resultsDir"
           } else {
-            dotnet test "test/${{ matrix.test }}" `
+            $subdir = if ("${{ matrix.test }}".StartsWith("Garnet.test.cluster")) { "cluster" } else { "standalone" }
+            dotnet test "test/$subdir/${{ matrix.test }}" `
               -f "${{ matrix.framework }}" `
               --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
@@ -139,7 +140,8 @@ jobs:
             $dir = $tsavoriteDirMap["${{ matrix.test }}"]
             $source = Join-Path $base "libs/storage/Tsavorite/cs/$dir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           } else {
-            $source = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+            $subdir = if ("${{ matrix.test }}".StartsWith("Garnet.test.cluster")) { "cluster" } else { "standalone" }
+            $source = Join-Path $base "test/$subdir/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           }
 
           $target = Join-Path $base "test/Allure/AllResults"
@@ -180,7 +182,8 @@ jobs:
             $dir = $tsavoriteDirMap["${{ matrix.test }}"]
             $paths += "libs/storage/Tsavorite/cs/$dir/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           } else {
-            $paths += "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+            $subdir = if ("${{ matrix.test }}".StartsWith("Garnet.test.cluster")) { "cluster" } else { "standalone" }
+            $paths += "test/$subdir/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           }
           foreach ($p in $paths) {
             $full = Join-Path $base $p
