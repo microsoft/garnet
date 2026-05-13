@@ -602,8 +602,8 @@ namespace Garnet.server
             => garnetApi.IterateStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
-        public ITsavoriteScanIterator IterateStore()
-            => garnetApi.IterateStore();
+        public void DeleteSlotKeys(HashSet<int> slots)
+            => garnetApi.DeleteSlotKeys(slots);
 
         #endregion
 

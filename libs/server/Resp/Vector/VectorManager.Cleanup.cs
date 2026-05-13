@@ -188,10 +188,12 @@ namespace Garnet.server
 
                     PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
 
-                    // Scan whole keyspace (sigh) and remove any associated data
-                    //
-                    // We don't really have a choice here, just do it
-                    _ = scanCtx.Session.Iterate(ref callbacks);
+                    // Scan whole keyspace and remove any associated data using a snapshot
+                    // lookup-based push iterator. This avoids building a parallel tempKv (which
+                    // would cost memory proportional to the keyspace) — IterateLookupSnapshot
+                    // walks the log and uses hash-chain liveness checks bounded to the snapshot's
+                    // TailAddress, so concurrent RCUs don't drop records.
+                    _ = scanCtx.Session.IterateLookupSnapshot(ref callbacks);
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
