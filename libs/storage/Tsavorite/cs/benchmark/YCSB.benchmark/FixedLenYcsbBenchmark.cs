@@ -12,7 +12,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordTriggers>;
 
     internal class FixedLenYcsbBenchmark<TAllocator>
         where TAllocator : IAllocator<FixedLenStoreFunctions>
@@ -112,7 +112,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions.Create(new FixedLengthKey.Comparer(), SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(new FixedLengthKey.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -374,7 +374,7 @@ namespace Tsavorite.benchmark
                     if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
                         long start = swatch.ElapsedTicks;
-                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
+                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType))
                         {
                             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;

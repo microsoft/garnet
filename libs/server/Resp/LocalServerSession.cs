@@ -51,8 +51,7 @@ namespace Garnet.server
             Debug.Assert(dbRes, "Should always be able to get DB 0");
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId: 0, database.VectorManager, logger);
-
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId: 0, readSessionState: null, database.VectorManager, logger);
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.stringBasicContext, storageSession.objectBasicContext, storageSession.unifiedBasicContext);
             this.VectorBasicContext = storageSession.vectorBasicContext;
         }

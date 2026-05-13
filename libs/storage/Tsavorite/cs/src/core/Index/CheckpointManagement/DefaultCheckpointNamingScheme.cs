@@ -14,13 +14,16 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public string BaseName { get; }
 
+        int SublogIdx { get; }
+
         /// <summary>
         /// Create instance of default naming scheme
         /// </summary>
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
-        public DefaultCheckpointNamingScheme(string baseName = "")
+        public DefaultCheckpointNamingScheme(string baseName = "", int sublogIdx = -1)
         {
             BaseName = baseName;
+            SublogIdx = sublogIdx;
         }
 
         /// <inheritdoc />
@@ -32,16 +35,13 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public FileDescriptor ObjectLogSnapshot(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "snapshot.obj.dat");
         /// <inheritdoc />
-        public FileDescriptor DeltaLog(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "delta.dat");
-
-        /// <inheritdoc />
         public FileDescriptor IndexCheckpointBase(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), null);
         /// <inheritdoc />
         public FileDescriptor IndexCheckpointMetadata(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "info.dat");
         /// <inheritdoc />
         public FileDescriptor HashTable(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "ht.dat");
         /// <inheritdoc />
-        public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new(TsavoriteLogCommitBasePath, $"commit.{commitNumber}");
+        public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new(TsavoriteLogCommitBasePath, SublogIdx == -1 ? $"commit.{commitNumber}" : $"commit.{commitNumber}.{SublogIdx}");
 
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);

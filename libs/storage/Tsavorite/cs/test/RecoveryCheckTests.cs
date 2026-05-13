@@ -9,14 +9,13 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using Tsavorite.devices;
 using Tsavorite.test.recovery.sumstore;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     public enum DeviceMode
     {
@@ -114,7 +113,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -168,7 +167,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -236,7 +235,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -252,7 +251,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -352,7 +351,7 @@ namespace Tsavorite.test.recovery
                     PageSize = pageSize,
                     LogMemorySize = 1L << 20,
                     CheckpointDir = MethodTestDir
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
@@ -413,7 +412,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 11,
                 SegmentSize = 1L << 11,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -535,7 +534,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -551,7 +550,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -659,7 +658,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -675,7 +674,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -785,7 +784,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -860,7 +859,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -911,177 +910,6 @@ namespace Tsavorite.test.recovery
 
         [TearDown]
         public void TearDown() => BaseTearDown();
-
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("CheckpointRestore")]
-        [Category("Smoke")]
-        [Ignore("TODO DeltaLog")]
-        public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
-        {
-            DeviceLogCommitCheckpointManager checkpointManager;
-            if (deviceMode == DeviceMode.Local)
-            {
-                checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
-            }
-            else
-            {
-                IgnoreIfNotRunningAzureTests();
-                checkpointManager = new DeviceLogCommitCheckpointManager(
-                    TestUtils.AzureStorageNamedDeviceFactoryCreator,
-                    new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
-            }
-
-            await IncrSnapshotRecoveryCheck(checkpointManager);
-            checkpointManager.PurgeAll();
-            checkpointManager.Dispose();
-        }
-
-        private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
-        {
-            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
-            {
-                IndexSize = 1L << 16,
-                LogDevice = log,
-                MutableFraction = 1,
-                PageSize = 1L << 10,
-                LogMemorySize = 1L << 20,
-                CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
-
-            using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions2>(new MyFunctions2());
-            var bc1 = s1.BasicContext;
-
-            // Local variables in an async function can be moved, so we must use an array for the key and value
-            var keyArray = new byte[sizeof(long)];
-            var valueArray = new byte[sizeof(long)];
-
-            for (long key = 0; key < 1000; key++)
-            {
-                var keySpan = new Span<byte>(keyArray);
-                ref var keyLong = ref keySpan.AsRef<long>();
-                keyLong = key;
-
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
-            }
-
-            var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
-            var (success, token) = await task;
-
-            for (long key = 950; key < 1000; key++)
-            {
-                var keySpan = new Span<byte>(keyArray);
-                ref var keyLong = ref keySpan.AsRef<long>();
-                var valueSpan = new Span<byte>(valueArray);
-                ref var valueLong = ref valueSpan.AsRef<long>();
-                keyLong = key;
-                valueLong = key + 1;
-
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
-            }
-
-            var version1 = store1.CurrentVersion;
-            var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, tryIncremental: true);
-            await store1.CompleteCheckpointAsync();
-
-            ClassicAssert.IsTrue(_result1);
-            ClassicAssert.AreEqual(token, _token1);
-
-            for (long key = 1000; key < 2000; key++)
-            {
-                var keySpan = new Span<byte>(keyArray);
-                ref var keyLong = ref keySpan.AsRef<long>();
-                var valueSpan = new Span<byte>(valueArray);
-                ref var valueLong = ref valueSpan.AsRef<long>();
-                keyLong = key;
-                valueLong = key + 1;
-
-                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
-            }
-
-            var version2 = store1.CurrentVersion;
-            var _result2 = store1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
-            await store1.CompleteCheckpointAsync();
-
-            ClassicAssert.IsTrue(_result2);
-            ClassicAssert.AreEqual(token, _token2);
-
-            // Test that we can recover to latest version
-            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
-            {
-                IndexSize = 1L << 16,
-                LogDevice = log,
-                MutableFraction = 1,
-                PageSize = 1L << 10,
-                LogMemorySize = 1L << 14,
-                CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
-
-            _ = await store2.RecoverAsync(default, _token2);
-
-            ClassicAssert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
-
-            using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions2>(new MyFunctions2());
-            var bc2 = s2.BasicContext;
-
-            for (long key = 0; key < 2000; key++)
-            {
-                var keySpan = new Span<byte>(keyArray);
-                ref var keyLong = ref keySpan.AsRef<long>();
-                keyLong = key;
-
-                long output = default;
-                var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
-                var wasPending = status.IsPending;
-                if (wasPending)
-                {
-                    Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                    (status, output) = GetSinglePendingResult(completedOutputs);
-                }
-                MyFunctions2.Verify(status, key, output);
-            }
-
-            // Test that we can recover to earlier version
-            using var store3 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
-            {
-                IndexSize = 1L << 16,
-                LogDevice = log,
-                MutableFraction = 1,
-                PageSize = 1L << 10,
-                LogMemorySize = 1L << 14,
-                CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
-
-            _ = await store3.RecoverAsync(recoverTo: version1);
-
-            ClassicAssert.IsTrue(store3.EntryCount == 1000);
-            using var s3 = store3.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions2>(new MyFunctions2());
-            var bc3 = s3.BasicContext;
-            for (long key = 0; key < 1000; key++)
-            {
-                var keySpan = new Span<byte>(keyArray);
-                ref var keyLong = ref keySpan.AsRef<long>();
-                keyLong = key;
-
-                long output = default;
-                var status = bc3.Read(TestSpanByteKey.FromArray(keyArray), ref output);
-                var wasPending = status.IsPending;
-                if (wasPending)
-                {
-                    Assert.That(bc3.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                    (status, output) = GetSinglePendingResult(completedOutputs);
-                }
-                MyFunctions2.Verify(status, key, output);
-            }
-        }
     }
 
     [AllureNUnit]
@@ -1150,7 +978,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1229,7 +1057,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

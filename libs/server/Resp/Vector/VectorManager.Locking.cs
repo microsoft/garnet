@@ -106,131 +106,142 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-
-            var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
-
-            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
-
-            var readCmd = input.header.cmd;
-
-            while (true)
+            try
             {
-                input.header.cmd = readCmd;
-                input.arg1 = 0;
+                var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
 
-                vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
-                GarnetStatus readRes;
-                try
+                var readCmd = input.header.cmd;
+
+                while (true)
                 {
-                    readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                    Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
-                }
-                catch
-                {
-                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                    input.header.cmd = readCmd;
+                    input.arg1 = 0;
 
-                    throw;
-                }
+                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
 
-                bool needsRecreate;
-                if (readRes == GarnetStatus.OK)
-                {
-                    if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                    {
-                        status = GarnetStatus.BADSTATE;
-
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                        return default;
-                    }
-
-                    needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
-                }
-                else
-                {
-                    needsRecreate = false;
-                }
-
-                if (needsRecreate)
-                {
-                    if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
-                    {
-                        // Release the SHARED lock if we can't promote and try again
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-
-                        continue;
-                    }
-
-                    ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
-
-                    input.arg1 = RecreateIndexArg;
-
-                    nint newlyAllocatedIndex;
-                    unsafe
-                    {
-                        newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
-                    }
-
-                    input.header.cmd = RespCommand.VADD;
-                    input.arg1 = RecreateIndexArg;
-
-                    input.parseState.EnsureCapacity(12);
-
-                    // Save off for recreation
-                    input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
-                    input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
-
-                    GarnetStatus writeRes;
+                    GarnetStatus readRes;
                     try
                     {
-                        try
-                        {
-                            writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-
-                            if (writeRes != GarnetStatus.OK)
-                            {
-                                // If we didn't write, drop index so we don't leak it
-                                Service.DropIndex(indexContext, newlyAllocatedIndex);
-                            }
-                        }
-                        catch
-                        {
-                            // Drop to avoid leak on error
-                            Service.DropIndex(indexContext, newlyAllocatedIndex);
-                            throw;
-                        }
+                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                         throw;
                     }
 
-                    if (writeRes == GarnetStatus.OK)
+                    bool needsRecreate;
+                    if (readRes == GarnetStatus.OK)
                     {
-                        // Try again so we don't hold an exclusive lock while performing a search
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
-                        continue;
+                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
+                        {
+                            status = GarnetStatus.BADSTATE;
+
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            return default;
+                        }
+
+                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
                     {
-                        status = writeRes;
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        needsRecreate = false;
+                    }
+
+                    if (needsRecreate)
+                    {
+                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        {
+                            // Release the SHARED lock if we can't promote and try again
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+
+                            continue;
+                        }
+
+                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+
+                        input.arg1 = RecreateIndexArg;
+
+                        nint newlyAllocatedIndex;
+                        unsafe
+                        {
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                        }
+
+                        input.header.cmd = RespCommand.VADD;
+                        input.arg1 = RecreateIndexArg;
+
+                        input.parseState.EnsureCapacity(12);
+
+                        // Save off for recreation
+                        input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                        input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+
+                        GarnetStatus writeRes;
+                        try
+                        {
+                            try
+                            {
+                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+
+                                if (writeRes != GarnetStatus.OK)
+                                {
+                                    // If we didn't write, drop index so we don't leak it
+                                    Service.DropIndex(indexContext, newlyAllocatedIndex);
+                                }
+                            }
+                            catch
+                            {
+                                // Drop to avoid leak on error
+                                Service.DropIndex(indexContext, newlyAllocatedIndex);
+                                throw;
+                            }
+                        }
+                        catch
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            throw;
+                        }
+
+                        if (writeRes == GarnetStatus.OK)
+                        {
+                            // Try again so we don't hold an exclusive lock while performing a search
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            continue;
+                        }
+                        else
+                        {
+                            status = writeRes;
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            return default;
+                        }
+                    }
+                    else if (readRes != GarnetStatus.OK)
+                    {
+                        status = readRes;
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                         return default;
                     }
-                }
-                else if (readRes != GarnetStatus.OK)
-                {
-                    status = readRes;
-                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                    return default;
+                    status = GarnetStatus.OK;
+                    return new(in vectorSetLocks, sharedLockToken);
                 }
+            }
+            catch
+            {
+                // If we exit without returning a lock, we'll leave ActiveThreadSession set, this clears it and rethrows
+                //
+                // In the normal exit case, disposing ReadVectorLock will clear ActiveThreadSession
+                ActiveThreadSession = null;
 
-                status = GarnetStatus.OK;
-                return new(in vectorSetLocks, sharedLockToken);
+                throw;
             }
         }
 
@@ -251,182 +262,193 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-
-            var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
-
-            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
-
-            while (true)
+            try
             {
-                input.arg1 = 0;
+                var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
 
-                vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
-                GarnetStatus readRes;
-                try
+                while (true)
                 {
-                    readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                    Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
-                }
-                catch
-                {
-                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                    input.arg1 = 0;
 
-                    throw;
-                }
+                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
 
-                bool needsRecreate;
-                if (readRes == GarnetStatus.OK)
-                {
-                    if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                    {
-                        status = GarnetStatus.BADSTATE;
-
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                        return default;
-                    }
-
-                    needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
-                }
-                else
-                {
-                    needsRecreate = false;
-                }
-
-                if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
-                {
-                    if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
-                    {
-                        // Release the SHARED lock if we can't promote and try again
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-
-                        continue;
-                    }
-
-                    ulong indexContext;
-                    nint newlyAllocatedIndex;
-                    if (needsRecreate)
-                    {
-                        ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
-
-                        input.arg1 = RecreateIndexArg;
-
-                        unsafe
-                        {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
-                        }
-
-                        input.parseState.EnsureCapacity(12);
-
-                        // Save off for recreation
-                        input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
-                        input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
-                    }
-                    else
-                    {
-                        // Create a new index, grab a new context
-
-                        // We must associate the index with a hash slot at creation time to enable future migrations
-                        // TODO: RENAME and friends need to also update this data
-                        var slot = HashSlotUtils.HashSlot(key);
-
-                        indexContext = NextVectorSetContext(slot);
-
-                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
-                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
-                        // ValueType is here, skipping during index creation
-                        // Values is here, skipping during index creation
-                        // Element is here, skipping during index creation
-                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
-                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
-                        // Attributes is here, skipping during index creation
-                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
-                        var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
-
-                        unsafe
-                        {
-                            newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
-                        }
-
-                        input.parseState.EnsureCapacity(12);
-
-                        // Save off for insertion
-                        input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
-                        input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
-                    }
-
-                    GarnetStatus writeRes;
+                    GarnetStatus readRes;
                     try
                     {
-                        try
-                        {
-                            writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-
-                            if (writeRes != GarnetStatus.OK)
-                            {
-                                // Insertion failed, drop index
-                                Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                // If the failure was for a brand new index, free up the context too
-                                if (!needsRecreate)
-                                {
-                                    CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            if (newlyAllocatedIndex != 0)
-                            {
-                                // Drop to avoid a leak on error
-                                Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                // If the failure was for a brand new index, free up the context too
-                                if (!needsRecreate)
-                                {
-                                    CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                }
-                            }
-
-                            throw;
-                        }
-
-                        if (!needsRecreate)
-                        {
-                            UpdateContextMetadata(ref storageSession.vectorBasicContext);
-                        }
+                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                         throw;
                     }
 
-                    if (writeRes == GarnetStatus.OK)
+                    bool needsRecreate;
+                    if (readRes == GarnetStatus.OK)
                     {
-                        // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
-                        continue;
+                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
+                        {
+                            status = GarnetStatus.BADSTATE;
+
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            return default;
+                        }
+
+                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
                     {
-                        status = writeRes;
-                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        needsRecreate = false;
+                    }
 
+                    if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
+                    {
+                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        {
+                            // Release the SHARED lock if we can't promote and try again
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+
+                            continue;
+                        }
+
+                        ulong indexContext;
+                        nint newlyAllocatedIndex;
+                        if (needsRecreate)
+                        {
+                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+
+                            input.arg1 = RecreateIndexArg;
+
+                            unsafe
+                            {
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                            }
+
+                            input.parseState.EnsureCapacity(12);
+
+                            // Save off for recreation
+                            input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                            input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                        }
+                        else
+                        {
+                            // Create a new index, grab a new context
+
+                            // We must associate the index with a hash slot at creation time to enable future migrations
+                            // TODO: RENAME and friends need to also update this data
+                            var slot = HashSlotUtils.HashSlot(key);
+
+                            indexContext = NextVectorSetContext(slot);
+
+                            var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                            var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                            // ValueType is here, skipping during index creation
+                            // Values is here, skipping during index creation
+                            // Element is here, skipping during index creation
+                            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                            var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                            // Attributes is here, skipping during index creation
+                            var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+                            var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
+
+                            unsafe
+                            {
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                            }
+
+                            input.parseState.EnsureCapacity(12);
+
+                            // Save off for insertion
+                            input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
+                            input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                        }
+
+                        GarnetStatus writeRes;
+                        try
+                        {
+                            try
+                            {
+                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+
+                                if (writeRes != GarnetStatus.OK)
+                                {
+                                    // Insertion failed, drop index
+                                    Service.DropIndex(indexContext, newlyAllocatedIndex);
+
+                                    // If the failure was for a brand new index, free up the context too
+                                    if (!needsRecreate)
+                                    {
+                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
+                                    }
+                                }
+                            }
+                            catch
+                            {
+                                if (newlyAllocatedIndex != 0)
+                                {
+                                    // Drop to avoid a leak on error
+                                    Service.DropIndex(indexContext, newlyAllocatedIndex);
+
+                                    // If the failure was for a brand new index, free up the context too
+                                    if (!needsRecreate)
+                                    {
+                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
+                                    }
+                                }
+
+                                throw;
+                            }
+
+                            if (!needsRecreate)
+                            {
+                                UpdateContextMetadata(ref storageSession.vectorBasicContext);
+                            }
+                        }
+                        catch
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            throw;
+                        }
+
+                        if (writeRes == GarnetStatus.OK)
+                        {
+                            // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            continue;
+                        }
+                        else
+                        {
+                            status = writeRes;
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            return default;
+                        }
+                    }
+                    else if (readRes != GarnetStatus.OK)
+                    {
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+
+                        status = readRes;
                         return default;
                     }
-                }
-                else if (readRes != GarnetStatus.OK)
-                {
-                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                    status = readRes;
-                    return default;
+                    status = GarnetStatus.OK;
+                    return new(in vectorSetLocks, sharedLockToken);
                 }
+            }
+            catch
+            {
+                // If we exit without returning a lock, we'll leave ActiveThreadSession set, this clears it and rethrows
+                //
+                // In the normal exit case, disposing ReadVectorLock will clear ActiveThreadSession
+                ActiveThreadSession = null;
 
-                status = GarnetStatus.OK;
-                return new(in vectorSetLocks, sharedLockToken);
+                throw;
             }
         }
 

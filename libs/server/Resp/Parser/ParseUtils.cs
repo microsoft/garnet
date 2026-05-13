@@ -94,6 +94,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Try to read a signed 64-bit long from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// True if long parsed successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadLong(PinnedSpanByte slice, bool allowLeadingZeros, out long number)
+        {
+            number = default;
+            var ptr = slice.ptr;
+            return slice.length != 0 &&
+                   RespReadUtils.TryReadInt64Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+                       out _, out _, allowLeadingZeros: allowLeadingZeros) &&
+                   (int)bytesRead == slice.length;
+        }
+
+        /// <summary>
         /// Read a signed 64-bit double from a given ArgSlice.
         /// </summary>
         /// <param name="slice">Source</param>

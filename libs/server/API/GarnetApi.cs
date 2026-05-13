@@ -98,12 +98,16 @@ namespace Garnet.server
             => storageSession.SET_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input)
-            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
-
-        /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SET_ETagConditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input)
+            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
@@ -164,12 +168,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
+        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey)
+            => storageSession.RENAME(oldKey, newKey);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
+        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result)
+            => storageSession.RENAMENX(oldKey, newKey, out result);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
@@ -400,6 +404,59 @@ namespace Garnet.server
         public unsafe GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
         => storageSession.VectorSetGetAttribute(key, element, ref outputAttributes);
 
+        #endregion
+
+        #region RangeIndex
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexCreate(PinnedSpanByte key, byte storageBackend,
+            ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexCreate(key, storageBackend, cacheSize, minRecordSize, maxRecordSize, maxKeyLen, leafPageSize, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexSet(key, field, value, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
+            ref StringOutput output, out RangeIndexResult result)
+            => storageSession.RangeIndexGet(key, field, ref output, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            out RangeIndexResult result)
+            => storageSession.RangeIndexDel(key, field, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexScan(key, startKey, count, returnField, ref output, out recordCount, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexRange(key, startKey, endKey, returnField, ref output, out recordCount, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexExists(PinnedSpanByte key, out bool exists)
+            => storageSession.RangeIndexExists(key, out exists);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexConfig(PinnedSpanByte key,
+            out byte storageBackend, out ulong cacheSize, out uint minRecordSize,
+            out uint maxRecordSize, out uint maxKeyLen, out uint leafPageSize,
+            out RangeIndexResult result)
+            => storageSession.RangeIndexConfig(key, out storageBackend, out cacheSize, out minRecordSize,
+                out maxRecordSize, out maxKeyLen, out leafPageSize, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexMetrics(PinnedSpanByte key,
+            out nint treeHandle, out bool isLive, out bool isFlushed, out bool isRecovered,
+            out RangeIndexResult result)
+            => storageSession.RangeIndexMetrics(key, out treeHandle, out isLive, out isFlushed, out isRecovered, out result);
         #endregion
     }
 }

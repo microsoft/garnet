@@ -93,17 +93,38 @@ namespace Tsavorite.core
         {
             if (diskLogRecord.IsSet)
             {
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
             }
             diskLogRecord = default;
             currentAddress = nextAddress;
+
+            // Acquire the epoch BEFORE sampling Initializing / TailAddress / HeadAddress /
+            // pagePointers, so that any allocator state we read is consistent with the epoch
+            // we hold.
+            epoch?.Resume();
+
+            // If a concurrent Reset is rebuilding the allocator, terminate the iteration
+            // cleanly — Reset is a wholesale wipe, the records we were iterating are gone,
+            // and the address range we were stepping through no longer maps to live data.
+            // Also avoids dereferencing the non-monotonic mid-Initialize state (HeadAddress
+            // already rewound to FirstValidAddress while TailPageOffset still holds the
+            // pre-Reset tail and pagePointers[i] are mostly 0).
+            if (hlogBase.Initializing)
+            {
+                epoch?.Suspend();
+                stopAddress = 0;
+                return false;
+            }
+
             stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
             if (currentAddress >= stopAddress)
+            {
+                epoch?.Suspend();
                 return false;
+            }
 
-            // Success; acquire the epoch. Caller will suspend the epoch as needed.
-            epoch?.Resume();
+            // Success; caller will suspend the epoch as needed.
             return true;
         }
 
@@ -236,7 +257,7 @@ namespace Tsavorite.core
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
                             var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
-                            diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
+                            diskLogRecord = new DiskLogRecord(in memoryLogRecord);
                         }
                         finally
                         {
@@ -247,9 +268,8 @@ namespace Tsavorite.core
                     else
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail (SpanByteAllocator has no objects).
-                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap),
-                                            obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                        // SpanByteAllocator has no objects, so no value-object disposal is required.
+                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap));
                     }
                 }
                 finally
@@ -354,13 +374,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public SpanByteAndMemory ValueSpanByteAndMemory => diskLogRecord.ValueSpanByteAndMemory;
+
+        /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;
 
         /// <inheritdoc/>
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Not relevant for "iterator as logrecord"
+        public void ClearValueIfHeap() { }  // Not relevant for "iterator as logrecord"
 
         /// <inheritdoc/>
         public bool IsMemoryLogRecord => false;
@@ -410,7 +433,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             if (diskLogRecord.IsSet)
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

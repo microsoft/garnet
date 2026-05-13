@@ -143,11 +143,10 @@ namespace Garnet.client
         /// <summary>
         /// Connect to server
         /// </summary>
-        /// <param name="timeoutMs">Timeout in milliseconds (default 0 for immediate timeout)</param>
         /// <param name="token"></param>
-        public unsafe void Connect(int timeoutMs = 0, CancellationToken token = default)
+        public unsafe void Connect(CancellationToken token = default)
         {
-            socket = ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false).GetAwaiter().GetResult();
+            socket = ConnectSendSocket();
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -157,7 +156,7 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.Start(sslOptions, EndPoint.ToString(), token);
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
@@ -168,11 +167,11 @@ namespace Garnet.client
             {
                 if (authUsername != null)
                 {
-                    ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("AUTH", authUsername, authPassword == null ? "" : authPassword);
                 }
                 else if (authPassword != null)
                 {
-                    ExecuteAsync("AUTH", authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("AUTH", authPassword);
                 }
             }
             catch (Exception e)
@@ -185,8 +184,63 @@ namespace Garnet.client
             {
                 if (clientName != null)
                 {
-                    _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
-                    _ = ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession");
+                    Execute("CLIENT", "SETNAME", clientName);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
+        }
+
+        /// <inheritdoc cref="Connect"/>
+        public async Task ConnectAsync(int timeoutMs = 0, CancellationToken token = default)
+        {
+            socket = await ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(
+                this,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                messageConsumer: this,
+                networkSendThrottleMax: networkSendThrottleMax,
+                logger: logger);
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
+            networkSender = networkHandler.GetNetworkSender();
+            networkSender.GetResponseObject();
+            unsafe
+            {
+                offset = networkSender.GetResponseObjectHead();
+                end = networkSender.GetResponseObjectTail();
+            }
+            numCommands = 0;
+
+            try
+            {
+                if (authUsername != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false);
+                }
+                else if (authPassword != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authPassword).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false);
+                    _ = await ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false);
                 }
             }
             catch (Exception e)
@@ -199,9 +253,40 @@ namespace Garnet.client
         /// <summary>
         /// Connect client send socket
         /// </summary>
-        /// <param name="millisecondsTimeout"></param>
-        /// <returns></returns>
         /// <exception cref="Exception"></exception>
+        private Socket ConnectSendSocket()
+        {
+            if (EndPoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (TryConnectSocket(socket, endpoint))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (TryConnectSocket(socket, EndPoint))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
+        }
+
+        /// <inheritdoc cref="ConnectSendSocket()"/>
         private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
         {
             if (EndPoint is DnsEndPoint dnsEndpoint)
@@ -216,7 +301,7 @@ namespace Garnet.client
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -226,7 +311,7 @@ namespace Garnet.client
                 if (EndPoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 
@@ -234,14 +319,36 @@ namespace Garnet.client
             throw new Exception($"Failed to connect at {EndPoint}");
         }
 
+
         /// <summary>
         /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="endpoint"></param>
-        /// <param name="millisecondsTimeout"></param>
-        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
+        private bool TryConnectSocket(Socket socket, EndPoint endpoint)
+        {
+            try
+            {
+                socket.Connect(endpoint);
+
+                if (!socket.Connected)
+                {
+                    socket.Close();
+                    throw new Exception($"Failed to connect server {endpoint}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
+                socket.Dispose();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc cref="TryConnectSocket(Socket, EndPoint)"/>
         private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
         {
             try
@@ -251,12 +358,12 @@ namespace Garnet.client
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                     var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
-                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)).ConfigureAwait(false) == connectTask)
                     {
                         // Task completed within timeout.
                         // Consider that the task may have faulted or been canceled.
                         // We re-await the task so that any exceptions/cancellation is rethrown.
-                        await connectTask;
+                        await connectTask.ConfigureAwait(false);
                     }
                     else
                     {
@@ -287,7 +394,7 @@ namespace Garnet.client
         /// <summary>
         /// Reconnect to server
         /// </summary>
-        public void Reconnect(int timeoutMs = 0, CancellationToken token = default)
+        public Task ReconnectAsync(int timeoutMs = 0, CancellationToken token = default)
         {
             if (Disposed) throw new ObjectDisposedException("GarnetClientSession");
             try
@@ -297,7 +404,7 @@ namespace Garnet.client
                 networkHandler?.Dispose();
             }
             catch { }
-            Connect(timeoutMs, token);
+            return ConnectAsync(timeoutMs, token);
         }
 
         /// <summary>
@@ -354,12 +461,21 @@ namespace Garnet.client
         /// <summary>
         /// ClusterAppendLog
         /// </summary>
-        public unsafe void ExecuteClusterAppendLog(string nodeId, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAppendLog"/>
+        /// <param name="nodeId"></param>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        /// <param name="payloadPtr"></param>
+        /// <param name="payloadLength"></param>
+        /// <exception cref="Exception"></exception>
+        public unsafe void ExecuteClusterAppendLog(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
         {
             Debug.Assert(nodeId != null);
 
             var curr = offset;
-            var arraySize = 7;
+            var arraySize = 8;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -368,6 +484,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 1
             while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
@@ -375,6 +492,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 2
             while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
                 Flush();
@@ -382,6 +500,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 3
             while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
@@ -389,6 +508,15 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 4
+            while (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
             while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
                 Flush();
@@ -396,6 +524,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 6
             while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
                 Flush();
@@ -403,6 +532,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 7
             while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
@@ -413,6 +543,7 @@ namespace Garnet.client
             if (payloadLength > networkBufferSettings.sendBufferSize)
                 throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
+            // 8
             while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
                 Flush();

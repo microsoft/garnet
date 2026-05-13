@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// Static class providing functions to operate on a Log field (Key Span, or Value Span or Object) at a certain address. Since (small) Objects can be represented
     /// as inline spans, this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
     /// <list type="bullet">
-    ///     <item>RecordDataHeader indicator byte and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
+    ///     <item>RecordDataHeader indicator byte and lengths; see <see cref="RecordDataHeader"/> header comments for details</item>
     ///     <item>Key data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Value data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     /// </list>
@@ -154,7 +154,7 @@ namespace Tsavorite.core
         /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey, Action<IHeapObject> objectDisposer = null)
+        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
         {
             Debug.Assert(isKey ? !recordInfo.KeyIsInline : !recordInfo.ValueIsInline);
 
@@ -164,7 +164,7 @@ namespace Tsavorite.core
             var objectId = *(int*)fieldAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
-                objectIdMap.Free(objectId, objectDisposer);
+                objectIdMap.Free(objectId);
                 *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
             }
 

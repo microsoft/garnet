@@ -19,7 +19,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
                 ValueIsObject = srcLogRecord.Info.ValueIsObject,
-                HasETag = !srcLogRecord.Info.ValueIsObject && (input.header.CheckWithETagFlag() || srcLogRecord.Info.HasETag),
+                HasETag = !srcLogRecord.Info.ValueIsObject && srcLogRecord.Info.HasETag,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -94,7 +94,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = 0,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false
             };
         }
 
@@ -111,7 +111,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false
             };
         }
 
@@ -144,7 +144,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = input.header.CheckWithETagFlag(),
+                HasETag = false,
                 HasExpiration = inputLogRecord.Info.HasExpiration
             };
         }

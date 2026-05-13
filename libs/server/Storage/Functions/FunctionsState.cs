@@ -16,14 +16,14 @@ namespace Garnet.server
     {
         private readonly CustomCommandManager customCommandManager;
 
-        public readonly TsavoriteLog appendOnlyFile;
+        public readonly GarnetAppendOnlyFile appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker cacheSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
-        public ETagState etagState;
+        public readonly RangeIndexManager rangeIndexManager;
         public StoreWrapper storeWrapper;
         public readonly ILogger logger;
         public byte respProtocolVersion;
@@ -32,7 +32,7 @@ namespace Garnet.server
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
-        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
+        public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, VectorManager vectorManager, ILogger logger,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -48,7 +48,7 @@ namespace Garnet.server
             // Hang onto this for access to storeWrapper.store.Log
             this.storeWrapper = storeWrapper;
 
-            this.etagState = new ETagState();
+            this.rangeIndexManager = storeWrapper.rangeIndexManager;
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
             this.vectorManager = vectorManager;

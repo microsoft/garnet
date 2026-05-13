@@ -182,10 +182,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long memorySizeChange)
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            memorySizeChange = 0;
-
             if (input.header.type != GarnetObjectType.Hash)
             {
                 //Indicates when there is an incorrect type 
@@ -194,7 +192,6 @@ namespace Garnet.server
                 return true;
             }
 
-            var previousMemorySize = HeapMemorySize;
             switch (input.header.HashOp)
             {
                 case HashOperation.HSET:
@@ -260,8 +257,6 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
             }
-
-            memorySizeChange = HeapMemorySize - previousMemorySize;
 
             if (hash.Count == 0)
                 output.OutputFlags |= ObjectOutputFlags.RemoveKey;

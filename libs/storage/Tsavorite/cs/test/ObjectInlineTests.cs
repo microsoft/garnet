@@ -11,8 +11,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Objects
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -36,7 +36,7 @@ namespace Tsavorite.test.Objects
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -428,7 +428,7 @@ namespace Tsavorite.test.Objects
             static void SetAndVerify(ref TestObjectInput input, ref TestValueStyle style, bool isInline, bool isOverflow)
             {
                 Set(ref style, isInline, isOverflow);
-                Assert.That(input.wantValueStyle, Is.EqualTo(style));
+                Assert.That(style, Is.EqualTo(input.wantValueStyle));
             }
 
             static RecordFieldInfo GetFieldInfo<TKey>(TKey key, ref TestObjectInput input)

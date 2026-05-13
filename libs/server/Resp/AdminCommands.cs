@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.Custom;
 using Microsoft.Extensions.Logging;
@@ -165,10 +166,8 @@ namespace Garnet.server
             }
         }
 
-        void CommitAof(int dbId = -1)
-        {
-            storeWrapper.CommitAOFAsync(dbId).ConfigureAwait(false).GetAwaiter().GetResult();
-        }
+        ValueTask<bool> CommitAofAsync(int dbId = -1)
+        => storeWrapper.CommitAOFAsync(dbId);
 
         private bool NetworkMonitor()
         {
@@ -606,7 +605,9 @@ namespace Garnet.server
                     return true;
             }
 
-            CommitAof(dbId);
+            // Have to block as we're on network thread
+            _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
+
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
 
@@ -802,31 +803,44 @@ namespace Garnet.server
             }
             else
             {
+                var usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
                 if (storeWrapper.clusterProvider.IsPrimary())
                 {
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 4 : 3, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(replication_offset[0], ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var replice in replicaInfo)
+                    foreach (var replica in replicaInfo)
                     {
-                        while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 4 : 3, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.address, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replica.address, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt32(replice.port, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt32(replica.port, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt64(replice.replication_offset, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt64(replica.replication_offset[0], ref dcurr, dend))
+                            SendAndReset();
+
+                        if (usingShardedLog)
+                        {
+                            while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset.ToString(), ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+
+                    if (usingShardedLog)
+                    {
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replication_offset.ToString(), ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -834,7 +848,7 @@ namespace Garnet.server
                 {
                     var role = storeWrapper.clusterProvider.GetReplicaInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 6 : 5, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
@@ -849,8 +863,14 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset[0], ref dcurr, dend))
                         SendAndReset();
+
+                    if (usingShardedLog)
+                    {
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_offset.ToString(), ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
 
@@ -878,7 +898,12 @@ namespace Garnet.server
                     return true;
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
+            var checkpointTask = storeWrapper.TakeCheckpointAsync(false, dbId: dbId, logger: logger);
+
+            // No choice but to block, we're on the network thread
+            var success = AsyncUtils.BlockingWait(checkpointTask);
+
+            if (!success)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
@@ -995,7 +1020,11 @@ namespace Garnet.server
                 }
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
+            var checkpointTask = storeWrapper.TakeCheckpointAsync(true, dbId: dbId, logger: logger);
+
+            // No choice but to block, we're on the network thread
+            var success = AsyncUtils.BlockingWait(checkpointTask);
+
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

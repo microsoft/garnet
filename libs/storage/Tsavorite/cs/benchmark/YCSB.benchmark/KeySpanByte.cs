@@ -25,7 +25,7 @@ namespace Tsavorite.benchmark
         /// The size remains the same as the previous key size for comparison purposes, making sure the large init_key and txn_key arrays use the same amount of memory.
         /// </summary>
         /// <remarks>
-        /// Combined with the header length total of <see cref="VarbyteLengthUtility.MinLengthMetadataBytes"/> bytes, we get:
+        /// Combined with the header length total of <see cref="RecordDataHeader.MinHeaderBytes"/> bytes, we get:
         ///     [RecordInfo header no_extended_namespace keydata valuedata]
         ///   = [8 + 5 (NumIndicatorBytes + 2 1-byte lengths) + 12 + 100 (see <see cref="SpanByteYcsbConstants.kValueDataSize"/>)] = 125
         /// which is rounded up to <see cref="Constants.kRecordAlignment"/> (8) so the final record size is exactly aligned to two cache lines.

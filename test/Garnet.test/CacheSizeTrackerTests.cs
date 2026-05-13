@@ -259,5 +259,67 @@ namespace Garnet.test
             // The first page of the read cache has been evicted => 11 records removed, 9 remain.
             ClassicAssert.AreEqual(9 * MemorySizePerEntry, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
         }
+
+        /// <summary>
+        /// Verifies that removing the last element from an object collection (triggering HasRemoveKey →
+        /// ExpireAndStop) correctly returns the heap tracker to zero. This exercises the IPU path where
+        /// Operate mutates the object in-place, the sizeChange delta is applied before the ExpireAndStop
+        /// early return, and OnDispose(Deleted) subtracts the remaining empty-collection overhead.
+        /// </summary>
+        [Test]
+        public void RemoveLastElementReturnsTrackerToZero_IPU()
+        {
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add a single element to a set — creates the object record with heap tracking.
+            db.SetAdd("myset", "value1");
+            var heapAfterAdd = cacheSizeTracker.mainLogTracker.LogHeapSizeBytes;
+            ClassicAssert.Greater(heapAfterAdd, 0, "Heap should be positive after SADD");
+
+            // Remove the only element — triggers HasRemoveKey → ExpireAndStop → tombstone.
+            var removed = db.SetRemove("myset", "value1");
+            ClassicAssert.IsTrue(removed, "SREM should return true");
+
+            // The tracker should return to zero: the sizeChange delta from SREM (negative) plus
+            // OnDispose(Deleted) subtracting the empty-collection overhead should exactly cancel
+            // the original SADD increment.
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes,
+                "Heap tracker must return to zero after removing the last element (IPU path)");
+        }
+
+        /// <summary>
+        /// Same scenario but with the record in the readonly region, forcing the remove-last-element
+        /// through CopyUpdate → PostCopyUpdater → HasRemoveKey → ExpireAndStop. The PCU path's
+        /// tombstoned new record must not leak value heap because +value is only added on pcuSuccess=true.
+        /// </summary>
+        [Test]
+        public void RemoveLastElementReturnsTrackerToZero_PCU()
+        {
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add a single element to a list.
+            db.ListRightPush("mylist", "value1");
+            var heapAfterAdd = cacheSizeTracker.mainLogTracker.LogHeapSizeBytes;
+            ClassicAssert.Greater(heapAfterAdd, 0, "Heap should be positive after RPUSH");
+
+            // Shift the record to the readonly region so the next mutation goes through CopyUpdate.
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            // Remove the only element — forces CopyUpdate → PCU → HasRemoveKey → ExpireAndStop.
+            var popped = db.ListLeftPop("mylist");
+            ClassicAssert.AreEqual("value1", (string)popped, "LPOP should return the value");
+
+            // Force eviction to flush any remaining sealed source records.
+            store.Log.FlushAndEvict(wait: true);
+
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes,
+                "Heap tracker must return to zero after removing the last element (PCU path)");
+        }
     }
 }

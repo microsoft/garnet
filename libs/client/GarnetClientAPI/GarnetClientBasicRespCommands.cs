@@ -572,7 +572,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(Memory<byte> key, long value, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECRBY, key, Encoding.ASCII.GetBytes(value.ToString()), token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECRBY, key, Encoding.ASCII.GetBytes(value.ToString()), token).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by value.

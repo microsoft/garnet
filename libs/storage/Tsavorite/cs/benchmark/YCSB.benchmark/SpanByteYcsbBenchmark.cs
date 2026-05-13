@@ -12,7 +12,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     internal static class SpanByteYcsbConstants
     {
@@ -113,7 +113,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordDisposer())
+                , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordTriggers())
                 , allocatorFactory
             );
         }
@@ -393,7 +393,7 @@ namespace Tsavorite.benchmark
                     if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
                         long start = swatch.ElapsedTicks;
-                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
+                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType))
                         {
                             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;

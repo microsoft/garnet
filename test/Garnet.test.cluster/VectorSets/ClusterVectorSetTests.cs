@@ -30,6 +30,8 @@ namespace Garnet.test.cluster
     [AllureNUnit]
     public class ClusterVectorSetTests : AllureTestBase
     {
+        protected int sublogCount = 1;
+
         private sealed class StringAndByteArrayComparer : IEqualityComparer<(string Key, byte[] Elem)>
         {
             public static readonly StringAndByteArrayComparer Instance = new();
@@ -108,7 +110,7 @@ namespace Garnet.test.cluster
         [TestCase("XB8", "NOQUANT")]
         [TestCase("FP32", "XPREQ8")]
         [TestCase("FP32", "NOQUANT")]
-        public void BasicVADDReplicates(string vectorFormat, string quantizer)
+        public async Task BasicVADDReplicatesAsync(string vectorFormat, string quantizer)
         {
             // TODO: also test VALUES format?
 
@@ -118,7 +120,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out var vectorFormatParsed));
             ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
 
-            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1).ConfigureAwait(false);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -205,7 +207,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
 
-            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1).ConfigureAwait(false);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -352,12 +354,13 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void RepeatedCreateDelete()
+        [CancelAfter(120_000)]
+        public async Task RepeatedCreateDeleteAsync(CancellationToken testCancellationToken)
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
 
-            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1).ConfigureAwait(false);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -469,7 +472,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
-            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
+            _ = await SimpleSetupClusterAsync(HighReplicationShards, primaryCount: 1, replicaCount: 5).ConfigureAwait(false);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -605,6 +608,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        [CancelAfter(180_000)]
         public async Task MultipleReplicasWithVectorSetsAndDeletesAsync()
         {
             const int PrimaryIndex = 0;
@@ -614,7 +618,7 @@ namespace Garnet.test.cluster
             const int Deletes = Vectors / 10;
             const string Key = nameof(MultipleReplicasWithVectorSetsAndDeletesAsync);
 
-            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
+            _ = await SimpleSetupClusterAsync(HighReplicationShards, primaryCount: 1, replicaCount: 5).ConfigureAwait(false);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -797,7 +801,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void VectorSetMigrateSingleBySlot()
+        public async Task VectorSetMigrateSingleBySlotAsync()
         {
             // Test migrating a single slot with a vector set of one element in it
 
@@ -806,7 +810,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1).ConfigureAwait(false);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -829,7 +833,7 @@ namespace Garnet.test.cluster
 
                 while (true)
                 {
-                    primary0Key = $"{nameof(VectorSetMigrateSingleBySlot)}_{ix}";
+                    primary0Key = $"{nameof(VectorSetMigrateSingleBySlotAsync)}_{ix}";
                     primary0HashSlot = context.clusterTestUtils.HashSlot(primary0Key);
 
                     if (slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && primary0HashSlot >= x.startSlot && primary0HashSlot <= x.endSlot))
@@ -928,14 +932,14 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void VectorSetMigrateByKeys()
+        public async Task VectorSetMigrateByKeysAsync()
         {
             // Based on : ClusterSimpleMigrateKeys test
 
             const int ShardCount = 3;
             const int KeyCount = 10;
 
-            _ = SimpleSetupCluster(ShardCount, primaryCount: -1, replicaCount: -1);
+            _ = await SimpleSetupClusterAsync(ShardCount, primaryCount: -1, replicaCount: -1).ConfigureAwait(false);
 
             var otherNodeIndex = 0;
             var sourceNodeIndex = 1;
@@ -1285,7 +1289,8 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task MigrateVectorSetWhileModifyingAsync()
+        [CancelAfter(120_000)]
+        public async Task MigrateVectorSetWhileModifyingAsync(CancellationToken testCancellationToken)
         {
             // Test migrating a single slot with a vector set while moving it
 
@@ -1294,7 +1299,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true, enableIncrementalSnapshots: true);
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1458,12 +1463,12 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void MigrateVectorSetBack()
+        public async Task MigrateVectorSetBackAsync()
         {
             const int Primary0Index = 0;
             const int Primary1Index = 1;
 
-            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards, replicaCount: 0);
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards, replicaCount: 0).ConfigureAwait(false);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1482,7 +1487,7 @@ namespace Garnet.test.cluster
 
                 while (true)
                 {
-                    vectorSetKey = $"{nameof(MigrateVectorSetBack)}_{ix}";
+                    vectorSetKey = $"{nameof(MigrateVectorSetBackAsync)}_{ix}";
                     vectorSetKeySlot = context.clusterTestUtils.HashSlot(vectorSetKey);
 
                     var isPrimary0Slot = slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && vectorSetKeySlot >= x.startSlot && vectorSetKeySlot <= x.endSlot);
@@ -1593,7 +1598,8 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task MigrateVectorStressAsync()
+        [CancelAfter(120_000)]
+        public async Task MigrateVectorStressAsync(CancellationToken testCancellationToken)
         {
             // Move vector sets back and forth between replicas, making sure we don't drop data
             // Keeps reads and writes going continuously
@@ -1611,7 +1617,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
+                _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -2058,7 +2064,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int ReplicaIndex = 1;
 
-            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1);
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var replica = (IPEndPoint)context.endpoints[ReplicaIndex];
@@ -2097,11 +2103,11 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-        private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false)
+        private Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
-            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
-            context.CreateConnection(useTLS: true);
-            return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
+            context.CreateConnection(useTLS: useTLS);
+            return context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]

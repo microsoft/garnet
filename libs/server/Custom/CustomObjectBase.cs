@@ -75,10 +75,8 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                            byte respProtocolVersion, out long sizeChange)
+                                            byte respProtocolVersion)
         {
-            sizeChange = 0;
-
             switch (input.header.cmd)
             {
                 // Scan Command

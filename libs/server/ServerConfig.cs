@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -37,9 +38,9 @@ namespace Garnet.server
         }
     }
 
-    internal sealed unsafe partial class RespServerSession : ServerSessionBase
+    internal sealed partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkCONFIG_GET()
+        private unsafe bool NetworkCONFIG_GET()
         {
             if (parseState.Count == 0)
             {
@@ -105,7 +106,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_REWRITE()
+        private unsafe bool NetworkCONFIG_REWRITE()
         {
             if (parseState.Count != 0)
                 return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.REWRITE)}");
@@ -117,7 +118,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_SET()
+        private unsafe bool NetworkCONFIG_SET()
         {
             if (parseState.Count == 0 || parseState.Count % 2 != 0)
                 return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.SET)}");
@@ -191,7 +192,10 @@ namespace Garnet.server
                 if (readCacheMemorySize != null)
                     HandleMemorySizeChange(readCacheMemorySize, sbErrorMsg, isReadCache: true);
                 if (index != null)
-                    HandleIndexSizeChange(index, sbErrorMsg);
+                {
+                    // Must block, we're on the network thread
+                    AsyncUtils.BlockingWait(HandleIndexSizeChangeAsync(index, sbErrorMsg));
+                }
             }
 
             if (sbErrorMsg.Length == 0)
@@ -253,7 +257,7 @@ namespace Garnet.server
                 storeWrapper.sizeTracker.TargetSize = newMemorySize;
         }
 
-        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg)
+        private async Task HandleIndexSizeChangeAsync(string indexSize, StringBuilder sbErrorMsg)
         {
             if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
             {
@@ -294,7 +298,7 @@ namespace Garnet.server
             // Try to grow the index size by doubling it until it reaches the new size
             for (; currIndexSize < adjNewIndexSize; currIndexSize *= 2)
             {
-                if (!storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult())
+                if (!AsyncUtils.BlockingWait(storeWrapper.store.GrowIndexAsync()))
                 {
                     AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, CmdStrings.Index);
                     return;

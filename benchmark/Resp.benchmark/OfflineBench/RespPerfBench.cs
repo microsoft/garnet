@@ -18,27 +18,6 @@ namespace Resp.benchmark
     /// </summary>
     public partial class RespPerfBench
     {
-        public static GarnetServerOptions GetServerOptions(Options options)
-        {
-            var serverOptions = new GarnetServerOptions
-            {
-                ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, 6379),
-                QuietMode = true,
-                EnableAOF = options.EnableAOF,
-                EnableCluster = options.EnableCluster,
-                IndexMemorySize = options.IndexMemorySize,
-                ClusterConfigFlushFrequencyMs = -1,
-                FastAofTruncate = options.EnableCluster && options.UseAofNullDevice,
-                UseAofNullDevice = options.UseAofNullDevice,
-                AofMemorySize = options.AofMemorySize,
-                AofPageSize = options.AofPageSize,
-                CommitFrequencyMs = options.CommitFrequencyMs,
-                ReplicationOffsetMaxLag = 0,
-                CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null
-            };
-            return serverOptions;
-        }
-
         readonly int Start;
         readonly ManualResetEventSlim waiter = new();
         readonly Options opts;
@@ -67,7 +46,7 @@ namespace Resp.benchmark
                 if (opts.EnableCluster && !opts.SkipLoad && !opts.LSet)
                     throw new Exception("Use --lset when running InProc and with cluster enabled to load data!");
 
-                var serverOptions = GetServerOptions(opts);
+                var serverOptions = AofBench.GetServerOptions(opts);
                 server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
 
@@ -391,9 +370,9 @@ namespace Resp.benchmark
                 };
             }
 
-            long beginAddress = 0;
+            AofAddress beginAddress = default;
             if (opts.Client == ClientType.InProc && server.StoreWrapper.appendOnlyFile != null)
-                beginAddress = server.StoreWrapper.appendOnlyFile.TailAddress;
+                beginAddress = server.StoreWrapper.appendOnlyFile.Log.TailAddress;
 
             // Start threads.
             foreach (var worker in workers)
@@ -428,9 +407,8 @@ namespace Resp.benchmark
                     Console.WriteLine($"[BytesConsumedPerSecond]: {byteConsumerPerSecond:N2} GiB/sec");
                     if (server.StoreWrapper.appendOnlyFile != null)
                     {
-                        var tailAddress = server.StoreWrapper.appendOnlyFile.TailAddress;
-                        var aofSize = tailAddress - beginAddress;
-
+                        var tailAddress = sessions[0].StoreWrapper.TailAddress;
+                        var aofSize = tailAddress.AggregateDiff(beginAddress);
                         var tpt = (aofSize / seconds) / (double)1_000_000_000;
                         Console.WriteLine($"[AOF Total Size]: {aofSize:N2} bytes");
                         Console.WriteLine($"[AOF Append Tpt]: {tpt:N2} GiB/sec");

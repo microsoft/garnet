@@ -17,8 +17,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
 
     public class CheckpointManagerWithCookie : DeviceLogCommitCheckpointManager
     {
@@ -125,7 +125,7 @@ namespace Tsavorite.test.recovery.sumstore
                 LogMemorySize = 1L << 29,
                 CheckpointDir = checkpointDir,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -137,7 +137,7 @@ namespace Tsavorite.test.recovery.sumstore
                 LogMemorySize = 1L << 29,
                 CheckpointDir = checkpointDir,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -210,7 +210,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -221,7 +221,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -275,7 +275,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointDir = checkpointDir
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -286,7 +286,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointDir = checkpointDir
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -336,7 +336,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -347,7 +347,7 @@ namespace Tsavorite.test.recovery.sumstore
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 29,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

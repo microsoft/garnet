@@ -41,6 +41,12 @@ namespace Garnet.cluster
         public const int MAX_HASH_SLOT_VALUE = 16384;
 
         /// <summary>
+        /// Version of the cluster config serialization format.
+        /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
+        /// </summary>
+        public const byte ClusterConfigVersion = 1;
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="slot"></param>
@@ -1176,7 +1182,7 @@ namespace Garnet.cluster
                     // will not be able to claim the slot without outside intervention
                     if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
                     {
-                        logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
+                        // logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
                         newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                         newSlotMap[i]._state = SlotState.OFFLINE;
                     }

@@ -1188,7 +1188,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverRawStringTest()
+        public async Task MultiDatabaseAofRecoverRawStringTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1214,7 +1214,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2data, value.ToString());
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1240,7 +1240,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverObjectTest()
+        public async Task MultiDatabaseAofRecoverObjectTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1266,7 +1266,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, score.Value);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1292,7 +1292,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofObjectMutationRecoverTest()
+        public async Task MultiDatabaseAofObjectMutationRecoverTestAsync()
         {
             // Verify that object mutation operations (LPOP, HDEL) that empty collections
             // are persisted correctly across multiple databases during AOF recovery
@@ -1314,7 +1314,7 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db1.KeyExists(hashKey));
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1394,6 +1394,55 @@ namespace Garnet.test
                 }
                 while (lastsave <= lastsave_old);
             }
+        }
+
+        [Test]
+        public void MultiDatabaseGeneralSaveBlocksGeneralSaveTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db0 = redis.GetDatabase(0);
+            var db1 = redis.GetDatabase(1);
+
+            // Touch DB 1 so there are at least two active databases. With multiple active DBs,
+            // MultiDatabaseManager.TakeCheckpointAsync acquires multiDbCheckpointingLock, which is
+            // what makes the second concurrent general BGSAVE fail synchronously below.
+            db1.StringSet("k", "v");
+
+            // Add some data so the checkpoint takes a measurable amount of time.
+            for (var i = 0; i < 1024; i++)
+            {
+                db0.StringSet($"k{i}", new string('x', 256));
+                db1.StringSet($"k{i}", new string('x', 256));
+            }
+
+            // Capture LASTSAVE baseline (long to avoid 2038 truncation in the wait loop below).
+            var lastsaveBaseline = (long)db0.Execute("LASTSAVE");
+
+            // Issue general background save.
+            var res = db0.Execute("BGSAVE");
+            ClassicAssert.AreEqual("Background saving started", res.ToString());
+
+            // Issuing another general BGSAVE while the first is in progress must fail. With multiple
+            // active DBs, multiDbCheckpointingLock is acquired synchronously by the first BGSAVE,
+            // so the second one reliably observes the in-progress checkpoint.
+            // Note: Assert.Throws's second argument is a *failure* message, not the expected exception
+            // message - assert on Message explicitly.
+            var ex = Assert.Throws<RedisServerException>(() => db0.Execute("BGSAVE"));
+            ClassicAssert.AreEqual(
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS),
+                ex.Message);
+
+            // Wait (bounded) for the in-flight save to complete by observing LASTSAVE advance past baseline.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            long lastsave;
+            do
+            {
+                Thread.Sleep(10);
+                lastsave = (long)db0.Execute("LASTSAVE");
+            }
+            while (lastsave <= lastsaveBaseline && DateTime.UtcNow < deadline);
+
+            ClassicAssert.Greater(lastsave, lastsaveBaseline, "LASTSAVE did not advance within timeout");
         }
 
         [Test]

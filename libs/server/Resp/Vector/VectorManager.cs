@@ -81,28 +81,29 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        public VectorManager(bool enabled, int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
-            IsEnabled = enabled;
+            IsEnabled = serverOptions.EnableVectorSetPreview;
 
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
 
             replicationBlockEvent = CountingEventSlim.Create();
-            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
+            // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
+            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
 
-            // TODO: Pull this off a config or something
-            replicationReplayTasks = new Task[Environment.ProcessorCount];
+            if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
+                throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
+            var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
+            replicationReplayTasks = new Task[vectorSetReplayCount];
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {
                 replicationReplayTasks[i] = Task.CompletedTask;
             }
 
-            // TODO: Probably configurable?
-            // For now, just number of processors
-            vectorSetLocks = new(Environment.ProcessorCount);
+            vectorSetLocks = new(vectorSetReplayCount);
 
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
@@ -116,6 +117,8 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
+            if (!IsEnabled) return;
+
             using var session = (RespServerSession)getCleanupSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
             {
@@ -153,6 +156,8 @@ namespace Garnet.server
         /// </summary>
         public void ResumePostRecovery()
         {
+            if (!IsEnabled) return;
+
             using var session = (RespServerSession)getCleanupSession();
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
@@ -271,16 +276,20 @@ namespace Garnet.server
         {
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             _ = replicationReplayChannel.Writer.TryComplete();
-            replicationReplayChannel.Reader.Completion.Wait();
-
-            Task.WhenAll(replicationReplayTasks).Wait();
+            AsyncUtils.BlockingWait(replicationReplayChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             replicationBlockEvent.Dispose();
 
-            // Wait for any in progress cleanup to finish
+            // Wait for any in progress cleanup to finish. PauseCleanupAsync callers MUST
+            // have called ResumeCleanup before reaching here, otherwise the cleanup task
+            // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
             cleanupTaskChannel.Writer.Complete();
-            cleanupTaskChannel.Reader.Completion.Wait();
-            cleanupTask.Wait();
+            AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(cleanupTask);
+
+            // Cleanup task has fully drained, so nothing else can take this gate.
+            cleanupGate.Dispose();
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)

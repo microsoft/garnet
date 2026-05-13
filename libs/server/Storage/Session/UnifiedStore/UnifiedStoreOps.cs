@@ -222,10 +222,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="oldKeySlice">The key to rename</param>
         /// <param name="newKeySlice">The new key name</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool withEtag)
-            => RENAME(oldKeySlice, newKeySlice, false, out _, withEtag);
+        public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice)
+            => RENAME(oldKeySlice, newKeySlice, false, out _);
 
         /// <summary>
         /// RENAME a key in the unified store context - if the new key does not exist
@@ -233,10 +232,9 @@ namespace Garnet.server
         /// <param name="oldKeySlice">The key to rename</param>
         /// <param name="newKeySlice">The new key name</param>
         /// <param name="result">Number of renamed records</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result, bool withEtag)
-            => RENAME(oldKeySlice, newKeySlice, true, out result, withEtag);
+        public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result)
+            => RENAME(oldKeySlice, newKeySlice, true, out result);
 
         /// <summary>
         /// RENAME a key in the unified store context
@@ -245,9 +243,8 @@ namespace Garnet.server
         /// <param name="newKeySlice">The new key name</param>
         /// <param name="isNX">If true, rename only if the new key does not exist</param>
         /// <param name="result">Number of renamed records</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
         /// <returns></returns>
-        private unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool isNX, out int result, bool withEtag)
+        private unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool isNX, out int result)
         {
             result = -1;
 
@@ -280,9 +277,7 @@ namespace Garnet.server
             var output = new UnifiedOutput();
             try
             {
-                // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 
-                // pass the srcLogRecord or even the ValueObject to RMW. TODO: Optimize this to return only the ETag, or set functionsState.etagState.ETag directly.
-                // Set the input so Read knows to do the special "serialization" into output
+                // Check if new key exists.
                 UnifiedInput input = new(RespCommand.RENAME);
                 var status = GET(newKey, ref input, ref output, ref context);
                 if (isNX && status != GarnetStatus.NOTFOUND)
@@ -290,18 +285,6 @@ namespace Garnet.server
                     result = 0;             // This is the "oldkey was found" return
                     abortTransaction = true;
                     return GarnetStatus.OK;
-                }
-
-                // Try to get the new key's etag, if exists
-                if (status != GarnetStatus.NOTFOUND)
-                {
-                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
-                    {
-                        // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
-                        var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
-                        if (logRecord.Info.HasETag)
-                            functionsState.etagState.ETag = logRecord.ETag;
-                    }
                 }
 
                 status = GET(oldKey, ref input, ref output, ref context);
@@ -315,10 +298,6 @@ namespace Garnet.server
                 {
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
-
-                    // The spec is that Expiration does not change. Set input ETag flag if requested.
-                    if (withEtag)
-                        input.header.SetWithETagFlag();
 
                     status = SET(newKey, ref input, in logRecord, ref context);
                     if (status == GarnetStatus.OK)

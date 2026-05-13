@@ -28,7 +28,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog AppendOnlyFile { get; }
+        public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
         /// Last save time (of DB 0)
@@ -81,28 +81,18 @@ namespace Garnet.server
         /// Recover checkpoint
         /// </summary>
         /// <param name="replicaRecover"></param>
-        /// <param name="recoverFromToken"></param>
-        /// <param name="metadata"></param>
+        /// <param name="recoverFromToken"></param>        
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
-        /// Take checkpoint of all active databases if checkpointing is not in progress
+        /// Take checkpoint of all active databases (or a specified database) if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="logger">Logger</param>
+        /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
-
-        /// <summary>
-        /// Take checkpoint of specified database ID if checkpointing is not in progress
-        /// </summary>
-        /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="dbId">ID of database to checkpoint</param>
         /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -155,18 +145,18 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1);
+        public AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <summary>
         /// Do compaction
         /// </summary>
-        public void DoCompaction(CancellationToken token = default, ILogger logger = null);
+        public ValueTask DoCompactionAsync(CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Grows indexes of both main store and object store for all active databases if current size is too small
         /// </summary>
         /// <returns>True if indexes are maxed out</returns>
-        public bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <summary>
         /// Executes a store-wide object collect operation

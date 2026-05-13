@@ -131,10 +131,6 @@ namespace Garnet
         [Option("no-pubsub", Required = false, HelpText = "Disable pub/sub feature on server.")]
         public bool? DisablePubSub { get; set; }
 
-        [OptionValidation]
-        [Option("incsnap", Required = false, HelpText = "Enable incremental snapshots.")]
-        public bool? EnableIncrementalSnapshots { get; set; }
-
         [MemorySizeValidation]
         [Option("pubsub-pagesize", Required = false, HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
         public string PubSubPageSize { get; set; }
@@ -204,6 +200,18 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
+        public int AofPhysicalSublogCount { get; set; }
+
+        [IntRangeValidation(1, 256, isRequired: false)]
+        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        public int AofReplayTaskCount { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
+        public int AofTailWitnessFreqMs { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -219,14 +227,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
         public int AofSizeLimitEnforceFrequencySecs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-refresh-freq", Required = false, HelpText = "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
-        public int AofReplicationRefreshFrequencyMs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("subscriber-refresh-freq", Required = false, HelpText = "Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.")]
-        public int SubscriberRefreshFrequencyMs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
@@ -310,6 +310,10 @@ namespace Garnet
         [OptionValidation]
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
+
+        [OptionValidation]
+        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
+        public bool? CommandStatsMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
@@ -414,7 +418,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
@@ -438,7 +442,7 @@ namespace Garnet
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
-        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        [Option("aof-null-device", Required = false, HelpText = "With fast-aof-truncate replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
@@ -632,6 +636,13 @@ namespace Garnet
         [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableVectorSetPreview { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
+        public int VectorSetReplayTaskCount { get; set; }
+
+        [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableRangeIndexPreview { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -715,7 +726,7 @@ namespace Garnet
             if (ClusterAnnounceIp != null)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
                 if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
                     endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
                     listenEp.Port == announceEp.Port &&
@@ -779,6 +790,15 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
+            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
+                throw new Exception("Cannot use sharded-log without FastCommit!");
+
+            if (!EnableAOF.GetValueOrDefault())
+            {
+                if (!string.IsNullOrEmpty(AofSizeLimit))
+                    throw new GarnetException("AofSizeLimit cannot be enforced with disabled AOF!");
+            }
+
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
             {
                 if (!string.IsNullOrEmpty(AzureStorageConnectionString))
@@ -815,7 +835,6 @@ namespace Garnet
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
-                EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
@@ -829,7 +848,9 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
-                AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
+                AofPhysicalSublogCount = AofPhysicalSublogCount,
+                AofReplayTaskCount = AofReplayTaskCount,
+                AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
@@ -858,6 +879,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
@@ -912,6 +934,8 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }
 

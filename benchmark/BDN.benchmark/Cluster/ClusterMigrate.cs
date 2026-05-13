@@ -25,7 +25,7 @@ namespace BDN.benchmark.Cluster
         /// </summary>
         public IEnumerable<ClusterParams> ClusterParamsProvider()
         {
-            yield return new(false);
+            yield return new(false, false);
         }
 
         ClusterContext cc;
@@ -34,7 +34,7 @@ namespace BDN.benchmark.Cluster
         public void GlobalSetup()
         {
             cc = new ClusterContext();
-            cc.SetupSingleInstance();
+            cc.SetupSingleInstance(Params);
             cc.AddSlotRange([(0, 16383)]);
             cc.CreateGetSet();
             cc.CreateMGetMSet();

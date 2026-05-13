@@ -26,9 +26,19 @@ namespace Garnet.server
         public BasicGarnetApi GarnetApi { get; }
 
         /// <summary>
+        /// Consistent Garnet API
+        /// </summary>
+        public ConsistentReadGarnetApi ConsistentGarnetApi { get; }
+
+        /// <summary>
         /// Lockable Garnet API
         /// </summary>
         public TransactionalGarnetApi TransactionalGarnetApi { get; }
+
+        /// <summary>
+        /// Lockable Consistent Garnet API
+        /// </summary>
+        public TransactionalConsistentReadGarnetApi TransactionalConsistentGarnetApi { get; }
 
         /// <summary>
         /// Transaction manager
@@ -37,13 +47,22 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabaseSession(int id, StorageSession storageSession, BasicGarnetApi garnetApi, TransactionalGarnetApi lockableGarnetApi, TransactionManager txnManager)
+        public GarnetDatabaseSession(
+            int id,
+            StorageSession storageSession,
+            BasicGarnetApi garnetApi,
+            TransactionalGarnetApi lockableGarnetApi,
+            TransactionManager txnManager,
+            ConsistentReadGarnetApi consistentGarnetApi = default,
+            TransactionalConsistentReadGarnetApi transactionalConsistentGarnetApi = default)
         {
             this.Id = id;
             this.StorageSession = storageSession;
             this.GarnetApi = garnetApi;
             this.TransactionalGarnetApi = lockableGarnetApi;
             this.TransactionManager = txnManager;
+            this.ConsistentGarnetApi = consistentGarnetApi;
+            this.TransactionalConsistentGarnetApi = transactionalConsistentGarnetApi;
         }
 
         public GarnetDatabaseSession(int id, GarnetDatabaseSession srcSession)

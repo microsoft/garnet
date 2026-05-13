@@ -54,7 +54,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    await Task.Delay(1000, cts.Token);
+                    await Task.Delay(1000, cts.Token).ConfigureAwait(false);
                     if (disposed)
                         break;
                     recordPool.ScanForEmpty(cts.Token);

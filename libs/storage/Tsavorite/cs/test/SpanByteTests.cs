@@ -13,7 +13,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.spanbyte
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -38,7 +38,7 @@ namespace Tsavorite.test.spanbyte
                         LogDevice = log,
                         LogMemorySize = 1L << 17,
                         PageSize = 1L << 12
-                    }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                    }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
                 using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
@@ -94,7 +94,7 @@ namespace Tsavorite.test.spanbyte
                         LogDevice = log,
                         LogMemorySize = 1L << 15,
                         PageSize = 1L << 12
-                    }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                    }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
                 using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
@@ -168,7 +168,7 @@ namespace Tsavorite.test.spanbyte
                     LogDevice = log,
                     LogMemorySize = 1L << 17,
                     PageSize = 1L << 10    // 1KB page
-                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());

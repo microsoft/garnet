@@ -175,7 +175,7 @@ namespace Tsavorite.core
                     {
                         Task.Run(async () =>
                         {
-                            await Task.Delay(TimeSpan.FromMilliseconds(thresholdMilli));
+                            await Task.Delay(TimeSpan.FromMilliseconds(thresholdMilli)).ConfigureAwait(false);
                             shouldRetry = 0;
                             log.Commit();
                         });

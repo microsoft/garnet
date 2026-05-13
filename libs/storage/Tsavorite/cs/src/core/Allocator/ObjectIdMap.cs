@@ -65,28 +65,15 @@ namespace Tsavorite.core
             return id;
         }
 
-        /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
+        /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, on a failed CAS, on record disposal, etc.).
+        /// The slot is cleared so its previous occupant (byte[] overflow or IHeapObject) becomes unreachable via the map and eligible for GC. If the application needs
+        /// to run <see cref="IDisposable.Dispose"/> on an IHeapObject (e.g. to release external resources), it should do so in <see cref="IRecordTriggers.OnDispose"/>
+        /// before the containing record is cleared.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(int objectId)
         {
             if (objectId != InvalidObjectId)
             {
-                objectArray.Set(objectId, default);
-                freeSlots.Push(objectId);
-            }
-        }
-
-        /// <summary>Clear a specific slot of the array.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Free(int objectId, Action<IHeapObject> disposer)
-        {
-            if (objectId != InvalidObjectId)
-            {
-                if (disposer is not null)
-                {
-                    var element = objectArray.Get(objectId);
-                    disposer(Unsafe.As<object, IHeapObject>(ref element));
-                }
                 objectArray.Set(objectId, default);
                 freeSlots.Push(objectId);
             }

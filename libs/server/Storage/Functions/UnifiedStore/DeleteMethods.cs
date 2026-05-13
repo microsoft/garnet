@@ -48,14 +48,9 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            if (logRecord.Info.ValueIsObject)
-            {
-                functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
-
-                // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                logRecord.ClearValueIfHeap(_ => { });
-            }
+            // Heap object cache-size tracking and disposal are handled by
+            // storeFunctions.OnDispose (GarnetRecordTriggers) which is called
+            // by Tsavorite after InPlaceDeleter returns.
             return true;
         }
 
@@ -67,6 +62,7 @@ namespace Garnet.server
 #endif
             where TEpochAccessor : IEpochAccessor
         {
+
             if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogDelete(key.KeyBytes, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
         }

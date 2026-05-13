@@ -15,37 +15,37 @@ namespace Garnet.server
     {
         /// <summary>
         /// Monitors AOF size and triggers checkpoints when size limit is exceeded.
-        /// <para>See <see cref="StoreWrapper.AutoCheckpointBasedOnAofSizeLimit"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.AutoCheckpointBasedOnAofSizeLimitAsync"/> for implementation.</para>
         /// </summary>
         AofSizeLimitTask,
 
         /// <summary>
         /// Periodically commits AOF data to ensure durability.
-        /// <para>See <see cref="StoreWrapper.CommitTask"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.CommitTaskAsync"/> for implementation.</para>
         /// </summary>
         CommitTask,
 
         /// <summary>
         /// Performs log compaction to reclaim space from deleted records.
-        /// <para>See <see cref="StoreWrapper.CompactionTask"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.CompactionTaskAsync"/> for implementation.</para>
         /// </summary>
         CompactionTask,
 
         /// <summary>
         /// Collects expired members from object store collections.
-        /// <para>See <see cref="StoreWrapper.ObjectCollectTask"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.ObjectCollectTaskAsync"/> for implementation.</para>
         /// </summary>
         ObjectCollectTask,
 
         /// <summary>
         /// Scans and removes expired keys from main and object stores.
-        /// <para>See <see cref="StoreWrapper.ExpiredKeyDeletionScanTask"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.ExpiredKeyDeletionScanTaskAsync"/> for implementation.</para>
         /// </summary>
         ExpiredKeyDeletionTask,
 
         /// <summary>
         /// Automatically grows hash table indexes when overflow thresholds are met.
-        /// <para>See <see cref="StoreWrapper.IndexAutoGrowTask"/> for implementation.</para>
+        /// <para>See <see cref="StoreWrapper.IndexAutoGrowTaskAsync"/> for implementation.</para>
         /// </summary>
         IndexAutoGrowTask,
 
@@ -53,6 +53,11 @@ namespace Garnet.server
         /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
         /// </summary>
         VectorReplicationReplayTask,
+
+        /// <summary>
+        /// Task used to process advance time signals at replica
+        /// </summary>
+        AdvanceTimeReplicaTask,
     }
 
     /// <summary>
@@ -77,6 +82,7 @@ namespace Garnet.server
             TaskPlacementMapping[(int)TaskType.ObjectCollectTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.ExpiredKeyDeletionTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.IndexAutoGrowTask] = TaskPlacementCategory.All;
+            TaskPlacementMapping[(int)TaskType.AdvanceTimeReplicaTask] = TaskPlacementCategory.Replica;
         }
 
         /// <summary>

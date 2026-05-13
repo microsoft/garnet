@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -143,6 +142,23 @@ namespace Tsavorite.core
         /// </summary>
         long OngoingCloseUntilAddress;
 
+        /// <summary>
+        /// True while <see cref="Reset"/> is rebuilding allocator state (page free + per-allocator
+        /// <see cref="Initialize"/>). Operations that want to be resilient to a concurrent Reset
+        /// can observe this flag (after acquiring epoch protection) and bail out — Reset is a
+        /// wholesale wipe, so any pre-Reset work or cached state is no longer meaningful. Scan
+        /// iterators do exactly this: they terminate the iteration (return false from
+        /// <c>GetNext</c>) when this flag is set.
+        ///
+        /// IMPORTANT: this flag is opt-in defense. Tsavorite's hot-path RMW / Read / Upsert /
+        /// Delete do NOT consult it (cost on the hot path), so they remain unsafe to call
+        /// concurrently with Reset and can dereference freed pages mid-Initialize. Callers of
+        /// Reset must still quiesce all non-iterator operations on the store (per Reset's
+        /// docstring contract). For Garnet, <c>VectorManager.PauseCleanupAsync</c> serializes
+        /// the cleanup task — including its post-iterate RMWs — with Reset.
+        /// </summary>
+        internal volatile bool Initializing;
+
         /// <inheritdoc/>
         public override string ToString() => BaseToString();
 
@@ -205,6 +221,12 @@ namespace Tsavorite.core
         /// <summary>Observer for records getting evicted from memory (page closed). May be the same object as <see cref="logSizeTracker"/>.</summary>
         internal IObserver<ITsavoriteScanIterator> onEvictionObserver;
 
+        /// <summary>
+        /// Whether this allocator is the read cache (as opposed to the main hybrid log).
+        /// Set once at construction from <see cref="AllocatorSettings.IsReadCache"/>.
+        /// </summary>
+        internal readonly bool IsReadCache;
+
         /// <summary>Log size tracker; called when an operation at the Tsavorite-internal level adds or removes heap memory size 
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
@@ -238,146 +260,152 @@ namespace Tsavorite.core
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
-        /// <summary>Flush checkpoint Delta to the Device</summary>
+        /// <summary>
+        /// Reset the hybrid log to empty.
+        ///
+        /// Concurrent-safety contract:
+        ///   * SCAN ITERATORS are safe end-to-end. The two-phase epoch cascade below
+        ///     (PR #1765) protects the page-free section, and the <see cref="Initializing"/>
+        ///     flag (set across this whole method including the per-allocator
+        ///     <see cref="Initialize"/> rewind) lets iterators terminate cleanly during the
+        ///     post-Phase-2 non-monotonic Initialize that would otherwise expose freed
+        ///     pagePointers.
+        ///   * RMW / Read / Upsert / Delete are NOT safe — Tsavorite's hot paths do not
+        ///     consult <see cref="Initializing"/>. They can race with Initialize and
+        ///     dereference freed pages. Callers MUST quiesce all non-iterator operations
+        ///     on the store before invoking Reset (per the original docstring contract).
+        ///     For Garnet, <c>VectorManager.PauseCleanupAsync</c> serializes the cleanup
+        ///     task — including its post-iterate RMWs — with Reset.
+        ///
+        /// Phase breakdown (executed by <see cref="ResetCore"/>):
+        ///
+        ///   Phase 1: publish new ReadOnlyAddress synchronously, then under
+        ///            BumpCurrentEpoch — i.e. after writers caching the OLD ReadOnlyAddress
+        ///            have drained — publish SafeReadOnlyAddress and FlushedUntilAddress.
+        ///            Mirrors OnPagesMarkedReadOnly's invariant that "by the time
+        ///            SafeReadOnlyAddress advances, no thread is mutating below it".
+        ///
+        ///   Phase 2: publish new HeadAddress synchronously (now safe — writers have observed
+        ///            the new ReadOnlyAddress, so no writer holds a cached old ReadOnlyAddress
+        ///            that would leave HeadAddress > cached ReadOnlyAddress). Then under
+        ///            BumpCurrentEpoch — i.e. after readers caching the OLD HeadAddress have
+        ///            drained — close pages (advancing SafeHeadAddress and ClosedUntilAddress)
+        ///            and free pages. Mirrors OnPagesClosed's invariant.
+        ///
+        ///   Final:   publish new BeginAddress synchronously. Publishing it last (rather than
+        ///            up front) means an iterator with a stale nextAddress sees
+        ///            currentAddress &gt; OLD BeginAddress and does not snap forward into the
+        ///            just-freed in-memory range — instead the currentAddress &lt; NEW HeadAddress
+        ///            check routes it through LoadPageIfNeeded's disk-frame branch (frame is
+        ///            iterator-owned, disk segment is intact). The invariant
+        ///            BeginAddress &lt;= HeadAddress holds throughout.
+        ///
+        /// Then per-allocator <see cref="Initialize"/> runs (re-allocates pages 0/1, rewinds
+        /// addresses to FirstValidAddress). The whole sequence is wrapped in
+        /// <c>Initializing = true / false</c> so iterators that opt in to checking the flag
+        /// terminate during the rewind window.
+        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
-            out Task completedTask, int throttleCheckpointFlushDelayMs)
+        public void Reset()
         {
-            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
-
-            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
-            if (throttleCheckpointFlushDelayMs >= 0)
+            // Gate Initializing-aware operations (e.g., scan iterators) for the entire
+            // reset+initialize sequence. Cleared in finally so a throw cannot leave them
+            // permanently terminating their next call.
+            Initializing = true;
+            try
             {
-                completedTask = Task.Run(FlushRunner);
+                ResetCore();
+
+                // Per-allocator Initialize re-allocates pages 0/1, resets all addresses to
+                // FirstValidAddress, and resets TailPageOffset. This non-monotonically rewinds
+                // multiple fields and is unsafe for concurrent operations — that's exactly
+                // what the Initializing flag guards iterator-aware callers against.
+                Initialize();
             }
-            else
+            finally
             {
-                try
-                {
-                    FlushRunner();
-                    completedTask = Task.CompletedTask;
-                }
-                catch (Exception ex)
-                {
-                    completedTask = Task.FromException(ex);
-                }
-            }
-
-            void FlushRunner()
-            {
-                long startPage = GetPage(startAddress);
-                long endPage = GetPage(endAddress);
-                if (endAddress > GetLogicalAddressOfStartOfPage(endPage))
-                    endPage++;
-
-                long prevEndPage = GetPage(prevEndAddress);
-                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-                int destOffset = 0;
-
-                // We perform delta capture under epoch protection with page-wise refresh for latency reasons
-                bool epochTaken = epoch.ResumeIfNotProtected();
-
-                try
-                {
-                    for (long p = startPage; p < endPage; p++)
-                    {
-                        // Check if we have the entire page safely available to process in memory
-                        if (HeadAddress >= GetLogicalAddressOfStartOfPage(p) + PageSize)
-                            continue;
-
-                        // All RCU pages need to be added to delta
-                        // For IPU-only pages, prune based on dirty bit
-                        if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                            continue;
-
-                        var logicalAddress = GetLogicalAddressOfStartOfPage(p);
-                        var endLogicalAddress = logicalAddress + PageSize;
-                        logicalAddress += PageHeader.Size;
-                        var physicalAddress = GetPhysicalAddress(logicalAddress);
-
-                        if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
-                        Debug.Assert(endLogicalAddress > logicalAddress);
-                        var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
-
-                        if (p == startPage)
-                        {
-                            var offset = (int)GetOffsetOnPage(startAddress);
-                            physicalAddress += offset;
-                            logicalAddress += offset;
-                        }
-
-                        while (physicalAddress < endPhysicalAddress)
-                        {
-                            var logRecord = _wrapper.CreateLogRecord(logicalAddress);
-                            ref var info = ref logRecord.InfoRef;
-                            var alignedRecordSize = logRecord.AllocatedSize;
-                            if (info.Dirty)
-                            {
-                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
-                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                                if (destOffset + size > entryLength)
-                                {
-                                    deltaLog.Seal(destOffset);
-                                    deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                                    destOffset = 0;
-                                    if (destOffset + size > entryLength)
-                                    {
-                                        deltaLog.Seal(0);
-                                        deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                                    }
-                                    if (destOffset + size > entryLength)
-                                        throw new TsavoriteException("Insufficient page size to write delta");
-                                }
-                                *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
-                                destOffset += sizeof(long);
-                                *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
-                                destOffset += sizeof(int);
-                                Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                                destOffset += alignedRecordSize;
-                            }
-                            physicalAddress += alignedRecordSize;
-                            logicalAddress += alignedRecordSize;
-                        }
-                        epoch.ProtectAndDrain();
-                    }
-                }
-                finally
-                {
-                    if (epochTaken)
-                        epoch.Suspend();
-                }
-
-                if (destOffset > 0)
-                    deltaLog.Seal(destOffset);
+                // Volatile.Write semantics (the field is volatile) ensure all our state
+                // mutations are visible BEFORE callers observe Initializing == false.
+                Initializing = false;
             }
         }
 
-        /// <summary>Reset the hybrid log. WARNING: assumes that threads have drained out at this point.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public virtual void Reset()
+        private void ResetCore()
         {
             var newBeginAddress = GetTailAddress();
 
-            // Shift read-only addresses to tail without flushing
+            // To use BumpCurrentEpoch we must be epoch-protected; conversely to wait for the
+            // queued action to drain we must NOT be holding the prior epoch. We toggle the
+            // protection per phase. If the caller arrived already protected, restore at the end.
+            var wasProtected = epoch.ThisInstanceProtected();
+            if (wasProtected)
+                epoch.Suspend();
+
+            // -------- Phase 1: ReadOnly -> wait for writer drain -> SafeReadOnly + FlushedUntil --------
             _ = MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
-            _ = MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
 
-            // Shift head address to tail
-            if (MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            using (var phase1Done = new ManualResetEventSlim(initialState: false))
             {
-                // Close addresses
-                OnPagesClosed(newBeginAddress);
-
-                // Wait for pages to get closed
-                while (ClosedUntilAddress < newBeginAddress)
+                epoch.Resume();
+                try
                 {
-                    _ = Thread.Yield();
-                    if (epoch.ThisInstanceProtected())
-                        epoch.ProtectAndDrain();
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        try
+                        {
+                            _ = MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+                            _ = MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _);
+                        }
+                        finally { phase1Done.Set(); }
+                    });
                 }
+                finally { epoch.Suspend(); }
+                phase1Done.Wait();
             }
 
-            // Update begin address to tail
+            // -------- Phase 2: HeadAddress -> wait for reader drain -> OnPagesClosed + FreeAllPages --------
+            var headShifted = MonotonicUpdate(ref HeadAddress, newBeginAddress, out _);
+
+            using (var phase2Done = new ManualResetEventSlim(initialState: false))
+            {
+                epoch.Resume();
+                try
+                {
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        try
+                        {
+                            if (headShifted)
+                                OnPagesClosed(newBeginAddress);
+
+                            // Wait for ClosedUntilAddress to catch up to newBeginAddress before
+                            // freeing remaining pages. Two scenarios make this necessary:
+                            //   (a) headShifted==true: OnPagesClosed may have returned immediately
+                            //       because another thread already owned OnPagesClosedWorker for our
+                            //       range — that worker is still freeing pages on the other thread.
+                            //   (b) headShifted==false: a concurrent Reset (or other ShiftHeadAddress
+                            //       caller) already advanced HeadAddress past newBeginAddress and its
+                            //       OnPagesClosedWorker may still be running.
+                            // In both cases, calling FreeAllAllocatedPages while the worker is mid-flight
+                            // would race with its FreePage calls and corrupt page state.
+                            while (ClosedUntilAddress < newBeginAddress)
+                                _ = Thread.Yield();
+
+                            FreeAllAllocatedPages();
+                        }
+                        finally { phase2Done.Set(); }
+                    });
+                }
+                finally { epoch.Suspend(); }
+                phase2Done.Wait();
+            }
+
+            // Restore caller's epoch state if they were protected on entry.
+            if (wasProtected)
+                epoch.Resume();
+
+            // -------- Final: publish BeginAddress (see XML doc on Reset for why this happens last) --------
             _ = MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
 
             flushEvent.Initialize();
@@ -389,6 +417,13 @@ namespace Tsavorite.core
             }
             device.Reset();
         }
+
+        /// <summary>
+        /// Free any pages still allocated after <see cref="OnPagesClosed"/> has run. Subclasses
+        /// override to call their per-allocator FreePage. Invoked from inside Reset's
+        /// epoch.BumpCurrentEpoch action so it is safe against concurrent iterators.
+        /// </summary>
+        protected virtual void FreeAllAllocatedPages() { }
 
         /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>.</summary>
         internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() => TruncateUntilAddressBlocking(toAddress));
@@ -427,91 +462,6 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
-        {
-            if (log == null)
-                return;
-
-            long pageStartLogicalAddress = GetLogicalAddressOfStartOfPage(startPage);
-            long pageEndLogicalAddress = GetLogicalAddressOfStartOfPage(endPage);
-
-            log.Reset();
-            while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
-            {
-                switch (type)
-                {
-                    case DeltaLogEntryType.DELTA:
-                        // Delta records
-                        long endAddress = physicalAddress + entryLength;
-                        while (physicalAddress < endAddress)
-                        {
-                            var address = *(long*)physicalAddress;
-                            physicalAddress += sizeof(long);
-                            var size = *(int*)physicalAddress;
-                            physicalAddress += sizeof(int);
-                            if (address >= pageStartLogicalAddress && address < pageEndLogicalAddress)
-                            {
-                                var logRecord = _wrapper.CreateLogRecord(address);
-                                var destination = logRecord.physicalAddress;
-
-                                // Clear extra space (if any) in old record
-                                var oldSize = logRecord.AllocatedSize;
-                                if (oldSize > size)
-                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
-
-                                // Update with new record
-                                Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-
-                                // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref LogRecord.GetInfoRef(destination);
-                                destInfo.ClearBitsForDiskImages();
-                            }
-                            physicalAddress += size;
-                        }
-                        break;
-                    case DeltaLogEntryType.CHECKPOINT_METADATA:
-                        if (recoverTo != -1)
-                        {
-                            // Only read metadata if we need to stop at a specific version
-                            var metadata = new byte[entryLength];
-                            unsafe
-                            {
-                                fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
-                            }
-
-                            HybridLogRecoveryInfo recoveryInfo = new();
-                            using StreamReader s = new(new MemoryStream(metadata));
-                            recoveryInfo.Initialize(s);
-                            // Finish recovery if only specific versions are requested
-                            if (recoveryInfo.version == recoverTo)
-                                return;
-                        }
-
-                        break;
-                    default:
-                        throw new TsavoriteException("Unexpected entry type");
-
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage(long logicalAddress, long version)
-        {
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            if (PageStatusIndicator[pageIndex].Dirty < version)
-                PageStatusIndicator[pageIndex].Dirty = version;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPageAtomic(long logicalAddress, long version)
-        {
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            MonotonicUpdate(ref PageStatusIndicator[pageIndex].Dirty, version, out _);
-        }
-
         /// <summary>
         /// This writes data from a page (or pages) for allocators that support only inline data.
         /// </summary>
@@ -548,9 +498,15 @@ namespace Tsavorite.core
 
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected AllocatorBase(LogSettings logSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback,
-                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
+        private protected AllocatorBase(AllocatorSettings allocatorSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator,
+                ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
         {
+            var logSettings = allocatorSettings.LogSettings;
+            var evictCallback = allocatorSettings.evictCallback;
+            var epoch = allocatorSettings.epoch;
+            var flushCallback = allocatorSettings.flushCallback;
+            IsReadCache = allocatorSettings.IsReadCache;
+
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
@@ -1398,15 +1354,22 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal void EvictPageForRecovery(long page)
         {
-            if (logSizeTracker is not null)
+            var start = GetLogicalAddressOfStartOfPage(page);
+            var end = GetLogicalAddressOfStartOfPage(page + 1);
+
+            var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+
+            // Per-record eviction walk handles internal heap accounting (key + value via
+            // logSizeTracker) and optionally notifies the application via OnEvict.
+            if (logSizeTracker is not null || storeFunctions.CallOnEvict)
             {
-                var start = GetLogicalAddressOfStartOfPage(page);
-                var end = GetLogicalAddressOfStartOfPage(page + 1);
-                MemoryPageScan(start, end, logSizeTracker);
+                _wrapper.EvictRecordsInRange(start, end, source);
+            }
+            if (onEvictionObserver is not null)
+            {
+                MemoryPageScan(start, end, onEvictionObserver);
             }
 
-            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
-            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1478,14 +1441,17 @@ namespace Tsavorite.core
                     var start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     var end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the eviction range as "in mutable region".
+                    // Legacy observer path — skip if the observer IS the logSizeTracker, since
+                    // EvictRecordsInRange below already handles heap accounting via logSizeTracker.
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
-                    // Dispose records being evicted — allows cleanup of external resources via DisposeRecord.
-                    if (storeFunctions.DisposeOnPageEviction)
-                        _wrapper.DisposeRecordsInRangeForEviction(start, end);
+                    // Per-record eviction walk: handles internal heap-size accounting (key overflow
+                    // and value heap via logSizeTracker) and optionally notifies the application
+                    // via OnEvict for app-level cleanup.
+                    var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict)
+                        _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -1877,8 +1843,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
+        /// <param name="flushBuffers"></param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
@@ -2112,6 +2080,9 @@ namespace Tsavorite.core
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                        if (storeFunctions.CallOnDiskRead)
+                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }
@@ -2147,6 +2118,7 @@ namespace Tsavorite.core
                     ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
+                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
@@ -2162,6 +2134,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
@@ -2248,7 +2221,6 @@ namespace Tsavorite.core
                 var result = (PageAsyncFlushResult<Empty>)context;
                 var epochTaken = epoch.ResumeIfNotProtected();
 
-                // Unset dirty bit for flushed pages
                 try
                 {
                     var startAddress = GetLogicalAddressOfStartOfPage(result.page);
@@ -2278,10 +2250,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             var logRecord = _wrapper.CreateLogRecord(startAddress);
-                            ref var info = ref logRecord.InfoRef;
                             var alignedRecordSize = logRecord.AllocatedSize;
-                            if (info.Dirty)
-                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
                             startAddress += alignedRecordSize;
                         }

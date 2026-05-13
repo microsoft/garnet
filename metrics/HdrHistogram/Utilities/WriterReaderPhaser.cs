@@ -183,12 +183,11 @@ namespace HdrHistogram.Utilities
                     //TODO: Revist this and check if a SpinWiat is actually preferable here? -LC
                     if (yieldPeriod == TimeSpan.Zero)
                     {
-                        Task.Yield().GetAwaiter().GetResult();
+                        Thread.Yield();
                     }
                     else
                     {
-                        //Thread.Sleep(yieldPeriod);
-                        Task.Delay(yieldPeriod).GetAwaiter().GetResult();
+                        Thread.Sleep(yieldPeriod);
                     }
                 }
             } while (!caughtUp);

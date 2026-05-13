@@ -80,7 +80,6 @@ namespace Garnet.test.cluster
         [TestCase("mtasks", new int[] { 1, 2, 3, 4 })]
         [TestCase("replicas", new int[] { 0, 2, 3, 4 })]
         [TestCase("replicate", new int[] { 0, 3, 4 })]
-        [TestCase("AOFSYNC", new int[] { 0, 1, 3, 4 })]
         [TestCase("APPENDLOG", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("INITIATE_REPLICA_SYNC", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("SEND_CKPT_METADATA", new int[] { 0, 1, 2, 4, 5, 6 })]
@@ -343,7 +342,7 @@ namespace Garnet.test.cluster
 
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
                 var primaryOffset2 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
-                ClassicAssert.Less(primaryOffset1, primaryOffset2);
+                ClassicAssert.Less(primaryOffset1[0], primaryOffset2[0]);
 
                 // Take another checkpoin to truncate
                 primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
@@ -629,7 +628,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(14), CancelAfter(testTimeout)]
         [Category("REPLICATION")]
-        public void ClusterFailoverSucceedsDuringEnsureReplication(CancellationToken cancellationToken)
+        public async Task ClusterFailoverSucceedsDuringEnsureReplicationAsync(CancellationToken cancellationToken)
         {
             // Verify that EnsureReplication does not block an in-flight failover.
             // EnsureReplication polls for dropped replication sessions and attempts auto-resync.
@@ -654,7 +653,7 @@ namespace Garnet.test.cluster
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
-            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+            await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(primaryIndex, 1, context.logger).ConfigureAwait(false);
 
             // Populate primary and wait for sync
             context.kvPairs = [];
@@ -687,7 +686,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(15), CancelAfter(testTimeout)]
         [Category("REPLICATION")]
-        public void ClusterEnsureReplicationWorksAfterFailover(CancellationToken cancellationToken)
+        public async Task ClusterEnsureReplicationWorksAfterFailoverAsync(CancellationToken cancellationToken)
         {
             // Verify that EnsureReplication still functions after a failover completes.
             // The failover guard should only suppress auto-resync during active failover states,
@@ -711,7 +710,7 @@ namespace Garnet.test.cluster
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
-            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+            await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(primaryIndex, 1, context.logger).ConfigureAwait(false);
 
             // Populate primary data and sync
             context.kvPairs = [];
@@ -747,7 +746,7 @@ namespace Garnet.test.cluster
 #if DEBUG
         [Test, Order(16), CancelAfter(testTimeout)]
         [Category("REPLICATION")]
-        public void ClusterFailoverResetsPrimaryOnTakeOverFailure(CancellationToken cancellationToken)
+        public async Task ClusterFailoverResetsPrimaryOnTakeOverFailureAsync(CancellationToken cancellationToken)
         {
             // Verify that when TakeOverAsPrimary fails after PauseWritesAndWaitForSync
             // has already sent failstopwrites to the primary, the primary is reset back
@@ -773,7 +772,7 @@ namespace Garnet.test.cluster
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
-            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+            await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(primaryIndex, 1, context.logger).ConfigureAwait(false);
 
             // Populate data and sync
             context.kvPairs = [];

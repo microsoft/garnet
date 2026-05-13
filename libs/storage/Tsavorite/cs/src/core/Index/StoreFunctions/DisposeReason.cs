@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The reason for a call to <see cref="IRecordDisposer.DisposeValueObject(IHeapObject, DisposeReason)"/>
+    /// The reason for a call to <see cref="IRecordTriggers.OnDispose(ref LogRecord, DisposeReason)"/>.
     /// </summary>
     public enum DisposeReason
     {
@@ -71,11 +71,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Elided from hash chain but not put into Revivification free list
         /// </summary>
-        Elided,
-
-        /// <summary>
-        /// A page was evicted from the in-memory portion of the main log, or from the readcache.
-        /// </summary>
-        PageEviction
+        Elided
     }
 }

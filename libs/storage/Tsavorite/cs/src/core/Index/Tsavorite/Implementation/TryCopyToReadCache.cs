@@ -85,7 +85,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             if (!casSuccess)
             {
-                DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
+                OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
                 newLogRecord.InfoRef.PreviousAddress = kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
             return false;

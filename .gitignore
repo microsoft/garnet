@@ -223,3 +223,4 @@ BenchmarkDotNet.Artifacts/
 
 # Helm chart artifacts
 .cr-release-packages/
+libs/native/bftree-garnet/target/

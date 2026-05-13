@@ -29,7 +29,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public abstract bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);
+        public abstract bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion);
 
         /// <summary>
         /// Serialize to given writer

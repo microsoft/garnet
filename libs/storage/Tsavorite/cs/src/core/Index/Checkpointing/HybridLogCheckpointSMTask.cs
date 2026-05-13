@@ -41,10 +41,12 @@ namespace Tsavorite.core
 
                 case Phase.IN_PROGRESS:
                     store.CheckpointVersionShiftStart(lastVersion, next.Version, isStreaming);
+                    store.storeFunctions.OnCheckpoint(CheckpointTrigger.VersionShift, guid);
                     break;
 
                 case Phase.WAIT_FLUSH:
                     store.CheckpointVersionShiftEnd(lastVersion, next.Version, isStreaming);
+                    store.storeFunctions.OnCheckpoint(CheckpointTrigger.FlushBegin, guid);
 
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.ResetLastVersion();
@@ -63,6 +65,7 @@ namespace Tsavorite.core
 
                 case Phase.REST:
                     store.CleanupLogCheckpoint();
+                    store.storeFunctions.OnCheckpoint(CheckpointTrigger.CheckpointCompleted, guid);
                     store._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     store.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });

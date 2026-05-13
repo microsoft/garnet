@@ -71,7 +71,7 @@ namespace Garnet.server
                 var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, storeWrapper);
                 if (!string.IsNullOrEmpty(info))
                 {
-                    WriteVerbatimString(Encoding.ASCII.GetBytes(info));
+                    WriteLargeVerbatimString(Encoding.ASCII.GetBytes(info));
                 }
                 else
                 {
@@ -80,7 +80,6 @@ namespace Garnet.server
                 }
             }
             return true;
-
         }
 
         private void GetHelpMessage()

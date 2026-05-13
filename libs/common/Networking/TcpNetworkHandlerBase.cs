@@ -70,12 +70,12 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public override async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
+        public override Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
             if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_TcpNetworkHandlerBase_Start_Server);
-            await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
+            return base.StartAsync(tlsOptions, remoteEndpointName, token);
         }
 
         /// <inheritdoc />
@@ -136,9 +136,9 @@ namespace Garnet.common
                 if (!socket.ReceiveAsync(receiveEventArgs))
                 {
                     if (useTLS)
-                        Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
                     else
-                        Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
                 }
             }
             catch (Exception ex)
@@ -170,6 +170,7 @@ namespace Garnet.common
                 // Dispose of the socket to free up unmanaged resources
                 socket.Dispose();
             }
+            DisposeImpl();
         }
 
         /// <summary>
@@ -182,7 +183,22 @@ namespace Garnet.common
 
         void Dispose(SocketAsyncEventArgs e)
         {
-            e.AcceptSocket.Dispose();
+            try
+            {
+                if (e.AcceptSocket.Connected)
+                {
+                    e.AcceptSocket.Shutdown(SocketShutdown.Both);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogTrace(ex, "Error shutting down accept socket during SAEA dispose");
+            }
+            finally
+            {
+                e.AcceptSocket.Close();
+                e.AcceptSocket.Dispose();
+            }
             DisposeImpl();
             e.Dispose();
         }
@@ -230,7 +246,7 @@ namespace Garnet.common
                     var receiveTask = OnNetworkReceiveWithTLSAsync(e.BytesTransferred);
                     if (!receiveTask.IsCompletedSuccessfully)
                     {
-                        await receiveTask;
+                        await receiveTask.ConfigureAwait(false);
                     }
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));

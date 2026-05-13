@@ -9,8 +9,9 @@ namespace Garnet
 {
     sealed class BulkIncrementBy : CustomTransactionProcedure
     {
-        // BULKINCRBY 2 a 10 [b 15] [c 25] ...
+        // BULKINCRBY <count> k1 incrby1 [k2 incrby2 [k3 incrby3 ...]]
         public static readonly RespCommandsInfo CommandInfo = new() { Arity = -4 };
+        public static readonly string Name = "BULKINCRBY";
 
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
@@ -23,7 +24,7 @@ namespace Garnet
             for (var i = 0; i < count; i++)
             {
                 AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, storeType: StoreType.Main);
-                GetNextArg(ref procInput, ref offset);
+                _ = GetNextArg(ref procInput, ref offset);
             }
 
             return true;

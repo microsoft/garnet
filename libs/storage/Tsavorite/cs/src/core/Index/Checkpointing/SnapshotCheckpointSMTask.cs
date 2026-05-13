@@ -25,7 +25,6 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
@@ -79,7 +78,10 @@ namespace Tsavorite.core
                     ObjectLog_OnPersistenceCallback();
                     store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
+                    store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();
+                    store._hybridLogCheckpoint.snapshotFileDevice = null;
+                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice?.Dispose();
+                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice = null;
                     break;
 
                 default:
