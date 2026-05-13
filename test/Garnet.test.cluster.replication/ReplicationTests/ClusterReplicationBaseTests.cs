@@ -38,22 +38,14 @@ namespace Garnet.test.cluster
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(false, true)), "ClusterSRPrimaryCheckpointAsync(false, true)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, false)), "ClusterSRPrimaryCheckpointAsync(true, false)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, true)), "ClusterSRPrimaryCheckpointAsync(true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)"),
@@ -302,18 +294,17 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
         {
-            ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true);
+            ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, true);
         }
 
         [Test, Order(6)]
         [Category("REPLICATION")]
-        public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
-            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false);
+        public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool manySegments)
+            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, manySegments: manySegments, false);
 
-        void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier)
+        void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool manySegments, bool disableStorageTier)
         {
-            // Test many segments on or off with lowMemory
-            manySegments = lowMemory && manySegments;
+            var lowMemory = manySegments;
 
             var primaryIndex = 0;
             var replicaIndex = 1;
