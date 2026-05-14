@@ -269,6 +269,12 @@ namespace Garnet.client
         /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
         public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)
         {
+            // The data payload must fit in the send buffer (as a RESP bulk string) after a flush,
+            // otherwise the TryWriteBulkString/Flush loop below will spin forever.
+            if (data.Length > networkBufferSettings.sendBufferSize)
+                ExceptionUtils.ThrowException(new InvalidOperationException(
+                    $"Snapshot data chunk ({data.Length} bytes) exceeds send buffer size ({networkBufferSettings.sendBufferSize} bytes)"));
+
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
