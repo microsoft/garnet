@@ -22,6 +22,7 @@ namespace Garnet.cluster
         private readonly TimeSpan timeout;
         private readonly CancellationToken cancellationToken;
         private readonly ILogger logger;
+        private readonly IOCallbackContext ioContext = new();
         private volatile uint lastIOErrorCode;
 
         public CheckpointFileType Type { get; }
@@ -68,31 +69,33 @@ namespace Garnet.cluster
             numBytesToWrite = (numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
             var pbuffer = bufferPool.Get((int)numBytesToWrite);
-            try
+            ioContext.Buffer = pbuffer;
+
+            fixed (byte* bufferRaw = data)
+                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, data.Length, data.Length);
+
+            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, (ulong)startAddress, (uint)numBytesToWrite, IOCallback, ioContext);
+
+            // The IOCallbackContext roots the buffer for GC safety while the IO is in-flight.
+            // On timeout or cancellation the buffer is intentionally abandoned (not returned to
+            // the pool) — the exception aborts the replication session, so the stale semaphore
+            // count left by the callback is harmless.
+            if (!writeSemaphore.Wait(timeout, cancellationToken))
             {
-                fixed (byte* bufferRaw = data)
-                    Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, data.Length, data.Length);
-
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, (ulong)startAddress, (uint)numBytesToWrite, IOCallback, null);
-
-                if (!writeSemaphore.Wait(timeout, cancellationToken))
-                {
-                    ExceptionUtils.ThrowException(new GarnetException(
-                        $"Timed out writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
-                }
-
-                var errorCode = lastIOErrorCode;
-                Debug.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
-                if (errorCode != 0)
-                {
-                    ExceptionUtils.ThrowException(new GarnetException(
-                        $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
-                }
+                ExceptionUtils.ThrowException(new GarnetException(
+                    $"Timed out writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
             }
-            finally
+
+            var errorCode = lastIOErrorCode;
+            Debug.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
+            if (errorCode != 0)
             {
-                pbuffer.Return();
+                ExceptionUtils.ThrowException(new GarnetException(
+                    $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
             }
+
+            // IO completed successfully — return buffer to pool for reuse.
+            pbuffer.Return();
         }
 
         /// <inheritdoc/>
@@ -120,10 +123,7 @@ namespace Garnet.cluster
             {
                 _ = writeSemaphore.Release();
             }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, $"{nameof(FileDataSink)}.IOCallback");
-            }
+            catch (ObjectDisposedException) { }
         }
     }
 }

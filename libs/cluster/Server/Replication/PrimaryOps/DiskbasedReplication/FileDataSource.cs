@@ -22,22 +22,12 @@ namespace Garnet.cluster
         /// </summary>
         internal const int DefaultBatchSize = 1 << 17;
 
-        /// <summary>
-        /// Roots the buffer so the pinned byte[] is not collected while IO is in-flight.
-        /// If the caller abandons the wait (timeout/cancellation), the buffer is intentionally
-        /// not returned to the pool — the GC will collect it after the IO completes and
-        /// the callback releases this context.
-        /// </summary>
-        private sealed class IOCallbackContext
-        {
-            public SectorAlignedMemory buffer;
-        }
-
         private readonly int maxBatchSize;
         private readonly TimeSpan timeout;
         private readonly ILogger logger;
         private readonly SectorAlignedBufferPool bufferPool;
         private readonly SemaphoreSlim signalCompletion;
+        private readonly IOCallbackContext ioContext = new();
         private volatile uint lastIOErrorCode;
 
         public CheckpointFileType Type { get; }
@@ -125,13 +115,13 @@ namespace Garnet.cluster
             numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
             var buffer = bufferPool.Get((int)numBytesToRead);
-            var ioContext = new IOCallbackContext { buffer = buffer };
+            ioContext.Buffer = buffer;
 
             unsafe
             {
                 device.ReadAsync(address, (IntPtr)buffer.aligned_pointer, (uint)numBytesToRead, IOCallback, ioContext);
             }
-            
+
             // The IOCallbackContext roots the buffer for GC safety while the IO is in-flight.
             // On timeout or cancellation the buffer is intentionally abandoned (not returned to
             // the pool) — the exception aborts the replication session, so the stale semaphore
