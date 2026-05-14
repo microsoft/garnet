@@ -186,7 +186,7 @@ namespace Garnet.server
                         {
                             logAccessCount = headerType == AofHeaderType.SingleLogTransactionHeader
                                 ? (*(AofSingleLogTransactionHeader*)ptr).participantCount
-                                : (*(AofTransactionHeader*)ptr).participantCount;
+                                : (*(AofShardedLogTransactionHeader*)ptr).participantCount;
 
                             startSeqNum = headerType == AofHeaderType.SingleLogTransactionHeader
                                 ? entryAddress
@@ -227,8 +227,8 @@ namespace Garnet.server
                     case AofHeaderType.ShardedHeader:
                         sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
                         break;
-                    case AofHeaderType.MultiLogTransactionHeader:
-                        sequenceNumber = (*(AofTransactionHeader*)ptr).shardedHeader.sequenceNumber;
+                    case AofHeaderType.ShardedLogTransactionHeader:
+                        sequenceNumber = (*(AofShardedLogTransactionHeader*)ptr).shardedHeader.sequenceNumber;
                         break;
                     default:
                         throw new GarnetException($"Unexpected header type {headerType}");
@@ -329,7 +329,7 @@ namespace Garnet.server
                         {
                             var shardedHeader = *(AofShardedHeader*)ptr;
                             commitSeqNum = shardedHeader.sequenceNumber;
-                            partCount = (*(AofTransactionHeader*)ptr).participantCount;
+                            partCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
                         }
 
                         // Acquire-barrier: synchronize all participants before locking using TxnStart sequence number
@@ -454,7 +454,7 @@ namespace Garnet.server
                     {
                         var shardedHeader = *(AofShardedHeader*)ptr;
                         sequenceNumber = shardedHeader.sequenceNumber;
-                        participantCount = (*(AofTransactionHeader*)ptr).participantCount;
+                        participantCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
                     }
 
                     // Synchronized processing of stored proc operation

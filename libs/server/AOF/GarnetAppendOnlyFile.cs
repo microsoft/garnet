@@ -117,8 +117,6 @@ namespace Garnet.server
             // Only reset for multi-physical-log mode; single-physical-log uses log addresses
             if (serverOptions.AofPhysicalSublogCount <= 1)
                 return;
-            if (!serverOptions.MultiLogEnabled)
-                return;
             var physicalSublogMaxReplayedSequenceNumber = readConsistencyManager.GetPhysicalSublogMaxReplayedSequenceNumber();
             var start = physicalSublogMaxReplayedSequenceNumber.Max();
             var newSeqNumGen = new SequenceNumberGenerator(start);

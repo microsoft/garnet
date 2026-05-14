@@ -779,18 +779,18 @@ namespace Garnet.server
                 };
 
                 proc.replayTaskAccessVector[0].CopyTo(
-                    new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                    new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes));
                 singleLog.log.Enqueue(singleLogTxnHeader, ref procInput, out _);
             }
             else
             {
-                var txnHeader = new AofTransactionHeader
+                var txnHeader = new AofShardedLogTransactionHeader
                 {
                     shardedHeader = new AofShardedHeader
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
+                            HeaderType = AofHeaderType.ShardedLogTransactionHeader,
                             opType = opType,
                             procedureId = procedureId,
                             storeVersion = txnVersion,
@@ -810,7 +810,7 @@ namespace Garnet.server
                     {
                         var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
                         proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
-                            new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                            new Span<byte>(txnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes));
                         shardedLog.sublog[physicalSublogIdx].Enqueue(txnHeader, ref procInput, out _);
                     }
                 }
@@ -853,18 +853,18 @@ namespace Garnet.server
                     participantCount = (short)virtualSublogParticipantCount
                 };
 
-                virtualSublogAccessVector[0].CopyTo(new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                virtualSublogAccessVector[0].CopyTo(new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes));
                 singleLog.log.Enqueue(singleLogTxnHeader, out _);
             }
             else
             {
-                var txnHeader = new AofTransactionHeader
+                var txnHeader = new AofShardedLogTransactionHeader
                 {
                     shardedHeader = new AofShardedHeader
                     {
                         basicHeader = new AofHeader
                         {
-                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
+                            HeaderType = AofHeaderType.ShardedLogTransactionHeader,
                             opType = opType,
                             storeVersion = txnVersion,
                             sessionID = sessionId,
@@ -882,7 +882,7 @@ namespace Garnet.server
                     while (_physicalSublogAccessVector > 0)
                     {
                         var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                        virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                        virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(txnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes));
                         shardedLog.sublog[physicalSublogIdx].Enqueue(txnHeader, out _);
                     }
                 }
@@ -963,14 +963,14 @@ namespace Garnet.server
                     basicHeader = basicHeader,
                     participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
                 };
-                new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
+                new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
 
                 singleLog.log.Enqueue(singleLogTxnHeader, out _);
             }
             else
             {
-                basicHeader.HeaderType = AofHeaderType.MultiLogTransactionHeader;
-                var header = new AofTransactionHeader
+                basicHeader.HeaderType = AofHeaderType.ShardedLogTransactionHeader;
+                var header = new AofShardedLogTransactionHeader
                 {
                     shardedHeader = new AofShardedHeader
                     {
@@ -979,7 +979,7 @@ namespace Garnet.server
                     },
                     participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
                 };
-                new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
+                new Span<byte>(header.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
 
                 var physicalSublogAccessVector = AllLogsBitmask();
                 try
