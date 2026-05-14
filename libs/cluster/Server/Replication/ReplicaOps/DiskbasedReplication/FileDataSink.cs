@@ -61,6 +61,9 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public unsafe void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
         {
+            if ((startAddress & (device.SectorSize - 1)) != 0)
+                throw new ArgumentException($"startAddress {startAddress} is not aligned to device sector size {device.SectorSize}", nameof(startAddress));
+
             long numBytesToWrite = data.Length;
             numBytesToWrite = (numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
