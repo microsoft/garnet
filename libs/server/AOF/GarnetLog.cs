@@ -897,87 +897,7 @@ namespace Garnet.server
             }
         }
 
-        internal void EnqueueDatabaseCommit(AofEntryType opType, long version)
-        {
-            if (usingSingleLog)
-            {
-                var header = new AofHeader
-                {
-                    HeaderType = AofHeaderType.BasicHeader,
-                    opType = opType,
-                    storeVersion = version,
-                    sessionID = -1
-                };
-                singleLog.log.Enqueue(header, out _);
-            }
-            else if (usingSinglePhysicalLog)
-            {
-                // Single physical log + multi-replay: use lightweight header without sequence number
-                var singleLogTxnHeader = new AofSingleLogTransactionHeader
-                {
-                    basicHeader = new AofHeader
-                    {
-                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
-                        opType = opType,
-                        storeVersion = version,
-                        sessionID = -1
-                    },
-                    participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
-                };
-                unsafe
-                {
-                    new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
-                }
-
-                singleLog.log.Enqueue(singleLogTxnHeader, out _);
-            }
-            else
-            {
-                var header = new AofTransactionHeader
-                {
-                    shardedHeader = new AofShardedHeader
-                    {
-                        basicHeader = new AofHeader
-                        {
-                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
-                            opType = opType,
-                            storeVersion = version,
-                            sessionID = -1
-                        },
-                        sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
-                    },
-                    participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
-                };
-                unsafe
-                {
-                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
-                }
-
-                var physicalSublogAccessVector = AllLogsBitmask();
-                try
-                {
-                    if (serverOptions.AofPhysicalSublogCount > 1)
-                        LockSublogs(physicalSublogAccessVector);
-                    var _physicalSublogAccessVector = physicalSublogAccessVector;
-
-                    while (_physicalSublogAccessVector > 0)
-                    {
-                        var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                        shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
-                    }
-                }
-                finally
-                {
-                    if (serverOptions.AofPhysicalSublogCount > 1)
-                        UnlockSublogs(physicalSublogAccessVector);
-                }
-
-                if (serverOptions.AofAutoCommit)
-                    Commit();
-            }
-        }
-
-        public void Enqueue<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
+        internal void Enqueue<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
             // Single physical log (covers both single-log and single-physical-log + multi-replay)
@@ -1024,35 +944,23 @@ namespace Garnet.server
             }
         }
 
-        internal unsafe void EnqueueSafeFlushAOF(AofEntryType opType, bool unsafeTruncateLog, int dbId)
+        /// <summary>
+        /// Enqueues an entry to all physical sublogs (broadcast). Used for markers that must
+        /// be visible to all replay tasks (e.g., database commit, safe-flush, checkpoint).
+        /// </summary>
+        private unsafe void EnqueueBroadcastEntry(AofHeader basicHeader)
         {
             if (usingSingleLog)
             {
-                var header = new AofHeader
-                {
-                    HeaderType = AofHeaderType.BasicHeader,
-                    opType = opType,
-                    storeVersion = 0,
-                    sessionID = -1,
-                    UnsafeTruncateLog = unsafeTruncateLog,
-                    databaseId = (byte)dbId
-                };
-                singleLog.log.Enqueue(header, out _);
+                singleLog.log.Enqueue(basicHeader, out _);
             }
             else if (usingSinglePhysicalLog)
             {
                 // Single physical log + multi-replay: use lightweight header without sequence number
+                basicHeader.HeaderType = AofHeaderType.SingleLogTransactionHeader;
                 var singleLogTxnHeader = new AofSingleLogTransactionHeader
                 {
-                    basicHeader = new AofHeader
-                    {
-                        HeaderType = AofHeaderType.SingleLogTransactionHeader,
-                        opType = opType,
-                        storeVersion = 0,
-                        sessionID = -1,
-                        UnsafeTruncateLog = unsafeTruncateLog,
-                        databaseId = (byte)dbId
-                    },
+                    basicHeader = basicHeader,
                     participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
                 };
                 new Span<byte>(singleLogTxnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
@@ -1061,27 +969,66 @@ namespace Garnet.server
             }
             else
             {
+                basicHeader.HeaderType = AofHeaderType.MultiLogTransactionHeader;
                 var header = new AofTransactionHeader
                 {
                     shardedHeader = new AofShardedHeader
                     {
-                        basicHeader = new AofHeader
-                        {
-                            HeaderType = AofHeaderType.MultiLogTransactionHeader,
-                            opType = opType,
-                            storeVersion = 0,
-                            sessionID = -1,
-                            UnsafeTruncateLog = unsafeTruncateLog,
-                            databaseId = (byte)dbId
-                        },
+                        basicHeader = basicHeader,
                         sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
                     },
                     participantCount = (short)appendOnlyFile.serverOptions.AofVirtualSublogCount
                 };
                 new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
 
-                var physicalSublogAccessVector = appendOnlyFile.Log.AllLogsBitmask();
+                var physicalSublogAccessVector = AllLogsBitmask();
+                try
+                {
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        LockSublogs(physicalSublogAccessVector);
+                    var _physicalSublogAccessVector = physicalSublogAccessVector;
+
+                    while (_physicalSublogAccessVector > 0)
+                    {
+                        var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                        shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
+                    }
+                }
+                finally
+                {
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        UnlockSublogs(physicalSublogAccessVector);
+                }
+
+                if (serverOptions.AofAutoCommit)
+                    Commit();
             }
+        }
+
+        internal void EnqueueDatabaseCommit(AofEntryType opType, long version)
+        {
+            var basicHeader = new AofHeader
+            {
+                HeaderType = AofHeaderType.BasicHeader,
+                opType = opType,
+                storeVersion = version,
+                sessionID = -1
+            };
+            EnqueueBroadcastEntry(basicHeader);
+        }
+
+        internal void EnqueueSafeFlushAOF(AofEntryType opType, bool unsafeTruncateLog, int dbId)
+        {
+            var basicHeader = new AofHeader
+            {
+                HeaderType = AofHeaderType.BasicHeader,
+                opType = opType,
+                storeVersion = 0,
+                sessionID = -1,
+                UnsafeTruncateLog = unsafeTruncateLog,
+                databaseId = (byte)dbId
+            };
+            EnqueueBroadcastEntry(basicHeader);
         }
     }
 }
