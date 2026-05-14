@@ -46,7 +46,7 @@ namespace Garnet.cluster
 
                     if (!resp.Equals("OK"))
                         ExceptionUtils.ThrowException(new GarnetException(
-                            $"Primary error at SendFileSegments {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
+                            $"Primary error at TransmitAsync {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
                 }
                 finally
                 {
@@ -61,7 +61,7 @@ namespace Garnet.cluster
 
             if (!endResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
-                    $"Primary error at SendFileSegments Completion {DataSource.Type} {endResp}"));
+                    $"Primary error at TransmitAsync Completion {DataSource.Type} {endResp}"));
         }
 
         public void Dispose()

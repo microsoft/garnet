@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -138,19 +137,9 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
-                    var tsavoriteSnaphotReader = new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    List<ISnapshotReader> snapshotReaders = [tsavoriteSnaphotReader];
-
-                    try
-                    {
-                        using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(snapshotReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                        await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        foreach (var reader in snapshotReaders)
-                            reader.Dispose();
-                    }
+                    using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
+                    await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
                 }
                 #endregion
 

@@ -16,13 +16,14 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
-        static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
-        static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
-        static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
-        static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
-        static ReadOnlySpan<byte> sync => "SYNC"u8;
-        static ReadOnlySpan<byte> advance_time => "ADVANCE_TIME"u8;
+        private static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        private static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        private static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        private static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        private static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
+        private static ReadOnlySpan<byte> sync => "SYNC"u8;
+        private static ReadOnlySpan<byte> advance_time => "ADVANCE_TIME"u8;
+        private static ReadOnlySpan<byte> snapshot_data => "SNAPSHOT_DATA"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -257,8 +258,6 @@ namespace Garnet.client
             Interlocked.Increment(ref numCommands);
             return tcs.Task;
         }
-
-        static ReadOnlySpan<byte> snapshot_data => "SNAPSHOT_DATA"u8;
 
         /// <summary>
         /// Send snapshot data (file segments or metadata) via unified CLUSTER SNAPSHOT_DATA command.

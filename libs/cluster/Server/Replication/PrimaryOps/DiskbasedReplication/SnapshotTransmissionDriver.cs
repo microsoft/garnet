@@ -15,21 +15,31 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed class SnapshotTransmissionDriver : IDisposable
     {
-        readonly List<ISnapshotReader> checkpointReaders;
+        readonly List<ISnapshotReader> checkpointReaders = [];
         readonly GarnetClientSession gcs;
         readonly TimeSpan timeout;
         readonly ILogger logger;
 
-        public SnapshotTransmissionDriver(List<ISnapshotReader> checkpointReaders, GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
+        public SnapshotTransmissionDriver(GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
         {
-            this.checkpointReaders = checkpointReaders;
             this.gcs = gcs;
             this.timeout = timeout;
             this.logger = logger;
         }
 
+        /// <summary>
+        /// Adds a checkpoint reader whose transmit sources will be sent during <see cref="SendCheckpointAsync"/>.
+        /// The driver takes ownership and will dispose the reader in <see cref="Dispose"/>.
+        /// </summary>
+        public void AddReader(ISnapshotReader reader) => checkpointReaders.Add(reader);
+
         public void Dispose()
         {
+            foreach (var reader in checkpointReaders)
+            {
+                try { reader.Dispose(); }
+                catch (Exception ex) { logger?.LogError(ex, "Error disposing checkpoint reader"); }
+            }
         }
 
         /// <summary>
