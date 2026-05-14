@@ -11,7 +11,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -31,11 +30,6 @@ namespace Tsavorite.core
         /// Actual buffer
         /// </summary>
         public byte[] buffer;
-
-        /// <summary>
-        /// Handle
-        /// </summary>
-        internal GCHandle handle;
 
         /// <summary>
         /// Offset for initial allocation alignment of the block; this is the offset from the first element of <see cref="buffer"/> to form <see cref="aligned_pointer"/>.
@@ -224,13 +218,6 @@ namespace Tsavorite.core
         /// </summary>
         public static bool Disabled;
 
-        /// <summary>
-        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
-        /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
-        /// This static option should be enabled on program entry, and not modified once Tsavorite is instantiated.
-        /// </summary>
-        public static bool UnpinOnReturn;
-
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
@@ -291,17 +278,10 @@ namespace Tsavorite.core
             Array.Clear(page.buffer, 0, page.buffer.Length);
             if (!Disabled)
             {
-                if (UnpinOnReturn)
-                {
-                    page.handle.Free();
-                    page.handle = default;
-                }
                 queue[page.Level].Enqueue(page);
             }
             else
             {
-                if (UnpinOnReturn)
-                    page.handle.Free();
                 page.buffer = null;
             }
         }
@@ -339,12 +319,6 @@ namespace Tsavorite.core
 #if CHECK_FREE
                 page.Free = false;
 #endif // CHECK_FREE
-                if (UnpinOnReturn)
-                {
-                    page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-                    page.aligned_pointer = (byte*)RoundUp(page.handle.AddrOfPinnedObject(), sectorSize);
-                    page.aligned_offset = (int)((long)page.aligned_pointer - page.handle.AddrOfPinnedObject());
-                }
                 page.required_bytes = required_bytes;
                 return page;
             }
@@ -352,10 +326,8 @@ namespace Tsavorite.core
             page = new SectorAlignedMemory(level: index)
             {
                 // Add an additional sector for the leading RoundUp of pageAddr to sectorSize.
-                buffer = GC.AllocateArray<byte>(sectorSize * ((1 << index) + 1), !UnpinOnReturn)
+                buffer = GC.AllocateArray<byte>(sectorSize * ((1 << index) + 1), pinned: true)
             };
-            if (UnpinOnReturn)
-                page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
             long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
             page.aligned_pointer = (byte*)RoundUp(pageAddr, sectorSize);
             page.aligned_offset = (int)((long)page.aligned_pointer - pageAddr);
