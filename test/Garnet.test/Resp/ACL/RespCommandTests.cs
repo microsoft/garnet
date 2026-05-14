@@ -709,6 +709,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClientReplyACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT REPLY",
+                [DoClientReplyAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoClientReplyAsync(GarnetClient client)
+            {
+                // CLIENT REPLY ON is the only mode that produces a reply (+OK);
+                // OFF/SKIP are write-only and would block ExecuteForString*.
+                var resp = await client.ExecuteForStringResultAsync("CLIENT", ["REPLY", "ON"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", resp);
+            }
+        }
+
+        [Test]
         public async Task ClientInfoACLsAsync()
         {
             await CheckCommandsAsync(
