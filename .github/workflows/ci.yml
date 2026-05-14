@@ -343,7 +343,8 @@ jobs:
             $durations = @()
             $failedTests = @()
             foreach ($trx in $trxFiles) {
-              [xml]$xml = Get-Content -Raw $trx.FullName
+              $xml = [System.Xml.XmlDocument]::new()
+              $xml.Load($trx.FullName)
               $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
               $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
               foreach ($r in $results) {
