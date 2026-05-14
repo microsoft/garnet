@@ -55,11 +55,11 @@ spec:
           - name: garnet
             containerPort: {{ .Values.containers.port }}
             protocol: TCP
-          {{- with .Values.containers.livenessProbe }}
+          {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.containers.readinessProbe }}
+          {{- with .Values.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}

@@ -58,10 +58,12 @@ containers:
   args: []
   # -- Containers port
   port: 6379
-  # -- Containers livenessProbe
-  livenessProbe: {}
-  # -- Containers livenessProbe
-  readinessProbe: {}
+
+# -- Containers livenessProbe
+livenessProbe: {}
+
+# -- Containers livenessProbe
+readinessProbe: {}
 
 # -- Init containers
 initContainers: []
