@@ -39,7 +39,8 @@ namespace Garnet.server
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false,
-                HasExpiration = srcLogRecord.Info.HasExpiration
+                HasExpiration = srcLogRecord.Info.HasExpiration,
+                RecordType = srcLogRecord.RecordType,
             };
         }
 
@@ -89,7 +90,8 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
-                HasETag = false
+                HasETag = false,
+                RecordType = inputLogRecord.RecordType,
                 // No object commands take an Expiration for Upsert.
             };
         }

@@ -889,6 +889,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task ExpirationAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+
+            var res1 = await db.ExecuteAsync("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+#if DEBUG
+            var preExpireDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+#endif
+
+            var res2 = await db.KeyExpireAsync("foo", TimeSpan.FromSeconds(0.5)).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res2);
+
+            // Wait for expiration to pass
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+
+            // Force an expiration scan, check that at least one record was evicted
+            var res3 = (int[])await db.ExecuteAsync("EXPDELSCAN");
+            ClassicAssert.AreEqual(1, res3[0]);
+
+            var res4 = await db.KeyExistsAsync("foo").ConfigureAwait(false);
+            ClassicAssert.IsFalse(res4);
+
+#if DEBUG
+            var finalExpireDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+
+            // Check that background cleanup was triggered, not just the key being removed
+            ClassicAssert.AreEqual(preExpireDropCalls + 1, finalExpireDropCalls);
+#endif
+        }
+
+        [Test]
         public void InterruptedVectorSetDelete_BeforeMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 

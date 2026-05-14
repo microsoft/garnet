@@ -216,7 +216,8 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = 0,
                 HasETag = false,
-                HasExpiration = srcLogRecord.Info.HasExpiration
+                HasExpiration = srcLogRecord.Info.HasExpiration,
+                RecordType = srcLogRecord.RecordType,
             };
 
             if (input.header.cmd != RespCommand.NONE)
