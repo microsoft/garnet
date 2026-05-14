@@ -35,20 +35,27 @@ namespace Garnet.server
             this.rangeIndexManager = rangeIndexManager;
         }
 
-        /// <inheritdoc/>
-        public bool CallOnFlush => rangeIndexManager != null;
+        // Trigger gates: only fire RangeIndex callbacks when the feature is enabled.
+        // When EnableRangeIndexPreview=false (the default), rangeIndexManager is constructed
+        // but inert (IsEnabled=false), so Tsavorite skips ALL trigger invocations entirely
+        // — the per-operation cost on non-RangeIndex workloads is zero. Without this gate,
+        // every flush/evict/disk-read/CTT/truncate would invoke our callback only to do an
+        // early-return on the RecordType check.
 
         /// <inheritdoc/>
-        public bool CallOnEvict => rangeIndexManager != null;
+        public bool CallOnFlush => rangeIndexManager is { IsEnabled: true };
 
         /// <inheritdoc/>
-        public bool CallOnDiskRead => rangeIndexManager != null;
+        public bool CallOnEvict => rangeIndexManager is { IsEnabled: true };
 
         /// <inheritdoc/>
-        public bool CallPostCopyToTail => rangeIndexManager != null;
+        public bool CallOnDiskRead => rangeIndexManager is { IsEnabled: true };
 
         /// <inheritdoc/>
-        public bool CallOnTruncate => rangeIndexManager != null;
+        public bool CallPostCopyToTail => rangeIndexManager is { IsEnabled: true };
+
+        /// <inheritdoc/>
+        public bool CallOnTruncate => rangeIndexManager is { IsEnabled: true };
 
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
