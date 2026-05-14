@@ -208,6 +208,18 @@ namespace Garnet.server
         string clientLibVersion = null;
 
         /// <summary>
+        /// Current CLIENT REPLY mode for this connection (controls reply suppression).
+        /// </summary>
+        internal ClientReplyMode clientReplyMode = ClientReplyMode.On;
+
+        /// <summary>
+        /// True while the current command's output should be discarded (i.e. CLIENT REPLY OFF/SKIP is active for this command).
+        /// Set at the start of each command in ProcessMessages and may be cleared by NetworkCLIENTREPLY when it processes ON
+        /// (so the +OK reply for `CLIENT REPLY ON` is allowed through).
+        /// </summary>
+        bool suppressCurrentReply = false;
+
+        /// <summary>
         /// Flag indicating whether any of the commands in one message
         /// requires us to block on AOF before sending response over the network
         /// </summary>
@@ -623,6 +635,18 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
+                // CLIENT REPLY: snapshot reply-suppression state for this command BEFORE parsing.
+                // - modeAtStart drives whether the buffer position we capture now (cmdStartPtr) gets
+                //   rewound after the command runs (discarding the reply bytes).
+                // - suppressCurrentReply also gates SendAndReset() so any mid-command flush is
+                //   discarded instead of being sent to the network. We set it before ParseCommand so
+                //   parse-time error replies (e.g. "unknown command") are also gated.
+                // CLIENT REPLY ON clears suppressCurrentReply inside its handler so the +OK reply
+                // for the ON command itself is allowed through.
+                var modeAtStart = clientReplyMode;
+                var cmdStartPtr = dcurr;
+                suppressCurrentReply = modeAtStart != ClientReplyMode.On;
+
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -632,6 +656,7 @@ namespace Garnet.server
                 if (!commandReceived)
                 {
                     endReadHead = readHead = _origReadHead;
+                    suppressCurrentReply = false;
                     break;
                 }
 
@@ -693,6 +718,27 @@ namespace Garnet.server
                 else
                 {
                     containsSlowCommand = true;
+                }
+
+                // CLIENT REPLY: end-of-command suppression handling. Applies to INVALID/parse-error
+                // commands as well so things like "GET" with no args don't leak "-ERR unknown command".
+                // suppressCurrentReply may have been cleared by NetworkCLIENTREPLY when it
+                // executed `CLIENT REPLY ON` (so the +OK reply is preserved).
+                if (suppressCurrentReply)
+                {
+                    // Discard anything this command wrote (mid-command SendAndReset has already
+                    // been gated, so the bytes still live within the current buffer between
+                    // cmdStartPtr and dcurr).
+                    dcurr = cmdStartPtr;
+                }
+                suppressCurrentReply = false;
+
+                // Burn off a one-shot SKIP. CLIENT REPLY commands themselves never burn the skip —
+                // a SKIP issued while already in Skip mode just re-arms (does not stack), and a
+                // following SKIP/ON/OFF transitions the mode directly inside the handler.
+                if (modeAtStart == ClientReplyMode.Skip && cmd != RespCommand.CLIENT_REPLY && cmd != RespCommand.INVALID)
+                {
+                    clientReplyMode = ClientReplyMode.On;
                 }
 
                 // Advance read head variables to process the next command
@@ -1050,6 +1096,7 @@ namespace Garnet.server
                 RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
                 RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.CLIENT_UNBLOCK => NetworkCLIENTUNBLOCK(),
+                RespCommand.CLIENT_REPLY => NetworkCLIENTREPLY(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
@@ -1318,6 +1365,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SendAndReset()
         {
+            // CLIENT REPLY OFF/SKIP: discard whatever was written into the current buffer
+            // without sending it. We deliberately do NOT rotate to a fresh buffer or call Send —
+            // we just rewind dcurr to the head so the suppressed bytes are dropped.
+            if (suppressCurrentReply)
+            {
+                dcurr = networkSender.GetResponseObjectHead();
+                return;
+            }
+
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
             {
