@@ -774,11 +774,13 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        //[Repeat(10000)]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
-        public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+        public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2)] int numReadThreads, [Values(0, 1, 2)] int numWriteThreads,
                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
 #pragma warning restore IDE0060 // Remove unused parameter
+            => LongRcMultiThreadWorker(numReadThreads, numWriteThreads, updateOp);
+
+        internal void LongRcMultiThreadWorker(int numReadThreads, int numWriteThreads, UpdateOp updateOp)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
@@ -1028,9 +1030,11 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        //[Repeat(10000)]
-        public void SpanByteRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+        public void SpanByteRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2)] int numReadThreads, [Values(0, 1, 2)] int numWriteThreads,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+            => SpanByteRcMultiThreadWorker(numReadThreads, numWriteThreads, updateOp);
+
+        internal void SpanByteRcMultiThreadWorker(int numReadThreads, int numWriteThreads, UpdateOp updateOp)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
