@@ -557,7 +557,14 @@ namespace Garnet.server
                 if (removeBarrierException != null)
                     throw removeBarrierException;
 
-                // Update timestamp
+                // Transaction replay consistency invariant:
+                // Updating the sequence number before the operation executes preserves prefix consistency —
+                // it signals that replay has reached this log position, matching the standalone operation model.
+                // Atomicity is currently preserved through coordinated locking (acquire-barrier before writes,
+                // release-barrier after commit), preventing readers from observing partial transaction state.
+                // Alternatively, atomicity could be preserved without locking by relying on the read protocol
+                // to re-read keys as they are updated; in that model, write-set replay must NOT advance the
+                // sequence number — only the commit marker should update it.
                 aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, sequenceNumber);
 
                 // Get barrier helper
