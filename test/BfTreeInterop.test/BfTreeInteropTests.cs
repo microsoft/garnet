@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Allure.NUnit;
 using Garnet.server.BfTreeInterop;
 using NUnit.Framework;
 
@@ -17,7 +16,6 @@ namespace BfTreeInterop.test
     /// Tests all core BfTree APIs: lifecycle, point operations, scans, and snapshot/recovery.
     /// </summary>
     [TestFixture]
-    [AllureNUnit]
     public class BfTreeInteropTests
     {
         private BfTreeService _tree;

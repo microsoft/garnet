@@ -436,7 +436,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Call <see cref="IStoreFunctions.OnFlush(ref LogRecord)"/> on original in-memory records
+        /// Call <see cref="IStoreFunctions.OnFlush(ref LogRecord, long)"/> on original in-memory records
         /// before they are flushed to disk. This allows the application to snapshot external resources
         /// (e.g. BfTree data files) and set flags on the live record while it is still in memory.
         /// </summary>
@@ -460,7 +460,7 @@ namespace Tsavorite.core
                     break;
 
                 if (logRecord.Info.Valid && !logRecord.Info.IsNull && !logRecord.Info.SkipOnScan && !logRecord.Info.Tombstone)
-                    storeFunctions.OnFlush(ref logRecord);
+                    storeFunctions.OnFlush(ref logRecord, address);
 
                 address += allocatedSize;
             }

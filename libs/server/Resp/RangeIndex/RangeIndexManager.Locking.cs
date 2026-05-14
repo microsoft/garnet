@@ -94,7 +94,7 @@ namespace Garnet.server
         /// <item><b>Checkpoint in progress</b>: If the tree is being snapshotted, releases
         /// the lock, waits for snapshot completion, and retries.</item>
         /// <item><b>Flushed stub</b>: If the stub has been flushed to the read-only region
-        /// (FlagFlushed set), promotes the stub to the tail via RMW and retries.</item>
+        /// (IsFlushed set), promotes the stub to the tail via RMW and retries.</item>
         /// <item><b>Null TreeHandle</b>: If the tree was evicted to disk (TreeHandle == 0),
         /// triggers lazy restore from the flush/checkpoint snapshot file and retries.</item>
         /// </list>
@@ -123,7 +123,7 @@ namespace Garnet.server
             GarnetStatus readRes;
             try
             {
-                readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+                readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
             }
             catch
             {
@@ -152,7 +152,7 @@ namespace Garnet.server
 
             // Per-tree checkpoint barrier: one volatile read on hot path (no checkpoint = skipped).
             if (checkpointInProgress
-                && WaitForTreeCheckpoint(stub.TreeHandle, ref output, indexSpan, ref sharedLockToken))
+                && WaitForTreeCheckpoint(key.ReadOnlySpan, ref output, indexSpan, ref sharedLockToken))
             {
                 goto Retry;
             }
@@ -169,10 +169,10 @@ namespace Garnet.server
                 rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
 
                 // Restore under exclusive lock to prevent concurrent restores.
-                // No need to wait for checkpoint — restored trees get SnapshotPending=0
-                // and are skipped by SnapshotAllTreesForCheckpoint. On recovery they
-                // fall back to flush.bftree which has the correct v-state data.
-                if (!RestoreTreeFromFlush(session, key, keyHash, ref input, indexSpan))
+                // Pre-staging of data.bftree always happened earlier (PostCopyToTail-cold,
+                // RIPROMOTE PostCopyUpdater-cold, or OnRecoverySnapshotRead) so RestoreTree
+                // just opens data.bftree directly.
+                if (!RestoreTree(session, key, keyHash, ref input, indexSpan))
                 {
                     status = GarnetStatus.NOTFOUND;
                     return default;
@@ -208,21 +208,26 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Cold path: checks if this tree is currently being snapshotted for a checkpoint.
-        /// If so, releases the shared lock, spin-waits for the snapshot to complete, and
-        /// signals the caller to retry the entire read operation.
+        /// Cold path: checks if this key's tree (activated or pending) is currently being snapshotted
+        /// for a checkpoint. If so, releases the shared lock, spin-waits for the snapshot to complete,
+        /// and signals the caller to retry the entire read operation.
+        ///
+        /// <para>Lookup is by <see cref="KeyId"/> (XxHash128 → Guid) so it works uniformly for activated
+        /// (TreeHandle != 0) and pending (TreeHandle == 0) entries. Hot-path Guid derivation is gated
+        /// by the <see cref="checkpointInProgress"/> short-circuit so steady-state cost is one volatile
+        /// bool read.</para>
         /// </summary>
-        /// <param name="treeHandle">The native tree pointer from the stub.</param>
+        /// <param name="key">The raw key bytes.</param>
         /// <param name="output">The StringOutput from the read (passed for lifetime management).</param>
         /// <param name="indexSpan">The stub span (passed for lifetime management).</param>
         /// <param name="sharedLockToken">The shared lock token; released before waiting.</param>
         /// <returns><c>true</c> if caller should retry the read; <c>false</c> if no wait was needed.</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool WaitForTreeCheckpoint(nint treeHandle, ref StringOutput output,
+        private bool WaitForTreeCheckpoint(ReadOnlySpan<byte> key, ref StringOutput output,
             Span<byte> indexSpan, ref int sharedLockToken)
         {
-            if (treeHandle == nint.Zero
-                || !liveIndexes.TryGetValue(treeHandle, out var treeEntry)
+            var keyId = KeyId(key);
+            if (!liveIndexes.TryGetValue(keyId, out var treeEntry)
                 || Volatile.Read(ref treeEntry.SnapshotPending) == 0)
                 return false;
 
@@ -233,44 +238,52 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Restore a BfTree from its snapshot file under the exclusive lock.
+        /// Restore a BfTree from its pre-staged CPR snapshot (<c>data.bftree</c>) and publish
+        /// the resulting native pointer into the stub via a RIRESTORE RMW.
         /// </summary>
         /// <remarks>
-        /// Prevents concurrent restores by re-reading the stub under the exclusive lock — if
-        /// another thread already set TreeHandle, returns immediately with <c>true</c>.
+        /// <para><b>Split design</b> (essential for deadlock safety): the per-key X-lock is
+        /// held ONLY for the recovery + register step, then RELEASED before issuing the RMW.
+        /// Holding an RI X-lock across a Tsavorite RMW would risk firing a deferred OnFlush on
+        /// this thread (e.g., from the RMW's allocator drain), which would attempt the per-key
+        /// shared lock for the cold case and self-deadlock with the X-lock we still hold.</para>
         ///
-        /// <para>Chooses the snapshot source based on the stub's flags:</para>
+        /// <para>Race between releasing X and issuing RIRESTORE RMW: a concurrent DEL could
+        /// fire, taking the X-lock, removing our entry from <see cref="liveIndexes"/>, and
+        /// queuing the bfTree for deferred disposal via <c>storeEpoch.BumpCurrentEpoch</c>. The
+        /// deferred dispose CANNOT execute until our thread's epoch advances — i.e., until the
+        /// RMW's Tsavorite session-suspend point. By that time the RMW has either:
         /// <list type="bullet">
-        /// <item><b>FlagRecovered set</b>: The stub was in a checkpoint snapshot file. Uses
-        /// the checkpoint snapshot (<see cref="DeriveCheckpointPath"/>).</item>
-        /// <item><b>FlagRecovered not set</b>: The stub was evicted from the log. Uses
-        /// the flush snapshot (<see cref="DeriveFlushPath"/>).</item>
-        /// </list>
+        /// <item>Succeeded — our nativePtr is now in the stub bytes; subsequent readers see
+        /// it and route through ReadRangeIndex's hot path which acquires the shared RI lock
+        /// before calling the native handle. The DEL's deferred dispose fires only after all
+        /// such readers complete (epoch barrier).</item>
+        /// <item>Returned NOTFOUND on a tombstoned key (RIRESTORE.NeedInitialUpdate=false).
+        /// Caller treats this as "key was deleted concurrently" → no re-restore loop.</item>
+        /// </list></para>
         ///
-        /// <para>After recovery, the BfTree data file is copied to the working path so the
-        /// native tree uses <c>data.bftree</c> as its live file. This prevents self-copy
-        /// corruption when <see cref="GarnetRecordTriggers.OnFlush"/> later snapshots back
-        /// to <c>flush.bftree</c>, and keeps checkpoint artifacts immutable.</para>
+        /// <para>Pre-staging of <c>data.bftree</c> always happened earlier:
+        /// <list type="bullet">
+        /// <item><c>PostCopyToTail</c>-cold (compaction/CopyReadsToTail with disk source).</item>
+        /// <item>RIPROMOTE <c>PostCopyUpdater</c>-cold (post-eviction or post-recovery first promote).</item>
+        /// <item><c>OnRecoverySnapshotRead</c> (above-FUA-at-checkpoint stubs DURING recovery, since
+        /// the checkpoint snapshot file may be deleted post-recovery).</item>
+        /// </list></para>
         /// </remarks>
-        /// <param name="session">The storage session for reading the stub and issuing restore RMW.</param>
-        /// <param name="key">The pinned Garnet key.</param>
-        /// <param name="keyHash">Hash of the key for lock acquisition.</param>
-        /// <param name="input">The StringInput for reading the stub.</param>
-        /// <param name="indexSpan">Scratch span for the stub bytes.</param>
-        /// <returns><c>true</c> if the tree was restored (or already restored by another thread); <c>false</c> on failure.</returns>
-        private bool RestoreTreeFromFlush(
+        private bool RestoreTree(
             StorageSession session,
             PinnedSpanByte key,
             long keyHash,
             ref StringInput input,
             Span<byte> indexSpan)
         {
+            nint nativePtr;
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
             try
             {
-                // Re-read stub under exclusive lock to check if another thread already restored
+                // Re-read stub under exclusive lock to check if another thread already restored.
                 var output = StringOutput.FromPinnedSpan(indexSpan);
-                var readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+                var readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
                 if (readRes != GarnetStatus.OK)
                     return false;
 
@@ -282,62 +295,76 @@ namespace Garnet.server
 
                 ref readonly var stub = ref ReadIndex(outputSpan);
                 if (stub.TreeHandle != nint.Zero)
-                    return true; // Another thread already restored — retry will find it
+                    return true; // Another thread already restored
 
                 var keySpan = key.ReadOnlySpan;
-                string restorePath;
+                var keyId = KeyId(keySpan);
 
-                if (stub.IsRecovered && recoveredCheckpointToken != Guid.Empty)
+                // Race-resolved path: another stub for this key may already have a live tree
+                // (RestoreTree ran via a different addr). Reuse it instead of opening another.
+                if (liveIndexes.TryGetValue(keyId, out var existing) && existing?.Tree != null)
                 {
-                    // Stub was in the checkpoint snapshot file — use checkpoint snapshot.
-                    restorePath = DeriveCheckpointPath(keySpan, recoveredCheckpointToken);
-                    Debug.Assert(File.Exists(restorePath),
-                        $"Checkpoint snapshot file missing for recovered stub: {restorePath}. " +
-                        "FlagRecovered should only be set for stubs above flushedLogicalAddress, " +
-                        "which means the tree was in liveIndexes at checkpoint time.");
+                    nativePtr = existing.Tree.NativePtr;
                 }
                 else
                 {
-                    // Eviction path (or main log recovery) — use the flush snapshot
-                    restorePath = DeriveFlushPath(keySpan);
+                    var hashPrefix = HashKeyToPrefix(keySpan);
+                    var workingPath = LogDataPath(hashPrefix);
+                    var scratchPath = LogScratchPath(hashPrefix);
+
+                    if (!File.Exists(workingPath))
+                    {
+                        // Should not happen in normal flow — pre-staging guarantees data.bftree
+                        // exists for any stub above FUA whose TreeHandle is 0. Assert in Debug;
+                        // LogWarning + return false in Release so the affected key surfaces
+                        // NOTFOUND rather than crashing the process.
+                        Debug.Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
+                        logger?.LogWarning("RestoreTree: data.bftree missing for {Hash} — pre-stage invariant violated", hashPrefix);
+                        return false;
+                    }
+
+                    var bfTree = BfTreeService.RecoverFromCprSnapshot(
+                        workingPath,
+                        scratchPath,
+                        (StorageBackendType)stub.StorageBackend);
+
+                    RegisterIndex(bfTree, keyHash, keySpan);
+
+                    // Re-look-up to use the WINNER's pointer (handles concurrent restorer race).
+                    if (!liveIndexes.TryGetValue(keyId, out var winner) || winner?.Tree == null)
+                    {
+                        // We disposed our duplicate via RegisterIndex's loser-disposal path AND
+                        // someone removed the winner before we observed it — extremely rare race
+                        // (concurrent DEL between RegisterIndex and TryGetValue). Bail out; the
+                        // next reader will retry.
+                        return false;
+                    }
+                    nativePtr = winner.Tree.NativePtr;
                 }
-
-                if (!File.Exists(restorePath))
-                {
-                    logger?.LogWarning("Snapshot file not found for lazy restore: {Path}", restorePath);
-                    return false;
-                }
-
-                // Copy snapshot to the deterministic working path so the native tree
-                // uses data.bftree as its live file. This prevents self-copy corruption
-                // when OnFlush later snapshots back to flush.bftree, and keeps checkpoint
-                // artifacts immutable.
-                var workingPath = DeriveWorkingPath(keySpan);
-                Directory.CreateDirectory(Path.GetDirectoryName(workingPath)!);
-                if (restorePath != workingPath)
-                    File.Copy(restorePath, workingPath, overwrite: true);
-
-                var bfTree = BfTreeService.RecoverFromSnapshot(
-                    workingPath,
-                    (StorageBackendType)stub.StorageBackend,
-                    stub.CacheSize,
-                    stub.MinRecordSize,
-                    stub.MaxRecordSize,
-                    stub.MaxKeyLen,
-                    stub.LeafPageSize);
-
-                RegisterIndex(bfTree, keyHash, keySpan);
-                session.RestoreRangeIndexStub(key, bfTree.NativePtr);
-                return true;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Failed to restore BfTree from snapshot");
+                logger?.LogError(ex, "Failed to restore BfTree from data.bftree");
                 return false;
             }
             finally
             {
                 rangeIndexLocks.ReleaseExclusiveLock(exclusiveLockToken);
+            }
+
+            // RIRESTORE RMW WITHOUT the X-lock. Safe because OnFlush no longer takes any RI
+            // X-lock from any code path that may fire as a deferred epoch action.
+            // RIRESTORE.NeedInitialUpdate=false → if the key was concurrently DEL'd (tombstone),
+            // the RMW returns NOTFOUND and the caller does not loop.
+            try
+            {
+                session.RestoreRangeIndexStub(key, nativePtr);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "RestoreRangeIndexStub RMW failed");
+                return false;
             }
         }
     }

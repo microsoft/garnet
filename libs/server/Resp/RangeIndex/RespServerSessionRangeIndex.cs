@@ -31,7 +31,7 @@ namespace Garnet.server
         private bool NetworkRICREATE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count < 1)
@@ -188,7 +188,7 @@ namespace Garnet.server
         private bool NetworkRISET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 3)
@@ -239,7 +239,7 @@ namespace Garnet.server
         private bool NetworkRIGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 2)
@@ -289,7 +289,7 @@ namespace Garnet.server
         private bool NetworkRIDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 2)
@@ -334,7 +334,7 @@ namespace Garnet.server
         private bool NetworkRISCAN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count < 4)
@@ -412,7 +412,7 @@ namespace Garnet.server
         private bool NetworkRIRANGE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count < 3)
@@ -478,7 +478,7 @@ namespace Garnet.server
         private bool NetworkRIEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 1)
@@ -508,7 +508,7 @@ namespace Garnet.server
         private bool NetworkRICONFIG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 1)
@@ -592,7 +592,7 @@ namespace Garnet.server
         private bool NetworkRIMETRICS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storeWrapper.rangeIndexManager.IsEnabled)
+            if (storeWrapper.rangeIndexManager is null)
                 return AbortWithErrorMessage("ERR Range Index (preview) commands are not enabled");
 
             if (parseState.Count != 1)

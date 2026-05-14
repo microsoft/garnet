@@ -39,48 +39,201 @@ by `GarnetRecordTriggers`:
 
 | Trigger | When | What it does for RangeIndex |
 |---------|------|---------------------------|
-| `OnFlush` | Page moves to read-only | Snapshot BfTree to `flush.bftree` under exclusive lock; set `FlagFlushed` |
-| `OnEvict` | Page evicted past HeadAddress | Free BfTree under exclusive lock via `DisposeTreeUnderLock`; data files preserved for lazy restore |
-| `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale) |
-| `OnCheckpoint(VersionShift)` | PREPARE→IN_PROGRESS | Set checkpoint barrier; mark all live trees `SnapshotPending=1` |
-| `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees with `SnapshotPending=1` under exclusive lock; clear barrier |
-| `OnCheckpoint(CheckpointCompleted)` | REST | Purge old checkpoint snapshot files (if `removeOutdated`) |
-| `OnRecovery(Guid)` | Before snapshot file recovery | Store recovered checkpoint token |
-| `OnRecoverySnapshotRead` | Per record from snapshot file | Set `FlagRecovered` on RI stubs |
-| `OnDispose(Deleted)` | DEL/UNLINK | Free BfTree under exclusive lock; delete data files (`data.bftree`, `flush.bftree`, snapshots, key directory) |
+| `OnFlush(addr)` | Page moves to read-only | Branch on `stub.TreeHandle`: `!=0` (live) → `BfTreeService.CprSnapshotByPtr(handle)` (concurrent-safe with workers via CPR) + `File.Copy(scratch.cpr → <addr:x16>.flush.bftree)`; `==0` (cold, just-CAS'd at tail) → S-lock to block RestoreTree from registering mid-copy; if a live tree exists under another stub for this key → CPR snapshot via that handle, else `File.Copy(data.bftree → <addr>.flush.bftree)`. Set `IsFlushed`. **No per-key X-lock taken.** Per-tree atomic (`TreeEntry.SnapshotInProgress`) serializes against concurrent checkpoint snapshot. |
+| `OnEvict` | Page evicted past HeadAddress | Remove entry from `liveIndexes` under per-key exclusive lock; **defer** `bfTree.Dispose()` via `storeEpoch.BumpCurrentEpoch(...)` so concurrent readers using `TreeHandle` complete before native free. Data files preserved for lazy restore |
+| `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale); no file work |
+| `PostCopyToTail` | After `TryCopyToTail` CAS, before unseal | Propagate `RecordType=RangeIndexRecordType` from src to dst (CTT does not carry it). Branch on `src.TreeHandle`: `!=0` live transfer (clear src.TreeHandle); `==0` cold pre-stage (`PreStageAndRegisterPending`). Set src.`IsTransferred` so a later eviction of src does not free dst's tree / pending entry. Clear `IsFlushed` on dst. |
+| `OnTruncate(newBA)` | After device truncate | Delete `<hash>.<addr:x16>.flush.bftree` files where `addr < newBA`. |
+| `OnCheckpoint(VersionShift)` | PREPARE→IN_PROGRESS | Set checkpoint barrier; mark all entries (activated AND pending) `SnapshotPending=1` |
+| `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees: activated → per-tree atomic + `BfTreeService.CprSnapshotByPtr(handle)` + `File.Copy(scratch.cpr → snapshot path)`; pending → `File.Copy(data.bftree → snapshot path)`. Clear barrier. **No per-key X-lock taken.** |
+| `OnCheckpoint(CheckpointCompleted)` | REST | No-op — Tsavorite removes per-token snapshot dirs when `removeOutdated=true`; per-flush files cleaned by `OnTruncate` |
+| `OnRecovery(token)` | Before snapshot file recovery | Store recovered checkpoint token (used by `RebuildFromSnapshotIfPending`) |
+| `OnRecoverySnapshotRead` | Per record from snapshot file | Set `IsRecovered`; pre-stage `data.bftree` from `cpr-checkpoints/<token>/rangeindex/<hash>.bftree` and register pending entry (snapshot files may be deleted post-recovery) |
+| `OnDispose(Deleted)` | DEL/UNLINK | Remove entry from `liveIndexes` under per-key exclusive lock; **defer** `bfTree.Dispose()` + `data.bftree` + `scratch.cpr` deletion via `storeEpoch.BumpCurrentEpoch(...)`. Per-flush snapshot files (`<hash>.<addr>.flush.bftree`) are preserved (LOG-tied; cleaned by `OnTruncate` once BeginAddress passes their addr). |
+
+### File Layout (two roots)
+
+RangeIndex files live under **two roots**, mirroring Tsavorite's separation of log state
+(`hlog`) from checkpoint state (`cpr-checkpoints`):
+
+**Log-tied root** — `{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex/`
+Co-located with `hlog.<seg>` when storage tier is enabled. Falls back through the same chain
+that Tsavorite uses for `CheckpointBaseDirectory` so RangeIndex works without storage tier.
+Lifetime tracks log addresses (cleared by `OnTruncate(newBA)`).
+
+```
+{riLogRoot}/
+    <hash>.data.bftree              # bftree's working file (disk-backed) / cold-restore staging (memory-backed)
+    <hash>.scratch.cpr              # bftree's CPR snapshot scratch path (overwritten each cpr_snapshot)
+    <hash>.<addr:x16>.flush.bftree  # immutable per-flush snapshot
+```
+
+**Checkpoint-tied root** — `{CheckpointBaseDirectory}/Store/checkpoints[_dbId]/cpr-checkpoints/`
+Per-checkpoint snapshots live alongside Tsavorite's per-token files. Deleted automatically
+when Tsavorite removes the parent token directory (via `removeOutdated`).
+
+```
+{cprDir}/<token>/
+    info.dat                        # Tsavorite (existing)
+    snapshot.dat                    # Tsavorite (existing)
+    snapshot.obj.dat                # Tsavorite (existing)
+    rangeindex/                     # NEW
+        <hash>.bftree               # one per liveIndexes entry at checkpoint time
+```
+
+`<hash>` is a 32-character lowercase-hex `Guid("N")` derived from `XxHash128(keyBytes)` —
+same scheme used to identify entries in `liveIndexes` (`KeyId(keyBytes)`).
+
+### liveIndexes — single dictionary, Guid-keyed
+
+`liveIndexes: ConcurrentDictionary<Guid, TreeEntry>` keyed by `KeyId(keyBytes) =
+new Guid(XxHash128.Hash(keyBytes))`. Entries can be:
+
+- **Activated** (`Tree != null`): a live native BfTree exists; ops go through `stub.TreeHandle`
+  on the hot path (no `liveIndexes` lookup needed).
+- **Pending** (`Tree == null`): `data.bftree` on disk has correct content but no native tree
+  has been opened yet. Awaiting `RestoreTree` activation. Tracked so checkpoint snapshots
+  capture the key's state.
+
+Pending entries are registered by:
+- `PreStageAndRegisterPending` — called from `PostCopyToTail`-cold (compaction with disk
+  source) and RIPROMOTE `PostCopyUpdater`-cold (post-eviction promote where
+  `src.TreeHandle == 0`). Pre-stages `data.bftree` from `<srcAddr:x16>.flush.bftree`
+  via `File.Copy(overwrite: true)` under the per-key X-lock (which serializes against any
+  concurrent `RestoreTree` on the same key).
+- `RebuildFromSnapshotIfPending` — called from `OnRecoverySnapshotRead` for above-FUA-at-
+  checkpoint stubs. Atomically pre-stages `data.bftree` from
+  `cpr-checkpoints/<recoveredToken>/rangeindex/<hash>.bftree`. **MUST run during recovery**
+  because the snapshot file may be deleted post-recovery.
+
+### Discipline: liveIndexes is never on the hot path (except for checkpoint coord)
+
+`liveIndexes` is consulted on the hot path ONLY by `WaitForTreeCheckpoint`, which is gated
+by the `checkpointInProgress` short-circuit (one volatile bool read in steady state).
+All other code uses `stub.TreeHandle` directly.
 
 ### Lazy Promote (Flush → Tail)
 
 When `ReadRangeIndex` detects `IsFlushed`:
 1. Release shared lock
-2. Issue `RIPROMOTE` RMW — `CopyUpdater` copies stub to tail, clears `FlagFlushed`
-3. `PostCopyUpdater` clears source `TreeHandle` (after CAS success, not before)
+2. Issue `RIPROMOTE` RMW — `CopyUpdater` copies stub to tail, clears `IsFlushed`
+3. `PostCopyUpdater` branches on `src.TreeHandle`:
+   - **`!= 0` (live transfer)**: clear src.TreeHandle (existing behavior). dst inherits the
+     handle via byte-copy.
+   - **`== 0` (cold case)**: pre-stage `data.bftree` from `<srcAddr:x16>.flush.bftree`
+     (using `rmwInfo.SourceAddress`) and register pending entry. Handles steady-state cold
+     restore, recovery Scenario D (below-FUA-at-checkpoint stub recovered + pure-read
+     access post-recovery), and any other path that promotes a flushed stub with
+     `TreeHandle == 0`.
 4. Retry — stub is now in mutable region
 
-### Lazy Restore (Eviction/Recovery → Live Tree)
+### Lazy Restore (Activation of Pending Entries)
 
-When `ReadRangeIndex` detects `TreeHandle == 0`:
+When `ReadRangeIndex` detects `TreeHandle == 0` (and the stub is not flushed):
 1. Release shared lock
 2. Acquire **exclusive** lock (prevents concurrent restores)
-3. Re-read stub — if another thread already restored, return
-4. Determine snapshot path: `FlagRecovered` → checkpoint file, else → `flush.bftree`
-5. Copy snapshot to `data.bftree` (working path), open via `RecoverFromSnapshot`
-6. Register in `liveIndexes`, issue `RIRESTORE` RMW to set new `TreeHandle` and clear `FlagRecovered`
-7. Release exclusive lock, retry
-
-> **Note:** `RecreateIndex()` clears `FlagRecovered` when setting the new `TreeHandle`.
-> This ensures that subsequent eviction cycles restore from `flush.bftree` (which
-> reflects post-recovery writes) rather than the stale checkpoint snapshot.
+3. Re-read stub — if another thread already set `TreeHandle`, return
+4. Recover bftree via `BfTreeService.RecoverFromCprSnapshot(data.bftree, scratch.cpr, backend)`
+   — pre-staging always happened earlier (`PostCopyToTail`-cold, RIPROMOTE-cold, or
+   `OnRecoverySnapshotRead`). Same API for disk-backed and memory-backed; bftree allocates
+   its own buffer for memory-backed when no `buffer_ptr` is supplied.
+5. Register/activate in `liveIndexes` (upgrades a pending entry if present)
+6. **Release exclusive lock**, then issue `RIRESTORE` RMW to set new `TreeHandle`
+   — split lock from RMW so a deferred `OnFlush` (cold-case S-lock) cannot self-deadlock
+   against an X-lock held over a Tsavorite operation
+7. Retry
 
 ### Checkpoint Consistency
 
-- Trees with `SnapshotPending=1` (marked at barrier time) are snapshotted — their data
-  reflects version v (v+1 RI ops are blocked by the per-tree barrier).
-- Trees restored/created in v+1 have `SnapshotPending=0` — they are **skipped** by
-  `SnapshotAllTreesForCheckpoint`. On recovery they fall back to `flush.bftree` (v-state).
-- Each BfTree snapshot is stored at `{dataDir}/rangeindex/{hash}/snapshot.{token}.bftree`.
-- Old checkpoint snapshots are purged at `CheckpointCompleted` when `removeOutdated=true`
-  (non-cluster mode), matching Tsavorite's checkpoint cleanup behavior.
+- At `VersionShift`: `SnapshotPending=1` set on **all** entries (activated + pending).
+- At `FlushBegin`: each entry is snapshotted using the per-tree atomic
+  `TreeEntry.SnapshotInProgress` (no per-key X-lock — that would risk deadlock with
+  deferred `OnFlush` firing on the checkpoint thread):
+  - Activated → `BfTreeService.CprSnapshotByPtr(handle)` (concurrent-safe with workers via
+    CPR; serialized against concurrent `OnFlush` for the same tree by the per-tree atomic)
+    + `File.Copy(<riLogRoot>/<hash>.scratch.cpr → <cprDir>/<token>/rangeindex/<hash>.bftree)`.
+  - Pending → `File.Copy(<riLogRoot>/<hash>.data.bftree → <cprDir>/<token>/rangeindex/<hash>.bftree)`.
+- Entries created during checkpoint enumeration (after the barrier) have
+  `SnapshotPending=0` and are skipped — they belong to v+1.
+- Per-checkpoint snapshots are removed automatically when Tsavorite deletes the parent
+  `cpr-checkpoints/<token>/` directory (no separate `PurgeOldCheckpointSnapshots` needed).
+- Per-flush snapshots are removed by `OnTruncate(newBA)` when the log advances past their
+  address.
+
+### Deadlock Safety
+
+The integration is built around three invariants:
+
+1. **OnFlush MUST NOT acquire any per-key X-lock from a code path that may run as a deferred
+   epoch action.** `OnFlush` may fire from `Drain` on a thread holding any RI lock (e.g.,
+   a hot-path reader's S-lock). The per-key X-lock walks all shards via `CalculateIndex`,
+   which collides with any S-lock the same thread already holds → self-deadlock. The cold
+   case uses a per-key **shared** RI lock instead (S-vs-S compatible across threads;
+   blocks RestoreTree's X-lock without self-deadlock).
+2. **Per-tree atomic** (`TreeEntry.SnapshotInProgress`) serializes `OnFlush` against
+   `SnapshotAllTreesForCheckpoint` for the same tree. Bf-tree's internal CPR coordinator
+   would otherwise no-op one of two concurrent calls.
+3. **Deferred disposal** via `storeEpoch.BumpCurrentEpoch(...)`: `bfTree.Dispose()` and
+   file deletion run only after every reader that observed the tree's `TreeHandle` has
+   moved past. This protects readers using `stub.TreeHandle` from concurrent DEL/eviction.
+
+Compatibility note: `EnableRangeIndexPreview=true` is incompatible with
+`CopyReadsToTail=true`. Under `CopyReadsToTail`, `ReadRangeIndex` holds a per-key shared
+RI lock during `Read_MainStore`, which can synchronously trigger
+`ConditionalCopyToTail → PostCopyToTail-cold → PreStageAndRegisterPending` — that path
+attempts the per-key X-lock and self-deadlocks against the shared lock the same thread is
+still holding. Server startup fails fast with a clear error if both are enabled.
+
+### Recovery Flow
+
+1. Recovery reads checkpoint snapshot files into the main log.
+2. `OnRecovery(token)` stores `recoveredCheckpointToken` for use by step 4.
+3. `OnDiskRead` zeros `TreeHandle` on every record loaded from disk (stale pointer).
+4. `OnRecoverySnapshotRead` for above-FUA-at-checkpoint RI stubs: calls
+   `RebuildFromSnapshotIfPending` which atomically copies
+   `<cprDir>/<recoveredToken>/rangeindex/<hash>.bftree` → `<riLogRoot>/<hash>.data.bftree`
+   and registers a pending entry. **Must happen during recovery** because the snapshot file
+   is removed when Tsavorite deletes the parent token directory.
+5. Below-FUA-at-checkpoint stubs (`IsFlushed=1`) are NOT pre-staged at recovery; they're
+   handled lazily by RIPROMOTE `PostCopyUpdater`-cold on first access (which uses
+   `<srcAddr>.flush.bftree`, the immutable per-flush snapshot).
+
+### Compaction Lifecycle
+
+When compaction copies an RI stub from `[BeginAddress, untilAddress)` to the tail:
+1. Source record is read from memory or disk via the scan iterator. If from disk,
+   `OnDiskRead` invalidates `TreeHandle`.
+2. `TryCopyToTail` allocates dst at the tail, byte-copies the stub, CAS-inserts.
+3. `PostCopyToTail` fires post-CAS:
+   - Propagates `RecordType=RangeIndexRecordType` from src to dst (CTT does not carry it).
+   - `src.TreeHandle != 0` (live transfer): clear src.TreeHandle. liveIndexes entry exists.
+   - `src.TreeHandle == 0` (cold): `PreStageAndRegisterPending(dstKey, srcLogicalAddress)`
+     copies `<srcAddr:x16>.flush.bftree` → `data.bftree` under the per-key X-lock,
+     and registers a pending entry.
+   - Sets src.`IsTransferred` so a later eviction of src does not free dst's tree / pending entry.
+   - Clears dst.`IsFlushed`.
+4. dst is unsealed by `CASRecordIntoChain`; subsequent RI ops find the new stub at the tail.
+
+After compaction completes, `Log.Truncate()` (or a checkpoint commit) advances `BeginAddress`
+past the compacted range. `OnTruncate(newBA)` fires after device truncation completes and
+deletes per-flush files whose `addr < newBA`.
+
+### Scratchpad: Key Plumbing for PostCopyToTail
+
+To support `PostCopyToTail`, the source logical address must be plumbed:
+- **Compaction path**: `CompactionConditionalCopyToTail(currentAddress, ...)` sets
+  `pendingContext.originalAddress = currentAddress`.
+- **CopyReadsToTail path**: `InternalRead.CopyFromImmutable` sets
+  `pendingContext.originalAddress = stackCtx.recSrc.LogicalAddress`.
+- **ContinuePending path**: sets `pendingContext.originalAddress = request.logicalAddress`
+  (the disk-resolved source address, set by `AsyncGetFromDiskCallback`).
+
+`TryCopyToTail.PostCopyToTail` reads source address from
+`stackCtx.recSrc.HasMainLogSrc ? stackCtx.recSrc.LogicalAddress : pendingContext.originalAddress`.
+
+For RIPROMOTE `PostCopyUpdater`, the source address is plumbed via
+`RMWInfo.SourceAddress` (a new field) which is set in `InternalRMW` before NeedCopyUpdate
+and preserved through `CopyUpdater` (since `RMWInfo.Address` is reassigned to dst by then).
 
 ### AOF Logging
 
@@ -540,14 +693,21 @@ private struct RangeIndexStub
 
 **Key fields explained:**
 
-- `TreeHandle` — Native pointer to a live `BfTree` instance. Zeroed by `OnDiskReadRecord`
+- `TreeHandle` — Native pointer to a live `BfTree` instance. Zeroed by `OnDiskRead`
   when the record is loaded from disk (recovery, pending read, etc.). A zero TreeHandle
   signals "needs lazy restore" — the first subsequent operation restores the BfTree from
-  the flush snapshot file via `RecoverFromSnapshot` and updates this field via RIRESTORE RMW.
-- `Flags` — Bit 0 (`FlagFlushed`): Set by `OnFlushRecord` when the page moves to read-only.
+  `data.bftree` via `BfTreeService.RecoverFromCprSnapshot` and updates this field via
+  RIRESTORE RMW.
+- `Flags` — Bit 0 (`IsFlushed`): Set by `OnFlush` when the page moves to read-only.
   The next RI operation detects this flag, issues RIPROMOTE RMW to copy the stub to the
   mutable region (tail), and clears the flag. This ensures the stub will be re-flushed
   (with up-to-date BfTree snapshot) on the next checkpoint or ReadOnly transition.
+  Bit 1 (`IsRecovered`): Set by `OnRecoverySnapshotRead` so the first promote after
+  recovery routes through `RecreateIndex` rather than the steady-state restore path.
+  Bit 2 (`IsTransferred`): Set on the source record by `PostCopyToTail` (CTT) and by
+  RIPROMOTE `PostCopyUpdater` after the CAS succeeds, so a later eviction/dispose of the
+  source record does not free the tree (live case) or the pending entry (cold case) that
+  the destination now owns.
 - `SerializationPhase` — Reserved for checkpoint coordination (future work).
 - Config fields (`CacheSize`, `MinRecordSize`, etc.) — Persisted so recovery can
   reconstruct the BfTree with identical configuration.

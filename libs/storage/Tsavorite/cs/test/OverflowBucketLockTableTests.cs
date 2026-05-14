@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.Collections.Generic;
@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -41,10 +40,8 @@ namespace Tsavorite.test.LockTable
 
     // Used to signal Setup to use the SingleBucketComparer
     public enum UseSingleBucketComparer { UseSingleBucket }
-
-    [AllureNUnit]
     [TestFixture]
-    internal class OverflowBucketLockTableTests : AllureTestBase
+    internal class OverflowBucketLockTableTests : TestBase
     {
         IKeyComparer comparer = new LongKeyComparer();
         long singleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily

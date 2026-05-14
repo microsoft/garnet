@@ -385,6 +385,7 @@ namespace Tsavorite.core
         RetryNow:
 
             rmwInfo.Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : kInvalidAddress;
+            rmwInfo.SourceAddress = rmwInfo.Address;
             rmwInfo.KeyHash = stackCtx.hei.hash;
 
             AllocateOptions allocOptions = new()

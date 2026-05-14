@@ -44,6 +44,18 @@ namespace Tsavorite.core
             {
                 // We don't call PostInitialWriter here so we must do the size tracking separately.
                 hlogBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
+
+                // Fire the application-level post-CAS hook BEFORE unsealing dst, so concurrent readers
+                // observing dst still see SkipOnScan and retry. The hook may mutate dst's value bytes
+                // and/or the source record (similar to RIPROMOTE PostCopyUpdater for live transfers).
+                if (storeFunctions.CallPostCopyToTail)
+                {
+                    var srcLogicalAddress = stackCtx.recSrc.HasMainLogSrc
+                        ? stackCtx.recSrc.LogicalAddress
+                        : pendingContext.originalAddress;
+                    storeFunctions.PostCopyToTail(in inputLogRecord, srcLogicalAddress, ref newLogRecord, newLogicalAddress);
+                }
+
                 newLogRecord.InfoRef.UnsealAndValidate();
 
                 pendingContext.logicalAddress = newLogicalAddress;

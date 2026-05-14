@@ -126,14 +126,7 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 
     `<username>`/branch-name
 
-3. Include Unit Tests for any new commands or feature. Allure enabled tests are required.  
-
-   Full documentation about Allure can be found [here](https://allurereport.org/docs/).  
-
-   Each test class must:  
-    * Apply [AllureNUnit] custom attribute  
-    * Apply [TestFixture] attribute 
-    * Inherit from the AllureTestBase base class 
+3. Include Unit Tests for any new commands or feature.
 
 4. Once it is ready for review, create a [Pull Request](https://github.com/microsoft/Garnet/pulls). Make sure to link it to your issue item in the development section.
 

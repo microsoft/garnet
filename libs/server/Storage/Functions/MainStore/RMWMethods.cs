@@ -1423,9 +1423,38 @@ namespace Garnet.server
                     rmwInfo.UserData |= NeedAofLog;
             }
 
-            // Clear source TreeHandle after CAS success for RIPROMOTE.
+            // RIPROMOTE: pass ownership of the BfTree from src to dst.
+            //  • If src.TreeHandle != 0 (live transfer): dst inherited the handle via byte-copy in
+            //    CopyUpdater; clear src.TreeHandle so a later eviction of src does not free the tree.
+            //  • If src.TreeHandle == 0 (cold case — src was post-eviction or post-recovery): pre-stage
+            //    data.bftree from <srcAddr:x16>.flush.bftree and register a pending entry so the next
+            //    checkpoint captures dst's content. Cleanly handles steady-state cold-restore, recovery
+            //    Scenario D (below-FUA-at-checkpoint stub recovered), and any other path that promotes
+            //    a flushed stub with TreeHandle == 0.
+            //  • In BOTH branches: set src.IsTransferred so a later OnEvict on the stale source does
+            //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the new
+            //    pending entry), and a later OnFlush on the stale source does not snapshot a stale view.
             if (cmd == RespCommand.RIPROMOTE)
-                RangeIndexManager.ClearTreeHandle(srcLogRecord.ValueSpan);
+            {
+                var srcSpan = srcLogRecord.ValueSpan;
+                var srcHandle = RangeIndexManager.ReadIndex(srcSpan).TreeHandle;
+                if (srcHandle != nint.Zero)
+                {
+                    RangeIndexManager.ClearTreeHandle(srcSpan);
+                }
+                else
+                {
+                    // rmwInfo.SourceAddress is the source logical address (preserved through
+                    // CopyUpdater; rmwInfo.Address has been reassigned to the destination).
+                    if (functionsState.storeWrapper?.rangeIndexManager is { } rim
+                        && rmwInfo.SourceAddress != Tsavorite.core.LogAddress.kInvalidAddress)
+                    {
+                        rim.PreStageAndRegisterPending(dstLogRecord.Key, rmwInfo.SourceAddress);
+                    }
+                }
+
+                RangeIndexManager.SetTransferredFlag(srcSpan);
+            }
 
             return true;
         }
