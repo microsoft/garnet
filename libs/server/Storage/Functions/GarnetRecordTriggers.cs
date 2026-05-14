@@ -52,10 +52,10 @@ namespace Garnet.server
         public bool CallOnFlush => rangeIndexManager != null;
 
         /// <inheritdoc/>
-        public bool CallOnEvict => rangeIndexManager != null;
+        public bool CallOnEvict => rangeIndexManager != null || vectorManager != null;
 
         /// <inheritdoc/>
-        public bool CallOnDiskRead => rangeIndexManager != null;
+        public bool CallOnDiskRead => rangeIndexManager != null || vectorManager != null;
 
         /// <inheritdoc/>
         public bool CallPostCopyToTail => rangeIndexManager != null;
