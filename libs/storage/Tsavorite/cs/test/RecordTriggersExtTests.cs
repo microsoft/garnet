@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -30,9 +29,8 @@ namespace Tsavorite.test
     /// <see cref="IRecordTriggers.OnFlush"/> (and is what Garnet's unified store uses for
     /// the RangeIndex stub records).
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class RecordTriggersExtTests : AllureTestBase
+    public class RecordTriggersExtTests : TestBase
     {
         /// <summary>Per-event log entries recorded by the test trigger.</summary>
         internal sealed class TriggerEvents
