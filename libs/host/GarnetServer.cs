@@ -40,7 +40,9 @@ namespace Garnet
         static string GetVersion()
         {
             var Version = Assembly.GetExecutingAssembly().GetName().Version;
-            return $"{Version.Major}.{Version.Minor}.{Version.Build}";
+            return Version.Revision > 0
+                ? $"{Version.Major}.{Version.Minor}.{Version.Build}.{Version.Revision}"
+                : $"{Version.Major}.{Version.Minor}.{Version.Build}";
         }
 
         internal GarnetProvider Provider;
