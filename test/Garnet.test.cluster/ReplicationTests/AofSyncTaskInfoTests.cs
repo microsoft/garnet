@@ -51,6 +51,15 @@ namespace Garnet.test.cluster
             Assert.That(session.Disposed, Is.True,
                 "AofSyncTaskInfo.Dispose() must dispose the " +
                 "owned GarnetClientSession to prevent leaks");
+
+            // Calling Dispose() a second time must be safe (idempotent).
+            // ReplicaSyncTaskAsync's finally path defensively re-disposes when
+            // TryRemove returns false, and removal sites in AofTaskStore may
+            // also call Dispose() on the same task — none must throw.
+            Assert.DoesNotThrow(() => taskInfo.Dispose(),
+                "AofSyncTaskInfo.Dispose() must be idempotent");
+            Assert.That(session.Disposed, Is.True,
+                "GarnetClientSession must remain disposed after second Dispose()");
         }
     }
 }

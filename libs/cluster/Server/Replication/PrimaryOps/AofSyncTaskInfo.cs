@@ -31,6 +31,11 @@ namespace Garnet.cluster
         // monitor.Dispose() until the worker has exited before disposing the client.
         readonly ActiveWorkerMonitor activeWorkerMonitor = new();
 
+        // Idempotency guard for Dispose(). Multiple disposal sites (AofTaskStore.Dispose,
+        // TryAddReplicationTask replacement, TryRemove, and the defensive call in
+        // ReplicaSyncTaskAsync's finally) may all call Dispose() on the same instance.
+        int disposed;
+
         /// <summary>
         /// Check if client connection is healthy
         /// </summary>
@@ -63,6 +68,11 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
+            // First-call wins; subsequent calls are no-ops. CancellationTokenSource.Cancel()
+            // throws ObjectDisposedException after Dispose(), and we have multiple potential
+            // disposal sites, so we guard the whole method.
+            if (Interlocked.Increment(ref disposed) > 1) return;
+
             // First cancel the token so any in-flight ReplicaSyncTaskAsync stops requesting work
             cts?.Cancel();
 
@@ -128,7 +138,6 @@ namespace Garnet.cluster
                 return;
             }
 
-            var enteredMonitor = true;
             try
             {
                 if (!IsConnected) garnetClient.Connect();
@@ -153,14 +162,18 @@ namespace Garnet.cluster
                 // Exit the monitor BEFORE TryRemove. TryRemove calls AofSyncTaskInfo.Dispose(),
                 // which calls activeWorkerMonitor.Dispose() and blocks until workerCount drains.
                 // If we held the monitor across TryRemove we would deadlock against ourselves.
-                if (enteredMonitor)
-                {
-                    _ = activeWorkerMonitor.Exit();
-                }
+                _ = activeWorkerMonitor.Exit();
 
                 if (!aofTaskStore.TryRemove(this))
                 {
                     logger?.LogInformation("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
+
+                    // Another path removed `this` from the store. In the current code that
+                    // path also calls Dispose() on us, but we call Dispose() defensively here
+                    // so that future removal sites cannot accidentally leak the
+                    // GarnetClientSession. Dispose() is idempotent (guarded by Interlocked
+                    // checks in ActiveWorkerMonitor, GarnetClientSession, and CancellationTokenSource).
+                    Dispose();
                 }
             }
         }
