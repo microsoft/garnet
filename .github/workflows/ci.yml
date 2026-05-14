@@ -111,18 +111,6 @@ jobs:
         run: dotnet restore
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
-      - name: Write build summary
-        if: always()
-        shell: pwsh
-        run: |
-          $status = "${{ job.status }}" -eq "success" ? "✅ Success" : "❌ Failed"
-          @"
-          ## 🔨 Build Garnet — ${{ matrix.os }} / ${{ matrix.configuration }}
-
-          | Metric | Value |
-          |--------|-------|
-          | Status | $status |
-          "@ >> $env:GITHUB_STEP_SUMMARY
 
   # Job to test Garnet standalone code
   test-garnet-standalone:
@@ -222,18 +210,6 @@ jobs:
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }} --no-restore
-      - name: Write build summary
-        if: always()
-        shell: pwsh
-        run: |
-          $status = "${{ job.status }}" -eq "success" ? "✅ Success" : "❌ Failed"
-          @"
-          ## 🔨 Build Tsavorite — ${{ matrix.os }} / ${{ matrix.configuration }}
-
-          | Metric | Value |
-          |--------|-------|
-          | Status | $status |
-          "@ >> $env:GITHUB_STEP_SUMMARY
 
   # Job to test Tsavorite code
   test-tsavorite:
@@ -365,17 +341,22 @@ jobs:
             if (-not $trxFiles -or $trxFiles.Count -eq 0) { return }
             $totalTests = 0; $passed = 0; $failed = 0; $skipped = 0
             $durations = @()
-            $earliestStart = [datetime]::MaxValue
-            $latestFinish = [datetime]::MinValue
+            $failedTests = @()
             foreach ($trx in $trxFiles) {
-              [xml]$xml = Get-Content $trx.FullName
+              [xml]$xml = Get-Content -Raw $trx.FullName
               $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
               $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
               foreach ($r in $results) {
                 $totalTests++
                 $outcome = $r.Node.outcome
                 if ($outcome -eq "Passed") { $passed++ }
-                elseif ($outcome -eq "Failed") { $failed++ }
+                elseif ($outcome -eq "Failed") {
+                  $failed++
+                  $dur = $r.Node.duration
+                  $durSec = 0
+                  if ($dur) { try { $durSec = [TimeSpan]::Parse($dur).TotalSeconds } catch { } }
+                  $failedTests += @{ Name = $r.Node.testName; Seconds = $durSec }
+                }
                 else { $skipped++ }
                 $dur = $r.Node.duration
                 if ($dur) {
@@ -383,17 +364,11 @@ jobs:
                   catch { }
                 }
               }
-              $times = Select-Xml -Xml $xml -XPath "//t:Times" -Namespace $ns
-              if ($times) {
-                $s = [datetime]$times[0].Node.start
-                $f = [datetime]$times[0].Node.finish
-                if ($s -lt $earliestStart) { $earliestStart = $s }
-                if ($f -gt $latestFinish) { $latestFinish = $f }
-              }
             }
-            if ($earliestStart -ne [datetime]::MaxValue) {
-              $totalDur = $latestFinish - $earliestStart
-              $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalDur.TotalMinutes), $totalDur.Seconds
+            # Compute total duration as sum of all individual test durations
+            $totalSec = ($durations | ForEach-Object { $_.Seconds } | Measure-Object -Sum).Sum
+            if ($totalSec -gt 0) {
+              $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalSec / 60), [int]($totalSec % 60)
             } else { $totalDurStr = "N/A" }
             $buckets = @(
               @{ Label = "< 1s";      Min = 0;   Max = 1 },
@@ -416,6 +391,18 @@ jobs:
             [void]$sb.AppendLine("")
             [void]$sb.AppendLine("⏱️ **Total: $totalDurStr** · $totalTests tests (✅ $passed · ❌ $failed · ⏭️ $skipped)")
             [void]$sb.AppendLine("")
+            # Failed tests section (only if there are failures)
+            if ($failedTests.Count -gt 0) {
+              [void]$sb.AppendLine("### ❌ Failed Tests")
+              [void]$sb.AppendLine("")
+              [void]$sb.AppendLine("| Test | Duration |")
+              [void]$sb.AppendLine("|------|----------|")
+              foreach ($t in $failedTests) {
+                $durStr = "{0:F1}s" -f $t.Seconds
+                [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+              }
+              [void]$sb.AppendLine("")
+            }
             [void]$sb.AppendLine("### Distribution")
             [void]$sb.AppendLine("")
             [void]$sb.AppendLine("| Duration | Count | |")
