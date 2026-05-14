@@ -56,9 +56,6 @@ namespace Garnet.server
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
         internal const int IndexSizeBytes = RangeIndexStub.Size;
 
-        /// <summary>Whether range index commands are enabled.</summary>
-        public bool IsEnabled { get; }
-
         /// <summary>Gets the number of live (registered) BfTree indexes (activated + pending).</summary>
         internal int LiveIndexCount => liveIndexes.Count;
 
@@ -169,15 +166,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Creates a new <see cref="RangeIndexManager"/>.
+        /// Creates a new <see cref="RangeIndexManager"/>. Constructed only when range index
+        /// is enabled in server options; <c>GarnetServer</c> passes <c>null</c> in place of
+        /// a manager when the feature is disabled, so this constructor never runs in the
+        /// disabled case.
         /// </summary>
-        /// <param name="enabled">Whether range index commands are enabled.</param>
         /// <param name="riLogRoot">Log-tied root directory for working/flush files (e.g.
-        /// <c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex</c>). When <paramref name="enabled"/>
-        /// is <c>true</c>, this MUST be a non-empty path and the directory MUST be creatable —
-        /// the constructor throws otherwise so misconfiguration (missing permissions, bad path,
-        /// etc.) surfaces at server startup rather than at first use. May be null/empty when
-        /// <paramref name="enabled"/> is <c>false</c> (manager is inert).</param>
+        /// <c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex</c>). MUST be a non-empty path
+        /// and the directory MUST be creatable — the constructor throws otherwise so
+        /// misconfiguration (missing permissions, bad path, etc.) surfaces at server startup
+        /// rather than at first use.</param>
         /// <param name="cprDir">Tsavorite <c>cpr-checkpoints/</c> directory; per-checkpoint snapshots
         /// live under <c>{cprDir}/&lt;token&gt;/rangeindex/</c>. May be null if no checkpointing.</param>
         /// <param name="storeEpoch">The store's <see cref="LightEpoch"/>; used to defer native
@@ -185,39 +183,35 @@ namespace Garnet.server
         /// stub's <c>TreeHandle</c>. May be null in unit-test scenarios with no concurrent
         /// readers; in that case disposal is performed synchronously.</param>
         /// <param name="logger">Optional logger.</param>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="enabled"/> is
-        /// <c>true</c> and <paramref name="riLogRoot"/> is null or empty.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="riLogRoot"/> is
+        /// null or empty.</exception>
         /// <exception cref="IOException">Thrown when the riLogRoot directory cannot be
         /// created (e.g., insufficient permissions). Wraps the underlying exception.</exception>
-        public RangeIndexManager(bool enabled, string riLogRoot = null, string cprDir = null,
+        public RangeIndexManager(string riLogRoot, string cprDir = null,
             LightEpoch storeEpoch = null, ILogger logger = null)
         {
-            IsEnabled = enabled;
+            if (string.IsNullOrEmpty(riLogRoot))
+                throw new ArgumentException(
+                    "RangeIndexManager: riLogRoot is required.",
+                    nameof(riLogRoot));
+
             this.riLogRoot = riLogRoot;
             this.cprDir = cprDir;
             this.storeEpoch = storeEpoch;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
 
-            if (enabled)
+            try
             {
-                if (string.IsNullOrEmpty(riLogRoot))
-                    throw new ArgumentException(
-                        "RangeIndexManager: riLogRoot is required when range index is enabled.",
-                        nameof(riLogRoot));
-
-                try
-                {
-                    Directory.CreateDirectory(riLogRoot);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "RangeIndexManager: failed to create riLogRoot {Path}", riLogRoot);
-                    throw new IOException(
-                        $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
-                        "Check that the parent directory exists and the process has write permissions.",
-                        ex);
-                }
+                Directory.CreateDirectory(riLogRoot);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "RangeIndexManager: failed to create riLogRoot {Path}", riLogRoot);
+                throw new IOException(
+                    $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
+                    "Check that the parent directory exists and the process has write permissions.",
+                    ex);
             }
         }
 
@@ -540,9 +534,6 @@ namespace Garnet.server
         /// a wiring bug that would otherwise silently lose the recovered tree.</exception>
         internal void RebuildFromSnapshotIfPending(ReadOnlySpan<byte> keyBytes)
         {
-            if (!IsEnabled)
-                return;
-
             if (string.IsNullOrEmpty(cprDir) || recoveredCheckpointToken == Guid.Empty)
                 throw new InvalidOperationException(
                     "RebuildFromSnapshotIfPending: recovery state missing " +
