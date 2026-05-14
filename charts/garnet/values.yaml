@@ -113,6 +113,11 @@ service:
   type: ClusterIP
   # -- Service port
   port: 6379
+  # -- Service ipFamilies
+  ipFamilies:
+  - IPv4
+  # -- Service ipFamilyPolicy SingleStack|PreferDualStack|RequireDualStack
+  ipFamilyPolicy: SingleStack
 
 # -- Resources
 resources: {}
