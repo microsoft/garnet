@@ -134,13 +134,14 @@ Metadata is handled purely on the Garnet side by reading out the [`Index`](#inde
 Deletion of Vector Sets is detected in the `GarnetTriggers.OnDispose` callback, which calls `VectorManager.RequestDeletion` to begin the process of deletion.
 
 This takes place in four steps:
-  1. The Vector Set context is marked for deletion
-     * The background cleanup task does this, as we do not have a usable storage session in the `GarnetTriggers` callback
+  1. The Vector Set context is marked for deletion from `GarnetTriggers.OnDispose`
+     * A background task does this, as we do not have a usable storage session in the `GarnetTriggers` callback
+     * We _block_ on that background task, if an error occurs an exception is raised and the delete aborted
   2. `GarnetTriggers.OnDispose` returns, deleting the index key
-  3. The background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
+  3. A background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
   4. The Vector Set context is marked available
 
-During recovery partially deleted Vector Sets are found using the `GarnetTriggers.OnRecoverySnapshotRead` callback and checking the `LogRecord`'s context to see if it's marked for cleanup.
+During recovery partially deleted Vector Sets are found by checking [`ContextMetadata`](#global-metadata).
 
 `FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 
@@ -274,12 +275,6 @@ While reading out [`Index`](#indexes) before performing a DiskANN function call,
 To recreate, we acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
 
 This means we recreate indexes lazily after recovery.  Consequently the _first_ command (regardless of if it's a `VADD`, a `VSIM`, or whatever) against an index after recovery will be slower since it needs to do extra work, and will block other commands since it needs exclusive locking.
-
-> [!NOTE]
-> Today `ProcessInstanceId` is a `GUID`, which means we're paying for a 16-byte comparison on every command.
->
-> This comparison is highly predictable, but we could try and remove the comparison (with caching, as mentioned for `Index` above).
-> We could also make it cheaper by using a random `ulong` instead, but would need to do some math to convince ourselves collisions aren't possible in realistic scenarios.
 
 # DiskANN Integration
 
