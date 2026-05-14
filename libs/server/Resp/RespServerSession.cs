@@ -220,6 +220,14 @@ namespace Garnet.server
         bool suppressCurrentReply = false;
 
         /// <summary>
+        /// Snapshot of <c>dcurr</c> at the start of the current command in ProcessMessages.
+        /// When <see cref="suppressCurrentReply"/> is set this is the rewind floor — bytes from earlier (non-suppressed)
+        /// commands in the same batch live at [head, cmdReplyFloor) and must not be discarded. <see cref="SendAndReset()"/>
+        /// uses this floor so a mid-command flush triggered by a suppressed write does not corrupt pipelined responses.
+        /// </summary>
+        byte* cmdReplyFloor;
+
+        /// <summary>
         /// Flag indicating whether any of the commands in one message
         /// requires us to block on AOF before sending response over the network
         /// </summary>
@@ -644,7 +652,7 @@ namespace Garnet.server
                 // CLIENT REPLY ON clears suppressCurrentReply inside its handler so the +OK reply
                 // for the ON command itself is allowed through.
                 var modeAtStart = clientReplyMode;
-                var cmdStartPtr = dcurr;
+                cmdReplyFloor = dcurr;
                 suppressCurrentReply = modeAtStart != ClientReplyMode.On;
 
                 // First, parse the command, making sure we have the entire command available
@@ -726,17 +734,20 @@ namespace Garnet.server
                 // executed `CLIENT REPLY ON` (so the +OK reply is preserved).
                 if (suppressCurrentReply)
                 {
-                    // Discard anything this command wrote (mid-command SendAndReset has already
-                    // been gated, so the bytes still live within the current buffer between
-                    // cmdStartPtr and dcurr).
-                    dcurr = cmdStartPtr;
+                    // Discard anything this command wrote since cmdReplyFloor. SendAndReset has
+                    // also been gated mid-command (it may have rotated the buffer if prior
+                    // non-suppressed replies needed flushing, in which case cmdReplyFloor was
+                    // updated to point at the new buffer head).
+                    dcurr = cmdReplyFloor;
                 }
                 suppressCurrentReply = false;
 
-                // Burn off a one-shot SKIP. CLIENT REPLY commands themselves never burn the skip —
-                // a SKIP issued while already in Skip mode just re-arms (does not stack), and a
-                // following SKIP/ON/OFF transitions the mode directly inside the handler.
-                if (modeAtStart == ClientReplyMode.Skip && cmd != RespCommand.CLIENT_REPLY && cmd != RespCommand.INVALID)
+                // Burn off a one-shot SKIP. The CLIENT REPLY command itself never burns the skip —
+                // a SKIP issued while already in Skip mode just re-arms (does not stack). Every
+                // other fully-received command — including parse-error / INVALID commands and
+                // unknown commands — consumes the SKIP, matching Redis semantics. Partial input
+                // is already handled by the !commandReceived early-break above.
+                if (modeAtStart == ClientReplyMode.Skip && cmd != RespCommand.CLIENT_REPLY)
                 {
                     clientReplyMode = ClientReplyMode.On;
                 }
@@ -1365,12 +1376,34 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SendAndReset()
         {
-            // CLIENT REPLY OFF/SKIP: discard whatever was written into the current buffer
-            // without sending it. We deliberately do NOT rotate to a fresh buffer or call Send —
-            // we just rewind dcurr to the head so the suppressed bytes are dropped.
+            // CLIENT REPLY OFF/SKIP: discard bytes for the currently-suppressed command without
+            // touching any prior (non-suppressed) replies queued earlier in the same batch.
             if (suppressCurrentReply)
             {
-                dcurr = networkSender.GetResponseObjectHead();
+                byte* head = networkSender.GetResponseObjectHead();
+                if (dcurr > cmdReplyFloor)
+                {
+                    // Suppressed write made progress for the current command — drop just those
+                    // bytes (the floor onward) and keep [head, cmdReplyFloor) intact.
+                    dcurr = cmdReplyFloor;
+                    return;
+                }
+                if (cmdReplyFloor > head)
+                {
+                    // No progress on the suppressed write yet, but earlier commands' replies sit
+                    // at [head, cmdReplyFloor). Flush those and rotate to a fresh buffer so the
+                    // retry has full space — then continue suppressing in the new buffer.
+                    Send(head);
+                    networkSender.GetResponseObject();
+                    cmdReplyFloor = networkSender.GetResponseObjectHead();
+                    dcurr = cmdReplyFloor;
+                    dend = networkSender.GetResponseObjectTail();
+                    return;
+                }
+                // No prior bytes and no progress: the single write is larger than the entire
+                // response buffer. Surface the same fatal condition as the non-suppressed path
+                // rather than spinning forever.
+                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
                 return;
             }
 
@@ -1394,6 +1427,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SendAndReset(IMemoryOwner<byte> memory, int length)
         {
+            // CLIENT REPLY OFF/SKIP: drop the payload entirely without flushing the buffer. The
+            // buffer may legitimately contain earlier non-suppressed replies sitting at
+            // [head, cmdReplyFloor); those get flushed at end-of-batch by the normal path.
+            if (suppressCurrentReply)
+            {
+                memory.Dispose();
+                return;
+            }
+
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
             {

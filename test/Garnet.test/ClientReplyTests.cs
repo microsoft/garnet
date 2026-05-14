@@ -89,15 +89,55 @@ namespace Garnet.test
                 }
             }
 
-            /// <summary>Read until the buffer matches the expected string (or read timeout fires).</summary>
+            /// <summary>
+            /// Read exactly <paramref name="expected"/>.Length bytes from the socket, one byte
+            /// at a time, so we never over-read and leave leftovers buffered for later assertions.
+            /// Returns whatever was accumulated before a read timeout or EOF.
+            /// </summary>
             public string ReadExpected(string expected)
             {
                 var sb = new StringBuilder();
+                var one = new byte[1];
                 while (sb.Length < expected.Length)
                 {
-                    var chunk = TryRead();
-                    if (chunk.Length == 0) break;
-                    sb.Append(chunk);
+                    try
+                    {
+                        int n = stream.Read(one, 0, 1);
+                        if (n <= 0) break;
+                        sb.Append((char)one[0]);
+                    }
+                    catch (IOException)
+                    {
+                        break;
+                    }
+                }
+                return sb.ToString();
+            }
+
+            /// <summary>
+            /// Read a single RESP simple-string (<c>+...</c>) or error (<c>-...</c>) reply,
+            /// up to and including the trailing CRLF. One byte at a time so subsequent reads
+            /// don't pick up any stray bytes from this reply.
+            /// </summary>
+            public string ReadSimpleReply()
+            {
+                var sb = new StringBuilder();
+                var one = new byte[1];
+                int prev = -1;
+                while (true)
+                {
+                    try
+                    {
+                        int n = stream.Read(one, 0, 1);
+                        if (n <= 0) break;
+                    }
+                    catch (IOException)
+                    {
+                        break;
+                    }
+                    sb.Append((char)one[0]);
+                    if (prev == '\r' && one[0] == '\n') break;
+                    prev = one[0];
                 }
                 return sb.ToString();
             }
@@ -169,13 +209,15 @@ namespace Garnet.test
 
             // Zero mode args.
             c.SendCommand("CLIENT", "REPLY");
-            var reply = c.ReadExpected("-ERR");
+            var reply = c.ReadSimpleReply();
             StringAssert.StartsWith("-ERR", reply);
+            StringAssert.EndsWith("\r\n", reply);
 
             // Two mode args.
             c.SendCommand("CLIENT", "REPLY", "ON", "EXTRA");
-            reply = c.ReadExpected("-ERR");
+            reply = c.ReadSimpleReply();
             StringAssert.StartsWith("-ERR", reply);
+            StringAssert.EndsWith("\r\n", reply);
         }
 
         [Test]
@@ -282,6 +324,69 @@ namespace Garnet.test
             // Second PING: replied to normally.
             c.SendCommand("PING");
             ClassicAssert.AreEqual("+PONG\r\n", c.ReadExpected("+PONG\r\n"));
+        }
+
+        /// <summary>
+        /// Unknown commands must burn a pending SKIP (the SKIP target was that command,
+        /// even though the server can't dispatch it). Matches Redis semantics.
+        /// </summary>
+        [Test]
+        public void ClientReplySkipBurnedByUnknownCommand()
+        {
+            using var c = new RawConn();
+
+            c.SendCommand("CLIENT", "REPLY", "SKIP");
+            ClassicAssert.AreEqual(string.Empty, c.TryRead());
+
+            // Unknown command — its error reply is suppressed AND it burns the SKIP.
+            c.SendCommand("NOSUCHCMD");
+            ClassicAssert.AreEqual(string.Empty, c.TryRead());
+
+            // Next command replies normally (SKIP was burned, not still pending).
+            c.SendCommand("PING");
+            ClassicAssert.AreEqual("+PONG\r\n", c.ReadExpected("+PONG\r\n"));
+        }
+
+        /// <summary>
+        /// Pipeline four commands in a single TCP write where SKIP is interleaved.
+        /// Verifies the reply stream ordering is preserved: the prior PING's reply must
+        /// not be dropped when the next command runs under suppression.
+        /// </summary>
+        [Test]
+        public void ClientReplyPipelinedSkipBetweenReplies()
+        {
+            using var c = new RawConn();
+
+            var sb = new StringBuilder();
+            sb.Append("*1\r\n$4\r\nPING\r\n");                                            // -> +PONG
+            sb.Append("*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$4\r\nSKIP\r\n");             // -> (none)
+            sb.Append("*1\r\n$4\r\nPING\r\n");                                            // -> suppressed
+            sb.Append("*1\r\n$4\r\nPING\r\n");                                            // -> +PONG
+            c.SendRaw(sb.ToString());
+
+            const string expected = "+PONG\r\n+PONG\r\n";
+            ClassicAssert.AreEqual(expected, c.ReadExpected(expected));
+        }
+
+        /// <summary>
+        /// Pipeline OFF/ON transitions inside a single batch. Prior PING reply must survive
+        /// the buffer-rewind that the suppressed PING triggers, and the trailing CLIENT REPLY
+        /// ON must produce its +OK.
+        /// </summary>
+        [Test]
+        public void ClientReplyPipelinedOffOnOrdering()
+        {
+            using var c = new RawConn();
+
+            var sb = new StringBuilder();
+            sb.Append("*1\r\n$4\r\nPING\r\n");                                            // -> +PONG
+            sb.Append("*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$3\r\nOFF\r\n");              // -> (none)
+            sb.Append("*1\r\n$4\r\nPING\r\n");                                            // -> suppressed
+            sb.Append("*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$2\r\nON\r\n");               // -> +OK
+            c.SendRaw(sb.ToString());
+
+            const string expected = "+PONG\r\n+OK\r\n";
+            ClassicAssert.AreEqual(expected, c.ReadExpected(expected));
         }
     }
 }
