@@ -111,6 +111,18 @@ jobs:
         run: dotnet restore
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
+      - name: Write build summary
+        if: always()
+        shell: pwsh
+        run: |
+          $status = "${{ job.status }}" -eq "success" ? "✅ Success" : "❌ Failed"
+          @"
+          ## 🔨 Build Garnet — ${{ matrix.os }} / ${{ matrix.configuration }}
+
+          | Metric | Value |
+          |--------|-------|
+          | Status | $status |
+          "@ >> $env:GITHUB_STEP_SUMMARY
 
   # Job to test Garnet standalone code
   test-garnet-standalone:
@@ -141,6 +153,86 @@ jobs:
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
+      - name: Write test summary
+        if: always()
+        shell: pwsh
+        run: |
+          $resultsDir = "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+          $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
+          if (-not $trxFiles) { Write-Host "No TRX files found"; exit 0 }
+          $totalTests = 0; $passed = 0; $failed = 0; $skipped = 0
+          $durations = @()
+          foreach ($trx in $trxFiles) {
+            [xml]$xml = Get-Content $trx.FullName
+            $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
+            $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
+            foreach ($r in $results) {
+              $totalTests++
+              $outcome = $r.Node.outcome
+              if ($outcome -eq "Passed") { $passed++ }
+              elseif ($outcome -eq "Failed") { $failed++ }
+              else { $skipped++ }
+              $dur = $r.Node.duration
+              if ($dur) {
+                try { $ts = [TimeSpan]::Parse($dur); $durations += @{ Name = $r.Node.testName; Seconds = $ts.TotalSeconds } }
+                catch { }
+              }
+            }
+          }
+          # Total duration from Times element
+          $times = Select-Xml -Xml $xml -XPath "//t:Times" -Namespace $ns
+          if ($times) {
+            $start = [datetime]$times[0].Node.start
+            $finish = [datetime]$times[0].Node.finish
+            $totalDur = $finish - $start
+            $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalDur.TotalMinutes), $totalDur.Seconds
+          } else { $totalDurStr = "N/A" }
+          # Histogram buckets
+          $buckets = @(
+            @{ Label = "< 1s";      Min = 0;   Max = 1 },
+            @{ Label = "1s - 5s";   Min = 1;   Max = 5 },
+            @{ Label = "5s - 15s";  Min = 5;   Max = 15 },
+            @{ Label = "15s - 30s"; Min = 15;  Max = 30 },
+            @{ Label = "30s - 60s"; Min = 30;  Max = 60 },
+            @{ Label = "> 60s";     Min = 60;  Max = [double]::MaxValue }
+          )
+          $counts = @(0,0,0,0,0,0)
+          foreach ($d in $durations) {
+            for ($i = 0; $i -lt $buckets.Count; $i++) {
+              if ($d.Seconds -ge $buckets[$i].Min -and $d.Seconds -lt $buckets[$i].Max) { $counts[$i]++; break }
+            }
+          }
+          $maxCount = ($counts | Measure-Object -Maximum).Maximum
+          if ($maxCount -eq 0) { $maxCount = 1 }
+          # Build summary
+          $sb = [System.Text.StringBuilder]::new()
+          [void]$sb.AppendLine("## 🧪 ${{ matrix.test }} — ${{ matrix.os }} / ${{ matrix.framework }} / ${{ matrix.configuration }}")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("⏱️ **Total: $totalDurStr** · $totalTests tests (✅ $passed · ❌ $failed · ⏭️ $skipped)")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("### Distribution")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("| Duration | Count | |")
+          [void]$sb.AppendLine("|----------|------:|--|")
+          for ($i = 0; $i -lt $buckets.Count; $i++) {
+            $barLen = [int][math]::Round(($counts[$i] / $maxCount) * 20)
+            $bar = "█" * $barLen
+            [void]$sb.AppendLine("| $($buckets[$i].Label) | $($counts[$i]) | $bar |")
+          }
+          # Top 10 slowest
+          $top10 = $durations | Sort-Object { $_.Seconds } -Descending | Select-Object -First 10
+          if ($top10.Count -gt 0) {
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("### 🐢 Top 10 Slowest")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("| Test | Duration |")
+            [void]$sb.AppendLine("|------|----------|")
+            foreach ($t in $top10) {
+              $durStr = if ($t.Seconds -ge 60) { "{0:F1}s" -f $t.Seconds } else { "{0:F1}s" -f $t.Seconds }
+              [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+            }
+          }
+          $sb.ToString() >> $env:GITHUB_STEP_SUMMARY
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -177,6 +269,82 @@ jobs:
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
+      - name: Write test summary
+        if: always()
+        shell: pwsh
+        run: |
+          $resultsDir = "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+          $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
+          if (-not $trxFiles) { Write-Host "No TRX files found"; exit 0 }
+          $totalTests = 0; $passed = 0; $failed = 0; $skipped = 0
+          $durations = @()
+          foreach ($trx in $trxFiles) {
+            [xml]$xml = Get-Content $trx.FullName
+            $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
+            $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
+            foreach ($r in $results) {
+              $totalTests++
+              $outcome = $r.Node.outcome
+              if ($outcome -eq "Passed") { $passed++ }
+              elseif ($outcome -eq "Failed") { $failed++ }
+              else { $skipped++ }
+              $dur = $r.Node.duration
+              if ($dur) {
+                try { $ts = [TimeSpan]::Parse($dur); $durations += @{ Name = $r.Node.testName; Seconds = $ts.TotalSeconds } }
+                catch { }
+              }
+            }
+          }
+          $times = Select-Xml -Xml $xml -XPath "//t:Times" -Namespace $ns
+          if ($times) {
+            $start = [datetime]$times[0].Node.start
+            $finish = [datetime]$times[0].Node.finish
+            $totalDur = $finish - $start
+            $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalDur.TotalMinutes), $totalDur.Seconds
+          } else { $totalDurStr = "N/A" }
+          $buckets = @(
+            @{ Label = "< 1s";      Min = 0;   Max = 1 },
+            @{ Label = "1s - 5s";   Min = 1;   Max = 5 },
+            @{ Label = "5s - 15s";  Min = 5;   Max = 15 },
+            @{ Label = "15s - 30s"; Min = 15;  Max = 30 },
+            @{ Label = "30s - 60s"; Min = 30;  Max = 60 },
+            @{ Label = "> 60s";     Min = 60;  Max = [double]::MaxValue }
+          )
+          $counts = @(0,0,0,0,0,0)
+          foreach ($d in $durations) {
+            for ($i = 0; $i -lt $buckets.Count; $i++) {
+              if ($d.Seconds -ge $buckets[$i].Min -and $d.Seconds -lt $buckets[$i].Max) { $counts[$i]++; break }
+            }
+          }
+          $maxCount = ($counts | Measure-Object -Maximum).Maximum
+          if ($maxCount -eq 0) { $maxCount = 1 }
+          $sb = [System.Text.StringBuilder]::new()
+          [void]$sb.AppendLine("## 🧪 ${{ matrix.test }} — ${{ matrix.os }} / ${{ matrix.framework }} / ${{ matrix.configuration }}")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("⏱️ **Total: $totalDurStr** · $totalTests tests (✅ $passed · ❌ $failed · ⏭️ $skipped)")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("### Distribution")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("| Duration | Count | |")
+          [void]$sb.AppendLine("|----------|------:|--|")
+          for ($i = 0; $i -lt $buckets.Count; $i++) {
+            $barLen = [int][math]::Round(($counts[$i] / $maxCount) * 20)
+            $bar = "█" * $barLen
+            [void]$sb.AppendLine("| $($buckets[$i].Label) | $($counts[$i]) | $bar |")
+          }
+          $top10 = $durations | Sort-Object { $_.Seconds } -Descending | Select-Object -First 10
+          if ($top10.Count -gt 0) {
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("### 🐢 Top 10 Slowest")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("| Test | Duration |")
+            [void]$sb.AppendLine("|------|----------|")
+            foreach ($t in $top10) {
+              $durStr = "{0:F1}s" -f $t.Seconds
+              [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+            }
+          }
+          $sb.ToString() >> $env:GITHUB_STEP_SUMMARY
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -210,6 +378,18 @@ jobs:
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/Tsavorite.slnx --configuration ${{ matrix.configuration }} --no-restore
+      - name: Write build summary
+        if: always()
+        shell: pwsh
+        run: |
+          $status = "${{ job.status }}" -eq "success" ? "✅ Success" : "❌ Failed"
+          @"
+          ## 🔨 Build Tsavorite — ${{ matrix.os }} / ${{ matrix.configuration }}
+
+          | Metric | Value |
+          |--------|-------|
+          | Status | $status |
+          "@ >> $env:GITHUB_STEP_SUMMARY
 
   # Job to test Tsavorite code
   test-tsavorite:
@@ -278,6 +458,82 @@ jobs:
       - name: Run tests ${{ matrix.test }}
         run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45
+      - name: Write test summary
+        if: always()
+        shell: pwsh
+        run: |
+          $resultsDir = "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+          $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
+          if (-not $trxFiles) { Write-Host "No TRX files found"; exit 0 }
+          $totalTests = 0; $passed = 0; $failed = 0; $skipped = 0
+          $durations = @()
+          foreach ($trx in $trxFiles) {
+            [xml]$xml = Get-Content $trx.FullName
+            $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
+            $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
+            foreach ($r in $results) {
+              $totalTests++
+              $outcome = $r.Node.outcome
+              if ($outcome -eq "Passed") { $passed++ }
+              elseif ($outcome -eq "Failed") { $failed++ }
+              else { $skipped++ }
+              $dur = $r.Node.duration
+              if ($dur) {
+                try { $ts = [TimeSpan]::Parse($dur); $durations += @{ Name = $r.Node.testName; Seconds = $ts.TotalSeconds } }
+                catch { }
+              }
+            }
+          }
+          $times = Select-Xml -Xml $xml -XPath "//t:Times" -Namespace $ns
+          if ($times) {
+            $start = [datetime]$times[0].Node.start
+            $finish = [datetime]$times[0].Node.finish
+            $totalDur = $finish - $start
+            $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalDur.TotalMinutes), $totalDur.Seconds
+          } else { $totalDurStr = "N/A" }
+          $buckets = @(
+            @{ Label = "< 1s";      Min = 0;   Max = 1 },
+            @{ Label = "1s - 5s";   Min = 1;   Max = 5 },
+            @{ Label = "5s - 15s";  Min = 5;   Max = 15 },
+            @{ Label = "15s - 30s"; Min = 15;  Max = 30 },
+            @{ Label = "30s - 60s"; Min = 30;  Max = 60 },
+            @{ Label = "> 60s";     Min = 60;  Max = [double]::MaxValue }
+          )
+          $counts = @(0,0,0,0,0,0)
+          foreach ($d in $durations) {
+            for ($i = 0; $i -lt $buckets.Count; $i++) {
+              if ($d.Seconds -ge $buckets[$i].Min -and $d.Seconds -lt $buckets[$i].Max) { $counts[$i]++; break }
+            }
+          }
+          $maxCount = ($counts | Measure-Object -Maximum).Maximum
+          if ($maxCount -eq 0) { $maxCount = 1 }
+          $sb = [System.Text.StringBuilder]::new()
+          [void]$sb.AppendLine("## 🧪 ${{ matrix.test }} — ${{ matrix.os }} / ${{ matrix.framework }} / ${{ matrix.configuration }}")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("⏱️ **Total: $totalDurStr** · $totalTests tests (✅ $passed · ❌ $failed · ⏭️ $skipped)")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("### Distribution")
+          [void]$sb.AppendLine("")
+          [void]$sb.AppendLine("| Duration | Count | |")
+          [void]$sb.AppendLine("|----------|------:|--|")
+          for ($i = 0; $i -lt $buckets.Count; $i++) {
+            $barLen = [int][math]::Round(($counts[$i] / $maxCount) * 20)
+            $bar = "█" * $barLen
+            [void]$sb.AppendLine("| $($buckets[$i].Label) | $($counts[$i]) | $bar |")
+          }
+          $top10 = $durations | Sort-Object { $_.Seconds } -Descending | Select-Object -First 10
+          if ($top10.Count -gt 0) {
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("### 🐢 Top 10 Slowest")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("| Test | Duration |")
+            [void]$sb.AppendLine("|------|----------|")
+            foreach ($t in $top10) {
+              $durStr = "{0:F1}s" -f $t.Seconds
+              [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+            }
+          }
+          $sb.ToString() >> $env:GITHUB_STEP_SUMMARY
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
