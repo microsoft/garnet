@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -16,10 +15,8 @@ namespace Tsavorite.test
 
     using RMWValueAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordTriggers>>;
     using RMWValueStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class NeedCopyUpdateTests : AllureTestBase
+    internal class NeedCopyUpdateTests : TestBase
     {
         private TsavoriteKV<RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;
@@ -188,10 +185,8 @@ namespace Tsavorite.test
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
-    internal class NeedCopyUpdateTestsSinglePage : AllureTestBase
+    internal class NeedCopyUpdateTestsSinglePage : TestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;

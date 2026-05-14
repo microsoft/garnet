@@ -1,0 +1,88 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NoWarn>1701;1702;1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garnet.test.collections" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.acl" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.scripting" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.complexstring" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.vectorset" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.rangeindex" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Garnet.test.extensions" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="EmbeddedNetworkSender.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+	  <EmbeddedResource Include="..\..\..\libs\host\defaults.conf" Link="defaults.conf" />
+	  <None Include="..\..\testcerts\testcert.pfx" Link="testcert.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+	  <None Update="GarnetJSON\JSONPath\RegressionSuite.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="diskann-garnet" />
+    <PackageReference Include="Microsoft.CodeAnalysis" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\libs\client\Garnet.client.csproj" />
+    <ProjectReference Include="..\..\..\libs\common\Garnet.common.csproj" />
+    <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
+    <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" />
+    <ProjectReference Include="..\..\..\modules\GarnetJSON\GarnetJSON.csproj" />
+    <ProjectReference Include="..\..\..\modules\NoOpModule\NoOpModule.csproj" />
+    <ProjectReference Include="..\..\Garnet.fuzz\Garnet.fuzz.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="RespCommandTests.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="CustomRespCommandsDocs.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="CustomRespCommandsInfo.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="redis.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+	<!-- Define compilation symbol for test project -->
+	<PropertyGroup>
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+		<DefineConstants>$(DefineConstants);TEST_PROJECT</DefineConstants>
+	</PropertyGroup>
+
+</Project>

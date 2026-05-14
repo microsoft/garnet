@@ -64,7 +64,7 @@ namespace Garnet
         public string LogMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2).")]
+        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2; minimum 512).")]
         public string PageSize { get; set; }
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
@@ -100,7 +100,7 @@ namespace Garnet
         public string ReadCacheMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
+        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2; minimum 512).")]
         public string ReadCachePageSize { get; set; }
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
@@ -563,9 +563,11 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
-        [IntRangeValidation(1, int.MaxValue, isRequired: false)]
-        [Option("value-overflow-threshold", Required = false, HelpText = "The length at which a value string becomes an overflow byte[]")]
-        public int ValueOverflowThreshold { get; set; }
+        // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
+        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
+        [MemorySizeValidation(isRequired: false)]
+        [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
+        public string ValueOverflowThreshold { get; set; }
 
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]

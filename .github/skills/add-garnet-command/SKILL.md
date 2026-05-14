@@ -587,8 +587,7 @@ public async Task MyCommandACLsAsync()
 **Required structure:**
 ```csharp
 [TestFixture]
-[AllureNUnit]
-public class RespMyFeatureTests : AllureTestBase
+public class RespMyFeatureTests : TestBase
 {
     GarnetServer server;
 
@@ -618,7 +617,7 @@ public class RespMyFeatureTests : AllureTestBase
 }
 ```
 
-**⚠️ Required attributes:** `[AllureNUnit]` and inheriting `AllureTestBase` are enforced by CI assembly reflection checks.
+**Note:** Test fixtures must inherit from `TestBase`.
 
 **Recommended test cases:**
 - Basic success case

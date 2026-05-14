@@ -379,14 +379,14 @@ namespace Garnet
     [AttributeUsage(AttributeTargets.Property)]
     internal sealed class MemorySizeValidationAttribute : OptionValidationAttribute
     {
-        private const string MemorySizePattern = @"^\d+([K|k|M|m|G|g][B|b]{0,1})?$";
+        private const string MemorySizePattern = @"^\d+([KkMmGg][Bb]?)?$";
 
         internal MemorySizeValidationAttribute(bool isRequired = true) : base(isRequired)
         {
         }
 
         /// <summary>
-        /// Memory size validation logic, checks if string matches memory size regex pattern
+        /// Memory size validation logic, checks if string matches memory size regex pattern.
         /// </summary>
         /// <param name="value">String containing memory size</param>
         /// <param name="validationContext">Validation context</param>
@@ -396,12 +396,14 @@ namespace Garnet
             if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var memorySize))
                 return initValidationResult;
 
-            if (Regex.IsMatch(memorySize, MemorySizePattern))
-                return ValidationResult.Success;
+            if (!Regex.IsMatch(memorySize, MemorySizePattern))
+            {
+                var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+                var errorMessage = $"{baseError} Expected string in memory size format (e.g. 1k, 1kb, 10m, 10mb, 50g, 50gb etc). Actual value: {memorySize}";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
 
-            var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
-            var errorMessage = $"{baseError} Expected string in memory size format (e.g. 1k, 1kb, 10m, 10mb, 50g, 50gb etc). Actual value: {memorySize}";
-            return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            return ValidationResult.Success;
         }
     }
 
