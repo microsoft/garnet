@@ -22,11 +22,27 @@ namespace Garnet.cluster
         /// </summary>
         internal const int DefaultBatchSize = 1 << 17;
 
+        /// <summary>
+        /// Coordinates buffer ownership between the caller and the async IO callback.
+        /// When the caller times out or is cancelled, the callback takes ownership of the
+        /// buffer and returns it to the pool once the IO completes, preventing use-after-free.
+        /// </summary>
+        private sealed class IOCallbackContext
+        {
+            public const int Pending = 0;
+            public const int CallbackFirst = 1;
+            public const int CallerAbandoned = 2;
+
+            public SectorAlignedMemory buffer;
+            public int state;
+        }
+
         private readonly int maxBatchSize;
         private readonly TimeSpan timeout;
         private readonly ILogger logger;
         private readonly SectorAlignedBufferPool bufferPool;
         private readonly SemaphoreSlim signalCompletion;
+        private volatile bool disposed;
         private volatile uint lastIOErrorCode;
 
         public CheckpointFileType Type { get; }
@@ -79,6 +95,7 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public void Dispose()
         {
+            disposed = true;
             Device?.Dispose();
         }
 
@@ -114,18 +131,60 @@ namespace Garnet.cluster
             numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
             var buffer = bufferPool.Get((int)numBytesToRead);
+            var ioContext = new IOCallbackContext { buffer = buffer };
+
             unsafe
             {
-                device.ReadAsync(address, (IntPtr)buffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(address, (IntPtr)buffer.aligned_pointer, (uint)numBytesToRead, IOCallback, ioContext);
             }
 
-            if (!await signalCompletion.WaitAsync(timeout, cancellationToken).ConfigureAwait(false))
+            bool completed;
+            try
             {
-                buffer.Return();
+                completed = await signalCompletion.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation while waiting — coordinate buffer ownership with the IO callback.
+                if (Interlocked.CompareExchange(ref ioContext.state, IOCallbackContext.CallerAbandoned, IOCallbackContext.Pending) == IOCallbackContext.Pending)
+                {
+                    // Callback hasn't fired yet; it will return the buffer when the IO eventually completes.
+                    logger?.LogWarning("Cancelled reading {type} checkpoint file at address {address}; buffer ownership transferred to IO callback", Type, address);
+                }
+                else
+                {
+                    // Callback already completed and released the semaphore, but cancellation won the race.
+                    // We own the buffer — return it. The semaphore has an extra count but the caller
+                    // will throw and no further reads will occur on this instance.
+                    buffer.Return();
+                }
+                throw;
+            }
+
+            if (completed)
+            {
+                // IO completed within the timeout — check for IO errors.
+                return HandleIOError(buffer, address, numBytesToRead);
+            }
+
+            // Timeout — coordinate buffer ownership with the IO callback.
+            if (Interlocked.CompareExchange(ref ioContext.state, IOCallbackContext.CallerAbandoned, IOCallbackContext.Pending) == IOCallbackContext.Pending)
+            {
+                // Callback hasn't fired yet; it will return the buffer when the IO eventually completes.
+                logger?.LogWarning("Timed out reading {type} checkpoint file at address {address}; buffer ownership transferred to IO callback", Type, address);
                 ExceptionUtils.ThrowException(new GarnetException(
                     $"Timed out reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
+                return default; // Unreachable
             }
 
+            // Callback completed between WaitAsync returning false and our CompareExchange.
+            // The IO finished — use the result instead of discarding it.
+            return HandleIOError(buffer, address, numBytesToRead);
+        }
+
+        private (SectorAlignedMemory buffer, int bytesRead) HandleIOError(
+            SectorAlignedMemory buffer, ulong address, long numBytesToRead)
+        {
             var errorCode = lastIOErrorCode;
             Debug.Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
             if (errorCode != 0)
@@ -140,13 +199,32 @@ namespace Garnet.cluster
 
         private void IOCallback(uint errorCode, uint numBytes, object context)
         {
+            var ioContext = (IOCallbackContext)context;
             lastIOErrorCode = errorCode;
             if (errorCode != 0)
             {
-                var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[CheckpointDataSource] ReadAsync error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-            _ = signalCompletion.Release();
+
+            var prevState = Interlocked.CompareExchange(ref ioContext.state, IOCallbackContext.CallbackFirst, IOCallbackContext.Pending);
+            if (prevState == IOCallbackContext.Pending)
+            {
+                // Normal path: callback arrived before caller abandoned. Release semaphore.
+                try
+                {
+                    _ = signalCompletion.Release();
+                }
+                catch (ObjectDisposedException) { }
+            }
+            else
+            {
+                // Caller abandoned (timeout/cancellation). IO is now complete so the buffer
+                // is safe to return — no more writes to aligned_pointer.
+                // Guard against the buffer pool having been freed after Dispose.
+                if (!disposed)
+                    ioContext.buffer.Return();
+            }
         }
     }
 }
