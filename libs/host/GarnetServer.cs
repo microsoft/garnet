@@ -191,7 +191,6 @@ namespace Garnet
             if (opts.EnableCluster && opts.EnableRangeIndexPreview)
                 throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
 
-
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
                 version, IntPtr.Size == 8 ? "64" : "32",
