@@ -192,9 +192,9 @@ namespace Garnet.server
         /// Extracts sequence number and participant count from a transaction header entry.
         /// For single-physical-log + multi-replay, uses entry address; for multi-physical-log, uses embedded sequence number.
         /// </summary>
-        unsafe void GetSynchronizedOperationParams(byte* ptr, long entryAddress, out long sequenceNumber, out short participantCount)
+        void GetSynchronizedOperationParams(byte* ptr, long entryAddress, out long sequenceNumber, out short participantCount)
         {
-            var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
+            var headerType = (*(AofHeader*)ptr).HeaderType;
             switch (headerType)
             {
                 case AofHeaderType.SingleLogTransactionHeader:
@@ -206,19 +206,16 @@ namespace Garnet.server
                     sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     participantCount = txnHeader.participantCount;
                     break;
-                default:
-                    // For non-transaction headers (BasicHeader, ShardedHeader), use entryAddress/seqNum
-                    if (headerType == AofHeaderType.BasicHeader)
-                    {
-                        sequenceNumber = entryAddress;
-                        participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
-                    }
-                    else
-                    {
-                        sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
-                        participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
-                    }
+                case AofHeaderType.BasicHeader:
+                    sequenceNumber = entryAddress;
+                    participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
                     break;
+                case AofHeaderType.ShardedHeader:
+                    sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
+                    participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
+                    break;
+                default:
+                    throw new GarnetException($"Unsupported header type: {headerType}");
             }
         }
 
@@ -321,8 +318,8 @@ namespace Garnet.server
                         }
                         else
                         {
-                        GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
-                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            GetSynchronizedOperationParams(ptr, entryAddress, out var seqNum, out var partCount);
+                            aofReplayCoordinator.ProcessSynchronizedOperation(
                                 virtualSublogIdx,
                                 seqNum,
                                 partCount,
