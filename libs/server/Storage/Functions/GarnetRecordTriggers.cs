@@ -127,19 +127,10 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.Info.ValueIsObject
+                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
-                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
-                {
-                    RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
-                }
-
-                // A Vector Set which isn't deleted from Tsavorites perspective may still have _started_ being deleted (that is, it's deleted from VectorManager.ContextMetadata's perspective)
-                // so we need to validate that during recovery
-                if (!logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
-                {
-                    vectorManager?.QueueForInProgressDeleteCheck(ref logRecord);
-                }
+                RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
             }
         }
 

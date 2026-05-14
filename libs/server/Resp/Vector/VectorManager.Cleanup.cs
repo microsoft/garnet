@@ -76,8 +76,10 @@ namespace Garnet.server
             }
         }
 
-        private readonly Channel<ulong> cleanupTaskChannel;
+        private readonly Channel<object> cleanupTaskChannel;
+        private readonly Channel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
         private readonly Task cleanupTask;
+        private readonly Task requestCleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
         // Pause / resume coordination for the cleanup task vs concurrent Reset.
@@ -104,11 +106,107 @@ namespace Garnet.server
         // would deadlock shutdown.
         private readonly SemaphoreSlim cleanupGate = new(initialCount: 1, maxCount: 1);
 
+        /// <summary>
+        /// Seaparate task thas allows for marking Vector Sets contexts as needing cleanup.
+        /// 
+        /// Cleanup is actually done by the <see cref="RunCleanupTaskAsync"/>.
+        /// 
+        /// Separating the two states allows for durable deletion logic, as we can block
+        /// deletion of Vector Sets until the context is marked as needing deletion.
+        /// </summary>
+        private async Task RunRequestCleanupTaskAsync()
+        {
+            while (await requestCleanupTaskChannel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                // We do not need to take the cleanupGate here because we block in an OnDispose callback 
+                // for this task to make progress.
+                //
+                // The fact that we're in an OnDispose means Reset() isn't running.
+
+                var completions = new List<TaskCompletionSource>();
+
+                try
+                {
+                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                    using var cleanupSession = (RespServerSession)getCleanupSession();
+                    if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
+                    {
+                        throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                    }
+
+                    ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
+
+                    var needsUpdate = false;
+                    lock (this)
+                    {
+                        // Read all pending requests so we can do one update
+                        while (requestCleanupTaskChannel.Reader.TryRead(out var t))
+                        {
+                            if (t.MarkCompleted != null)
+                            {
+                                completions.Add(t.MarkCompleted);
+                            }
+
+                            if (!contextMetadata.IsCleaningUp(t.Context))
+                            {
+                                contextMetadata.MarkCleaningUp(t.Context);
+
+                                needsUpdate = true;
+                            }
+                        }
+                    }
+
+                    if (needsUpdate)
+                    {
+                        UpdateContextMetadata(ref delCtx);
+                    }
+
+                    foreach (var completion in completions)
+                    {
+                        try
+                        {
+                            _ = completion.TrySetResult();
+                        }
+                        catch (Exception innerE)
+                        {
+                            logger?.LogError(innerE, "While completing Vector Set cleanup request");
+                        }
+                    }
+
+                    // Wake the cleanup task up if we made any changes
+                    if (needsUpdate)
+                    {
+                        _ = cleanupTaskChannel.Writer.TryWrite(null);
+                    }
+                }
+                catch (Exception e)
+                {
+                    foreach (var completion in completions)
+                    {
+                        try
+                        {
+                            _ = completion.TrySetException(e);
+                        }
+                        catch (Exception innerE)
+                        {
+                            // Best effort
+                            logger?.LogError(innerE, "While cancelling Vector Set cleanup requests");
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Perform cleanup of deleted Vector Set element keys.
+        /// 
+        /// What needs cleanup is tracked as part of <see cref="ContextMetadata"/>.
+        /// </summary>
         private async Task RunCleanupTaskAsync()
         {
             // Each drop index will queue a null object here
             // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
-            await foreach (var requestedContext in cleanupTaskChannel.Reader.ReadAllAsync())
+            await foreach (var ignored in cleanupTaskChannel.Reader.ReadAllAsync().ConfigureAwait(false))
             {
                 await cleanupGate.WaitAsync().ConfigureAwait(false);
 
@@ -129,24 +227,6 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
-                    if (requestedContext != InvalidContext)
-                    {
-                        var needsUpdate = false;
-                        lock (this)
-                        {
-                            if (!contextMetadata.IsCleaningUp(requestedContext))
-                            {
-                                contextMetadata.MarkCleaningUp(requestedContext);
-                                needsUpdate = true;
-                            }
-                        }
-
-                        if (needsUpdate)
-                        {
-                            UpdateContextMetadata(ref delCtx);
-                        }
-                    }
-
                     HashSet<ulong> needCleanup;
                     lock (this)
                     {
@@ -157,30 +237,6 @@ namespace Garnet.server
                     {
                         // Previous run already got here, so bail
                         continue;
-                    }
-
-                    // If this is our first cleanup pass after recovery, we might have some extra work to do
-                    if (vectorSetIndexKeyRecovery != null)
-                    {
-                        foreach (var toCleanupContext in needCleanup)
-                        {
-                            if (vectorSetIndexKeyRecovery.TryRemove(toCleanupContext, out var keyBytes))
-                            {
-                                unsafe
-                                {
-                                    fixed (byte* keyPtr = keyBytes)
-                                    {
-                                        var res = scanCtx.Delete((FixedSpanByteKey)SpanByte.FromPinnedPointer(keyPtr, keyBytes.Length));
-                                        if (res.IsPending)
-                                        {
-                                            CompletePending(ref res, ref scanCtx);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        vectorSetIndexKeyRecovery = null;
                     }
 
                     PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
@@ -241,15 +297,5 @@ namespace Garnet.server
         /// successful PauseCleanupAsync — typically from a finally block.
         /// </summary>
         public void ResumeCleanup() => cleanupGate.Release();
-
-        /// <summary>
-        /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
-        /// </summary>
-        internal void CleanupDroppedIndex(ref VectorBasicContext ctx, ulong context)
-        {
-            // Wake up cleanup task
-            var writeRes = cleanupTaskChannel.Writer.TryWrite(InvalidContext);
-            Debug.Assert(writeRes, "Request for cleanup failed, this should never happen");
-        }
     }
 }

@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -58,11 +57,6 @@ namespace Garnet.server
         private const int MinimumSpacePerId = sizeof(int) + 8;
 
         /// <summary>
-        /// Name for a context that will never be used by Vector Sets.
-        /// </summary>
-        private const ulong InvalidContext = 0;
-
-        /// <summary>
         /// This managers instance of <see cref="DiskANNService"/>.
         /// 
         /// We could probably share these, but its not a big loss to scope to the <see cref="VectorManager"/> instance.
@@ -79,9 +73,6 @@ namespace Garnet.server
         private readonly ILogger logger;
 
         private readonly int dbId;
-
-        // context -> key for Vector Sets which are were discovered during recovery
-        private ConcurrentDictionary<ulong, byte[]> vectorSetIndexKeyRecovery;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
@@ -108,9 +99,10 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getCleanupSession = getCleanupSession;
-            cleanupTaskChannel = Channel.CreateUnbounded<ulong>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
-            vectorSetIndexKeyRecovery = new();
+            requestCleanupTask = RunRequestCleanupTaskAsync();
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -184,30 +176,7 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-            _ = cleanupTaskChannel.Writer.TryWrite(InvalidContext);
-        }
-
-        /// <summary>
-        /// Called during recovery to note any Vector Sets which might be in the process of being deleted.
-        /// </summary>
-        public void QueueForInProgressDeleteCheck(ref LogRecord logRecord)
-        {
-            if (logRecord.ValueSpan.Length != IndexSize)
-            {
-                logger?.LogWarning("Skipping Vector Set '{key}' deletion checking during recovery, index size {size} != {IndexSize}", SpanByte.ToShortString(logRecord.Key), logRecord.ValueSpan.Length, IndexSize);
-                return;
-            }
-
-            ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
-
-            ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(logRecord.ValueSpan)[0];
-            if (asIndex.NeedsCleanup)
-            {
-                var added = vectorSetIndexKeyRecovery.TryAdd(context, logRecord.Key.ToArray());
-                Debug.Assert(added, "Recovery found multiple Vector Set indexes with same context");
-
-                _ = cleanupTaskChannel.Writer.TryWrite(context);
-            }
+            _ = cleanupTaskChannel.Writer.TryWrite(null);
         }
 
         /// <inheritdoc/>
@@ -219,6 +188,13 @@ namespace Garnet.server
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             replicationBlockEvent.Dispose();
+
+            // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
+            // have called ResumeCleanup before reaching here, otherwise the cleanup task
+            // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
+            requestCleanupTaskChannel.Writer.Complete();
+            AsyncUtils.BlockingWait(requestCleanupTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(requestCleanupTask);
 
             // Wait for any in progress cleanup to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
@@ -363,15 +339,18 @@ namespace Garnet.server
 
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _);
 
-            // Tell DiskANN to clean itself up right now
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            if (!requestCleanupTaskChannel.Writer.TryWrite((context, tcs)))
+            {
+                throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
+            }
+
+            // Wait until the context is _marked_ for cleanup, but not the actual cleanup
+            AsyncUtils.BlockingWait(tcs.Task);
+
+            // Tell DiskANN to clean itself up
             DropIndex(value);
-
-            // Clear the DiskANN index
-            ref var asIndex = ref MemoryMarshal.Cast<byte, Index>(value)[0];
-            asIndex.IndexPtr = 0;
-            asIndex.NeedsCleanup = true;
-
-            _ = cleanupTaskChannel.Writer.TryWrite(context);
         }
 
         /// <summary>

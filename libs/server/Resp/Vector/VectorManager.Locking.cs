@@ -362,12 +362,6 @@ namespace Garnet.server
                                 {
                                     // Insertion failed, drop index
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
                             }
                             catch
@@ -376,12 +370,6 @@ namespace Garnet.server
                                 {
                                     // Drop to avoid a leak on error
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
 
                                 throw;
