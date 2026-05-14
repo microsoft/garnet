@@ -37,7 +37,7 @@ jobs:
     needs: [changes]
     runs-on: ${{ matrix.os }}
     concurrency:
-      group: bdn-benchmark-${{ matrix.gh-pages-branch }}
+      group: bdn-benchmark-${{ matrix.gh-pages-branch }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
       cancel-in-progress: false
     strategy:
       fail-fast: false

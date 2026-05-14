@@ -682,7 +682,7 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
     [TestFixture]
-    class LongStressChainTests : TestBase
+    public class LongStressChainTests : TestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;

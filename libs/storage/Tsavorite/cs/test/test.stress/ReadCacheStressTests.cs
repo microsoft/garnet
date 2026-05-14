@@ -44,8 +44,10 @@ namespace Tsavorite.test.stress
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
+#pragma warning disable IDE0060 // Remove unused parameter (modRange is used by worker.Setup())
         public void SpanByteRcMultiThreadStressTest([Values] HashModulo modRange, [Values(1, 8)] int numReadThreads, [Values(1, 8)] int numWriteThreads,
                                                     [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+#pragma warning restore IDE0060 // Remove unused parameter
             => worker.SpanByteRcMultiThreadWorker(numReadThreads, numWriteThreads, updateOp);
     }
 }
