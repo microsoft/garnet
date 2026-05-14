@@ -425,8 +425,15 @@ namespace Tsavorite.core
         /// </summary>
         protected virtual void FreeAllAllocatedPages() { }
 
-        /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>.</summary>
-        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() => TruncateUntilAddressBlocking(toAddress));
+        /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>; fires
+        /// <see cref="IRecordTriggers.OnTruncate(long)"/> AFTER the device truncation completes when
+        /// <see cref="IStoreFunctions.CallOnTruncate"/> is true.</summary>
+        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() =>
+        {
+            TruncateUntilAddressBlocking(toAddress);
+            if (storeFunctions.CallOnTruncate)
+                storeFunctions.OnTruncate(toAddress);
+        });
 
         /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
@@ -703,7 +710,10 @@ namespace Tsavorite.core
             if (trimLog)
             {
                 logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
-                TruncateUntilAddressBlocking(GetStartLogicalAddressOfSegment(firstValidSegment));
+                var toAddress = GetStartLogicalAddressOfSegment(firstValidSegment);
+                TruncateUntilAddressBlocking(toAddress);
+                if (storeFunctions.CallOnTruncate)
+                    storeFunctions.OnTruncate(toAddress);
 
                 for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
                 {

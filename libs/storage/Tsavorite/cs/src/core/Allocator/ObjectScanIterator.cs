@@ -273,6 +273,9 @@ namespace Tsavorite.core
                         // (pending-op ctx, scan iteration, cluster streaming), unless the object is transferred out (e.g. via CopyToTail).
                         var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
                         diskLogRecord = new(logRecord);
+                        // Fire OnDiskRead so app can invalidate stale TreeHandles, etc., on records loaded from disk.
+                        if (hlogBase.storeFunctions.CallOnDiskRead)
+                            hlogBase.storeFunctions.OnDiskRead(ref diskLogRecord.logRecord);
                     }
                 }
                 finally

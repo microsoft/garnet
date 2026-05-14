@@ -59,14 +59,20 @@ namespace Tsavorite.core
         /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
         bool CallOnDiskRead { get; }
 
+        /// <inheritdoc cref="IRecordTriggers.CallPostCopyToTail"/>
+        bool CallPostCopyToTail { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.CallOnTruncate"/>
+        bool CallOnTruncate { get; }
+
         /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason);
 
         /// <inheritdoc cref="IRecordTriggers.OnDisposeDiskRecord"/>
         void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
 
-        /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
-        void OnFlush(ref LogRecord logRecord);
+        /// <inheritdoc cref="IRecordTriggers.OnFlush(ref LogRecord, long)"/>
+        void OnFlush(ref LogRecord logRecord, long logicalAddress);
 
         /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
         void OnEvict(ref LogRecord logRecord, EvictionSource source);
@@ -82,6 +88,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc cref="IRecordTriggers.OnCheckpoint"/>
         void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken);
+
+        /// <inheritdoc cref="IRecordTriggers.PostCopyToTail{TSourceLogRecord}(in TSourceLogRecord, long, ref LogRecord, long)"/>
+        void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                               ref LogRecord dstLogRecord, long dstLogicalAddress)
+            where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
+
+        /// <inheritdoc cref="IRecordTriggers.OnTruncate"/>
+        void OnTruncate(long newBeginAddress);
         #endregion Record Triggers
 
         #region Checkpoint Completion

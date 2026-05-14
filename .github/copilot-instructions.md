@@ -138,7 +138,7 @@ This same header is used throughout the entire codebase, including Tsavorite fil
 ### Test Structure
 
 - **Framework**: NUnit with `[TestFixture]`, `[Test]`, `[SetUp]`, `[TearDown]`
-- **Allure required**: All test fixtures must inherit from `AllureTestBase` and have the `[AllureNUnit]` attribute. CI enforces this via assembly reflection checks — builds will fail if any test fixture is missing either.
+- **Test base class**: All test fixtures must inherit from `TestBase` (defined in `test/standalone/Garnet.test/TestBase.cs`). This tracks currently running tests for diagnostics.
 - **Server lifecycle**: Create in `[SetUp]` via `TestUtils.CreateGarnetServer(TestUtils.MethodTestDir)`, call `.Start()`, then `.Dispose()` in `[TearDown]`. Common optional parameters include `enableAOF`, `lowMemory`, `enableTLS`, `enableCluster`, `tryRecover`, `disableObjects`, `useAcl`, and `defaultPassword`.
 - **Teardown**: Always call `TestUtils.OnTearDown()` (checks for leaked `LightEpoch` instances)
 - **Test directory cleanup**: `TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true)` at the start of `[SetUp]`
@@ -147,8 +147,7 @@ This same header is used throughout the entire codebase, including Tsavorite fil
 
 ```csharp
 [TestFixture]
-[AllureNUnit]
-public class MyTests : AllureTestBase
+public class MyTests : TestBase
 {
     GarnetServer server;
 
@@ -297,5 +296,5 @@ To update the version and make a new release, increment the `VersionPrefix` in `
 
 1. Create a GitHub Issue (Enhancement / Bug / Task)
 2. Branch naming: `<username>/branch-name`
-3. Include unit tests with Allure wiring (see Test Structure above)
+3. Include unit tests (see Test Structure above)
 4. Link PR to the issue in the development section

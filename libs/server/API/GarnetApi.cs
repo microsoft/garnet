@@ -354,8 +354,8 @@ namespace Garnet.server
             => storageSession.IterateStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
-        public readonly ITsavoriteScanIterator IterateStore()
-            => storageSession.IterateStore();
+        public readonly void DeleteSlotKeys(HashSet<int> slots)
+            => storageSession.DeleteSlotKeys(slots);
 
         #endregion
 

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,8 +9,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Allure.Net.Commons" />
-    <PackageReference Include="Allure.NUnit" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,8 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\test\Garnet.test.cluster\Garnet.test.cluster.csproj" />
-    <ProjectReference Include="..\..\test\Garnet.test\Garnet.test.csproj" />
+    <ProjectReference Include="..\..\test\cluster\Garnet.test.cluster\Garnet.test.cluster.csproj" />
+    <ProjectReference Include="..\..\test\cluster\Garnet.test.cluster.migrate\Garnet.test.cluster.migrate.csproj" />
+    <ProjectReference Include="..\..\test\cluster\Garnet.test.cluster.replication\Garnet.test.cluster.replication.csproj" />
+    <ProjectReference Include="..\..\test\standalone\Garnet.test\Garnet.test.csproj" />
   </ItemGroup>
 
 </Project>

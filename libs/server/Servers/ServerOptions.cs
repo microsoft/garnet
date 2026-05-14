@@ -143,17 +143,33 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Minimum main-log / read-cache page size in bytes. A worst-case inline record at default Garnet settings
+        /// (MaxInlineKeySize = 128B Tsavorite default, single-byte namespace, all optional fields, max length-byte
+        /// encoding, max filler) plus the 64-byte page header is ~490 bytes when the value-overflow threshold is
+        /// at its largest allowed value relative to PageSize (effective value &lt; effective page); 512 bytes is the
+        /// smallest power-of-2 page size that accommodates this and prevents Tsavorite's "Entry does not fit on page".
+        /// </summary>
+        public const long MinPageSizeBytes = 512L;
+
+        /// <summary>
+        /// Validate and convert a page-size configuration value to bits, enforcing <see cref="MinPageSizeBytes"/>.
+        /// </summary>
+        protected int ValidatedPageSizeBits(string value, string propName)
+        {
+            var size = ParseSize(value, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation("Warning: using lower {PropName} than specified (power of 2)", propName);
+            if (adjustedSize < MinPageSizeBytes)
+                throw new Exception($"{propName} '{value}' (effective {adjustedSize} bytes after rounding to previous power of 2) must be at least {MinPageSizeBytes} bytes to ensure a worst-case record fits within a single page.");
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
         /// Get page size
         /// </summary>
         /// <returns></returns>
-        public int PageSizeBits()
-        {
-            var size = ParseSize(PageSize, out _);
-            var adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
+        public int PageSizeBits() => ValidatedPageSizeBits(PageSize, nameof(PageSize));
 
         /// <summary>
         /// Get pub/sub page size

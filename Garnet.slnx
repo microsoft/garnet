@@ -77,7 +77,21 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Garnet.fuzz/Garnet.fuzz.csproj" />
-    <Project Path="test/Garnet.test.cluster/Garnet.test.cluster.csproj" />
-    <Project Path="test/Garnet.test/Garnet.test.csproj" />
+    <Project Path="test/standalone/Garnet.test/Garnet.test.csproj" />
+    <Project Path="test/standalone/Garnet.test.acl/Garnet.test.acl.csproj" />
+    <Project Path="test/standalone/Garnet.test.collections/Garnet.test.collections.csproj" />
+    <Project Path="test/standalone/Garnet.test.complexstring/Garnet.test.complexstring.csproj" />
+    <Project Path="test/standalone/Garnet.test.extensions/Garnet.test.extensions.csproj" />
+    <Project Path="test/standalone/Garnet.test.rangeindex/Garnet.test.rangeindex.csproj" />
+    <Project Path="test/standalone/Garnet.test.scripting/Garnet.test.scripting.csproj" />
+    <Project Path="test/standalone/Garnet.test.vectorset/Garnet.test.vectorset.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster/Garnet.test.cluster.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.migrate/Garnet.test.cluster.migrate.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.multilog/Garnet.test.cluster.multilog.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication/Garnet.test.cluster.replication.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication.asyncreplay/Garnet.test.cluster.replication.asyncreplay.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication.disklesssync/Garnet.test.cluster.replication.disklesssync.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication.tls/Garnet.test.cluster.replication.tls.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
   </Folder>
 </Solution>
