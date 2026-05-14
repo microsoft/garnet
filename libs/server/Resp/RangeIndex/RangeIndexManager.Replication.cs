@@ -82,7 +82,7 @@ namespace Garnet.server
         /// <param name="session">The storage session for issuing the RMW.</param>
         /// <param name="key">The Garnet key being created.</param>
         /// <param name="input">The RMW input containing the stub bytes in parseState.</param>
-        internal void HandleRangeIndexCreateReplay(StorageSession session, ReadOnlySpan<byte> key, ref StringInput input)
+        internal unsafe void HandleRangeIndexCreateReplay(StorageSession session, ReadOnlySpan<byte> key, ref StringInput input)
         {
             var stubSpan = input.parseState.GetArgSliceByRef(0).Span;
             if (stubSpan.Length != IndexSizeBytes)
@@ -107,7 +107,7 @@ namespace Garnet.server
 
             // Replace stale handle with fresh one in the stub bytes
             stub.TreeHandle = bfTree.NativePtr;
-            stub.Flags = 0;
+            stub.ResetFlags();
 
             // Let the normal RMW path create the record from the updated stub bytes
             var output = new StringOutput();

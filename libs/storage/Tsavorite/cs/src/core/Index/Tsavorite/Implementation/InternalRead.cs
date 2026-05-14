@@ -171,6 +171,8 @@ namespace Tsavorite.core
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
+                // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
+                pendingContext.originalAddress = stackCtx.recSrc.LogicalAddress;
                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, wantIO: false);
                 return status;
             }

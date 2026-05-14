@@ -308,9 +308,30 @@ namespace Garnet
             CustomCommandManager customCommandManager)
         {
             var removeOutdated = !serverOptions.EnableCluster;
-            var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
-            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
-                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
+
+            // Two-roots layout for RangeIndex files:
+            //  riLogRoot — log-tied (working file + per-flush snapshots), co-located with hlog.
+            //              Falls back through LogDir → CheckpointDir → cwd, mirroring Tsavorite's
+            //              CheckpointBaseDirectory chain so RangeIndex works without storage tier.
+            //  cprDir    — checkpoint-tied (per-token snapshots live under <token>/rangeindex/),
+            //              alongside Tsavorite's cpr-checkpoints/<token>/info.dat etc.
+            // Construct the manager only when the feature is enabled. When disabled, the
+            // store wrapper / triggers / functions hold a null reference, and Tsavorite's
+            // record-trigger gates (CallOnFlush etc.) return false → zero per-op overhead.
+            RangeIndexManager rangeIndexManager = null;
+            if (serverOptions.EnableRangeIndexPreview)
+            {
+                var logRootBase = serverOptions.LogDir
+                                  ?? serverOptions.CheckpointDir
+                                  ?? Directory.GetCurrentDirectory();
+                var riLogRoot = Path.Combine(logRootBase ?? string.Empty, "Store", "rangeindex");
+                var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(dbId), "cpr-checkpoints");
+
+                rangeIndexManager = new RangeIndexManager(
+                    riLogRoot: riLogRoot, cprDir: cprDir,
+                    storeEpoch: storeEpoch,
+                    logger: loggerFactory?.CreateLogger("RangeIndexManager"));
+            }
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 
