@@ -305,6 +305,145 @@ jobs:
       - name: Build website
         run: yarn build
 
+  # Job to generate combined test summaries per category
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [changes, test-garnet-standalone, test-garnet-cluster, test-tsavorite]
+    if: always() && (needs.test-garnet-standalone.result != 'skipped' || needs.test-garnet-cluster.result != 'skipped' || needs.test-tsavorite.result != 'skipped')
+    steps:
+      - name: Download standalone test results
+        if: needs.test-garnet-standalone.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dotnet-standalone-results-*
+          path: results/standalone
+          merge-multiple: true
+      - name: Download cluster test results
+        if: needs.test-garnet-cluster.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dotnet-cluster-results-*
+          path: results/cluster
+          merge-multiple: true
+      - name: Download Tsavorite test results
+        if: needs.test-tsavorite.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dotnet-tsavorite-results-*
+          path: results/tsavorite
+          merge-multiple: true
+      - name: Generate summaries
+        shell: pwsh
+        run: |
+          function Write-CategorySummary($category, $dir) {
+            $trxFiles = Get-ChildItem -Path $dir -Filter "*.trx" -Recurse -ErrorAction SilentlyContinue
+            if (-not $trxFiles -or $trxFiles.Count -eq 0) { return }
+            $totalTests = 0; $passed = 0; $failed = 0; $skipped = 0
+            $durations = @()
+            $failedTests = @()
+            foreach ($trx in $trxFiles) {
+              $xml = [System.Xml.XmlDocument]::new()
+              try { $xml.Load($trx.FullName) }
+              catch {
+                Write-Warning "Skipping malformed TRX file: $($trx.FullName) - $_"
+                continue
+              }
+              $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
+              $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
+              foreach ($r in $results) {
+                $totalTests++
+                $outcome = $r.Node.outcome
+                if ($outcome -eq "Passed") { $passed++ }
+                elseif ($outcome -eq "Failed") {
+                  $failed++
+                  $dur = $r.Node.duration
+                  $durSec = 0
+                  if ($dur) { try { $durSec = [TimeSpan]::Parse($dur).TotalSeconds } catch { } }
+                  $failedTests += @{ Name = $r.Node.testName; Seconds = $durSec }
+                }
+                else { $skipped++ }
+                $dur = $r.Node.duration
+                if ($dur) {
+                  try { $ts = [TimeSpan]::Parse($dur); $durations += @{ Name = $r.Node.testName; Seconds = $ts.TotalSeconds } }
+                  catch { }
+                }
+              }
+            }
+            # Compute total duration as sum of all individual test durations
+            $totalSec = ($durations | ForEach-Object { $_.Seconds } | Measure-Object -Sum).Sum
+            if ($totalSec -gt 0) {
+              $totalDurStr = "{0}m {1:D2}s" -f [int][math]::Floor($totalSec / 60), [int]($totalSec % 60)
+            } else { $totalDurStr = "N/A" }
+            $buckets = @(
+              @{ Label = "< 1s";      Min = 0;   Max = 1 },
+              @{ Label = "1s - 5s";   Min = 1;   Max = 5 },
+              @{ Label = "5s - 15s";  Min = 5;   Max = 15 },
+              @{ Label = "15s - 30s"; Min = 15;  Max = 30 },
+              @{ Label = "30s - 60s"; Min = 30;  Max = 60 },
+              @{ Label = "> 60s";     Min = 60;  Max = [double]::MaxValue }
+            )
+            $counts = @(0,0,0,0,0,0)
+            foreach ($d in $durations) {
+              for ($i = 0; $i -lt $buckets.Count; $i++) {
+                if ($d.Seconds -ge $buckets[$i].Min -and $d.Seconds -lt $buckets[$i].Max) { $counts[$i]++; break }
+              }
+            }
+            $maxCount = ($counts | Measure-Object -Maximum).Maximum
+            if ($maxCount -eq 0) { $maxCount = 1 }
+            $sb = [System.Text.StringBuilder]::new()
+            [void]$sb.AppendLine("## 🧪 $category")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("⏱️ **Total: $totalDurStr** · $totalTests tests (✅ $passed · ❌ $failed · ⏭️ $skipped)")
+            [void]$sb.AppendLine("")
+            # Failed tests section (only if there are failures)
+            if ($failedTests.Count -gt 0) {
+              [void]$sb.AppendLine("### ❌ Failed Tests")
+              [void]$sb.AppendLine("")
+              [void]$sb.AppendLine("| Test | Duration |")
+              [void]$sb.AppendLine("|------|----------|")
+              foreach ($t in $failedTests) {
+                $durStr = "{0:F1}s" -f $t.Seconds
+                [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+              }
+              [void]$sb.AppendLine("")
+            }
+            [void]$sb.AppendLine("### Distribution")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("| Duration | Count | |")
+            [void]$sb.AppendLine("|----------|------:|--|")
+            for ($i = 0; $i -lt $buckets.Count; $i++) {
+              $barLen = [int][math]::Round(($counts[$i] / $maxCount) * 20)
+              $bar = "█" * $barLen
+              [void]$sb.AppendLine("| $($buckets[$i].Label) | $($counts[$i]) | $bar |")
+            }
+            $top10 = $durations | Sort-Object { $_.Seconds } -Descending | Select-Object -First 10
+            if ($top10.Count -gt 0) {
+              [void]$sb.AppendLine("")
+              [void]$sb.AppendLine("### 🐢 Top 10 Slowest")
+              [void]$sb.AppendLine("")
+              [void]$sb.AppendLine("| Test | Duration |")
+              [void]$sb.AppendLine("|------|----------|")
+              foreach ($t in $top10) {
+                $durStr = "{0:F1}s" -f $t.Seconds
+                [void]$sb.AppendLine("| $($t.Name) | $durStr |")
+              }
+            }
+            [void]$sb.AppendLine("")
+            $sb.ToString() >> $env:GITHUB_STEP_SUMMARY
+          }
+
+          # Generate per-category summaries
+          if (Test-Path "results/standalone") {
+            Write-CategorySummary "Garnet Standalone" "results/standalone"
+          }
+          if (Test-Path "results/cluster") {
+            Write-CategorySummary "Garnet Cluster" "results/cluster"
+          }
+          if (Test-Path "results/tsavorite") {
+            Write-CategorySummary "Tsavorite" "results/tsavorite"
+          }
+
   pipeline-success:
     name: Garnet CI (Complete)
     runs-on: ubuntu-latest
