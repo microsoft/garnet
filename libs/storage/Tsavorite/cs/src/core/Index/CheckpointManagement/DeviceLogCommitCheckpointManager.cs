@@ -95,7 +95,7 @@ namespace Tsavorite.core
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
             if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
 
@@ -171,7 +171,7 @@ namespace Tsavorite.core
         public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
-        public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
+        public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             var device = NextIndexCheckpointDevice(indexToken);
 
@@ -186,7 +186,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CleanupIndexCheckpoint(Guid indexToken)
+        public virtual bool PerformAutomaticCleanup => true;
+
+        /// <inheritdoc />
+        public void CleanupIndexCheckpoint(Guid indexToken)
         {
             if (removeOutdated)
             {
@@ -222,7 +225,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
+        public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -237,7 +240,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CleanupLogCheckpoint(Guid logToken)
+        public void CleanupLogCheckpoint(Guid logToken)
         {
             if (removeOutdated)
             {

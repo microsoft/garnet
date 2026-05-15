@@ -2170,6 +2170,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterSnapshotDataACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SNAPSHOT_DATA",
+                [DoClusterSnapshotDataAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoClusterSnapshotDataAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SNAPSHOT_DATA", "1", "2", "3", "4"]).ConfigureAwait(false);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterSetConfigEpochACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
