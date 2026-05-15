@@ -87,7 +87,7 @@ namespace Garnet.test.Resp
 
             // Re-auth
             _ = await c.ExecuteAsync("AUTH", "bar").ConfigureAwait(false);
-            
+
             // Should be authed again
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
         }
