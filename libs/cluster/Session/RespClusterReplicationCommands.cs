@@ -205,25 +205,6 @@ namespace Garnet.cluster
 
             LogPrimaryStream(physicalSublogIdx, previousAddress, currentAddress, nextAddress, logger);
 
-            // Mark this session as the active replication stream so that
-            // EnsureReplication does not trigger spurious resyncs while the
-            // AOF stream is idle (no data APPENDLOG to set the flag later).
-            IsReplicating = true;
-
-            // This is an initialization message
-            if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
-            {
-                if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
-                    replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
-                else
-                    throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            var sbRecord = parseState.GetArgSliceByRef(5);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
             var primaryId = currentConfig.LocalNodePrimaryId;
@@ -237,6 +218,25 @@ namespace Garnet.cluster
             }
             else
             {
+                // Mark this session as the active replication stream so that
+                // EnsureReplication does not trigger spurious resyncs while the
+                // AOF stream is idle (no data APPENDLOG to set the flag later).
+                IsReplicating = true;
+
+                // This is an initialization message
+                if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
+                {
+                    if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
+                        replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
+                    else
+                        throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
+
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                var sbRecord = parseState.GetArgSliceByRef(5);
                 ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
