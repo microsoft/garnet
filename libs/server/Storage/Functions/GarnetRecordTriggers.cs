@@ -141,16 +141,23 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
-            // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
-            // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
-            if (rangeIndexManager is null
-                || logRecord.Info.ValueIsObject
-                || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
-                return;
+            if (!logRecord.Info.ValueIsObject)
+            {
+                // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
+                // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
+                // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
+                if (rangeIndexManager is not null && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
+                    rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
+                }
 
-            RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
-            rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
+                // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
+                if(vectorManager is not null && !logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                }
+            }
         }
 
         /// <inheritdoc/>

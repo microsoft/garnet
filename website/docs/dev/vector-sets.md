@@ -141,7 +141,7 @@ This takes place in four steps:
   3. A background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
   4. The Vector Set context is marked available
 
-During recovery partially deleted Vector Sets are found by checking [`ContextMetadata`](#global-metadata).
+During recovery partially deleted Vector Sets are found by checking [`ContextMetadata`](#global-metadata).  Those whose index keys no longer are exist are rescheduled for cleanup, and those who still have an index key have their "mark for deletion"-bit cleared.
 
 `FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 

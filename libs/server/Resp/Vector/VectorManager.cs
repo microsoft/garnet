@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -74,6 +75,8 @@ namespace Garnet.server
 
         private readonly int dbId;
 
+        private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
@@ -103,6 +106,8 @@ namespace Garnet.server
             requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
+
+            recoveredIndexes = new();
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -157,11 +162,12 @@ namespace Garnet.server
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
-            // If we come up and contexts are marked for migration, that means the migration FAILED
-            // and we'd like those contexts back ASAP
             lock (this)
             {
+                // If we come up and contexts are marked for migration, that means the migration FAILED
+                // and we'd like those contexts back ASAP
                 var abandonedMigrations = contextMetadata.GetMigrating();
+                var needsUpdated = false;
 
                 if (abandonedMigrations != null)
                 {
@@ -171,12 +177,40 @@ namespace Garnet.server
                         contextMetadata.MarkCleaningUp(abandoned);
                     }
 
+                    needsUpdated = true;
+                }
+
+                // Any non-deleted records we recovered for contexts being deleted, we need to undo that
+                foreach (var (context, _) in recoveredIndexes)
+                {
+                    if (contextMetadata.IsCleaningUp(context))
+                    {
+                        contextMetadata.ClearIsCleaningUp(context);
+                        needsUpdated = true;
+                    }
+
+                    recoveredIndexes = null;
+                }
+
+                if (needsUpdated)
+                {
                     UpdateContextMetadata(ref ctx);
                 }
             }
 
             // Resume any cleanups we didn't complete before recovery
             _ = cleanupTaskChannel.Writer.TryWrite(null);
+        }
+
+        public void RecoveredVectorSetIndexKey(ref LogRecord record)
+        {
+            if (record.ValueSpan.Length != IndexSize)
+            {
+                return;
+            }
+
+            ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+            recoveredIndexes[context] = 0;
         }
 
         /// <inheritdoc/>

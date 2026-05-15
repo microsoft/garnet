@@ -247,6 +247,22 @@ namespace Garnet.server
                 Version++;
             }
 
+            public void ClearIsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "Should be in use if was marked for cleanup");
+                Debug.Assert((cleaningUp & mask) != 0, "About to clear cleanup when not marked for cleanup");
+                cleaningUp &= ~mask;
+
+                Version++;
+            }
+
             public void FinishedCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");

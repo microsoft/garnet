@@ -926,13 +926,18 @@ namespace Garnet.test
         public void InterruptedVectorSetDelete_BeforeMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
+
         [Test]
-        public void InterruptedVectorSetDelete_AfterMark()
+        public void InterruptedVectorSetDelete_DuringCleanup()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterDelete()
+        public void InterruptedVectorSetDelete_AfterCleanup()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+
+        [Test]
+        public void InterruptedVectorSetDelete_AfterMark()
+        => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
         private void InterruptedVectorSetDelete(ExceptionInjectionType faultLocation)
         {
@@ -1112,12 +1117,16 @@ namespace Garnet.test
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_DuringCleanup_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterDelete_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_AfterCleanup_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+
+        [Test]
+        public Task InteterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
         private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
         {

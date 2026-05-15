@@ -161,6 +161,8 @@ namespace Garnet.server
                         UpdateContextMetadata(ref delCtx);
                     }
 
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
+
                     foreach (var completion in completions)
                     {
                         try
@@ -173,11 +175,8 @@ namespace Garnet.server
                         }
                     }
 
-                    // Wake the cleanup task up if we made any changes
-                    if (needsUpdate)
-                    {
-                        _ = cleanupTaskChannel.Writer.TryWrite(null);
-                    }
+                    // Pump the cleanup task once we're done
+                    _ = cleanupTaskChannel.Writer.TryWrite(null);
                 }
                 catch (Exception e)
                 {
