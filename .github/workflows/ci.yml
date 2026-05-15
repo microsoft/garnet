@@ -414,6 +414,7 @@ jobs:
             [void]$sb.AppendLine("|----------|------:|--|")
             for ($i = 0; $i -lt $buckets.Count; $i++) {
               $barLen = [int][math]::Round(($counts[$i] / $maxCount) * 20)
+              if ($barLen -eq 0 -and $counts[$i] -gt 0) { $barLen = 1 }
               $bar = "█" * $barLen
               [void]$sb.AppendLine("| $($buckets[$i].Label) | $($counts[$i]) | $bar |")
             }
