@@ -205,6 +205,11 @@ namespace Garnet.cluster
 
             LogPrimaryStream(physicalSublogIdx, previousAddress, currentAddress, nextAddress, logger);
 
+            // Mark this session as the active replication stream so that
+            // EnsureReplication does not trigger spurious resyncs while the
+            // AOF stream is idle (no data APPENDLOG to set the flag later).
+            IsReplicating = true;
+
             // This is an initialization message
             if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
             {
@@ -232,8 +237,6 @@ namespace Garnet.cluster
             }
             else
             {
-                IsReplicating = true;
-
                 ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
