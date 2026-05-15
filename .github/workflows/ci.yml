@@ -344,7 +344,11 @@ jobs:
             $failedTests = @()
             foreach ($trx in $trxFiles) {
               $xml = [System.Xml.XmlDocument]::new()
-              $xml.Load($trx.FullName)
+              try { $xml.Load($trx.FullName) }
+              catch {
+                Write-Warning "Skipping malformed TRX file: $($trx.FullName) - $_"
+                continue
+              }
               $ns = @{ t = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010" }
               $results = Select-Xml -Xml $xml -XPath "//t:UnitTestResult" -Namespace $ns
               foreach ($r in $results) {
