@@ -153,7 +153,7 @@ namespace Garnet.server
                 }
 
                 // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
-                if(vectorManager is not null && !logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
                 {
                     vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
                 }
