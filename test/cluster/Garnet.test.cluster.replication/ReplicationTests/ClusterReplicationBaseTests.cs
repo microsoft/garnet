@@ -1716,5 +1716,56 @@ namespace Garnet.test.cluster
             var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
+
+        [Test, Order(32)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationHlogSegmentCleanupTest([Values] bool performRMW, [Values] bool disableObjects)
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var replica_count = 1;
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count,
+                tryRecover: true,
+                disableObjects: disableObjects,
+                lowMemory: true,
+                segmentSize: "4k",
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                deviceType: Tsavorite.core.DeviceType.Native,
+                sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            context.SimplePrimaryReplicaSetup();
+
+            var cconfig = context.clusterTestUtils.ClusterNodes(primaryIndex, context.logger);
+            var myself = cconfig.Nodes.First();
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+
+            var shards = context.clusterTestUtils.ClusterShards(primaryIndex, context.logger);
+            ClassicAssert.AreEqual(2, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+
+            context.kvPairs = [];
+            context.kvPairsObj = [];
+
+            // Populate with more iterations to accumulate multiple hlog segments and trigger segment cleanup
+            context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true, iter: 10));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSyncAsync(primaryIndex, primary_count, replica_count, disableObjects));
+
+            var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(timeout)))
+                Assert.Fail($"Task timeout - checkpointTask: {context.checkpointTask.Status}, attachReplicaTask: {attachReplicaTask.Status}");
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
+            context.SimpleValidateDB(disableObjects, replicaIndex);
+        }
     }
 }

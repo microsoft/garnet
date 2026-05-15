@@ -53,6 +53,7 @@ namespace Tsavorite.core
 
         internal void CleanupLogCheckpoint()
         {
+            if (!checkpointManager.PerformAutomaticCleanup) return;
             checkpointManager.CleanupLogCheckpoint(_hybridLogCheckpointToken);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
@@ -64,6 +65,7 @@ namespace Tsavorite.core
 
         internal void CleanupIndexCheckpoint()
         {
+            if (!checkpointManager.PerformAutomaticCleanup) return;
             checkpointManager.CleanupIndexCheckpoint(_indexCheckpointToken);
         }
 

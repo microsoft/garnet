@@ -16,13 +16,14 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
-        static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
-        static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
-        static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
-        static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
-        static ReadOnlySpan<byte> sync => "SYNC"u8;
-        static ReadOnlySpan<byte> advance_time => "ADVANCE_TIME"u8;
+        private static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        private static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        private static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        private static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        private static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
+        private static ReadOnlySpan<byte> sync => "SYNC"u8;
+        private static ReadOnlySpan<byte> advance_time => "ADVANCE_TIME"u8;
+        private static ReadOnlySpan<byte> snapshot_data => "SNAPSHOT_DATA"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -247,6 +248,87 @@ namespace Garnet.client
 
             //7
             while (!RespWriteUtils.TryWriteArrayItem(segmentId, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Send snapshot data (file segments or metadata) via unified CLUSTER SNAPSHOT_DATA command.
+        /// </summary>
+        /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
+        /// <param name="fileType">The checkpoint file type (including metadata variants).</param>
+        /// <param name="startAddress">The start address for this chunk (-1 for metadata).</param>
+        /// <param name="data">The data to send.</param>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
+        public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)
+        {
+            // The data payload must fit in the send buffer (as a RESP bulk string) after a flush,
+            // otherwise the TryWriteBulkString/Flush loop below will spin forever.
+            if (data.Length > networkBufferSettings.sendBufferSize)
+                ExceptionUtils.ThrowException(new InvalidOperationException(
+                    $"Snapshot data chunk ({data.Length} bytes) exceeds send buffer size ({networkBufferSettings.sendBufferSize} bytes)"));
+
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            byte* curr = offset;
+            int arraySize = 6;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(snapshot_data, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //3
+            while (!RespWriteUtils.TryWriteBulkString(fileTokenBytes.Span, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //4
+            while (!RespWriteUtils.TryWriteArrayItem(fileType, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //5
+            while (!RespWriteUtils.TryWriteArrayItem(startAddress, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //6
+            while (!RespWriteUtils.TryWriteBulkString(data, ref curr, end))
             {
                 Flush();
                 curr = offset;

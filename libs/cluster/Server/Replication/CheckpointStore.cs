@@ -193,6 +193,14 @@ namespace Garnet.cluster
                 curr = next;
             }
 
+            // Safely truncate hlog segments up to the oldest active checkpoint's begin address.
+            // This is safe because curr is the oldest entry still referenced by active readers.
+            if (curr != null)
+            {
+                var hlogSize = storeWrapper.store.GetLogFileSize(curr.metadata.storeHlogToken);
+                storeWrapper.store.Log.ShiftBeginAddress(hlogSize.hybridLogFileStartAddress, truncateLog: true);
+            }
+
             // Update head after delete
             head = curr;
             logger?.LogCheckpointEntry(LogLevel.Trace, "Current Head", head);

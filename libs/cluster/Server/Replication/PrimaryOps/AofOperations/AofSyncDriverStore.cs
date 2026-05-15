@@ -392,7 +392,7 @@ namespace Garnet.cluster
                     {
                         var syncDriver = syncDrivers[i];
                         Debug.Assert(syncDriver != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
-                        if (syncDriver.RemoteNodeId == rss.replicaNodeId)
+                        if (syncDriver.RemoteNodeId == rss.replicaSyncMetadata.originNodeId)
                         {
                             syncDrivers[i] = rss.AofSyncDriver;
                             syncDriver.Dispose();

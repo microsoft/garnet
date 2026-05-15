@@ -229,36 +229,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Process checkpoint metadata transmitted from primary during replica synchronization.
-        /// </summary>
-        /// <param name="fileToken">Checkpoint metadata token.</param>
-        /// <param name="fileType">Checkpoint metadata filetype.</param>
-        /// <param name="checkpointMetadata">Raw bytes of checkpoint metadata.</param>
-        /// <exception cref="Exception">Throws invalid type checkpoint metadata.</exception>
-        public void ProcessCheckpointMetadata(Guid fileToken, CheckpointFileType fileType, byte[] checkpointMetadata)
-        {
-            UpdateLastPrimarySyncTime();
-            var ckptManager = fileType switch
-            {
-                CheckpointFileType.STORE_SNAPSHOT or
-                CheckpointFileType.STORE_INDEX => clusterProvider.ReplicationLogCheckpointManager,
-                _ => throw new Exception($"Invalid checkpoint filetype {fileType}"),
-            };
-
-            switch (fileType)
-            {
-                case CheckpointFileType.STORE_SNAPSHOT:
-                    ckptManager.CommitLogCheckpointSendFromPrimary(fileToken, checkpointMetadata);
-                    break;
-                case CheckpointFileType.STORE_INDEX:
-                    ckptManager.CommitIndexCheckpoint(fileToken, checkpointMetadata);
-                    break;
-                default:
-                    throw new Exception($"Invalid checkpoint filetype {fileType}");
-            }
-        }
-
-        /// <summary>
         /// Check if device needs to be initialized with a specifi segment size depending on the checkpoint file type
         /// </summary>
         /// <param name="type">Checkpoint type</param>
@@ -280,7 +250,7 @@ namespace Garnet.cluster
         /// <param name="token"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        public IDevice GetInitializedSegmentFileDevice(Guid token, CheckpointFileType type)
+        public IDevice CreateCheckpointDevice(Guid token, CheckpointFileType type)
         {
             var device = type switch
             {

@@ -31,6 +31,13 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
+        /// Whether Tsavorite should perform internal cleanup of checkpoint snapshot files and hybrid log segments
+        /// during the checkpoint state machine. When false, cleanup of hlog segments is avoided and the external
+        /// layer is responsible for managing checkpoint lifecycle (e.g., cluster mode with reader-safe deletion).
+        /// </summary>
+        bool PerformAutomaticCleanup { get; }
+
+        /// <summary>
         /// Get current cookie
         /// </summary>
         /// <returns></returns>
