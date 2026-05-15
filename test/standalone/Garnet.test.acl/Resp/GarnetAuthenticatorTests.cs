@@ -91,7 +91,7 @@ namespace Garnet.test.Resp
             serverStarted = true;
 
             using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
+            await c.ConnectAsync().ConfigureAwait(false);
 
             // Initial command runs under default user
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
