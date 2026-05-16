@@ -114,7 +114,7 @@ namespace Garnet.test
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out var optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("4m", options.PageSize);
+            ClassicAssert.AreEqual("16m", options.PageSize);
             ClassicAssert.AreEqual("16g", options.LogMemorySize);
             var nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
             ClassicAssert.IsEmpty(nonDefaultOptions);
@@ -310,7 +310,7 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.PageSize == "16m");
             ClassicAssert.IsTrue(options.LogMemorySize == "16g");
             ClassicAssert.IsNull(options.AzureStorageServiceUri);
             ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
