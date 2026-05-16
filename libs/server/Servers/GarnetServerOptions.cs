@@ -447,7 +447,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each read cache page in bytes (rounds down to power of 2)
         /// </summary>
-        public string ReadCachePageSize = "1m";
+        public string ReadCachePageSize = "4m";
 
         /// <summary>
         /// Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.
