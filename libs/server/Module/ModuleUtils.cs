@@ -8,12 +8,124 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using System.Runtime.Loader;
 using Garnet.common;
 
 namespace Garnet.server
 {
     public class ModuleUtils
     {
+        /// <summary>
+        /// Loads only the assemblies that the module at <paramref name="modulePath"/> references (transitively)
+        /// from <paramref name="binPath"/>, instead of loading every DLL in the directory.
+        /// </summary>
+        /// <param name="modulePath">Full path to the module assembly file</param>
+        /// <param name="binPath">Directory containing the module and its dependencies</param>
+        /// <param name="allowedExtensionPaths">List of allowed paths for loading assemblies from</param>
+        /// <param name="allowUnsignedAssemblies">True if loading unsigned assemblies is allowed</param>
+        /// <param name="loadedAssemblies">Assemblies that were loaded</param>
+        /// <param name="errorMessage">Error message on failure</param>
+        /// <returns>True if all required dependencies were loaded successfully</returns>
+        public static bool LoadModuleDependencies(
+            string modulePath,
+            string binPath,
+            string[] allowedExtensionPaths,
+            bool allowUnsignedAssemblies,
+            out IEnumerable<Assembly> loadedAssemblies,
+            out ReadOnlySpan<byte> errorMessage)
+        {
+            loadedAssemblies = null;
+            errorMessage = default;
+
+            // Read referenced assembly names from the module without loading it into the runtime
+            AssemblyName[] referencedNames;
+            try
+            {
+                referencedNames = GetReferencedAssemblyNames(modulePath);
+            }
+            catch
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
+                return false;
+            }
+
+            if (referencedNames.Length == 0)
+                return true;
+
+            // Build a map of available DLLs in binPath (filename without extension → full path)
+            var availableFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var file in Directory.GetFiles(binPath, "*.dll", SearchOption.TopDirectoryOnly))
+                _ = availableFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+
+            // Collect the set of dependency files to load (transitive closure)
+            var alreadyLoaded = new HashSet<string>(
+                AssemblyLoadContext.Default.Assemblies
+                    .Where(a => !a.IsDynamic && a.GetName().Name != null)
+                    .Select(a => a.GetName().Name!),
+                StringComparer.Ordinal);
+
+            var toLoad = new List<string>();
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var queue = new Queue<AssemblyName>(referencedNames);
+
+            while (queue.TryDequeue(out var asmName))
+            {
+                var name = asmName.Name;
+                if (name == null || !visited.Add(name))
+                    continue;
+
+                // Skip if already loaded in the runtime or not available in binPath (it may be a framework assembly)
+                if (alreadyLoaded.Contains(name) || !availableFiles.TryGetValue(name, out var filePath))
+                    continue;
+
+                toLoad.Add(filePath);
+
+                // Walk transitive dependencies
+                try
+                {
+                    foreach (var t in GetReferencedAssemblyNames(filePath))
+                        queue.Enqueue(t);
+                }
+                catch
+                {
+                    // If we can't read metadata, we'll still try to load the file
+                }
+            }
+
+            if (toLoad.Count == 0)
+                return true;
+
+            return LoadAssemblies(toLoad, allowedExtensionPaths, allowUnsignedAssemblies,
+                out loadedAssemblies, out errorMessage, ignoreAssemblyLoadErrors: true, ignorePathCheckWhenUndefined: true);
+        }
+
+        /// <summary>
+        /// Reads referenced assembly names from an assembly file using metadata, without loading it into the runtime.
+        /// </summary>
+        private static AssemblyName[] GetReferencedAssemblyNames(string assemblyPath)
+        {
+            using var fs = File.OpenRead(assemblyPath);
+            using var peReader = new PEReader(fs);
+
+            if (!peReader.HasMetadata)
+                return [];
+
+            var metadataReader = peReader.GetMetadataReader();
+            var refs = new List<AssemblyName>();
+
+            foreach (var refHandle in metadataReader.AssemblyReferences)
+            {
+                var asmRef = metadataReader.GetAssemblyReference(refHandle);
+                refs.Add(new AssemblyName
+                { 
+                    Name = metadataReader.GetString(asmRef.Name),
+                    Version = asmRef.Version
+                });
+            }
+
+            return [.. refs];
+        }
+
         /// <summary>
         /// Load assemblies from specified binary paths
         /// </summary>

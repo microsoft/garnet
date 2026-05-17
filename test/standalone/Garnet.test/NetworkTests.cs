@@ -170,7 +170,7 @@ namespace Garnet.test
             // with the shared server from SetUp, and so TearDown doesn't hang.
             var testDir = TestUtils.MethodTestDir + "_injection";
             TestUtils.DeleteDirectory(testDir, wait: true);
-            var endpoint = new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort + 1000);
+            var endpoint = new IPEndPoint(IPAddress.Loopback, (int)TestPortAssignment.GarnetTestAlternate);
             var testServer = TestUtils.CreateGarnetServer(testDir, enableTLS: true,
                 endpoints: [endpoint]);
             testServer.Start();

@@ -92,7 +92,7 @@ namespace Garnet.test.cluster
 
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
-            socket.Connect(IPAddress.Loopback, 7000);
+            socket.Connect(IPAddress.Loopback, ClusterTestContext.Port);
 
             var clusterCMD = $"$7\r\ncluster\r\n${subcommand.Length}\r\n{subcommand}\r\n";
             var errorCmd = $"cluster|{subcommand.ToLowerInvariant()}";
@@ -127,7 +127,7 @@ namespace Garnet.test.cluster
             context.CreateInstances(1);
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
-            socket.Connect(IPAddress.Loopback, 7000);
+            socket.Connect(IPAddress.Loopback, ClusterTestContext.Port);
 
             var slots = Enumerable.Range(0, 8192).ToList();
             var packet = $"*{2 + slots.Count}\r\n$7\r\ncluster\r\n$8\r\naddslots\r\n";

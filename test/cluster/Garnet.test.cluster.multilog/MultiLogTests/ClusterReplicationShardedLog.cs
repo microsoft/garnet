@@ -285,7 +285,7 @@ namespace Garnet.test.cluster.MultiLogTests
             var targetIndex = upgradeFromSingleLog ? multiLogNodeIndex : singleLogNodeIndex;
 
             context.nodes = new GarnetServer[nodes_count];
-            context.endpoints = TestUtils.GetShardEndPoints(nodes_count, IPAddress.Loopback, 7000);
+            context.endpoints = TestUtils.GetShardEndPoints(nodes_count, IPAddress.Loopback, ClusterTestContext.Port);
 
             context.clusterTestUtils = new ClusterTestUtils(
                 context.endpoints,

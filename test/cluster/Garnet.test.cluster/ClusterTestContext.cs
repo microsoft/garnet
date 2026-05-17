@@ -50,7 +50,7 @@ namespace Garnet.test.cluster
         public ILogger logger;
 
         public int defaultShards = 3;
-        public static int Port = 7000;
+        public static int Port = (int)ClusterPortAssignment.ClusterTest;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
 
         public Random r = new();
         public ManualResetEventSlim waiter;

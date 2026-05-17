@@ -79,7 +79,8 @@ namespace Garnet.test
     /// </summary>
     public enum TestPortAssignment
     {
-        GarnetTest = 33200,
+        GarnetTest = 33278,
+        GarnetTestAlternate = 34278,    // Alternate port for GarnetTest; used by NetworkTests.cs
         GarnetTestAcl = 34300,
         GarnetTestCollections = 34400,
         GarnetTestComplexString = 34500,
@@ -91,7 +92,7 @@ namespace Garnet.test
 
     internal static class TestUtils
     {
-        public static int TestPort = (int)TestPortAssignment.GarnetTest;
+        public static int TestPort = (int)TestPortAssignment.GarnetTest;    // No OneTimeSetUp needed for "Garnet.test" to set this
 
         /// <summary>
         /// Test server end point
@@ -1029,7 +1030,7 @@ namespace Garnet.test
         internal static string UnitTestWorkingDir()
         {
             // Include process id to avoid conflicts between parallel test runs, and remove the prefix to keep the length short.
-            var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName.Split("Garnet.test")}_{TestContext.CurrentContext.Test.MethodName}";
+            var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName.Split("Garnet.test")[0]}_{TestContext.CurrentContext.Test.MethodName}";
 
             // Incorporate arguments (as a hash code) so different runs of the same method get different folders
             //

@@ -525,43 +525,34 @@ namespace Garnet.server
         private bool NetworkModuleLoad(CustomCommandManager customCommandManager)
         {
             if (parseState.Count < 1) // At least module path is required
-            {
                 return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
-            }
-
             if (!CanRunModule())
-            {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
-            }
 
-            // Read path to module file
+            // Read path to module file and module args
             var modulePath = parseState.GetArgSliceByRef(0).ToString();
-
-            // Read module args
             var moduleArgs = new string[parseState.Count - 1];
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 
-            var errorMsg = ReadOnlySpan<byte>.Empty;
-
+            // Load only the referenced dependencies from the module directory, not all assemblies.
+            // This avoids loading hundreds of unrelated DLLs that may be present in binPath.
+            ReadOnlySpan<byte> errorMsg;
             var binPath = Path.GetDirectoryName(modulePath);
-            var moduleFileName = Path.GetFileName(modulePath);
-
-            // Load dependencies from the module path
-            if (Directory.Exists(binPath) && !ModuleUtils.LoadAssemblies([binPath],
-                    storeWrapper.serverOptions.ExtensionBinPaths,
-                    storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out errorMsg, [moduleFileName],
-                    SearchOption.TopDirectoryOnly, true))
+            if (Directory.Exists(binPath))
             {
-                if (!errorMsg.IsEmpty)
+                if (!ModuleUtils.LoadModuleDependencies(modulePath, binPath,
+                        storeWrapper.serverOptions.ExtensionBinPaths,
+                        storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies,
+                        out _, out errorMsg))
                 {
-                    WriteError(errorMsg);
+                    if (!errorMsg.IsEmpty)
+                        WriteError(errorMsg);
+                    return true;
                 }
-
-                return true;
             }
 
-            // Load the module path
+            // Load the module itself
             if (ModuleUtils.LoadAssemblies([modulePath], storeWrapper.serverOptions.ExtensionBinPaths,
                 storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out errorMsg))
             {
@@ -577,10 +568,7 @@ namespace Garnet.server
             }
 
             if (!errorMsg.IsEmpty)
-            {
                 WriteError(errorMsg);
-            }
-
             return true;
         }
 
