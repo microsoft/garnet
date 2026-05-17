@@ -214,8 +214,6 @@ namespace Tsavorite.test
             Object
         }
 
-        public enum CompletionSyncMode { Sync, Async }
-
         public enum ReadCopyDestination { Tail, ReadCache }
 
         public enum FlushMode { NoFlush, ReadOnly, OnDisk }

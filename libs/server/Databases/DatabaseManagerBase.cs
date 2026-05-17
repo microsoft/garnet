@@ -35,7 +35,7 @@ namespace Garnet.server
         public abstract void ResumeCheckpoints(int dbId);
 
         /// <inheritdoc/>
-        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
+        public abstract ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
         public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
@@ -57,7 +57,7 @@ namespace Garnet.server
         public abstract Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public abstract void RecoverAOF();
+        public abstract ValueTask RecoverAOFAsync();
 
         /// <inheritdoc/>
         public abstract AofAddress ReplayAOF(AofAddress untilAddress);
@@ -164,18 +164,17 @@ namespace Garnet.server
         /// Recover single database from checkpoint
         /// </summary>
         /// <param name="db">Database to recover</param>
-        /// <param name="storeVersion">Store version</param>
-        protected void RecoverDatabaseCheckpoint(GarnetDatabase db, out long storeVersion)
+        protected async ValueTask<long> RecoverDatabaseCheckpointAsync(GarnetDatabase db)
         {
-            storeVersion = 0;
-
-            storeVersion = db.Store.Recover();
+            var storeVersion = await db.Store.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
             if (storeVersion > 0)
             {
                 db.LastSaveTime = DateTimeOffset.UtcNow;
             }
+
+            return storeVersion;
         }
 
         /// <summary>
@@ -227,11 +226,11 @@ namespace Garnet.server
         /// Recover a single database from AOF
         /// </summary>
         /// <param name="db">Database to recover</param>
-        protected void RecoverDatabaseAOF(GarnetDatabase db)
+        protected async ValueTask RecoverDatabaseAOFAsync(GarnetDatabase db)
         {
             if (db.AppendOnlyFile == null) return;
 
-            db.AppendOnlyFile.Log.Recover();
+            await db.AppendOnlyFile.Log.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
                 db.AppendOnlyFile.Log.BeginAddress, db.AppendOnlyFile.Log.TailAddress, db.Id);
         }

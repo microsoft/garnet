@@ -270,7 +270,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressUC([Values] TestDeviceType deviceType, [Values] CompletionSyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -310,16 +310,9 @@ namespace Tsavorite.test.UnsafeContext
                         ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = uContext.CompletePending(true);
-                }
-                else
-                {
-                    uContext.EndUnsafe();
-                    await uContext.CompletePendingAsync().ConfigureAwait(false);
-                    uContext.BeginUnsafe();
-                }
+                uContext.EndUnsafe();
+                await uContext.CompletePendingAsync().ConfigureAwait(false);
+                uContext.BeginUnsafe();
 
                 // Shift head and retry - should not find in main memory now
                 store.Log.FlushAndEvict(true);
@@ -336,17 +329,9 @@ namespace Tsavorite.test.UnsafeContext
                     ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
-                CompletedOutputIterator<InputStruct, OutputStruct, Empty> outputs;
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = uContext.CompletePendingWithOutputs(out outputs, wait: true);
-                }
-                else
-                {
-                    uContext.EndUnsafe();
-                    outputs = await uContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
-                    uContext.BeginUnsafe();
-                }
+                uContext.EndUnsafe();
+                var outputs = await uContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
+                uContext.BeginUnsafe();
 
                 int count = 0;
                 while (outputs.Next())

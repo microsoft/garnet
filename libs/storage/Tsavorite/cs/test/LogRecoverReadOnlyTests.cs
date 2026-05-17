@@ -52,15 +52,15 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
+        public async Task RecoverReadOnlyCheck1()
         {
             using var device = Devices.CreateLogDevice(deviceName);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, TryRecoverLatest = false };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
+            using var log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             await Task.WhenAll(ProducerAsync(log, cts),
                                CommitterAsync(log, cts.Token),
-                               ReadOnlyConsumerAsync(deviceName, isAsync, cts.Token)).ConfigureAwait(false);
+                               ReadOnlyConsumerAsync(deviceName, cts.Token)).ConfigureAwait(false);
         }
 
         private async Task ProducerAsync(TsavoriteLog log, CancellationTokenSource cts)
@@ -90,11 +90,11 @@ namespace Tsavorite.test.recovery
 
         // This creates a separate TsavoriteLog over the same log file, using RecoverReadOnly to continuously update
         // to the primary TsavoriteLog's commits.
-        private async Task ReadOnlyConsumerAsync(string deviceName, bool isAsync, CancellationToken cancellationToken)
+        private async Task ReadOnlyConsumerAsync(string deviceName, CancellationToken cancellationToken)
         {
             using var device = Devices.CreateLogDevice(deviceName);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false) : new TsavoriteLog(logSettings);
+            using var log = await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false);
 
             var _ = BeginRecoverAsyncLoop();
 
@@ -129,12 +129,7 @@ namespace Tsavorite.test.recovery
                     {
                         try
                         {
-                            if (isAsync)
-                            {
-                                await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
-                            }
-                            else
-                                log.RecoverReadOnly();
+                            await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
                             break;
                         }
                         catch

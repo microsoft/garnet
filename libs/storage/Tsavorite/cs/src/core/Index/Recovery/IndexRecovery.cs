@@ -21,16 +21,6 @@ namespace Tsavorite.core
         public ICheckpointManager CheckpointManager => checkpointManager;
 
         // Derived class exposed API
-        internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
-        {
-            ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: false);
-            overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);
-
-            // Wait until reading is complete
-            IsFuzzyIndexRecoveryComplete(true);
-            FinalizeMainIndexRecovery(info);
-        }
-
         internal async ValueTask RecoverFuzzyIndexAsync(IndexCheckpointInfo info, CancellationToken cancellationToken)
         {
             ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
@@ -70,15 +60,6 @@ namespace Tsavorite.core
         }
 
         // Test-only
-        internal void RecoverFuzzyIndex(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes)
-        {
-            BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
-            var sectorSize = device.SectorSize;
-            var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            overflowBucketsAllocator.Recover(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes);
-        }
-
-        // Test-only
         internal async ValueTask RecoverFuzzyIndexAsync(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes, CancellationToken cancellationToken)
         {
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes, isAsync: true);
@@ -86,13 +67,6 @@ namespace Tsavorite.core
             var sectorSize = device.SectorSize;
             var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
             await overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken).ConfigureAwait(false);
-        }
-
-        internal bool IsFuzzyIndexRecoveryComplete(bool waitUntilComplete = false)
-        {
-            bool completed1 = IsMainIndexRecoveryCompleted(waitUntilComplete);
-            bool completed2 = overflowBucketsAllocator.IsRecoveryCompleted(waitUntilComplete);
-            return completed1 && completed2;
         }
 
         /// <summary>
@@ -129,17 +103,6 @@ namespace Tsavorite.core
                 numBytesRead += chunkSize;
             }
             Debug.Assert(numBytesRead == num_bytes);
-        }
-
-        private bool IsMainIndexRecoveryCompleted(bool waitUntilComplete = false)
-        {
-            bool completed = recoveryCountdown.IsCompleted;
-            if (!completed && waitUntilComplete)
-            {
-                recoveryCountdown.Wait();
-                return true;
-            }
-            return completed;
         }
 
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap)

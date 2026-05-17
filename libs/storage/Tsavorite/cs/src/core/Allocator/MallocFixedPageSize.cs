@@ -375,18 +375,6 @@ namespace Tsavorite.core
         /// <param name="device"></param>
         /// <param name="buckets"></param>
         /// <param name="numBytes"></param>
-        /// <param name="offset"></param>
-        public void Recover(IDevice device, ulong offset, int buckets, ulong numBytes)
-        {
-            BeginRecovery(device, offset, buckets, numBytes, out _);
-        }
-
-        /// <summary>
-        /// Recover
-        /// </summary>
-        /// <param name="device"></param>
-        /// <param name="buckets"></param>
-        /// <param name="numBytes"></param>
         /// <param name="cancellationToken"></param>
         /// <param name="offset"></param>
         public async ValueTask<ulong> RecoverAsync(IDevice device, ulong offset, int buckets, ulong numBytes, CancellationToken cancellationToken)
@@ -394,22 +382,6 @@ namespace Tsavorite.core
             BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
             return numBytesRead;
-        }
-
-        /// <summary>
-        /// Check if recovery complete
-        /// </summary>
-        /// <param name="waitUntilComplete"></param>
-        /// <returns></returns>
-        public bool IsRecoveryCompleted(bool waitUntilComplete = false)
-        {
-            bool completed = recoveryCountdown.IsCompleted;
-            if (!completed && waitUntilComplete)
-            {
-                recoveryCountdown.Wait();
-                return true;
-            }
-            return completed;
         }
 
         // Implementation of asynchronous recovery

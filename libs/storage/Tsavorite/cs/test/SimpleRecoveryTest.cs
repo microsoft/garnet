@@ -84,14 +84,14 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask PageBlobSimpleRecoveryTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
+            [Values] bool testCommitCookie)
         {
             IgnoreIfNotRunningAzureTests();
             checkpointManager = new CheckpointManagerWithCookie(
                 testCommitCookie,
                 TestUtils.AzureStorageNamedDeviceFactoryCreator,
                 new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie).ConfigureAwait(false);
+            await SimpleRecoveryTest1_Worker(checkpointType, testCommitCookie).ConfigureAwait(false);
             checkpointManager.PurgeAll();
         }
 
@@ -102,18 +102,17 @@ namespace Tsavorite.test.recovery.sumstore
 
         public async ValueTask LocalDeviceSimpleRecoveryTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode,
             [Values] bool testCommitCookie)
         {
             checkpointManager = new CheckpointManagerWithCookie(
                 testCommitCookie,
                 new LocalStorageNamedDeviceFactoryCreator(),
                 new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "chkpt")));
-            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie).ConfigureAwait(false);
+            await SimpleRecoveryTest1_Worker(checkpointType, testCommitCookie).ConfigureAwait(false);
             checkpointManager.PurgeAll();
         }
 
-        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, CompletionSyncMode completionSyncMode, bool testCommitCookie)
+        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool testCommitCookie)
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
@@ -155,16 +154,10 @@ namespace Tsavorite.test.recovery.sumstore
             }
 
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
-            else
-                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                _ = store2.Recover(token);
-            else
-                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
+            _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             if (testCommitCookie)
                 ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(checkpointManager.Cookie));
@@ -197,8 +190,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask SimpleRecoveryTest2(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode)
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             checkpointManager = new CheckpointManagerWithCookie(false, new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
@@ -238,13 +230,10 @@ namespace Tsavorite.test.recovery.sumstore
                 _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
-            store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                _ = store2.Recover(token);
-            else
-                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
+            _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             var session2 = store2.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session1.BasicContext;
@@ -263,7 +252,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask ShouldRecoverBeginAddress([Values] CompletionSyncMode completionSyncMode)
+        public async ValueTask ShouldRecoverBeginAddress()
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
             checkpointDir = Path.Join(MethodTestDir, "checkpoints6");
@@ -308,23 +297,17 @@ namespace Tsavorite.test.recovery.sumstore
             store1.Log.ShiftBeginAddress(address);
 
             _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
-            else
-                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                _ = store2.Recover(token);
-            else
-                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
+            _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(address, store2.Log.BeginAddress);
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleReadAndUpdateInfoTest([Values] CompletionSyncMode completionSyncMode)
+        public async ValueTask SimpleReadAndUpdateInfoTest()
         {
             checkpointManager = new CheckpointManagerWithCookie(false, new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
@@ -372,16 +355,10 @@ namespace Tsavorite.test.recovery.sumstore
                 }
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
-            else
-                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
-            if (completionSyncMode == CompletionSyncMode.Sync)
-                _ = store2.Recover(token);
-            else
-                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
+            _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             var session2 = store2.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(functions2);
             var bContext2 = session2.BasicContext;

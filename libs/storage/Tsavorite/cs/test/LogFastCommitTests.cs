@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -25,7 +26,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void TsavoriteLogSimpleFastCommitTest([Values] TestUtils.TestDeviceType deviceType)
+        public async Task TsavoriteLogSimpleFastCommitTest([Values] TestUtils.TestDeviceType deviceType)
         {
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
@@ -72,13 +73,13 @@ namespace Tsavorite.test
 
             // Recovery should still work
             var recoveredLog = new TsavoriteLog(logSettings);
-            recoveredLog.Recover(1);
+            await recoveredLog.RecoverAsync(1).ConfigureAwait(false);
             ClassicAssert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
             ClassicAssert.AreEqual(commit1Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
 
             recoveredLog = new TsavoriteLog(logSettings);
-            recoveredLog.Recover(2);
+            await recoveredLog.RecoverAsync(2).ConfigureAwait(false);
             ClassicAssert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
             ClassicAssert.AreEqual(commit2Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();

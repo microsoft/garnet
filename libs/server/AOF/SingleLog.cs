@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -39,7 +40,7 @@ namespace Garnet.server
 
         public AofAddress MemorySizeBytes => AofAddress.Create(1, value: log.MemorySizeBytes);
 
-        public void Recover() => log.Recover();
+        public async ValueTask RecoverAsync() => await log.RecoverAsync().ConfigureAwait(false);
         public void Reset() => log.Reset();
 
         public void Dispose()

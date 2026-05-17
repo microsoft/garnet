@@ -39,8 +39,7 @@ namespace Tsavorite.test.recovery.objects
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest3(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values(1000)] int iterations,
-            [Values] CompletionSyncMode syncMode)
+            [Values(1000)] int iterations)
         {
             this.iterations = iterations;
             Prepare(out IDevice log, out IDevice objlog, out var store);
@@ -59,10 +58,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 Prepare(out log, out objlog, out store);
 
-                if (syncMode == CompletionSyncMode.Async)
-                    _ = await store.RecoverAsync(default, item.Item2).ConfigureAwait(false);
-                else
-                    _ = store.Recover(default, item.Item2);
+                _ = await store.RecoverAsync(default, item.Item2).ConfigureAwait(false);
 
                 var session2 = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
                 Read(session2, false, item.Item1);

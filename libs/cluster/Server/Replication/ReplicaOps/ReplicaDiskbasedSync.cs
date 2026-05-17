@@ -176,7 +176,7 @@ namespace Garnet.cluster
                     cEntry = GetLatestCheckpointEntryFromDisk();
                     logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTaskAsync), cEntry);
 
-                    storeWrapper.RecoverAOF();
+                    await storeWrapper.RecoverAOFAsync().ConfigureAwait(false);
                     logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
 
                     var beginAddress = storeWrapper.appendOnlyFile.Log.BeginAddress;
@@ -339,10 +339,10 @@ namespace Garnet.cluster
                     remoteCheckpoint.metadata.storeIndexToken,
                     remoteCheckpoint.metadata.storeHlogToken);
 
-                storeWrapper.RecoverCheckpoint(
+                AsyncUtils.BlockingWait(storeWrapper.RecoverCheckpointAsync(
                     replicaRecover: true,
                     recoverStoreFromToken,
-                    remoteCheckpoint.metadata);
+                    remoteCheckpoint.metadata));
 
                 if (replayAOFMap > 0)
                 {

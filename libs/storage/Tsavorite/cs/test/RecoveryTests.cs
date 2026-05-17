@@ -84,7 +84,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestSeparateCheckpoint([Values] CompletionSyncMode syncMode, [Values] TestDeviceType deviceType)
+        public async ValueTask RecoveryTestSeparateCheckpoint([Values] TestDeviceType deviceType)
         {
             Setup(deviceType);
             Populate(SeparateCheckpointAction);
@@ -93,7 +93,7 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 if (i >= indexTokens.Count) break;
                 PrepareToRecover(deviceType);
-                await RecoverAndTest(i, syncMode == CompletionSyncMode.Async).ConfigureAwait(false);
+                await RecoverAndTest(i).ConfigureAwait(false);
             }
         }
 
@@ -101,7 +101,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public async ValueTask RecoveryTestFullCheckpoint([Values] CompletionSyncMode syncMode, [Values] TestDeviceType deviceType)
+        public async ValueTask RecoveryTestFullCheckpoint([Values] TestDeviceType deviceType)
         {
             Setup(deviceType);
             Populate(FullCheckpointAction);
@@ -109,7 +109,7 @@ namespace Tsavorite.test.recovery.sumstore
             for (var i = 0; i < logTokens.Count; i++)
             {
                 PrepareToRecover(deviceType);
-                await RecoverAndTest(i, syncMode == CompletionSyncMode.Async).ConfigureAwait(false);
+                await RecoverAndTest(i).ConfigureAwait(false);
             }
         }
 
@@ -174,16 +174,13 @@ namespace Tsavorite.test.recovery.sumstore
             _ = bContext.CompletePending(true);
         }
 
-        private async ValueTask RecoverAndTest(int tokenIndex, bool isAsync)
+        private async ValueTask RecoverAndTest(int tokenIndex)
         {
             var logToken = logTokens[tokenIndex];
             var indexToken = indexTokens[tokenIndex];
 
             // Recover
-            if (isAsync)
-                _ = await store.RecoverAsync(indexToken, logToken).ConfigureAwait(false);
-            else
-                _ = store.Recover(indexToken, logToken);
+            _ = await store.RecoverAsync(indexToken, logToken).ConfigureAwait(false);
 
             // Create array for reading
             var inputArray = GC.AllocateArray<AdInput>((int)NumUniqueKeys, pinned: true);
@@ -297,32 +294,32 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestByAllocatorType([Values] AllocatorType allocatorType, [Values] CompletionSyncMode syncMode)
+        public async ValueTask RecoveryTestByAllocatorType([Values] AllocatorType allocatorType)
         {
-            await TestDriver(allocatorType, syncMode == CompletionSyncMode.Async).ConfigureAwait(false);
+            await TestDriver(allocatorType).ConfigureAwait(false);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestFailOnSectorSize([Values] AllocatorType allocatorType, [Values] CompletionSyncMode syncMode)
+        public async ValueTask RecoveryTestFailOnSectorSize([Values] AllocatorType allocatorType)
         {
             smallSector = true;
-            await TestDriver(allocatorType, syncMode == CompletionSyncMode.Async).ConfigureAwait(false);
+            await TestDriver(allocatorType).ConfigureAwait(false);
         }
 
-        private async ValueTask TestDriver(AllocatorType allocatorType, [Values] bool isAsync)
+        private async ValueTask TestDriver(AllocatorType allocatorType)
         {
             var task = allocatorType switch
             {
                 AllocatorType.SpanByte => RunTest<SpanByteStoreFunctions, StructAllocator>(allocatorType,
                                                 () => StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance),
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
-                                                Populate, Read, Recover, isAsync),
+                                                Populate, Read, Recover),
                 AllocatorType.Object => RunTest<ClassStoreFunctions, ClassAllocator>(allocatorType,
                                                 () => StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
-                                                Populate, Read, Recover, isAsync),
+                                                Populate, Read, Recover),
                 _ => throw new ApplicationException("Unknown allocator type"),
             };
             ;
@@ -333,8 +330,7 @@ namespace Tsavorite.test.recovery.sumstore
                 Func<TStoreFunctions> storeFunctionsCreator, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorCreator,
                 Action<TsavoriteKV<TStoreFunctions, TAllocator>> populateAction,
                 Action<TsavoriteKV<TStoreFunctions, TAllocator>> readAction,
-                Func<TsavoriteKV<TStoreFunctions, TAllocator>, bool, ValueTask> recoverFunc,
-                bool isAsync)
+                Func<TsavoriteKV<TStoreFunctions, TAllocator>, ValueTask> recoverFunc)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -343,18 +339,18 @@ namespace Tsavorite.test.recovery.sumstore
             readAction(store);
             if (smallSector)
             {
-                _ = Assert.ThrowsAsync<TsavoriteException>(async () => await Checkpoint(store, isAsync).ConfigureAwait(false));
+                _ = Assert.ThrowsAsync<TsavoriteException>(async () => await Checkpoint(store, isAsync: true).ConfigureAwait(false));
                 Assert.Pass("Verified expected exception; the test cannot continue, so exiting early with success");
             }
             else
-                await Checkpoint(store, isAsync).ConfigureAwait(false);
+                await Checkpoint(store, isAsync: true).ConfigureAwait(false);
 
             ClassicAssert.AreNotEqual(Guid.Empty, logToken);
             ClassicAssert.AreNotEqual(Guid.Empty, indexToken);
             readAction(store);
 
             store = PrepareToRecover(allocatorType, storeFunctionsCreator, allocatorCreator);
-            await recoverFunc(store, isAsync).ConfigureAwait(false);
+            await recoverFunc(store).ConfigureAwait(false);
             readAction(store);
         }
 
@@ -421,9 +417,9 @@ namespace Tsavorite.test.recovery.sumstore
             indexToken = logToken;
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByteStoreFunctions, StructAllocator> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByteStoreFunctions, StructAllocator> store)
         {
-            await Recover(store, isAsync).ConfigureAwait(false);
+            await Recover(store).ConfigureAwait(false);
             Read(store);
         }
 
@@ -450,9 +446,9 @@ namespace Tsavorite.test.recovery.sumstore
             }
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
         {
-            await Recover(store, isAsync).ConfigureAwait(false);
+            await Recover(store).ConfigureAwait(false);
             Read(store);
         }
 
@@ -471,14 +467,11 @@ namespace Tsavorite.test.recovery.sumstore
             }
         }
 
-        private async ValueTask Recover<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, bool isAsync = false)
+        private async ValueTask Recover<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            if (isAsync)
-                _ = await store.RecoverAsync(indexToken, logToken).ConfigureAwait(false);
-            else
-                _ = store.Recover(indexToken, logToken);
+            _ = await store.RecoverAsync(indexToken, logToken).ConfigureAwait(false);
         }
     }
 }

@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
@@ -44,7 +45,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public void ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
+        public async Task ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
         {
             var copyOnWrite = new FunctionsCopyOnWrite();
             ClientSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
@@ -101,7 +102,7 @@ namespace Tsavorite.test
                 ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 _ = store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
-                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
 
                 session.Dispose();
                 session = null;
@@ -118,7 +119,7 @@ namespace Tsavorite.test
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
-                _ = store.Recover(token);
+                _ = await store.RecoverAsync(token).ConfigureAwait(false);
                 session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 bContext = session.BasicContext;
 

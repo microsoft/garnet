@@ -509,21 +509,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Main recover method for replication
         /// </summary>
-        public void Recover()
+        public async ValueTask RecoverAsync()
         {
             var nodeRole = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
 
             switch (nodeRole)
             {
                 case NodeRole.PRIMARY:
-                    RecoverCheckpointAndAOF();
+                    await RecoverCheckpointAndAOFAsync().ConfigureAwait(false);
                     break;
                 case NodeRole.REPLICA:
                     // If configured, load from disk - otherwise wait to connect with a Primary
                     if (clusterProvider.serverOptions.ClusterReplicaResumeWithData)
-                    {
-                        RecoverCheckpointAndAOF();
-                    }
+                        await RecoverCheckpointAndAOFAsync().ConfigureAwait(false);
 
                     break;
                 default:
@@ -535,10 +533,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Recover whatever is available from <see cref="storeWrapper"/>.
         /// </summary>
-        private void RecoverCheckpointAndAOF()
+        private async ValueTask RecoverCheckpointAndAOFAsync()
         {
-            storeWrapper.RecoverCheckpoint();
-            storeWrapper.RecoverAOF();
+            await storeWrapper.RecoverCheckpointAsync().ConfigureAwait(false);
+            await storeWrapper.RecoverAOFAsync().ConfigureAwait(false);
             if (clusterProvider.serverOptions.EnableAOF)
             {
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
@@ -555,7 +553,7 @@ namespace Garnet.cluster
 
             // First recover and then load latest checkpoint info in-memory
             if (!InitializeCheckpointStore())
-                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(RecoverCheckpointAndAOF));
+                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(RecoverCheckpointAndAOFAsync));
         }
 
         /// <summary>

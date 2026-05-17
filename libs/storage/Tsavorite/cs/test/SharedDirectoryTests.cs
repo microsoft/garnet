@@ -54,7 +54,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public async ValueTask SharedLogDirectory([Values] bool isAsync)
+        public async ValueTask SharedLogDirectory()
         {
             original.Initialize(Path.Join(TestUtils.MethodTestDir, "OriginalCheckpoint"), sharedLogDirectory);
             ClassicAssert.IsTrue(IsDirectoryEmpty(sharedLogDirectory)); // sanity check
@@ -62,7 +62,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Take checkpoint from original to start the clone from
             ClassicAssert.IsTrue(original.Store.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
-            original.Store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            await original.Store.CompleteCheckpointAsync().ConfigureAwait(false);
 
             // Sanity check against original
             ClassicAssert.IsFalse(IsDirectoryEmpty(sharedLogDirectory));
@@ -75,10 +75,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Recover from original checkpoint
             clone.Initialize(cloneCheckpointDirectory, sharedLogDirectory, populateLogHandles: true);
 
-            if (isAsync)
-                _ = await clone.Store.RecoverAsync(checkpointGuid).ConfigureAwait(false);
-            else
-                _ = clone.Store.Recover(checkpointGuid);
+            _ = await clone.Store.RecoverAsync(checkpointGuid).ConfigureAwait(false);
 
             // Both sessions should work concurrently
             Test(original, checkpointGuid);

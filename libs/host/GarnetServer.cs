@@ -409,7 +409,7 @@ namespace Garnet
         /// </summary>
         public void Start()
         {
-            Provider.Recover();
+            AsyncUtils.BlockingWait(Provider.RecoverAsync());
             for (var i = 0; i < servers.Length; i++)
                 servers[i].Start();
             Provider.Start();

@@ -41,8 +41,7 @@ namespace Tsavorite.test.recovery.objects
 
         public async ValueTask ObjectRecoveryTest2(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Range(300, 700, 300)] int numberOfRecords,
-            [Values] CompletionSyncMode syncMode)
+            [Range(300, 700, 300)] int numberOfRecords)
         {
             this.numberOfRecords = numberOfRecords;
 
@@ -56,7 +55,7 @@ namespace Tsavorite.test.recovery.objects
                 session.Dispose();
 
                 _ = store.TryInitiateFullCheckpoint(out var guid, checkpointType);  // guid is useful for debugging, but not otherwise used in this test
-                await store.CompleteCheckpointAsync();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
 
                 Destroy(log, objlog, store);
             }
@@ -65,10 +64,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 Prepare(out var log, out var objlog, out var store);
 
-                if (syncMode == CompletionSyncMode.Async)
-                    _ = await store.RecoverAsync().ConfigureAwait(false);
-                else
-                    _ = store.Recover();
+                _ = await store.RecoverAsync().ConfigureAwait(false);
 
                 var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
                 Read(session, delete: true);
