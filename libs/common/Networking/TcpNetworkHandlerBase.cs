@@ -246,7 +246,7 @@ namespace Garnet.common
                     var receiveTask = OnNetworkReceiveWithTLSAsync(e.BytesTransferred);
                     if (!receiveTask.IsCompletedSuccessfully)
                     {
-                        await receiveTask;
+                        await receiveTask.ConfigureAwait(false);
                     }
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
@@ -268,7 +268,7 @@ namespace Garnet.common
 
         unsafe void AllocateNetworkReceiveBuffer()
         {
-            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize);
+            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize, PoolEntryBufferType.NetworkReceiveBuffer);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
         }

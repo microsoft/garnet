@@ -40,14 +40,17 @@ function CleanUpFiles {
 	$publishPath = "$basePath/main/GarnetServer/bin/Release/$framework/publish/$publishFolder"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
 
-	# Native binary is different based on OS by default
+	# Native binaries are different based on OS by default
 	$nativeFile = "libnative_device.so"
+	$bftreeFile = "libbftree_garnet.so"
 
 	if ($platform -match "win-x64") {
 		$nativeFile = "native_device.dll"
+		$bftreeFile = "bftree_garnet.dll"
 	}
 
 	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
+	$bftreeRuntimePathFile = "$publishPath/runtimes/$platform/native/$bftreeFile"
 
 	if (Test-Path -Path $publishPath) {
 		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
@@ -56,6 +59,9 @@ function CleanUpFiles {
 
 		# Copy proper native run time to publish directory
 		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+		if (Test-Path -Path $bftreeRuntimePathFile) {
+			Copy-Item -Path $bftreeRuntimePathFile -Destination $publishPath
+		}
 	} else {
 		Write-Host "Publish Path not found: $publishPath"
 	}

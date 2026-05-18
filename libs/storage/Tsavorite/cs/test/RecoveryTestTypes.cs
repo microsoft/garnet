@@ -1,22 +1,53 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    public struct AdId
+    public struct AdId : IKey
     {
+        public const int Size = sizeof(long);
+
         public long adId;
+
+        // Not always pinned, so don't act like it is.
+        public readonly bool IsPinned => false;
+
+        [UnscopedRef]
+        public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.AsBytes<long>(new(in adId));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
 
         public override string ToString() => adId.ToString();
 
-        public struct Comparer : IKeyComparer<AdId>
+        public struct Comparer : IKeyComparer
         {
-            public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
+            public long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(key.KeyBytes.AsRef<AdId>().adId);
 
-            public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
+            public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => k1.KeyBytes.AsRef<AdId>().adId == k2.KeyBytes.AsRef<AdId>().adId;
         }
     }
 
@@ -30,6 +61,7 @@ namespace Tsavorite.test.recovery.sumstore
 
     public struct NumClicks
     {
+        public const int Size = sizeof(long);
         public long numClicks;
 
         public override string ToString() => numClicks.ToString();
@@ -42,40 +74,36 @@ namespace Tsavorite.test.recovery.sumstore
         public override string ToString() => value.ToString();
     }
 
-    public class Functions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
+    public class Functions : SessionFunctionsBase<AdInput, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref AdInput input, ref Output output, ref ReadInfo readInfo)
         {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = value;
+            output.value = srcLogRecord.ValueSpan.AsRef<NumClicks>();
             return true;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
+
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
         {
-            value = input.numClicks;
+            _ = Interlocked.Add(ref logRecord.ValueSpan.AsRef<NumClicks>().numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
         {
-            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            dstLogRecord.ValueSpan.AsRef<NumClicks>().numClicks += srcLogRecord.ValueSpan.AsRef<NumClicks>().numClicks + input.numClicks.numClicks;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
-
-        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
-            return true;
-        }
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref AdInput input)
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref AdInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
     }
 }

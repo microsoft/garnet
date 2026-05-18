@@ -22,7 +22,7 @@ namespace Tsavorite.core
         /// Serialize object
         /// </summary>
         /// <param name="obj"></param>
-        void Serialize(ref T obj);
+        void Serialize(T obj);
 
         /// <summary>
         /// End serialization to given stream
@@ -69,7 +69,7 @@ namespace Tsavorite.core
         public void BeginSerialize(Stream stream) => writer = new BinaryWriter(stream, new UTF8Encoding(), true);
 
         /// <summary>Serialize</summary>
-        public abstract void Serialize(ref T obj);
+        public abstract void Serialize(T obj);
 
         /// <summary>End serialize</summary>
         public void EndSerialize() => writer.Dispose();

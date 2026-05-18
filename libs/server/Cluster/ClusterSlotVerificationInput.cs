@@ -16,24 +16,14 @@ namespace Garnet.server
         public byte sessionAsking;
 
         /// <summary>
-        /// Offset of first key in the ArgSlice buffer
+        /// Simplified key specifications for extracting key positions from the command's parse state
         /// </summary>
-        public int firstKey;
+        public SimpleRespKeySpec[] keySpecs;
 
         /// <summary>
-        /// Offset of the last key in the ArgSlice buffer
+        /// Whether the command is a sub-command (affects key index offset calculation)
         /// </summary>
-        public int lastKey;
-
-        /// <summary>
-        /// The step, or increment, between the first key and the position of the next key
-        /// </summary>
-        public int step;
-
-        /// <summary>
-        /// Offset of key num if any
-        /// </summary>
-        public int keyNumOffset;
+        public bool isSubCommand;
 
         /// <summary>
         /// If the command being executed requires a slot be STABLE for executing.

@@ -98,7 +98,6 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |
-| **EnableIncrementalSnapshots** | ```--incsnap``` | ```bool``` |  | Enable incremental snapshots. |
 | **PubSubPageSize** | ```--pubsub-pagesize``` | ```string``` | Memory size | Page size of log used for pub/sub (rounds down to power of 2) |
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
@@ -115,12 +114,13 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **EnableAOF** | ```--aof``` | ```bool``` |  | Enable write ahead logging (append-only file). |
 | **AofMemorySize** | ```--aof-memory``` | ```string``` | Memory size | Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit |
 | **AofPageSize** | ```--aof-page-size``` | ```string``` | Memory size | Size of each AOF page in bytes(rounds down to power of 2) |
+| **AofSegmentSize** | ```--aof-segment-size``` | ```string``` | Memory size | Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated. |
 | **CommitFrequencyMs** | ```--aof-commit-freq``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command |
 | **WaitForCommit** | ```--aof-commit-wait``` | ```bool``` |  | Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency. |
 | **AofSizeLimit** | ```--aof-size-limit``` | ```string``` | Memory size | Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken |
 | **CompactionFrequencySecs** | ```--compaction-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead) |
 | **ExpiredObjectCollectionFrequencySecs** | ```--expired-object-collection-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand. |
-| **CompactionType** | ```--compaction-type``` | ```LogCompactionType``` | None, Shift, Scan, Lookup | Hybrid log compaction type. Value options: None - No compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss) |
+| **CompactionType** | ```--compaction-type``` | ```LogCompactionType``` | None, Shift, Lookup, Scan | Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss; recommended for production use), Scan - scan old pages and move live records to tail (no data loss; NOT RECOMMENDED — builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use; prefer Lookup) |
 | **CompactionForceDelete** | ```--compaction-force-delete``` | ```bool``` |  | Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied. If false, take a checkpoint to actually delete the older data files from disk. |
 | **CompactionMaxSegments** | ```--compaction-max-segments``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Number of log segments created on disk before compaction triggers. |
 | **ObjectStoreCompactionMaxSegments** | ```--obj-compaction-max-segments``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Number of object store log segments created on disk before compaction triggers. |

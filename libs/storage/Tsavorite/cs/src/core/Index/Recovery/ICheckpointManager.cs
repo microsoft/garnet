@@ -31,6 +31,13 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
+        /// Whether Tsavorite should perform internal cleanup of checkpoint snapshot files and hybrid log segments
+        /// during the checkpoint state machine. When false, cleanup of hlog segments is avoided and the external
+        /// layer is responsible for managing checkpoint lifecycle (e.g., cluster mode with reader-safe deletion).
+        /// </summary>
+        bool PerformAutomaticCleanup { get; }
+
+        /// <summary>
         /// Get current cookie
         /// </summary>
         /// <returns></returns>
@@ -92,20 +99,6 @@ namespace Tsavorite.core
         void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming);
 
         /// <summary>
-        /// Commit log incremental checkpoint (incremental snapshot)
-        /// </summary>
-        /// <param name="logToken"></param>
-        /// <param name="commitMetadata"></param>
-        /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog);
-
-        /// <summary>
-        /// Cleanup log incremental checkpoint (incremental snapshot)
-        /// </summary>
-        /// <param name="logToken"></param>
-        void CleanupLogIncrementalCheckpoint(Guid logToken);
-
-        /// <summary>
         /// Retrieve commit metadata for specified index checkpoint
         /// </summary>
         /// <param name="indexToken">Token</param>
@@ -116,11 +109,8 @@ namespace Tsavorite.core
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
         /// <param name="logToken">Token</param>
-        /// <param name="deltaLog">Delta log</param>
-        /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry. make sure the delta log points to the tail address immediately following the returned metadata.</param>
-        /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
+        byte[] GetLogCheckpointMetadata(Guid logToken);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
@@ -154,13 +144,6 @@ namespace Tsavorite.core
         /// <param name="token"></param>
         /// <returns></returns>
         IDevice GetSnapshotObjectLogDevice(Guid token);
-
-        /// <summary>
-        /// Provide device to store incremental (delta) snapshot of log (required only for incremental snapshot checkpoints)
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        IDevice GetDeltaLogDevice(Guid token);
 
         /// <summary>
         /// Cleanup all data (subfolder) related to the given guid by this manager

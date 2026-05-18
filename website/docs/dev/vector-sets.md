@@ -6,29 +6,26 @@ title: Vector Sets
 
 # Overview
 
-Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](https://www.nuget.org/packages/diskann-garnet/).
+Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](https://github.com/microsoft/DiskANN).
 
 This data type is very strange when compared to others Garnet supports.
 
-> [!IMPORTANT]
-> The DiskANN link needs to be updated once OSS'd.
-
 # Design
 
-Vector Sets are a combination of one "index" key, which stores metadata and a pointer to the DiskANN data structure, and many "element" keys, which store vectors/quantized vectors/attributes/etc.  All Vector Set keys are kept in the main store, but only the index key is visible - this is accomplished by putting all element keys in different namespaces.
+Vector Sets are a combination of one "index" key, which stores metadata and a pointer to the DiskANN data structure, and many "element" keys, which store vectors/quantized vectors/attributes/etc.  All Vector Set keys are kept in the store as binary (ie. non-object) values, but only the index key is visible - this is accomplished by putting all element keys in different namespaces.
 
 ## Global Metadata
 
-In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep a single `ContextMetadata` struct under the empty key in namespace 0.
+In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep a single `ContextMetadata` struct under the empty key in namespace `VectorManager.MetadataNamespace` (which is `1`).
 
 This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
 
 > [!IMPORTANT]
 > Today `ContextMetadata` can track only 64 Vector Sets in some state of creation or cleanup.
 > 
-> The practical limit is actually 31, because context must be &lt; 256, divisible by 8, and not 0 (which is reserved).
+> The practical limit is actually 15, because context must be &lt; 128, divisible by 8, and not 0 (which is reserved).
 >
-> This limitation will be lifted eventually, perhaps after Store V2 lands.
+> This limitation will be lifted eventually.
 
 ## Indexes
 
@@ -46,17 +43,12 @@ The index key (represented by the `Index` struct) contains the following data:
      > We have an extension here, `XPREQ8` which is not from Redis.
      > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
      > It forbids the `REDUCE` option and requires 4-byte element ids.
-   * > [!IMPORTANT]
-     > Today only `XPREQ` is actually implemented, eventually DiskANN will provide reasonable versions of all the Redis builtin quantizers.
  - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after [recovery](#recovery) or [replication](#replication) to detect if `IndexPtr` is dangling
 
-The index key is in the main store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with the `VectorSet` bit on `RecordInfo`.
+The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 
 > [!IMPORTANT]
-> `RecordInfo.VectorSet` is checked in a few places to correctly produce `WRONGTYPE` responses, but we need more coverage for all commands.  Probably something akin to how ACLs required per-command tests.
-
-> [!IMPORTANT]
-> A generalization of the `VectorSet`-bit should be used for all data types, this can happen once we have Store V2.
+> `RecordType` is checked in a few places to correctly produce `WRONGTYPE` responses, but we need more coverage for all commands.  Probably something akin to how ACLs required per-command tests.
 
 ## Elements
 
@@ -83,8 +75,8 @@ Implemented commands:
  - [ ] VCARD
  - [x] VDIM
  - [x] VEMB
- - [ ] VGETATTR
- - [ ] VINFO
+ - [x] VGETATTR
+ - [x] VINFO
  - [ ] VISMEMBER
  - [ ] VLINKS
  - [ ] VRANDMEMBER
@@ -214,16 +206,13 @@ Replicating Vector Sets is tricky because of the unusual "writes are actually re
 
 As noted above, inserts (via `VADD`) and deletes (via `VREM`) are reads from Tsavorite's perspective.  As a consequence, normal replication (which is triggered via `MainSessionFunctions.WriteLog(Delete|RMW|Upsert)`) does not happen on those operations.
 
-To fix that, synthetic writes against related keys are made after an insert or remove.  These writes are against the same Vector Set key, but in namespace 0.  See `VectorManager.ReplicateVectorSetAdd` and `VectorManager.ReplicateVectorSetRemove` for details.
+To fix that, synthetic writes against related keys are made after an insert or remove.  These writes are against the same Vector Set key, without any namespace information.  See `VectorManager.ReplicateVectorSetAdd` and `VectorManager.ReplicateVectorSetRemove` for details.
 
 > [!IMPORTANT]
 > There is a failure case here where we crash between the insert operation completing and the replication operation completing.
 >
 > This appears to simply extend a window that already existed between when a Tsavorite operation completed and an entry was written to the AOF.
 > This needs to confirmed - if it is not the case, handling this failure needs to be figured out.
-
-> [!IMPORTANT]
-> This code assumes a Vector Set under the empty string is illegal.  That does not seem to be true with Redis - so we will need to move these keys elsewhere.  For now, we just forbid the empty key for VADDs.
 
 > [!NOTE]
 > These synthetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write amplification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.
@@ -271,7 +260,7 @@ At a high level, migration between the originating primary a destination primary
 
 # Cleanup
 
-Deleting a Vector Set only drops the DiskANN index and removes the top-level keys (ie. the visible key and related hidden keys for replication).  This leaves all element, attribute, neighbor lists, etc. still in the Main Store.
+Deleting a Vector Set only drops the DiskANN index and removes the top-level keys (ie. the index key).  This leaves all element, attribute, neighbor lists, etc. still in the Main Store.
 
 To clean up the remaining data we record the deleted index context value in `ContextMetadata` and then schedule a full sweep of the Main Store looking for any keys under namespaces related to that context.  When we find those keys we delete them, see `VectorManager.RunCleanupTaskAsync()` and `VectorManager.PostDropCleanupFunctions` for details.
 
@@ -281,7 +270,7 @@ To clean up the remaining data we record the deleted index context value in `Con
 > If we wanted to explore better options, we'd need to build something that can drop whole namespaces at once in Tsavorite.
 
 > [!IMPORTANT]
-> Today because we only have ~30 available Vector Set contexts, it is quite likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
+> Today because we only have ~15 available Vector Set contexts, it is quite likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
 >
 > This will be fixed once we have arbitrarily long namespaces in Store V2, and have updated `ContextMetadata` to track those.
 
@@ -316,9 +305,9 @@ In order for DiskANN to access and store data in Garnet, we provide a set of cal
 All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opaque identifier.
 
 > [!IMPORTANT]
-> As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to just 31.
+> As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to ~15.
 >
-> This restriction will go away with Store V2, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for intermediate data copies with longer namespaces.
+> This restriction will go away later, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for intermediate data copies with longer namespaces.
 
 ## Read Callback
 
@@ -329,10 +318,10 @@ void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint key
 
 `context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
-In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.  This is necessary to support variable length element ids, but also gives us some scratch space to store a namespace when we convert these to `SpanByte`s.  This mangling is done as part of the `IReadArgBatch` implementation we use to read keys from Tsavorite.
+In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.
 
 > [!NOTE]
-> Once variable sized namespaces are supported we'll have to handle the case where the namespace can't fit in 4 bytes.  However, we expect that to be rare (4-bytes would give us ~53,000,000 Vector Sets) and the performance benefits of _not_ copying during querying are very large.
+> Today we place the `context`-derived namespace byte in a field on `VectorElementKey`.  In store v1 we kept namespace inline with key bytes (using the length prefixed bytes for storage) - it may be worth restoring that for performance.
 
 As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
@@ -355,7 +344,7 @@ byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint w
 
 `context` identifies which Vector Set is being operated on AND the associated namespace,  `keyData` and `keyLength` represent a `Span<byte>` of the key to write, and `writeData` and `writeLength` represent a `Span<byte>` of the value to write.
 
-DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we can safely modify.  This is used to avoid copying the key value when we add a namespace to the `SpanByte` before invoking Tsavorite's `Upsert`.
+DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we can safely modify.
 
 This callback returns 1 if successful, and 0 otherwise.
 
@@ -368,7 +357,7 @@ byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
 
 `context` identifies which Vector Set is being operated on AND the associated namespace,  and `keyData` and `keyLength` represent a `Span<byte>` of the key to delete.
 
-As with the write callback, DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we use to store a namespace, and thus avoid copying the key value before invoking Tsavorite's `Delete`.
+As with the write callback, DiskANN guarantees an extra 4-bytes BEFORE `keyData`.
 
 This callback returns 1 if the key was found and removed, and 0 otherwise.
 
@@ -383,7 +372,7 @@ byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLeng
 
 `writeLength` is the desired number of bytes, this is only used used if we are creating a new key-value pair.
 
-As with the write and delete callbacks, DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we use to store a namespace, and thus avoid copying the key value before invoking Tsavorite's `RMW`.
+As with the write and delete callbacks, DiskANN guarantees an extra 4-bytes BEFORE `keyData`.
 
 After we allocate a new key-value pair or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)` is called.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
 

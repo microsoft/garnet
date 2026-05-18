@@ -202,7 +202,7 @@ namespace Garnet.common
         {
             if (responseObject != null)
                 return responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
-            return base.GetResponseObjectHead();
+            return base.GetResponseObjectTail();
         }
 
         /// <inheritdoc />
@@ -214,6 +214,7 @@ namespace Garnet.common
             responseObject = null;
             try
             {
+                // If this does not throw, _r is ReturnBuffer()ed when it completes.
                 Send(socket, _r, offset, size);
             }
             catch

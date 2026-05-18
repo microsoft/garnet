@@ -16,6 +16,7 @@ using System.Text.Json.Nodes;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -226,9 +227,7 @@ namespace Garnet.server
 
                     if (txnMode)
                     {
-                        txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                            txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey(key, LockType.Exclusive);
                     }
 
                     // Equivalent to KEYS[i+1] = key
@@ -317,7 +316,7 @@ namespace Garnet.server
         /// Entry point for redis.call method from a Lua script (transactional mode)
         /// </summary>
         public int GarnetCallWithTransaction(nint luaStatePtr)
-        => ProcessCommandFromScripting(luaStatePtr, ref respServerSession.lockableGarnetApi);
+        => ProcessCommandFromScripting(luaStatePtr, ref respServerSession.transactionalGarnetApi);
 
         /// <summary>
         /// Entry point for redis.call method from a Lua script (non-transactional mode)
@@ -3005,7 +3004,7 @@ namespace Garnet.server
             static (RespCommand Parsed, bool BadArg) PrepareAndCheckRespRequest(
                 ref LuaStateWrapper state,
                 RespServerSession respServerSession,
-                ScratchBufferBuilder scratchBufferManager,
+                ScratchBufferBuilder scratchBufferBuilder,
                 RespCommandsInfo cmdInfo,
                 ReadOnlySpan<byte> cmdSpan,
                 int luaArgCount
@@ -3020,8 +3019,8 @@ namespace Garnet.server
 
                 // RESP format the args so we can parse the command (and sub-command, and maybe keys down the line?)
 
-                scratchBufferManager.Reset();
-                scratchBufferManager.StartCommand(cmdSpan, actualRespArgCount);
+                scratchBufferBuilder.Reset();
+                scratchBufferBuilder.StartCommand(cmdSpan, actualRespArgCount);
 
                 for (var i = 0; i < actualRespArgCount; i++)
                 {
@@ -3033,7 +3032,7 @@ namespace Garnet.server
                         var argType = state.Type(stackIx);
                         if (argType == LuaType.Nil)
                         {
-                            scratchBufferManager.WriteNullArgument();
+                            scratchBufferBuilder.WriteNullArgument();
                         }
                         else if (argType is LuaType.String or LuaType.Number)
                         {
@@ -3043,7 +3042,7 @@ namespace Garnet.server
                             state.KnownStringToBuffer(stackIx, out var span);
 
                             // Span remains pinned so long as we don't pop the stack
-                            scratchBufferManager.WriteArgument(span);
+                            scratchBufferBuilder.WriteArgument(span);
                         }
                         else
                         {
@@ -3053,11 +3052,11 @@ namespace Garnet.server
                     else
                     {
                         // For args we don't have, shove in an empty string
-                        scratchBufferManager.WriteArgument(default);
+                        scratchBufferBuilder.WriteArgument(default);
                     }
                 }
 
-                var request = scratchBufferManager.ViewFullArgSlice();
+                var request = scratchBufferBuilder.ViewFullArgSlice();
                 var parsedCommand = respServerSession.ParseRespCommandBuffer(request.ReadOnlySpan);
 
                 return (parsedCommand, false);
@@ -3209,8 +3208,8 @@ namespace Garnet.server
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
-                    var value = ArgSlice.FromPinnedSpan(valSpan);
+                    var key = PinnedSpanByte.FromPinnedSpan(keySpan);
+                    var value = PinnedSpanByte.FromPinnedSpan(valSpan);
 
                     _ = api.SET(key, value);
 
@@ -3243,8 +3242,8 @@ namespace Garnet.server
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
-                    var status = api.GET(key, out var value);
+                    var key = PinnedSpanByte.FromPinnedSpan(keySpan);
+                    var status = api.GET(key, out PinnedSpanByte value);
 
                     if (status == GarnetStatus.OK)
                     {

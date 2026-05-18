@@ -1,59 +1,121 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
-    /// abstract/virtual methods may be called via <see cref="AllocatorBase{Key, Value, TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// Non-generic interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
-    public interface IAllocator<TKey, TValue, TStoreFunctions> : IAllocatorCallbacks<TKey, TValue, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+    public interface IAllocator
+    {
+        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
+        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
+        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
+    }
+
+    /// <summary>
+    /// Genric interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// </summary>
+    public interface IAllocator<TStoreFunctions> : IAllocator, IAllocatorCallbacks<TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The base class instance of the allocator implementation</summary>
-        AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>;
-
-        /// <summary>Whether this allocator uses fixed-length records</summary>
-        bool IsFixedLength { get; }
+        AllocatorBase<TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<TStoreFunctions>;
 
         /// <summary>Whether this allocator uses a separate object log</summary>
         bool HasObjectLog { get; }
 
-        /// <summary>Cast address range to <typeparamref name="TValue"/>. For <see cref="SpanByte"/> this will also initialize the value to span the address range.</summary>
-        ref TValue GetAndInitializeValue(long physicalAddress, long endPhysicalAddress);
+        /// <summary>Initialize the RecordDataHeader lengths to key length and a value that spans the address range, and the serialize the key into the record.</summary>
+        /// <param name="key">The key to be copied into the record</param>
+        /// <param name="logicalAddress">The logical address of the new record</param>
+        /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
+        /// <param name="logRecord">The new log record being initialized</param>
+        void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
-        (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
+        RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
+        RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
+        RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
 
-        /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value);
+        /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
+        RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
 
-        /// <summary>Get the record size for a tombstoned record</summary>
-        (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key);
+        /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="inputLogRecord"/>, and <paramref name="input"/></summary>
+        RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
 
-        /// <summary>Get the size of the given <paramref name="value"/></summary>
-        int GetValueLength(ref TValue value);
+        /// <summary>Get record size required for a new tombstone record</summary>
+        RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
-        /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
-        void MarkPage(long logicalAddress, long version);
+        /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>
+        LogRecord CreateLogRecord(long logicalAddress);
 
-        /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty atomically</summary>
-        void MarkPageAtomic(long logicalAddress, long version);
+        /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
+        LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
 
-        /// <summary>Get segment offsets</summary>
-        long[] GetSegmentOffsets();
+        /// <summary>Return the <see cref="LogRecord"/> for a transient (e.g. iterator or pending IO) page at <paramref name="physicalAddress"/></summary>
+        LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress);
 
-        /// <summary>Serialize key to log</summary>
-        void SerializeKey(ref TKey key, long physicalAddress);
+        /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
+        ObjectIdMap TransientObjectIdMap { get; }
+
+        /// <summary>Dispose an in-memory log record</summary>
+        void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
+
+        /// <summary>Dispose an on-disk / transient log record. Invokes the store's
+        /// <see cref="IStoreFunctions.OnDisposeDiskRecord"/> trigger; the caller should then call
+        /// <see cref="DiskLogRecord.Dispose"/> to release the record buffer.</summary>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason);
+
+        /// <summary>
+        /// Iterate records in the given logical address range and invoke the application-level
+        /// <see cref="IRecordTriggers.OnEvict"/> hook for each valid, non-tombstoned record.
+        /// Used during page eviction to allow cleanup of external resources.
+        /// </summary>
+        /// <param name="startAddress">Start logical address of the range.</param>
+        /// <param name="endAddress">End logical address of the range (exclusive).</param>
+        /// <param name="source">Identifies whether this eviction is from the main log or the read cache.</param>
+        void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source);
     }
 }

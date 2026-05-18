@@ -36,29 +36,40 @@ namespace Garnet.server
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         /// <summary>
-        /// Total log memory used in bytes (rounds down to power of 2).
+        /// Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2
         /// </summary>
-        public string MemorySize = "16g";
+        public string LogMemorySize = "16g";
 
         /// <summary>
-        /// Size of each page in bytes (rounds down to power of 2).
+        /// Size of each main-log page in bytes (rounds down to power of 2).
         /// </summary>
-        public string PageSize = "32m";
+        public string PageSize = "16m";
 
         /// <summary>
-        /// Size of each log segment in bytes on disk (rounds down to power of 2).
+        /// Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than <see cref="LogMemorySize"/> divided by <see cref="PageSize"/>
+        /// </summary>
+        /// <remarks>The default empty value means to calculate <see cref="PageCount"/> based on <see cref="LogMemorySize"/> divided by <see cref="PageSize"/></remarks>
+        public int PageCount = 0;
+
+        /// <summary>
+        /// Size of each main-log segment in bytes on disk (rounds down to power of 2).
         /// </summary>
         public string SegmentSize = "1g";
 
         /// <summary>
+        /// Size of each object-log segment in bytes on disk (rounds down to power of 2).
+        /// </summary>
+        public string ObjectLogSegmentSize = "1g";
+
+        /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string IndexSize = "128m";
+        public string IndexMemorySize = "128m";
 
         /// <summary>
         /// Max size of hash index in bytes (rounds down to power of 2). If unspecified, index size doesn't grow (default behavior).
         /// </summary>
-        public string IndexMaxSize = string.Empty;
+        public string IndexMaxMemorySize = string.Empty;
 
         /// <summary>
         /// Percentage of log memory that is kept mutable.
@@ -74,11 +85,6 @@ namespace Garnet.server
         /// When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log.
         /// </summary>
         public bool CopyReadsToTail = false;
-
-        /// <summary>
-        /// When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log.
-        /// </summary>
-        public bool ObjectStoreCopyReadsToTail = false;
 
         /// <summary>
         /// Storage directory for tiered records (hybrid log), if storage tiering (UseStorage) is enabled. Uses current directory if unspecified.
@@ -129,7 +135,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int MemorySizeBits()
         {
-            long size = ParseSize(MemorySize, out _);
+            long size = ParseSize(LogMemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
@@ -137,17 +143,33 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Minimum main-log / read-cache page size in bytes. A worst-case inline record at default Garnet settings
+        /// (MaxInlineKeySize = 128B Tsavorite default, single-byte namespace, all optional fields, max length-byte
+        /// encoding, max filler) plus the 64-byte page header is ~490 bytes when the value-overflow threshold is
+        /// at its largest allowed value relative to PageSize (effective value &lt; effective page); 512 bytes is the
+        /// smallest power-of-2 page size that accommodates this and prevents Tsavorite's "Entry does not fit on page".
+        /// </summary>
+        public const long MinPageSizeBytes = 512L;
+
+        /// <summary>
+        /// Validate and convert a page-size configuration value to bits, enforcing <see cref="MinPageSizeBytes"/>.
+        /// </summary>
+        protected int ValidatedPageSizeBits(string value, string propName)
+        {
+            var size = ParseSize(value, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation("Warning: using lower {PropName} than specified (power of 2)", propName);
+            if (adjustedSize < MinPageSizeBytes)
+                throw new Exception($"{propName} '{value}' (effective {adjustedSize} bytes after rounding to previous power of 2) must be at least {MinPageSizeBytes} bytes to ensure a worst-case record fits within a single page.");
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
         /// Get page size
         /// </summary>
         /// <returns></returns>
-        public int PageSizeBits()
-        {
-            long size = ParseSize(PageSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
+        public int PageSizeBits() => ValidatedPageSizeBits(PageSize, nameof(PageSize));
 
         /// <summary>
         /// Get pub/sub page size
@@ -163,15 +185,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get segment size
+        /// Get segment size bits for either the main log or object log
         /// </summary>
         /// <returns></returns>
-        public int SegmentSizeBits()
+        public int SegmentSizeBits(bool isObj)
         {
-            long size = ParseSize(SegmentSize, out _);
+            long size = ParseSize(isObj ? ObjectLogSegmentSize : SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower {SegmentType} than specified (power of 2)", isObj ? "ObjSegmentSize" : "SegmentSize");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -279,7 +301,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="v"></param>
         /// <returns></returns>
-        internal static long PreviousPowerOf2(long v)
+        public static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;

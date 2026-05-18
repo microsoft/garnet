@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -19,28 +20,28 @@ namespace Garnet.client
         /// (1) in AssignInstance, to assign a unique instanceId to each LightEpoch instance, and
         /// (2) in Metadata, to track per-thread epoch table entries for each LightEpoch instance.
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = MaxInstances * sizeof(int))]
+        [InlineArray(MaxInstances)]
         private struct InstanceIndexBuffer
         {
             /// <summary>
             /// Maximum number of concurrent instances of LightEpoch supported.
             /// </summary>
-            internal const int MaxInstances = 16;
+            internal const int MaxInstances = 1024;
 
             /// <summary>
             /// Anchor field for the buffer.
             /// </summary>
-            [FieldOffset(0)]
             int field0;
 
             /// <summary>
             /// Reference to the entry for the given instance ID.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            [UnscopedRef]
             internal ref int GetRef(int instanceId)
             {
                 Debug.Assert(instanceId >= 0 && instanceId < MaxInstances);
-                return ref Unsafe.AsRef<int>((int*)Unsafe.AsPointer(ref field0) + instanceId);
+                return ref Unsafe.Add(ref field0, instanceId);
             }
         }
 
@@ -193,7 +194,7 @@ namespace Garnet.client
                 if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
                     return i;
             }
-            throw new InvalidOperationException("Exceeded maximum number of active LightEpoch instances");
+            throw new InvalidOperationException($"Exceeded maximum number of active LightEpoch instances {ActiveInstanceCount()} {InstanceIndexBuffer.MaxInstances}");
         }
 
         /// <summary>
@@ -422,7 +423,7 @@ namespace Garnet.client
         {
             long oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= kTableSize; index++)
             {
                 long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
@@ -450,7 +451,7 @@ namespace Garnet.client
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; ++index)
+                for (int index = 1; index <= kTableSize; index++)
                 {
                     long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)

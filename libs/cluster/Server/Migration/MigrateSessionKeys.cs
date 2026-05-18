@@ -2,9 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -17,22 +20,12 @@ namespace Garnet.cluster
     internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
-        /// Method used to migrate individual keys from main store to target node.
+        /// Method used to migrate individual keys from store to target node.
         /// Used with MIGRATE KEYS option
         /// </summary>
         /// <returns>True on success, false otherwise</returns>
-        private async Task<bool> MigrateKeysFromMainStoreAsync()
+        private async Task<bool> MigrateKeysFromStoreAsync()
         {
-            var bufferSize = 1 << 10;
-            SectorAlignedMemory buffer = new(bufferSize, 1);
-            IntPtr bufPtr, bufPtrEnd;
-            SpanByteAndMemory o;
-            unsafe
-            {
-                bufPtr = (IntPtr)buffer.GetValidPointer();
-                bufPtrEnd = bufPtr + bufferSize;
-                o = new SpanByteAndMemory((byte*)bufPtr, (int)(bufPtrEnd - bufPtr));
-            }
             var migrateTask = migrateOperation[0];
 
             try
@@ -53,13 +46,14 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Transmit keys from main store
-                if (!await migrateTask.TransmitKeysAsync(StoreType.Main, indexesToMigrate).ConfigureAwait(false))
+                // Transmit keys from store
+                if (!await migrateTask.TransmitKeysAsync(indexesToMigrate).ConfigureAwait(false))
                 {
-                    logger?.LogError("Failed transmitting keys from main store");
+                    logger?.LogError("Failed transmitting keys from store");
                     return false;
                 }
 
+                // Move Vector Sets over after individual keys are moved
                 if ((_namespaces?.Count ?? 0) > 0)
                 {
                     // Actually move element data over
@@ -72,55 +66,54 @@ namespace Garnet.cluster
                     // Move the indexes over
                     var gcs = migrateTask.Client;
 
-                    foreach (var (key, value) in indexesToMigrate)
+                    var serializeBufferArr = ArrayPool<byte>.Shared.Rent(128);
+
+                    try
                     {
-                        // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
-                        // namespaces for element data
-                        VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
 
-                        var newContext = _namespaceMap[oldContext];
-                        VectorManager.SetContextForMigration(value, newContext);
-
-                        Task<bool> pendingHandleTask;
-                    retryKeyAndValue:
-                        unsafe
+                        foreach (var (key, value) in indexesToMigrate)
                         {
-                            fixed (byte* keyPtr = key, valuePtr = value)
+                            // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
+                            // namespaces for element data
+                            VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
+
+                            var newContext = _namespaceMap[oldContext];
+                            VectorManager.SetContextForMigration(value, newContext);
+
+                            var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
+
+                            if (neededSpace > serializeBufferArr.Length)
                             {
-                                var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
-
-                                if (gcs.NeedsInitialization)
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-
-                                if (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
-                                {
-                                    // Need to wait for response, but can't do so in unsafe...
-                                    pendingHandleTask = HandleMigrateTaskResponseAsync(task);
-                                    goto awaitAndRetry;
-                                }
-
-                                continue;
+                                ArrayPool<byte>.Shared.Return(serializeBufferArr);
+                                serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                             }
-                        }
 
-                    awaitAndRetry:
-                        if (!await pendingHandleTask.ConfigureAwait(false))
-                        {
-                            unsafe
                             {
-                                fixed (byte* keyPtr = key)
-                                {
-                                    var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                                Span<byte> serializeBuffer = serializeBufferArr;
+                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
+                                key.CopyTo(serializeBuffer[sizeof(int)..]);
+                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
+                                value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
+                            }
 
-                                    logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
+                            if (gcs.NeedsInitialization)
+                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+
+                            while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
+                            {
+                                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                                {
+                                    logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                     return false;
                                 }
+
+                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
                             }
                         }
-
-                        gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-                        goto retryKeyAndValue;
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(serializeBufferArr);
                     }
 
                     if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
@@ -129,44 +122,13 @@ namespace Garnet.cluster
                         return false;
                     }
                 }
-
                 // Final cleanup, which will also delete Vector Sets
                 await DeleteKeysAsync().ConfigureAwait(false);
             }
             finally
             {
-                // If allocated memory in heap dispose it here.
-                if (o.Memory != default)
-                    o.Memory.Dispose();
-                buffer.Dispose();
-
                 migrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
-            return true;
-        }
-
-        /// <summary>
-        /// Method used to migrate individual keys from object store to target node.
-        /// Used with MIGRATE KEYS option
-        /// </summary>
-        /// <returns>True on success, false otherwise</returns>
-        private async Task<bool> MigrateKeysFromObjectStoreAsync()
-        {
-            var migrateTask = migrateOperation[0];
-            // NOTE: Any keys not found in main store are automatically set to INITIALIZING before this method is called
-            // Transition all INITIALIZING to TRANSMITTING state
-            migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
-            await WaitForConfigPropagationAsync().ConfigureAwait(false);
-
-            // Transmit keys from object store
-            if (!await migrateTask.TransmitKeysAsync(StoreType.Object, new(ByteArrayComparer.Instance)).ConfigureAwait(false))
-            {
-                logger?.LogError("Failed transmitting keys from object store");
-                return false;
-            }
-
-            // Delete keys if COPY option is false or transition KEYS from MIGRATING to MIGRATED status
-            await DeleteKeysAsync().ConfigureAwait(false);
             return true;
         }
 
@@ -202,15 +164,8 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate main store keys
-                if (!await MigrateKeysFromMainStoreAsync().ConfigureAwait(false))
+                if (!await MigrateKeysFromStoreAsync().ConfigureAwait(false))
                     return false;
-
-                // Migrate object store keys
-                if (!clusterProvider.serverOptions.DisableObjects)
-                {
-                    if (!await MigrateKeysFromObjectStoreAsync().ConfigureAwait(false))
-                        return false;
-                }
             }
             catch (Exception ex)
             {

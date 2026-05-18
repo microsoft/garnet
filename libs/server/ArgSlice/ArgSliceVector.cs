@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,7 +14,7 @@ namespace Garnet.server
     /// Vector of ArgSlices
     /// </summary>
     /// <param name="maxItemNum"></param>
-    public unsafe class ArgSliceVector(int maxItemNum = 1 << 18) : IEnumerable<SpanByte>
+    public unsafe class ArgSliceVector(int maxItemNum = 1 << 18) : IEnumerable<(PinnedSpanByte NamespaceBytes, PinnedSpanByte KeyBytes, bool HasNamespace)>
     {
         private bool enumerating;
 
@@ -21,52 +22,48 @@ namespace Garnet.server
         readonly int maxCount = maxItemNum;
         public int Count => items.Count;
         public bool IsEmpty => items.Count == 0;
-        readonly List<(int Offset, int Length, bool HasNamespace)> items = [];
+        readonly List<((int Offset, int Length) Entry, bool HasNamespace)> items = [];
 
         /// <summary>
         /// Try to add ArgSlice
         /// </summary>
         /// <param name="item"></param>
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
-        public bool TryAddItem(Span<byte> item)
+        public bool TryAddItem(ReadOnlySpan<byte> item)
         {
             Debug.Assert(!enumerating, "Cannot modify while enumerating");
 
             if (Count + 1 >= maxCount)
                 return false;
 
-            var insertLoc = bufferManager.ScratchBufferOffset;
+            var entry = bufferManager.CreateArgSliceAsOffset(item);
 
-            var sb = bufferManager.CreateArgSlice(item);
-
-            items.Add((insertLoc, sb.Length, HasNamespace: false));
+            items.Add((entry, false));
             return true;
         }
 
         /// <summary>
         /// Try to add ArgSlice
         /// </summary>
-        /// <param name="ns"></param>
+        /// <param name="namespaceBytes"></param>
         /// <param name="item"></param>
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
-        public bool TryAddItem(ulong ns, Span<byte> item)
+        public bool TryAddItem(ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> item)
         {
             Debug.Assert(!enumerating, "Cannot modify while enumerating");
-            Debug.Assert(ns <= byte.MaxValue, "Only byte-size namespaces supported currently");
-
             if (Count + 1 >= maxCount)
                 return false;
 
             var insertLoc = bufferManager.ScratchBufferOffset;
 
-            var argSlice = bufferManager.CreateArgSlice(item.Length + 1);
-            var sb = argSlice.SpanByte;
+            Span<byte> toWrite = stackalloc byte[sizeof(int) + namespaceBytes.Length + sizeof(int) + item.Length];
+            BinaryPrimitives.WriteInt32LittleEndian(toWrite, namespaceBytes.Length);
+            namespaceBytes.CopyTo(toWrite[sizeof(int)..]);
+            BinaryPrimitives.WriteInt32LittleEndian(toWrite[(sizeof(int) + namespaceBytes.Length)..], item.Length);
+            item.CopyTo(toWrite[(sizeof(int) + namespaceBytes.Length + sizeof(int))..]);
 
-            sb.MarkNamespace();
-            sb.SetNamespaceInPayload((byte)ns);
-            item.CopyTo(sb.AsSpan());
-
-            items.Add((insertLoc, sb.Length, HasNamespace: true));
+            var entry = bufferManager.CreateArgSliceAsOffset(toWrite);
+            items.Add((entry, true));
             return true;
         }
 
@@ -81,7 +78,8 @@ namespace Garnet.server
             bufferManager.Reset();
         }
 
-        public IEnumerator<SpanByte> GetEnumerator()
+        /// <inheritdoc/>
+        public IEnumerator<(PinnedSpanByte NamespaceBytes, PinnedSpanByte KeyBytes, bool HasNamespace)> GetEnumerator()
         {
             Debug.Assert(!enumerating, "Concurrent enumeration is not allwed");
 
@@ -90,17 +88,27 @@ namespace Garnet.server
             enumerating = true;
             try
             {
-                foreach (var (offset, length, hasNamespace) in items)
+                foreach (var ((offset, length), hasNamespace) in items)
                 {
-                    var span = full.ReadOnlySpan.Slice(offset, length);
-                    var ret = SpanByte.FromPinnedSpan(span);
-
-                    if (hasNamespace)
+                    if (!hasNamespace)
                     {
-                        ret.MarkNamespace();
-                    }
+                        var span = full.ReadOnlySpan.Slice(offset, length);
+                        var ret = PinnedSpanByte.FromPinnedSpan(span);
 
-                    yield return ret;
+                        yield return (default, ret, false);
+                    }
+                    else
+                    {
+                        var span = full.ReadOnlySpan.Slice(offset, length);
+
+                        var nsLen = BinaryPrimitives.ReadInt32LittleEndian(span);
+                        var ns = PinnedSpanByte.FromPinnedSpan(span.Slice(sizeof(int), nsLen));
+
+                        var keyLen = BinaryPrimitives.ReadInt32LittleEndian(span[(sizeof(int) + nsLen)..]);
+                        var key = PinnedSpanByte.FromPinnedSpan(span.Slice(sizeof(int) + nsLen + sizeof(int), keyLen));
+
+                        yield return (ns, key, true);
+                    }
                 }
             }
             finally
@@ -109,6 +117,7 @@ namespace Garnet.server
             }
         }
 
+        /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

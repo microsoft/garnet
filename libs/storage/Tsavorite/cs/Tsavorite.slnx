@@ -11,5 +11,10 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Tsavorite.test.csproj" />
+    <Project Path="test/test.recordops/Tsavorite.test.recordops.csproj" />
+    <Project Path="test/test.session/Tsavorite.test.session.csproj" />
+    <Project Path="test/test.session.context/Tsavorite.test.session.context.csproj" />
+    <Project Path="test/test.hlog/Tsavorite.test.hlog.csproj" />
+    <Project Path="test/test.recovery/Tsavorite.test.recovery.csproj" />
   </Folder>
 </Solution>

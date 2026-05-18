@@ -79,13 +79,15 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                endpoint, tlsOptions,
+                endpoint,
+                tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 epoch: epoch,
+                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger);
             this.initialized = 0;
             this.logger = logger;
@@ -160,7 +162,10 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                if (clusterProvider.replicationManager != null)
+                    // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
+                    // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -179,16 +184,24 @@ namespace Garnet.cluster
         {
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
                     var returnedConfigArray = resp.Span.ToArray();
+
+                    // Validate config version before full deserialization
+                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    {
+                        logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
+                        return;
+                    }
+
                     var other = ClusterConfig.FromByteArray(returnedConfigArray);
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     // Check if gossip is from a node that is known and trusted before merging
                     if (current.IsKnown(other.LocalNodeId))
-                        clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                        clusterProvider.clusterManager.TryMerge(other);
                     else
                         logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }
@@ -204,11 +217,10 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeetAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
-            return resp;
+            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -292,7 +304,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ClusterPublishNoResponse(cmd, channel, message);
+                gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {

@@ -6,13 +6,12 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Manual-enabled (both manual and transient) LockTable interface definition
+    /// LockTable interface definition (for both Transactional and Ephemeral)
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    public interface ILockTable<TKey> : IDisposable
+    public interface ILockTable : IDisposable
     {
         /// <summary>
-        /// Try to acquire a manual lock for the key.
+        /// Whether the lock table is enabled.
         /// </summary>
         public bool IsEnabled { get; }
 

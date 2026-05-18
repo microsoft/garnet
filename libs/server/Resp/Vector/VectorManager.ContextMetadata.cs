@@ -11,13 +11,9 @@ using System.Text;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     /// <summary>
     /// Methods for managing <see cref="VectorManager.ContextMetadata"/>, which tracks process wide 
     /// information about different contexts.
@@ -120,9 +116,15 @@ namespace Garnet.server
 
             public readonly ulong NextNotInUse()
             {
-                var ignoringZero = inUse | 1;
+                var ignoringUnusuable = inUse;
 
-                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringZero & (ulong)-(long)(~ignoringZero));
+                ignoringUnusuable |= 1; // Context 0 is reserved
+
+                // We cannot use namespaces > 127
+                // TODO: Once Variable length namespaces work, remove this constraint
+                ignoringUnusuable |= ~((1UL << 15) - 1);
+
+                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)(~ignoringUnusuable));
 
                 if (bit == 64)
                 {
@@ -385,8 +387,7 @@ namespace Garnet.server
         /// 
         /// The return contexts are unavailable for other use, but are not yet "live" for visibility purposes.
         /// </summary>
-        public bool TryReserveContextsForMigration<TContext>(ref TContext ctx, int count, out List<ulong> contexts)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool TryReserveContextsForMigration(ref VectorBasicContext ctx, int count, out List<ulong> contexts)
         {
             lock (this)
             {
@@ -405,10 +406,8 @@ namespace Garnet.server
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
-        private void UpdateContextMetadata<TContext>(ref TContext ctx)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        private void UpdateContextMetadata(ref VectorBasicContext ctx)
         {
-            Span<byte> keySpan = stackalloc byte[1];
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
             lock (this)
@@ -416,10 +415,8 @@ namespace Garnet.server
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
             }
 
-            var key = SpanByte.FromPinnedSpan(keySpan);
-
-            key.MarkNamespace();
-            key.SetNamespaceInPayload(0);
+            // empty is context metadata
+            VectorElementKey key = new(MetadataNamespace, []);
 
             VectorInput input = default;
             input.Callback = 0;
@@ -429,11 +426,11 @@ namespace Garnet.server
                 input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
             }
 
-            var status = ctx.RMW(ref key, ref input);
+            var status = ctx.RMW(key, ref input);
 
             if (status.IsPending)
             {
-                SpanByte ignored = default;
+                VectorOutput ignored = new();
                 CompletePending(ref status, ref ignored, ref ctx);
             }
         }

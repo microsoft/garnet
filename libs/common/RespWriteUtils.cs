@@ -762,6 +762,34 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write verbtatim string header.
+        /// 
+        /// That is ={len}\r\n{ext}:
+        /// </summary>
+        public static bool TryWriteVerbatimStringHeader(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
+        {
+            Debug.Assert(ext.Length == 3);
+
+            // Verbatim string length includes the type metadata.
+            // So ext (3 bytes) + ':' (1 byte separator) + str
+            var actualLength = 3 + 1 + str.Length;
+            var itemDigits = NumUtils.CountDigits(actualLength);
+
+            var headerLen = 1 + itemDigits + 2 + 3 + 1;
+            if (headerLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'=';
+            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            ext.CopyTo(new Span<byte>(curr, 3));
+            curr += 3;
+            *curr++ = (byte)':';
+
+            return true;
+        }
+
+        /// <summary>
         /// Write RESP3 true
         /// </summary>
         public static bool TryWriteTrue(ref byte* curr, byte* end)
@@ -821,13 +849,13 @@ namespace Garnet.common
         public static void WriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
-            RespWriteUtils.TryWriteArrayLength(2, ref curr, end);
-            RespWriteUtils.TryWriteInt64(etag, ref curr, end);
+            TryWriteArrayLength(2, ref curr, end);
+            TryWriteInt64(etag, ref curr, end);
 
             if (writeDirect)
-                RespWriteUtils.TryWriteDirect(value, ref curr, end);
+                TryWriteDirect(value, ref curr, end);
             else
-                RespWriteUtils.TryWriteBulkString(value, ref curr, end);
+                TryWriteBulkString(value, ref curr, end);
         }
 
         /// <summary>

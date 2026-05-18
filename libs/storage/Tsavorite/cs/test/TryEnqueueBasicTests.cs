@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,10 +12,8 @@ namespace Tsavorite.test
 {
     //** Fundamental basic test for TryEnqueue that covers all the parameters in TryEnqueue
     //** Other tests in TsavoriteLog.cs provide more coverage for TryEnqueue
-
-    [AllureNUnit]
     [TestFixture]
-    internal class TryEnqueueTests : AllureTestBase
+    internal class TryEnqueueTests : TestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -142,7 +139,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

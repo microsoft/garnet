@@ -3,6 +3,8 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.common
@@ -52,6 +54,19 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Throw Garnet exception with message.
+        /// </summary>
+        /// <param name="messageBytes"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="clientResponse"></param>
+        /// <param name="panic"></param>
+        /// <param name="disposeSession"></param>
+        public GarnetException(ReadOnlySpan<byte> messageBytes, LogLevel logLevel = LogLevel.Trace, bool clientResponse = true, bool panic = false, bool disposeSession = true)
+            : this(Encoding.ASCII.GetString(messageBytes))
+        {
+        }
+
+        /// <summary>
         /// Throw Garnet exception with message and inner exception.
         /// </summary>
         /// <param name="message"></param>
@@ -69,12 +84,13 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Throw helper that throws a GarnetException.
+        /// Throw helper that throws a GarnetException. We use a method wrapper so that the caller method can execute inlined.
         /// </summary>
         /// <param name="message"></param>
         /// <param name="logLevel"></param>
         /// <exception cref="GarnetException"></exception>
         [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Throw(string message, LogLevel logLevel = LogLevel.Trace) =>
             throw new GarnetException(message, logLevel);
     }

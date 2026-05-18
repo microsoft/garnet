@@ -101,6 +101,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClient.ExecuteClusterFailStopWrites"/>
         private bool NetworkClusterFailStopWrites(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -125,8 +126,7 @@ namespace Garnet.cluster
 
             // Cannot avoid blocking here we're on the network thread
             AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-            while (!RespWriteUtils.TryWriteInt64(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -136,6 +136,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClient.ExecuteClusterFailReplicationOffset"/>
         private bool NetworkClusterFailReplicationOffset(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -147,16 +148,11 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (!parseState.TryGetLong(0, out var primaryReplicationOffset))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            var primaryReplicationOffset = AofAddress.FromByteArray(parseState.GetArgSliceByRef(0).ToArray());
 
             // Cannot avoid blocking here we're on the network thread
             var rOffset = AsyncUtils.BlockingWait(clusterProvider.replicationManager.WaitForReplicationOffsetAsync(primaryReplicationOffset));
-            while (!RespWriteUtils.TryWriteInt64(rOffset, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(rOffset.ToString(), ref dcurr, dend))
                 SendAndReset();
 
             return true;

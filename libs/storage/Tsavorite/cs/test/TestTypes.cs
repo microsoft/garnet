@@ -2,40 +2,83 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
+using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#pragma warning disable CA2211 // Non-constant fields should not be visible (This is for the .Instance members)
+
 namespace Tsavorite.test
 {
-    public struct KeyStruct
+    [StructLayout(LayoutKind.Explicit)]
+    public struct KeyStruct : IKey
     {
+        [FieldOffset(0)]
         public long kfield1;
+        [FieldOffset(8)]
         public long kfield2;
 
-        public override string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
+        // Not always pinned, so don't assume it is
+        public readonly bool IsPinned => false;
 
-        public struct Comparer : IKeyComparer<KeyStruct>
+        public ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateReadOnlySpan(ref kfield1, 2));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
+        public override readonly string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
+
+        public struct Comparer : IKeyComparer
         {
-            public long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.kfield1);
-            public bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+            public readonly long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
+
+            public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey key1, TSecondKey key2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+            {
+                var k1 = key1.KeyBytes.AsRef<KeyStruct>();
+                var k2 = key2.KeyBytes.AsRef<KeyStruct>();
+                return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+            }
 
             public static Comparer Instance = new();
         }
     }
 
-    public struct ValueStruct
+    [StructLayout(LayoutKind.Explicit)]
+    public unsafe struct ValueStruct
     {
+        [FieldOffset(0)]
         public long vfield1;
+        [FieldOffset(8)]
         public long vfield2;
-        public override string ToString() => $"vfield1 {vfield1}, vfield2 {vfield2}";
+
+        public static int AsSpanByteDataSize => sizeof(ValueStruct);
+
+        public override readonly string ToString() => $"vfield1 {vfield1}, vfield2 {vfield2}";
     }
 
     public struct InputStruct
     {
         public long ifield1;
         public long ifield2;
-        public override string ToString() => $"ifield1 {ifield1}, ifield2 {ifield2}";
+        public override readonly string ToString() => $"ifield1 {ifield1}, ifield2 {ifield2}";
     }
 
     public struct OutputStruct
@@ -47,93 +90,98 @@ namespace Tsavorite.test
     {
         public long cfield1;
         public long cfield2;
-        public override string ToString() => $"cfield1 {cfield1}, cfield2 {cfield2}";
+        public override readonly string ToString() => $"cfield1 {cfield1}, cfield2 {cfield2}";
     }
 
     public class Functions : FunctionsWithContext<Empty>
     {
     }
 
-    public class FunctionsWithContext<TContext> : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, TContext>
+    public class FunctionsWithContext<TContext> : SessionFunctionsBase<InputStruct, OutputStruct, TContext>
     {
-        public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
-            ClassicAssert.AreEqual(key.kfield1 + input.ifield1, output.value.vfield1);
-            ClassicAssert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
+            ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield1 + input.ifield1, output.value.vfield1);
+            ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield2 + input.ifield2, output.value.vfield2);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
-            ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield2, output.value.vfield2);
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
-            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
-            dst.value = value;
+            output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             output.value = value;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             output.value = value;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsTrue(srcLogRecord.IsSet);
             return true;
         }
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
+            ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
+
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             output.value = newValue;
             return true;
         }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
-    public class FunctionsCompaction : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, int>
+    public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
     {
-        public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
                 ClassicAssert.IsTrue(status.Found);
+                var key = diskLogRecord.Key.AsRef<KeyStruct>();
                 ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
                 ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
             }
@@ -144,150 +192,225 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = value;
+            output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
+        public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
+            ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
+
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             return true;
         }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
-    public class FunctionsCopyOnWrite : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
+    public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
     {
-        private int _concurrentWriterCallCount;
-        private int _inPlaceUpdaterCallCount;
+        private int inPlaceWriterCallCount;
+        private int inPlaceUpdaterCallCount;
 
-        public int ConcurrentWriterCallCount => _concurrentWriterCallCount;
-        public int InPlaceUpdaterCallCount => _inPlaceUpdaterCallCount;
+        public int InPlaceWriterCallCount => inPlaceWriterCallCount;
+        public int InPlaceUpdaterCallCount => inPlaceUpdaterCallCount;
 
-        public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
+            var key = diskLogRecord.Key.AsRef<KeyStruct>();
             ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
             ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
-            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
-            dst.value = value;
+            output.value = logRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
 
         // Upsert functions
-        public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
-            ClassicAssert.IsFalse(upsertInfo.RecordInfo.IsNull());
-            dst = src;
+            logRecord.ValueSpan.AsRef<ValueStruct>() = srcValue.AsRef<ValueStruct>();
             return true;
         }
 
-        public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
-            ClassicAssert.IsFalse(upsertInfo.RecordInfo.IsNull());
-            Interlocked.Increment(ref _concurrentWriterCallCount);
+            _ = Interlocked.Increment(ref inPlaceWriterCallCount);
             return false;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
-            Interlocked.Increment(ref _inPlaceUpdaterCallCount);
+            _ = Interlocked.Increment(ref inPlaceUpdaterCallCount);
             return false;
         }
 
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsTrue(srcLogRecord.IsSet);
             return true;
         }
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
+            ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
+
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             return true;
         }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
-    class RMWSimpleFunctions<TKey, TValue> : SimpleSimpleFunctions<TKey, TValue>
+    public class SimpleLongSimpleFunctions : SimpleIntegerFunctionsBase<long>
     {
-        public RMWSimpleFunctions(Func<TValue, TValue, TValue> merger) : base(merger) { }
+        public SimpleLongSimpleFunctions() : base() { }
+        public SimpleLongSimpleFunctions(Func<long, long, long> merger) : base(merger) { }
+    }
 
-        public override bool InitialUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+    public class SimpleIntSimpleFunctions : SimpleIntegerFunctionsBase<int>
+    {
+        public SimpleIntSimpleFunctions() : base() { }
+        public SimpleIntSimpleFunctions(Func<int, int, int> merger) : base(merger) { }
+    }
+
+    public class SimpleIntegerFunctionsBase<TInteger> : SessionFunctionsBase<TInteger, TInteger, Empty>
+        where TInteger : unmanaged
+    {
+        private readonly Func<TInteger, TInteger, TInteger> merger;
+
+        public SimpleIntegerFunctionsBase() : base() => merger = (input, oldValue) => input;
+
+        public SimpleIntegerFunctionsBase(Func<TInteger, TInteger, TInteger> merger) => this.merger = merger;
+
+        /// <inheritdoc/>
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInteger input, ref TInteger output, ref ReadInfo readInfo)
         {
-            base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-            output = input;
+            output = srcLogRecord.ValueSpan.AsRef<TInteger>();
             return true;
         }
 
-        /// <inheritdoc/>
-        public override bool CopyUpdater(ref TKey key, ref TValue input, ref TValue oldValue, ref TValue newValue, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
         {
-            base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
-            output = newValue;
-            return true;
+            var result = base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            if (result)
+                output = srcValue.AsRef<TInteger>();
+            return result;
+        }
+
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
+        {
+            var result = base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
+            if (result)
+                output = srcValue.AsRef<TInteger>();
+            return result;
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ref TInteger output, ref RMWInfo rmwInfo)
         {
-            base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-            output = value;
-            return true;
+            var ok = dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
+            if (ok)
+                output = input;
+            return ok;
+        }
+
+        /// <inheritdoc/>
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ref TInteger output, ref RMWInfo rmwInfo)
+        {
+            ClassicAssert.IsTrue(dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo), "Failed TryCopyRecordValues");
+            var result = output = merger(input, srcLogRecord.ValueSpan.AsRef<TInteger>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
+            return dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
+        }
+
+        /// <inheritdoc/>
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref TInteger input, ref TInteger output, ref RMWInfo rmwInfo)
+        {
+            var result = output = merger(input, logRecord.ValueSpan.AsRef<TInteger>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+            return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
+        }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInteger input)
+        {
+            Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(sizeof(TInteger)));
+            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(TInteger) };
+        }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInteger input)
+        {
+            Assert.That(key.KeyBytes.Length, Is.EqualTo(sizeof(TInteger)));
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
+        }
+
+        /// <inheritdoc/>
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInteger input)
+        {
+            Assert.That(value.Length, Is.EqualTo(sizeof(TInteger)));
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
         }
     }
 }

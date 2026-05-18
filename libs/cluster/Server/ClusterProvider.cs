@@ -12,30 +12,13 @@ using Garnet.server;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicContext = BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
-        BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
-            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
-
-    using VectorContext = BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>, SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
     /// <summary>
     /// Cluster provider
     /// </summary>
-    public class ClusterProvider : IClusterProvider
+    public sealed partial class ClusterProvider : IClusterProvider
     {
         internal readonly ClusterManager clusterManager;
         internal readonly ReplicationManager replicationManager;
@@ -86,7 +69,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool AllowDataLoss
-            => serverOptions.UseAofNullDevice || (serverOptions.FastAofTruncate && !serverOptions.OnDemandCheckpoint);
+            => serverOptions.AllowDataLoss;
 
         /// <inheritdoc />
         public void Recover()
@@ -96,11 +79,11 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool PreventRoleChange()
-        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
+            => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
 
         /// <inheritdoc />
         public void AllowRoleChange()
-        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
 
         /// <inheritdoc />
         public void Start()
@@ -110,8 +93,8 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, BasicContext basicContext, VectorContext vectorContext, INetworkSender networkSender, ILogger logger = null)
-            => new ClusterSession(this, txnManager, authenticator, userHandle, garnetSessionMetrics, basicGarnetApi, basicContext, vectorContext, networkSender, logger);
+        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringContext, VectorBasicContext vectorContext, INetworkSender networkSender, ILogger logger = null)
+            => new ClusterSession(this, txnManager, authenticator, userHandle, garnetSessionMetrics, basicGarnetApi, stringContext, vectorContext, networkSender, logger);
 
         /// <inheritdoc />
         public void UpdateClusterAuth(string clusterUsername, string clusterPassword)
@@ -167,25 +150,18 @@ namespace Garnet.cluster
         public void FlushDB(bool unsafeTruncateLog = false)
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
+        public void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
-            var entry = new CheckpointEntry();
+            var entry = new CheckpointEntry(storeWrapper.serverOptions.AofPhysicalSublogCount);
 
             entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
             entry.metadata.storeHlogToken = storeCheckpointToken;
             entry.metadata.storeIndexToken = storeCheckpointToken;
             entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
             entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
-
-            entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-            entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-            entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-            entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-            entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
 
             // Keep track of checkpoints for replica
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
@@ -196,24 +172,24 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(long truncateUntil)
+        public void SafeTruncateAOF(in AofAddress truncateUntil)
         {
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
-                _ = replicationManager.SafeTruncateAof(truncateUntil);
+                replicationManager.AofSyncDriverStore.SafeTruncateAof(truncateUntil);
             else
             {
                 if (serverOptions.FastAofTruncate)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
+                    storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
                 else
                 {
-                    storeWrapper.appendOnlyFile?.TruncateUntil(truncateUntil);
-                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Commit();
+                    storeWrapper.appendOnlyFile?.Log.TruncateUntil(truncateUntil);
+                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Log.Commit();
                 }
             }
         }
 
         /// <inheritdoc />
-        public void OnCheckpointInitiated(out long CheckpointCoveredAofAddress)
+        public void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress)
         {
             Debug.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
@@ -222,12 +198,13 @@ namespace Garnet.cluster
                 // until the checkpoint start marker. Otherwise, we will be left with an AOF that starts at the checkpoint end marker.
                 // ReplicationCheckpointStartOffset is set by { ReplicaReplayTask.Consume -> AofProcessor.ProcessAofRecordInternal } when
                 // it encounters the checkpoint start marker.
+
                 CheckpointCoveredAofAddress = replicationManager.ReplicationCheckpointStartOffset;
             }
             else
-                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.TailAddress;
+                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
 
-            replicationManager?.UpdateCommitSafeAofAddress(CheckpointCoveredAofAddress);
+            replicationManager?.UpdateCommitSafeAofAddress(ref CheckpointCoveredAofAddress);
         }
 
         /// <inheritdoc />
@@ -251,10 +228,9 @@ namespace Garnet.cluster
                 new("second_repl_offset", replication_offset2),
                 new("store_current_safe_aof_address", clusterEnabled ? replicationManager.StoreCurrentSafeAofAddress.ToString() : "N/A"),
                 new("store_recovered_safe_aof_address", clusterEnabled ? replicationManager.StoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
-                new("object_store_current_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreCurrentSafeAofAddress.ToString() : "N/A"),
-                new("object_store_recovered_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
                 new("recover_status", replicationManager.currentRecoveryStatus.ToString()),
-                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus())
+                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus()),
+                new("sync_driver_count", !clusterEnabled ? "0" : replicationManager.AofSyncDriverStore.AofSyncDriverCount.ToString())
             };
 
             if (clusterEnabled)
@@ -263,7 +239,7 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
-                    var replicationOffsetLag = storeWrapper.appendOnlyFile.TailAddress - replicationManager.ReplicationOffset;
+                    var replicationOffsetLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
@@ -287,18 +263,18 @@ namespace Garnet.cluster
             return [.. replicationInfo];
         }
 
+        /// <inheritdoc />
         public MetricsItem[] GetCheckpointInfo()
             => [new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()),
                 new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo())];
 
         /// <inheritdoc />
-        public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
+        public (AofAddress replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
         {
             if (!serverOptions.EnableCluster)
             {
                 return (replicationManager.ReplicationOffset, default);
             }
-
             return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
         }
 
@@ -326,12 +302,6 @@ namespace Garnet.cluster
             };
 
             return info;
-        }
-
-        /// <inheritdoc />
-        public long GetReplicationOffset()
-        {
-            return replicationManager.ReplicationOffset;
         }
 
         /// <inheritdoc />
@@ -367,85 +337,16 @@ namespace Garnet.cluster
                 throw new GarnetException();
         }
 
-        public void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
-        {
-            var specs = commandInfo.KeySpecifications;
-            switch (specs.Length)
-            {
-                case 1:
-                    var searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
-                    csvi.readOnly = specs[0].Flags.HasFlag(KeySpecificationFlags.RO);
-                    switch (specs[0].FindKeys)
-                    {
-                        case FindKeysRange:
-                            var findRange = (FindKeysRange)specs[0].FindKeys;
-                            csvi.firstKey = searchIndex.Index - 1;
-                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey - searchIndex.Index + 1;
-                            csvi.step = findRange.KeyStep;
-                            csvi.readOnly = !specs[0].Flags.HasFlag(KeySpecificationFlags.RW);
-                            break;
-                        case FindKeysKeyNum:
-                            var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
-                            csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
-                            csvi.lastKey = csvi.firstKey + parseState.GetInt(searchIndex.Index + findKeysKeyNum.KeyNumIdx - 1);
-                            csvi.step = findKeysKeyNum.KeyStep;
-                            break;
-                        case FindKeysUnknown:
-                        default:
-                            throw new GarnetException("FindKeys spec not known");
-                    }
-
-                    break;
-                case 2:
-                    searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
-                    switch (specs[0].FindKeys)
-                    {
-                        case FindKeysRange:
-                            csvi.firstKey = RespCommand.BITOP == cmd ? searchIndex.Index - 2 : searchIndex.Index - 1;
-                            break;
-                        case FindKeysKeyNum:
-                        case FindKeysUnknown:
-                        default:
-                            throw new GarnetException("FindKeys spec not known");
-                    }
-
-                    var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
-                    switch (specs[1].FindKeys)
-                    {
-                        case FindKeysRange:
-                            var findRange = (FindKeysRange)specs[1].FindKeys;
-                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey + searchIndex1.Index - searchIndex.Index + 1;
-                            csvi.step = findRange.KeyStep;
-                            break;
-                        case FindKeysKeyNum:
-                            var findKeysKeyNum = (FindKeysKeyNum)specs[1].FindKeys;
-                            csvi.keyNumOffset = searchIndex1.Index + findKeysKeyNum.KeyNumIdx - 1;
-                            csvi.lastKey = searchIndex1.Index + parseState.GetInt(csvi.keyNumOffset);
-                            csvi.step = findKeysKeyNum.KeyStep;
-                            break;
-                        case FindKeysUnknown:
-                        default:
-                            throw new GarnetException("FindKeys spec not known");
-                    }
-
-                    break;
-                default:
-                    throw new GarnetException("KeySpecification not supported count");
-            }
-        }
-
         public ValueTask ClusterPublishAsync(RespCommand cmd, Span<byte> channel, Span<byte> message)
             => clusterManager.TryClusterPublishAsync(cmd, channel, message);
 
-        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
+        internal GarnetClusterCheckpointManager ReplicationLogCheckpointManager
         {
-            Debug.Assert(serverOptions.EnableCluster);
-            return storeType switch
+            get
             {
-                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
-                _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
-            };
+                Debug.Assert(serverOptions.EnableCluster);
+                return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+            }
         }
 
         /// <summary>

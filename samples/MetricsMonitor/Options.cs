@@ -26,7 +26,7 @@ namespace MetricsMonitor
         [Option("latency-metrics-type", Required = false, Default = LatencyMetricsType.NET_RS_LAT, HelpText = "Latency metrics types to track (NET_RS_LAT)")]
         public LatencyMetricsType LatencyEvent { get; set; }
 
-        [Option("info-metrics-type", Required = false, Default = InfoMetricsType.STATS, HelpText = "Info metrics types to track (SERVER, MEMORY, CLUSTER, STATS, STORE, OBJECTSTORE, ALL)")]
+        [Option("info-metrics-type", Required = false, Default = InfoMetricsType.STATS, HelpText = "Info metrics types to track (SERVER, MEMORY, CLUSTER, STATS, STORE, ALL)")]
         public InfoMetricsType infoType { get; set; }
 
         [Option("metrics", Required = false, Default = Metric.INFO, HelpText = "What type of server side metrics to retrieve (LATENCY, INFO)")]

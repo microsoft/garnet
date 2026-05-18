@@ -4,8 +4,8 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -43,7 +43,7 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Migration, logger: logger);
 
             logger?.LogInformation("NetworkBufferSettings.sendBufferSize:{sendBufferSize}", networkBufferSettings.sendBufferSize);
             logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);
@@ -149,7 +149,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="readOnly"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
-            => migrationTaskStore.CanAccessKey(ref key, slot, readOnly);
+        public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
+            => migrationTaskStore.CanAccessKey(key, slot, readOnly);
     }
 }

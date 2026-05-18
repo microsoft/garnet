@@ -2,10 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,31 +10,55 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <summary>
         /// Logging upsert from
-        /// a. ConcurrentWriter
-        /// b. PostSingleWriter
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if (functionsState.StoredProcMode) return;
+            if (functionsState.StoredProcMode)
+                return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            var valueBytes = GarnetObjectSerializer.Serialize(value);
-            fixed (byte* ptr = key)
-            {
-                fixed (byte* valPtr = valueBytes)
-                {
-                    var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
-                    var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.ObjectStoreUpsert,
+                version,
+                sessionID,
+                key,
+                value,
+                ref input,
+                epochAccessor,
+                out _);
+        }
 
-                    functionsState.appendOnlyFile.Enqueue(
-                        new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                        ref keySB, ref valSB, epochAccessor, out _);
-                }
+        /// <summary>
+        /// Logging upsert from
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
+        /// </summary>
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if (functionsState.StoredProcMode)
+                return;
+            input.header.flags |= RespInputFlags.Deterministic;
+
+            GarnetObjectSerializer.Serialize(value, out var valueBytes);
+            fixed (byte* valPtr = valueBytes)
+            {
+                functionsState.appendOnlyFile.Log.Enqueue(
+                    AofEntryType.ObjectStoreUpsert,
+                    version,
+                    sessionID,
+                    key,
+                    new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                    ref input,
+                    epochAccessor,
+                    out _);
             }
         }
 
@@ -47,143 +68,42 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW<TEpochAccessor>(ref byte[] key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogRMW<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            // Serializing key & ObjectInput to RMW log
-            fixed (byte* keyPtr = key)
-            {
-                var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-
-                functionsState.appendOnlyFile.Enqueue(
-                    new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                    ref sbKey, ref input, epochAccessor, out _);
-            }
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.ObjectStoreRMW,
+                version,
+                sessionID,
+                key,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
         ///  Logging Delete from
-        ///  a. ConcurrentDeleter
-        ///  b. PostSingleDeleter
+        ///  a. InPlaceDeleter
+        ///  b. PostInitialDeleter
         /// </summary>
-        void WriteLogDelete<TEpochAccessor>(ref byte[] key, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if (functionsState.StoredProcMode) return;
-            fixed (byte* ptr = key)
-            {
-                var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
-                SpanByte valSB = default;
 
-                functionsState.appendOnlyFile.Enqueue(
-                    new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID },
-                    ref keySB, ref valSB, epochAccessor, out _);
-            }
-        }
-
-        internal static bool CheckExpiry(IGarnetObject src) => src.Expiration < DateTimeOffset.UtcNow.Ticks;
-
-        static void CopyRespNumber(long number, ref SpanByteAndMemory dst)
-        {
-            byte* curr = dst.SpanByte.ToPointer();
-            byte* end = curr + dst.SpanByte.Length;
-            if (RespWriteUtils.TryWriteInt64(number, ref curr, end, out var integerLen, out int totalLen))
-            {
-                dst.SpanByte.Length = (int)(curr - dst.SpanByte.ToPointer());
+            if (functionsState.StoredProcMode)
                 return;
-            }
 
-            //handle resp buffer overflow here
-            dst.ConvertToHeap();
-            dst.Length = totalLen;
-            dst.Memory = MemoryPool<byte>.Shared.Rent(totalLen);
-            fixed (byte* ptr = dst.Memory.Memory.Span)
-            {
-                byte* cc = ptr;
-                *cc++ = (byte)':';
-                NumUtils.WriteInt64(number, (int)integerLen, ref cc);
-                *cc++ = (byte)'\r';
-                *cc++ = (byte)'\n';
-            }
-        }
-
-        static void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
-        {
-            if (resp.Length < dst.SpanByte.Length)
-            {
-                resp.CopyTo(dst.SpanByte.AsSpan());
-                dst.SpanByte.Length = resp.Length;
-                return;
-            }
-
-            dst.ConvertToHeap();
-            dst.Length = resp.Length;
-            dst.Memory = MemoryPool<byte>.Shared.Rent(resp.Length);
-            resp.CopyTo(dst.Memory.Memory.Span);
-        }
-
-        static bool EvaluateObjectExpireInPlace(ExpireOption optionType, bool expiryExists, long expiration, ref IGarnetObject value, ref GarnetObjectStoreOutput output)
-        {
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
-            if (expiryExists)
-            {
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                        o->result1 = 0;
-                        break;
-                    case ExpireOption.XX:
-                    case ExpireOption.None:
-                        value.Expiration = expiration;
-                        o->result1 = 1;
-                        break;
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                        bool replace = expiration < value.Expiration;
-                        value.Expiration = replace ? value.Expiration : expiration;
-                        if (replace)
-                            o->result1 = 0;
-                        else
-                            o->result1 = 1;
-                        break;
-                    case ExpireOption.LT:
-                    case ExpireOption.XXLT:
-                        replace = expiration > value.Expiration;
-                        value.Expiration = replace ? value.Expiration : expiration;
-                        if (replace)
-                            o->result1 = 0;
-                        else
-                            o->result1 = 1;
-                        break;
-                    default:
-                        throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
-                }
-            }
-            else
-            {
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                    case ExpireOption.None:
-                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        value.Expiration = expiration;
-                        o->result1 = 1;
-                        break;
-                    case ExpireOption.XX:
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                    case ExpireOption.XXLT:
-                        o->result1 = 0;
-                        break;
-                    default:
-                        throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
-                }
-            }
-            return true;
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.ObjectStoreDelete,
+                version,
+                sessionID,
+                key,
+                value: default,
+                epochAccessor,
+                out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -195,7 +115,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool IncorrectObjectType(ref ObjectInput input, IGarnetObject value, ref SpanByteAndMemory output)
+        private bool IncorrectObjectType(ref ObjectInput input, IGarnetObject value, ref SpanByteAndMemory output)
         {
             var inputType = (byte)input.header.type;
             if (inputType != value.Type) // Indicates an incorrect type of key

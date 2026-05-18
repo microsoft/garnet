@@ -13,16 +13,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
+    using static LogAddress;
 
     /// <summary>
-    /// Tsavorite log
+    /// Tsavorite Log
     /// </summary>
     public sealed class TsavoriteLog : IDisposable
     {
         private Exception cannedException = null;
 
-        readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+        readonly TsavoriteLogAllocatorImpl allocator;
         readonly LightEpoch epoch;
         readonly bool isEpochOwned;
         readonly ILogCommitManager logCommitManager;
@@ -43,7 +43,7 @@ namespace Tsavorite.core
 
         // Offsets for all currently unprocessed commit records
         readonly Queue<(long, TsavoriteLogRecoveryInfo)> ongoingCommitRequests;
-        readonly List<TsavoriteLogRecoveryInfo> coveredCommits = new();
+        readonly List<TsavoriteLogRecoveryInfo> coveredCommits = [];
         long commitNum, commitCoveredAddress;
 
         readonly LogCommitPolicy commitPolicy;
@@ -73,9 +73,21 @@ namespace Tsavorite.core
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
 
         /// <summary>
-        /// Log safe read-only address
+        /// Log safe read-only address.
+        /// This is the largest address below which every byte has been fully written and is safe to
+        /// read by uncommitted iterators / replication streams. Computed lazily via a <c>min</c> fold
+        /// over per-thread in-flight slot publishes in the <see cref="LightEpoch"/> user-word column,
+        /// clamped by <see cref="TailAddress"/> above and by commit/recovery/reset floors below.
+        /// Reads are O(1) (return the monotonically-advanced cache); call
+        /// <see cref="RefreshSafeTailAddress"/> to force recomputation from the current in-flight state.
         /// </summary>
-        public long SafeTailAddress;
+        public long SafeTailAddress => Volatile.Read(ref cachedSafeTailAddress);
+
+        /// <summary>
+        /// Monotonically-advanced cache of the safe tail address. Advanced by
+        /// <see cref="RefreshSafeTailAddress"/> and by commit/recovery/reset paths.
+        /// </summary>
+        long cachedSafeTailAddress;
 
         /// <summary>
         /// Log committed until address
@@ -93,7 +105,7 @@ namespace Tsavorite.core
         public byte[] RecoveredCookie;
 
         /// <summary>
-        /// Header size used by TsavoriteLog
+        /// Header size used by TsavoriteLog, for entryLength and possibly checkSum
         /// </summary>
         public int HeaderSize => headerSize;
 
@@ -105,7 +117,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Task notifying log flush completions
         /// </summary>
-        internal CompletionEvent FlushEvent => allocator.FlushEvent;
+        internal CompletionEvent FlushEvent => allocator.flushEvent;
 
         /// <summary>
         /// Committed view of commitMetadataVersion
@@ -121,44 +133,42 @@ namespace Tsavorite.core
         readonly ILogger logger;
 
         /// <summary>
-        /// SafeTailAddress refresh frequency in milliseconds. -1 => disabled; 0 => immediate refresh after every enqueue, >1 => refresh period in milliseconds.
+        /// Index of the <see cref="LightEpoch"/> user-word slot used by this log to track in-flight enqueue
+        /// slot start addresses (or <see cref="long.MaxValue"/> when the thread is not currently enqueueing).
+        /// The minimum value across the column, clamped above by <see cref="TailAddress"/>, yields
+        /// <see cref="SafeTailAddress"/> — the largest address below which every byte has been fully written.
+        /// See the "SafeTail via per-thread in-flight publish" region below for the protocol.
         /// </summary>
-        readonly int SafeTailRefreshFrequencyMs;
+        readonly int inflightWord;
 
         /// <summary>
-        /// CTS to allow cancellation of the safe tail refresh background task, called during Dispose
+        /// Sentinel written to the in-flight slot when the thread has no enqueue in progress. Chosen as
+        /// <see cref="long.MaxValue"/> so that idle threads contribute neutrally to the <c>min</c> fold
+        /// that computes SafeTailAddress.
         /// </summary>
-        readonly CancellationTokenSource safeTailRefreshTaskCts;
+        const long InflightInactive = long.MaxValue;
 
         /// <summary>
-        /// Last captured safe tail address before epoch bump
+        /// Callback fired when the safe tail crosses a page boundary. Arguments are the old and new
+        /// <see cref="SafeTailAddress"/>. Fires at most once per page — byte-level SafeTail advances that
+        /// do not cross a page boundary are coalesced. Iterators that need byte-level notification should
+        /// use <see cref="WaitUncommittedAsync"/> instead of this callback.
         /// </summary>
-        long safeTailRefreshLastTailAddress = 0;
+        public Action<long, long> SafeTailPageShiftCallback;
 
-        /// <summary>
-        /// Events to control callback execution
-        /// </summary>
-        readonly SingleWaiterAutoResetEvent safeTailRefreshCallbackCompleted, safeTailRefreshEntryEnqueued;
+        /// <summary>Last published page for <see cref="SafeTailPageShiftCallback"/>. Written only inside
+        /// the callback-dispatch path; read without locks under the monotonic-update invariant.</summary>
+        long lastPublishedSafeTailPage;
 
-        /// <summary>
-        /// Task corresponding to safe tail refresh
-        /// </summary>
-        readonly Task safeTailRefreshTask;
-
-        /// <summary>
-        /// Action for bump epoch to refresh safe tail
-        /// </summary>
-        readonly Action periodicRefreshSafeTailAddressBumpCallbackAction;
-
-        /// <summary>
-        /// Callback when safe tail shifts
-        /// </summary>
-        public Action<long, long> SafeTailShiftCallback;
+        /// <summary>Highest page any producer has observed the tail reaching. Producers CAS this when they
+        /// cross into a new page and the CAS winner drives a <see cref="RefreshSafeTailAddress"/>. Ensures
+        /// the page-shift callback fires even with no active iterators driving scans.</summary>
+        long lastProducerObservedPage;
 
         /// <summary>
         /// Whether we automatically commit as records are inserted
         /// </summary>
-        readonly bool AutoCommit;
+        readonly bool autoCommit;
 
         /// <summary>
         /// Maximum memory size in bytes
@@ -166,17 +176,17 @@ namespace Tsavorite.core
         public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
 
         /// <summary>
-        /// Actual memory used by log
+        /// Actual memory used by log. Does not include overflow free pages.
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => allocator.GetLogicalAddressOfStartOfPage(allocator.AllocatedPageCount);
 
         /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
-        /// <param name="logger">Log settings</param>
+        /// <param name="logger">User provided logger instance</param>
         public TsavoriteLog(TsavoriteLogSettings logSettings, ILogger logger = null)
-            : this(logSettings, logSettings.TryRecoverLatest, logger)
+            : this(logSettings, logSettings.TryRecoverLatest, logger: logger)
         { }
 
         /// <summary>
@@ -188,19 +198,17 @@ namespace Tsavorite.core
         private TsavoriteLog(TsavoriteLogSettings logSettings, bool syncRecover, ILogger logger = null)
         {
             this.logger = logger;
-            AutoCommit = logSettings.AutoCommit;
+            autoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(
-                        logSettings.LogCommitDir ??
-                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
+                    (new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(logSettings.LogCommitDir ?? new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
                     !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
 
-            // Reserve 8 byte checksum in header if requested
+            // Reserve 8 byte checksum in header if requested, in addition to the entry length
             logChecksum = logSettings.LogChecksum;
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
@@ -211,14 +219,12 @@ namespace Tsavorite.core
             }
             else
                 epoch = logSettings.Epoch;
-            CommittedUntilAddress = Constants.kFirstValidAddress;
-            CommittedBeginAddress = Constants.kFirstValidAddress;
-            SafeTailAddress = Constants.kFirstValidAddress;
+
+            CommittedUntilAddress = FirstValidAddress;
+            CommittedBeginAddress = FirstValidAddress;
+            cachedSafeTailAddress = FirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
-            allocator = new(
-                new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback },
-                StoreFunctions<Empty, byte>.Create(EmptyKeyComparer.Instance),
-                @this => new BlittableAllocator<Empty, Byte, EmptyStoreFunctions>(@this));
+            allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 
@@ -246,127 +252,217 @@ namespace Tsavorite.core
                 catch { }
             }
 
-            // Set up safe tail refresh
-            SafeTailRefreshFrequencyMs = logSettings.SafeTailRefreshFrequencyMs;
-            if (SafeTailRefreshFrequencyMs >= 0)
+            // Claim a LightEpoch user-word slot for our in-flight enqueue publish protocol.
+            // Idle threads carry the InflightInactive sentinel (long.MaxValue) so they contribute
+            // neutrally to the min fold that produces SafeTailAddress.
+            inflightWord = epoch.AllocateUserWord(InflightInactive);
+        }
+
+        #region SafeTail via per-thread in-flight publish
+        //
+        // Each enqueue publishes its in-flight slot start address into a per-thread LightEpoch user-word,
+        // cleared when the payload write completes. SafeTailAddress = min(TailAddress, min over threads
+        // of inflightStart). This replaces the background-worker + epoch-bump design that previously
+        // maintained SafeTailAddress, eliminating the refresh-frequency tuning knob entirely.
+        //
+        // Producer protocol (must run inside epoch.Resume / before epoch.Suspend):
+        //   1. BeginInflightEnqueue()   — publish a lower bound ≤ eventual slot start
+        //   2. TryAllocateRetryNow(...) — FAA advances TailAddress and returns our slot start
+        //   3. (payload write)
+        //   4. EndInflightEnqueue()     — publish InflightInactive, wake parked iterators
+        // On allocation failure, call EndInflightEnqueue() to clear the lower bound before Suspend.
+        //
+        // The Begin pre-publish is required because otherwise a reader could observe TailAddress
+        // advanced past our slot while our in-flight slot still reads InflightInactive, erroneously
+        // concluding that region is safe. By publishing a lower bound before the FAA, any reader that
+        // sees TailAddress ≥ X is guaranteed (via release/acquire ordering) to also observe our slot at
+        // some value ≤ X.
+        //
+        // The published lower bound may be slightly below our actual slot start (by the amount other
+        // threads allocated between our GetTailAddress read and our FAA). This makes SafeTailAddress
+        // lag by at most O(N_threads × entry_size) bytes — negligible compared to page-level
+        // granularity of downstream consumers. We tolerate this in exchange for removing one
+        // Volatile.Write per enqueue from the hot path.
+
+        /// <summary>
+        /// Publish a conservative lower bound into this thread's in-flight slot before the allocator's
+        /// FAA. The value is <c>≤</c> our eventual slot start because <see cref="TailAddress"/> is
+        /// monotonic and the FAA can only increase it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void BeginInflightEnqueue()
+        {
+            Volatile.Write(ref epoch.ThisThreadUserWord(inflightWord), allocator.GetTailAddress());
+        }
+
+        /// <summary>
+        /// Clear this thread's in-flight publish (mark not-in-flight) and wake any parked iterators /
+        /// <see cref="WaitUncommittedAsync"/> awaiters. Safe to call unconditionally at the end of an
+        /// enqueue (success or failure).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void EndInflightEnqueue()
+        {
+            Volatile.Write(ref epoch.ThisThreadUserWord(inflightWord), InflightInactive);
+            NotifyParkedWaiters();
+            MaybeProducerDriveSafeTail();
+        }
+
+        /// <summary>
+        /// If a <see cref="SafeTailPageShiftCallback"/> is registered and this enqueue crossed into a
+        /// new page, drive a <see cref="RefreshSafeTailAddress"/> from the producer side. This keeps
+        /// the callback progressing even with no active iterators. Cost on the hot path is a cheap
+        /// (unsynchronized) long read + branch; the scan only runs once per page transition, driven by
+        /// exactly one producer (the CAS winner).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void MaybeProducerDriveSafeTail()
+        {
+            if (SafeTailPageShiftCallback == null) return;
+            long tail = allocator.GetTailAddress();
+            long newPage = tail >> allocator.LogPageSizeBits;
+            // Non-volatile read — stale values only cause a redundant CAS attempt, never missed progress
+            // (some subsequent producer will observe the shift and take the slow path).
+            if (newPage <= lastProducerObservedPage) return;
+            ProducerDriveSafeTailSlow(newPage);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ProducerDriveSafeTailSlow(long newPage)
+        {
+            long prev = Volatile.Read(ref lastProducerObservedPage);
+            if (newPage <= prev) return;
+            if (Interlocked.CompareExchange(ref lastProducerObservedPage, newPage, prev) != prev) return;
+            _ = RefreshSafeTailAddress();
+        }
+
+        /// <summary>
+        /// Wake any iterators parked in <see cref="WaitUncommittedAsync"/> or as single-iterators.
+        /// Fast path (no waiters): two null-check loads. When waiters exist, defers to the slow path.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void NotifyParkedWaiters()
+        {
+            // Fast path: both references are null when no iterators/waiters exist (NoCons scenario).
+            // The JIT can inline these two loads and the branch without hitting IL size limits.
+            if (refreshUncommittedTcs != null || activeSingleIterators != null)
+                NotifyParkedWaitersSlow();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void NotifyParkedWaitersSlow()
+        {
+            var tcs = refreshUncommittedTcs;
+            var asi = activeSingleIterators;
+
+            // When multiple iterators exist, refresh before signaling so they all see
+            // the fresh cache and skip their own RefreshSafeTailAddress scan.
+            // The count is a stale-tolerant hint: if we read an old value of 1 when it's actually 2,
+            // the extra iterator simply does its own scan (correct, just redundant). If we read 2 when
+            // it's actually 1, we do one extra scan (harmless).
+            if (asi != null && Volatile.Read(ref activeSingleIteratorCount) > 1)
+                _ = RefreshSafeTailAddress();
+
+            if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
+                tcs.TrySetResult(Empty.Default);
+            if (asi != null)
             {
-                safeTailRefreshCallbackCompleted = new()
-                {
-                    RunContinuationsAsynchronously = true
-                };
-                if (SafeTailRefreshFrequencyMs == 0)
-                {
-                    safeTailRefreshEntryEnqueued = new()
-                    {
-                        RunContinuationsAsynchronously = true
-                    };
-                }
-                safeTailRefreshTaskCts = new();
-                periodicRefreshSafeTailAddressBumpCallbackAction = PeriodicRefreshSafeTailAddressBumpCallback;
-                safeTailRefreshTask = Task.Run(SafeTailRefreshWorker);
+                foreach (var iter in asi)
+                    iter.Signal();
             }
         }
 
-        async Task SafeTailRefreshWorker()
+        /// <summary>
+        /// Recompute <see cref="SafeTailAddress"/> from the current in-flight state, advance the
+        /// monotonic cache, and invoke <see cref="SafeTailPageShiftCallback"/> if the new SafeTail
+        /// crossed a page boundary. Also notifies any parked iterators of the new value. Consumers
+        /// needing up-to-the-moment progress call this; iterator hot loops can read
+        /// <see cref="SafeTailAddress"/> directly (O(1) cached read).
+        /// </summary>
+        public long RefreshSafeTailAddress()
         {
+            // Fast path: if TailAddress hasn't moved beyond the cached SafeTailAddress, no new
+            // records have been allocated and scanning the inflight column cannot yield a higher
+            // value. Skip the expensive epoch-table scan entirely.
+            long tail = allocator.GetTailAddress();
+            long cached = Volatile.Read(ref cachedSafeTailAddress);
+            if (tail <= cached)
+                return cached;
+
+            // Ordering is critical: read the tail *before* the inflight column, with a full fence in
+            // between. Producers publish their inflight slot via a release store and then advance the
+            // tail via an interlocked FAA. If we read inflight first and tail second, a reader could
+            // observe a fresh tail value (post-FAA) while still seeing the producer's slot as
+            // InflightInactive (pre-BeginInflightEnqueue), incorrectly concluding that the entire
+            // range up to the new tail is safe even though the producer has not written its payload.
+            // Reading tail first + memory barrier guarantees that if we observed the FAA we will
+            // also observe the preceding BeginInflightEnqueue store.
+            Interlocked.MemoryBarrier();
+            long minInflight = epoch.GetMinUserWord(inflightWord);
+            long computed = minInflight < tail ? minInflight : tail;
+
+            long oldSafe;
+            if (Utility.MonotonicUpdate(ref cachedSafeTailAddress, computed, out oldSafe))
+            {
+                NotifyParkedWaiters();
+                MaybeInvokePageShiftCallback(oldSafe, computed);
+                return computed;
+            }
+            return oldSafe;
+        }
+
+        /// <summary>
+        /// Monotonically advance the cached <see cref="SafeTailAddress"/> to at least
+        /// <paramref name="floor"/>. Used by commit/recovery/reset paths to publish a known-safe address
+        /// (e.g., committed-until, recovered-until) without scanning in-flight slots.
+        /// </summary>
+        void AdvanceSafeTailFloor(long floor)
+        {
+            if (Utility.MonotonicUpdate(ref cachedSafeTailAddress, floor, out var oldSafe))
+            {
+                NotifyParkedWaiters();
+                MaybeInvokePageShiftCallback(oldSafe, floor);
+            }
+        }
+
+        /// <summary>
+        /// Fires <see cref="SafeTailPageShiftCallback"/> only when the new SafeTail is on a different
+        /// page than the last call. Uses <see cref="lastPublishedSafeTailPage"/> as a monotonic filter so
+        /// that concurrent callers cannot double-fire for the same page transition. The callback is
+        /// always invoked outside epoch protection so it can safely re-enter Tsavorite APIs (matching
+        /// the contract of the previous background-worker design).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void MaybeInvokePageShiftCallback(long oldSafe, long newSafe)
+        {
+            var cb = SafeTailPageShiftCallback;
+            if (cb == null) return;
+            long newPage = newSafe >> allocator.LogPageSizeBits;
+            long prev = Volatile.Read(ref lastPublishedSafeTailPage);
+            if (newPage <= prev) return;
+            if (Interlocked.CompareExchange(ref lastPublishedSafeTailPage, newPage, prev) != prev) return;
+
+            // Invoke callback outside epoch protection. Producer drive and direct RefreshSafeTailAddress
+            // callers may hold the epoch; suspend it so the callback can re-enter log APIs without
+            // tripping nested-epoch asserts or corrupting epoch bookkeeping.
+            // Exceptions are caught and logged — the callback is best-effort (e.g., AOF truncation)
+            // and must not propagate into EndInflightEnqueue / producer cleanup paths.
+            var isProtected = epoch.ThisInstanceProtected();
+            if (isProtected) epoch.Suspend();
             try
             {
-                var token = safeTailRefreshTaskCts.Token;
-
-                // Outer loop makes the worker wake up every so often (either delay or enqueue-signal)
-                // and try to move SafeTailAddress towards TailAddress
-                while (!token.IsCancellationRequested)
-                {
-                    // Inner loop keeps moving SafeTailAddress towards TailAddress until we have
-                    // caught up and there is no more movement necessary.
-                    while (!token.IsCancellationRequested)
-                    {
-                        try
-                        {
-                            // Resume epoch protection
-                            epoch.Resume();
-
-                            // Capture the tail address before epoch refresh, so that the bump action
-                            // knows what the new SafeTailAddress should be set to.
-                            safeTailRefreshLastTailAddress = TailAddress;
-
-                            // Break out of inner loop if there is no more work to do
-                            if (safeTailRefreshLastTailAddress <= SafeTailAddress)
-                                break;
-
-                            // Bump epoch with an action to update SafeTailAddress to the captured safeTailRefreshLastTailAddress
-                            epoch.BumpCurrentEpoch(periodicRefreshSafeTailAddressBumpCallbackAction);
-                        }
-                        finally
-                        {
-                            // Suspend epoch protection
-                            epoch.Suspend();
-                        }
-                        // Wait for the bump epoch action to finish executing, so we can re-check
-                        await safeTailRefreshCallbackCompleted.WaitAsync().ConfigureAwait(false);
-                    }
-                    // Work is done, wait for the next iteration of the worker loop
-                    if (SafeTailRefreshFrequencyMs > 0)
-                    {
-                        await Task.Delay(SafeTailRefreshFrequencyMs, token).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await safeTailRefreshEntryEnqueued.WaitAsync().ConfigureAwait(false);
-                    }
-                }
-            }
-            catch (TaskCanceledException) when (safeTailRefreshTaskCts.Token.IsCancellationRequested)
-            {
-                // Suppress the exception if the task was cancelled due to TsavoriteLog disposal or refresh task cancellation
+                cb(oldSafe, newSafe);
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "Exception encountered during PeriodicSafeTailRefreshRunner");
-            }
-        }
-
-        void PeriodicRefreshSafeTailAddressBumpCallback()
-        {
-            try
-            {
-                if (Utility.MonotonicUpdate(ref SafeTailAddress, safeTailRefreshLastTailAddress, out long oldSafeTailAddress))
-                {
-                    var tcs = refreshUncommittedTcs;
-                    if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
-                        tcs.SetResult(Empty.Default);
-                    var _callback = SafeTailShiftCallback;
-                    if (_callback != null || activeSingleIterators != null)
-                    {
-                        // We invoke callback outside epoch protection
-                        bool isProtected = epoch.ThisInstanceProtected();
-                        if (isProtected) epoch.Suspend();
-                        try
-                        {
-                            // Notify waiting single iterators, if any
-                            var _asi = activeSingleIterators;
-                            if (_asi != null)
-                            {
-                                foreach (var iter in _asi)
-                                {
-                                    iter.Signal();
-                                }
-                            }
-                            // Invoke callback, if any
-                            _callback?.Invoke(oldSafeTailAddress, safeTailRefreshLastTailAddress);
-                        }
-                        finally
-                        {
-                            if (isProtected) epoch.Resume();
-                        }
-                    }
-                }
+                logger?.LogError(e, "SafeTailPageShiftCallback failed");
             }
             finally
             {
-                safeTailRefreshCallbackCompleted.Signal();
+                if (isProtected) epoch.Resume();
             }
         }
+        #endregion
 
         /// <summary>
         /// Reset TsavoriteLog to empty state
@@ -374,11 +470,17 @@ namespace Tsavorite.core
         /// </summary>
         public void Reset()
         {
-            var beginAddress = allocator.GetFirstValidLogicalAddress(0);
+            var beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
             allocator.Reset();
             CommittedUntilAddress = beginAddress;
             CommittedBeginAddress = beginAddress;
-            SafeTailAddress = beginAddress;
+            cachedSafeTailAddress = beginAddress;
+
+            // Reset monotonic page trackers to the new (lower) address so that the first post-reset
+            // enqueue that crosses into a new page re-arms both producer-drive and callback dispatch.
+            var resetPage = beginAddress >> allocator.LogPageSizeBits;
+            Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
+            Volatile.Write(ref lastProducerObservedPage, resetPage);
 
             commitNum = 0;
             this.beginAddress = beginAddress;
@@ -406,7 +508,7 @@ namespace Tsavorite.core
 
             // Wait for initialization to complete
             while (Initializing)
-                Thread.Yield();
+                _ = Thread.Yield();
         }
 
         /// <summary>
@@ -422,7 +524,7 @@ namespace Tsavorite.core
             try
             {
                 if (beginAddress == 0)
-                    beginAddress = allocator.GetFirstValidLogicalAddress(0);
+                    beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
 
                 if (committedUntilAddress == 0)
                     committedUntilAddress = beginAddress;
@@ -439,12 +541,21 @@ namespace Tsavorite.core
 
                 CommittedUntilAddress = committedUntilAddress;
                 CommittedBeginAddress = beginAddress;
-                SafeTailAddress = committedUntilAddress;
+
+                // Align monotonic page trackers to the restored address so that post-recovery producer
+                // drive and page-shift callbacks re-arm correctly (they only advance beyond the
+                // initial floor).
+                var resetPage = committedUntilAddress >> allocator.LogPageSizeBits;
+                Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
+                Volatile.Write(ref lastProducerObservedPage, resetPage);
+
+                AdvanceSafeTailFloor(committedUntilAddress);
 
                 commitNum = lastCommitNum;
                 this.beginAddress = beginAddress;
 
-                if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
+                if (lastCommitNum > 0)
+                    logCommitManager.OnRecovery(lastCommitNum);
             }
             finally
             {
@@ -493,14 +604,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Mark the log as complete. A completed log log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
         /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
         public void CompleteLog(bool spinWait = false)
         {
             // Ensure progress even if there is no thread in epoch table. Also, BumpCurrentEpoch must be done on a protected thread.
-            bool isProtected = epoch.ThisInstanceProtected();
+            var isProtected = epoch.ThisInstanceProtected();
             if (!isProtected)
                 epoch.Resume();
             try
@@ -508,7 +619,7 @@ namespace Tsavorite.core
                 // Ensure all currently started entries will enqueue before we declare log closed
                 epoch.BumpCurrentEpoch(() =>
                 {
-                    CommitInternal(out _, out _, false, [], long.MaxValue, null);
+                    _ = CommitInternal(out _, out _, false, [], long.MaxValue, null);
                 });
             }
             finally
@@ -522,18 +633,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Check if the log is complete. A completed log log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
         public bool LogCompleted => commitNum == long.MaxValue;
 
         internal void TrueDispose()
         {
-            safeTailRefreshTaskCts?.Cancel();
-            safeTailRefreshCallbackCompleted?.Signal();
-            safeTailRefreshEntryEnqueued?.Signal();
+            // Release our in-flight user-word slot back to the epoch. Iterators no longer parked; the
+            // slot column is no longer referenced.
+            epoch.ReleaseUserWord(inflightWord);
             commitQueue.Dispose();
-            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
+            _ = commitTcs.TrySetException(new ObjectDisposedException("TsavoriteLog has been disposed"));
             allocator.Dispose();
             if (isEpochOwned)
                 epoch.Dispose();
@@ -551,7 +662,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -564,7 +675,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -578,7 +689,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!UnsafeTryEnqueueRaw(entryBytes, noCommit, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
 
         }
@@ -596,13 +707,15 @@ namespace Tsavorite.core
             }
             try
             {
-                if (!isProtected) epoch.Resume();
+                if (!isProtected)
+                    epoch.Resume();
                 if (!allocator.ShiftReadOnlyToTail(out _, out _))
                     CommitMetadataOnly(ref info);
             }
             finally
             {
-                if (!isProtected) epoch.Suspend();
+                if (!isProtected)
+                    epoch.Suspend();
             }
         }
 
@@ -610,14 +723,18 @@ namespace Tsavorite.core
         /// Get page size in bits
         /// </summary>
         /// <returns></returns>
-        public int UnsafeGetLogPageSizeBits()
-            => allocator.LogPageSizeBits;
+        public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
 
         /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyAddressLagOffset()
-            => allocator.GetReadOnlyAddressLagOffset();
+        public long UnsafeGetReadOnlyAddressAbove(long newTailAddress, int numPagesAbove)
+        {
+            var readOnlyAddress = allocator.CalculateReadOnlyAddress(newTailAddress, allocator.HeadAddress) + numPagesAbove * allocator.PageSize;
+            if (readOnlyAddress > newTailAddress)
+                readOnlyAddress = newTailAddress;
+            return readOnlyAddress;
+        }
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -628,7 +745,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -642,7 +759,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -656,7 +773,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
         #endregion
@@ -674,28 +791,32 @@ namespace Tsavorite.core
         {
             logicalAddress = 0;
             var length = entry.SerializedLength;
-            int allocatedLength = headerSize + Align(length);
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
+                    if (cannedException != null)
+                        throw cannedException;
                     return false;
                 }
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
-            SetHeader(length, (byte*)physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -720,28 +841,33 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                foreach (var entry in entries)
+                {
+                    var length = entry.SerializedLength;
+                    entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
+                    SetHeader(length, (byte*)physicalAddress);
+                    physicalAddress += Align(length) + headerSize;
+                }
+            }
+            finally
+            {
+                EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            foreach (var entry in entries)
-            {
-                var length = entry.SerializedLength;
-                entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
-                SetHeader(length, (byte*)physicalAddress);
-                physicalAddress += Align(length) + headerSize;
-            }
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -756,29 +882,34 @@ namespace Tsavorite.core
         {
             logicalAddress = 0;
             var length = entry.Length;
-            int allocatedLength = headerSize + Align(length);
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
+            try
+            {
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
+                    if (cannedException != null)
+                        throw cannedException;
                     return false;
                 }
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
-            SetHeader(length, (byte*)physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                fixed (byte* bp = entry)
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -792,31 +923,36 @@ namespace Tsavorite.core
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit, out long logicalAddress)
         {
-            int length = entryBytes.Length;
+            var length = entryBytes.Length;
 
             // Length should be pre-aligned
             Debug.Assert(length == Align(length));
             logicalAddress = 0;
-            int allocatedLength = length;
+            var allocatedLength = length;
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit && !noCommit) Commit();
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit && !noCommit) Commit();
             return true;
         }
 
@@ -831,28 +967,33 @@ namespace Tsavorite.core
         {
             logicalAddress = 0;
             var length = entry.Length;
-            int allocatedLength = headerSize + Align(length);
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
-            SetHeader(length, (byte*)physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                fixed (byte* bp = &entry.GetPinnableReference())
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -866,142 +1007,170 @@ namespace Tsavorite.core
         {
             logicalAddress = 0;
             var length = sizeof(THeader);
-            int allocatedLength = headerSize + Align(length);
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined blittable struct header and one <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(THeader) + item.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, TEpochAccessor epochAccessor, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TEpochAccessor>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged
             where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
-
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
-                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-                item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
                 SetHeader(length, physicalAddress);
-                safeTailRefreshEntryEnqueued?.Signal();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (AutoCommit) Commit();
+            if (autoCommit)
+                Commit();
         }
 
         /// <summary>
-        /// Append two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue(ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
         {
-            logicalAddress = 0;
-            var length = item1.TotalSize + item2.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = item1.TotalSize() + item2.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            item1.CopyTo(physicalAddress + headerSize);
-            item2.CopyTo(physicalAddress + headerSize + item1.TotalSize);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                var offset = headerSize;
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item2.TotalSize();
+                item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="input"></param>
@@ -1015,112 +1184,161 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                _ = input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header, one <see cref="ReadOnlySpan{_byte_}"/> entry, and one <see cref="IStoreInput"/> atomically to the log.
         /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="input"></param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
-            where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit)
+                Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header, one <see cref="ReadOnlySpan{_byte_}"/> entry, and one <see cref="IStoreInput"/> atomically to the log.
+        /// </summary>
+        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
+            where THeader : unmanaged where TInput : IStoreInput
+            where TEpochAccessor : IEpochAccessor
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
+            var allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
-                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-                input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                safeTailRefreshEntryEnqueued?.Signal();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (AutoCommit) Commit();
+            if (autoCommit)
+                Commit();
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
-                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-                item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-                input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
-                    input.SerializedLength);
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item2.TotalSize();
+                _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                safeTailRefreshEntryEnqueued?.Signal();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (AutoCommit) Commit();
+            if (autoCommit)
+                Commit();
         }
 
         /// <summary>
-        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(byte) + item.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            BeginInflightEnqueue();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *physicalAddress = userHeader;
+                var offset = sizeof(byte);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1128,23 +1346,26 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
-                if (logicalAddress > 0)
+                var flushEvent = allocator.flushEvent;
+                if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 
-                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
+                // Clear in-flight slot before suspending, re-publish after resuming
+                EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
                 try
                 {
+                    if (cannedException != null)
+                        throw cannedException;
                     flushEvent.Wait();
                 }
                 finally
                 {
                     epoch.Resume();
+                    BeginInflightEnqueue();
                 }
             }
         }
@@ -1155,25 +1376,30 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
+                var flushEvent = allocator.flushEvent;
+                allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
                 if (logicalAddress > 0)
                     return logicalAddress;
 
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled
                 Debug.Assert(logicalAddress == 0);
 
+                // Clear in-flight slot before suspending, re-publish after resuming
+                EndInflightEnqueue();
                 epoch.Suspend();
                 var suspended = epochAccessor.TrySuspend();
                 try
                 {
-                    if (cannedException != null) ThrowException(cannedException);
+                    if (cannedException != null)
+                        ThrowException(cannedException);
                     flushEvent.Wait();
                 }
                 finally
                 {
-                    if (suspended) epochAccessor.Resume();
+                    if (suspended)
+                        epochAccessor.Resume();
                     epoch.Resume();
+                    BeginInflightEnqueue();
                 }
             }
         }
@@ -1182,7 +1408,7 @@ namespace Tsavorite.core
         static void ThrowException(Exception e) => throw e;
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1190,37 +1416,44 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
 
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1229,68 +1462,82 @@ namespace Tsavorite.core
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
 
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item2.TotalSize();
+                item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log. If it returns true, we are
+        /// Try to append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe bool TryEnqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+            var length = sizeof(byte) + item.TotalSize();
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
 
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *physicalAddress = userHeader;
+                var offset = sizeof(byte);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -1318,7 +1565,7 @@ namespace Tsavorite.core
         public ValueTask<long> EnqueueAsync(byte[] entry, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
-            if (TryEnqueue(entry, out long logicalAddress))
+            if (TryEnqueue(entry, out var logicalAddress))
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entry, token);
@@ -1353,7 +1600,7 @@ namespace Tsavorite.core
         public ValueTask<long> EnqueueAsync(ReadOnlyMemory<byte> entry, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
-            if (TryEnqueue(entry.Span, out long logicalAddress))
+            if (TryEnqueue(entry.Span, out var logicalAddress))
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entry, token);
@@ -1388,7 +1635,7 @@ namespace Tsavorite.core
         public ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
-            if (TryEnqueue(readOnlySpanBatch, out long address))
+            if (TryEnqueue(readOnlySpanBatch, out var address))
                 return new ValueTask<long>(address);
 
             return SlowEnqueueAsync(this, readOnlySpanBatch, token);
@@ -1424,7 +1671,7 @@ namespace Tsavorite.core
         public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : ILogEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
-            if (TryEnqueue(entry, out long logicalAddress))
+            if (TryEnqueue(entry, out var logicalAddress))
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entry, token);
@@ -1461,7 +1708,7 @@ namespace Tsavorite.core
         public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : ILogEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
-            if (TryEnqueue(entries, out long logicalAddress))
+            if (TryEnqueue(entries, out var logicalAddress))
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entries, token);
@@ -1506,7 +1753,7 @@ namespace Tsavorite.core
             while (commitNum > persistedCommitNum || untilAddress > CommittedUntilAddress)
             {
                 if (cannedException != null) throw cannedException;
-                Thread.Yield();
+                _ = Thread.Yield();
             }
         }
 
@@ -1540,8 +1787,13 @@ namespace Tsavorite.core
         /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown)</returns>
         public async ValueTask<bool> WaitUncommittedAsync(long nextAddress, CancellationToken token = default)
         {
-            Debug.Assert(SafeTailRefreshFrequencyMs >= 0);
+            // Fast path — cache already past nextAddress.
             if (nextAddress < SafeTailAddress)
+                return true;
+
+            // Refresh once in case in-flight enqueues have already completed but haven't triggered a
+            // recompute yet (e.g., single-producer, no other reader has forced RefreshSafeTailAddress).
+            if (nextAddress < RefreshSafeTailAddress())
                 return true;
 
             while (true)
@@ -1558,13 +1810,13 @@ namespace Tsavorite.core
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (nextAddress < SafeTailAddress)
+                if (nextAddress < SafeTailAddress || nextAddress < RefreshSafeTailAddress())
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
                 try
                 {
-                    await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
+                    _ = await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
@@ -1578,8 +1830,8 @@ namespace Tsavorite.core
         /// Issue commit request for log (until tail)
         /// </summary>
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
+        /// <param name="cookie"></param>
         /// <returns> whether there is anything to commit. </returns>
-
         public void Commit(bool spinWait = false, byte[] cookie = null)
         {
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
@@ -1629,6 +1881,8 @@ namespace Tsavorite.core
         /// complete the commit. Throws exception if this or any 
         /// ongoing commit fails.
         /// </summary>
+        /// <param name="cookie"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
         public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
@@ -1672,12 +1926,9 @@ namespace Tsavorite.core
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
-
-            if (prevCommitTask == null) prevCommitTask = CommitTask;
+            prevCommitTask ??= CommitTask;
 
             var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, null, -1, null);
-
-
             if (success)
             {
                 while (CommittedUntilAddress < actualTail || persistedCommitNum < actualCommitNum)
@@ -1747,7 +1998,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
@@ -1762,7 +2013,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
@@ -1777,7 +2028,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
@@ -1793,7 +2044,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
@@ -1809,7 +2060,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
@@ -2090,7 +2341,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntil(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _);
+            _ = Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _);
         }
 
         /// <summary>
@@ -2105,9 +2356,9 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress &= ~allocator.PageSizeMask;
+                    untilAddress = allocator.GetAddressOfStartOfPageOfAddress(untilAddress);
 
-                bool epochProtected = epoch.ThisInstanceProtected();
+                var epochProtected = epoch.ThisInstanceProtected();
                 try
                 {
                     if (!epochProtected)
@@ -2130,7 +2381,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, untilAddress & ~allocator.PageSizeMask, out _);
+            _ = Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPageOfAddress(untilAddress), out _);
         }
 
         /// <summary>
@@ -2143,18 +2394,14 @@ namespace Tsavorite.core
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
-
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
-
-            if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
             var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
@@ -2163,7 +2410,23 @@ namespace Tsavorite.core
             return iter;
         }
 
+        /// <summary>
+        /// Registered single-waiter iterators (one per replica / pub-sub subscriber). Non-null when at
+        /// least one <see cref="TsavoriteLogScanSingleIterator"/> is active. Replaced atomically under
+        /// <c>lock(this)</c> on iterator add/remove — read without lock on the hot path
+        /// (<see cref="NotifyParkedWaiters"/>).
+        /// </summary>
         List<TsavoriteLogScanSingleIterator> activeSingleIterators;
+
+        /// <summary>
+        /// Count of registered single iterators, mirroring <c>activeSingleIterators.Count</c>.
+        /// Read via <c>Volatile.Read</c> by <see cref="NotifyParkedWaiters"/> to
+        /// decide whether to pre-refresh <see cref="SafeTailAddress"/> before signaling iterators.
+        /// When <c>&gt; 1</c>, a single scan at the producer side prevents N redundant scans in the
+        /// N woken iterators. Stale reads are benign — see <see cref="NotifyParkedWaiters"/> comments.
+        /// Written under <c>lock(this)</c> alongside <see cref="activeSingleIterators"/>.
+        /// </summary>
+        int activeSingleIteratorCount;
 
         public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
         {
@@ -2181,22 +2444,21 @@ namespace Tsavorite.core
                         }
                     }
                     activeSingleIterators = newList;
+                    // Keep the count in sync; read without lock by NotifyParkedWaiters as a hint.
+                    activeSingleIteratorCount = newList?.Count ?? 0;
                 }
             }
         }
 
-        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
-
-            if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
             var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
@@ -2204,6 +2466,8 @@ namespace Tsavorite.core
             {
                 List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
                 activeSingleIterators = newList;
+                // Keep the count in sync; read without lock by NotifyParkedWaiters as a hint.
+                activeSingleIteratorCount = newList.Count;
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
@@ -2234,7 +2498,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2265,7 +2529,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2294,19 +2558,11 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
             return GetRecordLengthAndFree(ctx.record);
-        }
-
-        /// <summary>
-        /// Trigger refresh of safe tail address
-        /// </summary>
-        private void DoAutoRefreshSafeTailAddress()
-        {
-            safeTailRefreshEntryEnqueued?.Signal();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2329,29 +2585,34 @@ namespace Tsavorite.core
         {
             var entryBodySize = info.SerializedSize();
 
-            int allocatedLength = headerSize + Align(entryBodySize);
+            var allocatedLength = headerSize + Align(entryBodySize);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
-                epoch.Suspend();
-                return false;
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
+                {
+                    return false;
+                }
+
+                // Finish filling in all fields
+                info.BeginAddress = BeginAddress;
+                info.UntilAddress = logicalAddress + allocatedLength;
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+
+                var entryBody = info.ToByteArray();
+                fixed (byte* bp = entryBody)
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
+                SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
             }
-            // Finish filling in all fields
-            info.BeginAddress = BeginAddress;
-            info.UntilAddress = logicalAddress + allocatedLength;
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-
-            var entryBody = info.ToByteArray();
-            fixed (byte* bp = entryBody)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
-            SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             // Return the commit tail
             return true;
         }
@@ -2378,7 +2639,7 @@ namespace Tsavorite.core
         {
             CommittedBeginAddress = recoveryInfo.BeginAddress;
             CommittedUntilAddress = recoveryInfo.UntilAddress;
-            Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
+            _ = Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
         }
 
         private void WriteCommitMetadata(TsavoriteLogRecoveryInfo recoveryInfo)
@@ -2387,7 +2648,7 @@ namespace Tsavorite.core
 
             // If we are in fast-commit, we may not write every metadata to disk. However, when we are deleting files
             // on disk, we have to write metadata for the new start location on disk so we know where to scan forward from.
-            bool forceWriteMetadata = fastCommitMode && (allocator.BeginAddress < recoveryInfo.BeginAddress);
+            var forceWriteMetadata = fastCommitMode && (allocator.BeginAddress < recoveryInfo.BeginAddress);
             logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
                 recoveryInfo.ToByteArray(), recoveryInfo.CommitNum, forceWriteMetadata);
 
@@ -2419,16 +2680,16 @@ namespace Tsavorite.core
                 {
                     var oldCommitTcs = commitTcs;
                     commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    oldCommitTcs.TrySetException(exception);
+                    _ = oldCommitTcs.TrySetException(exception);
                     // Silently set flushed until past this range
-                    Utility.MonotonicUpdate(ref allocator.FlushedUntilAddress, commitInfo.UntilAddress, out _);
+                    _ = Utility.MonotonicUpdate(ref allocator.FlushedUntilAddress, commitInfo.UntilAddress, out _);
                     allocator.UnsafeSkipError(commitInfo);
                 }
                 else
                 {
                     cannedException = exception;
                     // Make sure future waiters do not get a fresh tcs
-                    commitTcs.TrySetException(cannedException);
+                    _ = commitTcs.TrySetException(cannedException);
                 }
                 return;
             }
@@ -2441,7 +2702,7 @@ namespace Tsavorite.core
                     var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
                     if (addr > commitInfo.UntilAddress) break;
                     coveredCommits.Add(recoveryInfo);
-                    ongoingCommitRequests.Dequeue();
+                    _ = ongoingCommitRequests.Dequeue();
                 }
             }
 
@@ -2483,7 +2744,7 @@ namespace Tsavorite.core
                 CommitInfo = commitInfo,
                 NextTask = commitTcs.Task
             };
-            _commitTcs?.TrySetResult(lci);
+            _ = (_commitTcs?.TrySetResult(lci));
         }
 
         /// <summary>
@@ -2506,20 +2767,18 @@ namespace Tsavorite.core
             if (!readOnlyMode)
                 throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+            _ = await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
         private void SignalWaitingROIterators()
         {
-            // One RecoverReadOnly use case is to allow a TsavoriteLogIterator to continuously read a mirror TsavoriteLog (over the same log storage) of a primary TsavoriteLog.
+            // One RecoverReadOnly use case is to allow a TsavoriteLogScanIterator to continuously read a mirror TsavoriteLog (over the same log storage) of a primary TsavoriteLog.
             // In this scenario, when the iterator arrives at the tail after a previous call to RestoreReadOnly, it will wait asynchronously until more data
             // is committed and read by a subsequent call to RecoverReadOnly. Here, we signal iterators that we have completed recovery.
             var _commitTcs = commitTcs;
-            if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
-            {
+            if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException is CommitFailureException)
                 commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
 
             // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
@@ -2527,7 +2786,7 @@ namespace Tsavorite.core
                 CommitInfo = new CommitInfo { FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
                 NextTask = commitTcs.Task
             };
-            _commitTcs?.TrySetResult(lci);
+            _ = (_commitTcs?.TrySetResult(lci));
         }
 
         private bool LoadCommitMetadata(long commitNum, out TsavoriteLogRecoveryInfo info)
@@ -2577,7 +2836,7 @@ namespace Tsavorite.core
                 try
                 {
                     using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                    scanIterator.ScanForwardForCommit(ref info);
+                    _ = scanIterator.ScanForwardForCommit(ref info);
                 }
                 catch { }
             }
@@ -2590,7 +2849,7 @@ namespace Tsavorite.core
 
                 // Reset variables to normal
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2599,12 +2858,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
 
                 try
                 {
@@ -2625,7 +2884,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
@@ -2637,7 +2897,8 @@ namespace Tsavorite.core
             long scanStart = 0;
             foreach (var metadataCommit in logCommitManager.ListCommits())
             {
-                if (metadataCommit > requestedCommitNum) continue;
+                if (metadataCommit > requestedCommitNum)
+                    continue;
                 try
                 {
                     if (LoadCommitMetadata(metadataCommit, out info))
@@ -2672,15 +2933,15 @@ namespace Tsavorite.core
             }
 
             // At this point, we should have found the exact commit num requested
-            Debug.Assert(info.CommitNum == requestedCommitNum);
+            Debug.Assert(info.CommitNum == requestedCommitNum, $"info.CommitNum {info.CommitNum} must equal requestedCommitNum {requestedCommitNum}");
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 try
                 {
                     allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
@@ -2698,7 +2959,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
@@ -2732,7 +2994,7 @@ namespace Tsavorite.core
                 try
                 {
                     using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                    scanIterator.ScanForwardForCommit(ref info);
+                    _ = scanIterator.ScanForwardForCommit(ref info);
                 }
                 catch { }
             }
@@ -2744,7 +3006,7 @@ namespace Tsavorite.core
                 logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2753,12 +3015,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
@@ -2769,7 +3031,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
 
             return cookie;
         }
@@ -2778,7 +3041,7 @@ namespace Tsavorite.core
         {
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
-            SafeTailAddress = info.UntilAddress;
+            AdvanceSafeTailFloor(info.UntilAddress);
         }
 
         /// <summary>
@@ -2793,40 +3056,43 @@ namespace Tsavorite.core
         {
             logicalAddress = 0;
 
-            int totalEntries = readOnlySpanBatch.TotalEntries();
+            var totalEntries = readOnlySpanBatch.TotalEntries();
             allocatedLength = 0;
-            for (int i = 0; i < totalEntries; i++)
-            {
+            for (var i = 0; i < totalEntries; i++)
                 allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
-            }
 
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            BeginInflightEnqueue();
+            try
             {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                for (var i = 0; i < totalEntries; i++)
+                {
+                    var span = readOnlySpanBatch.Get(i);
+                    var entryLength = span.Length;
+                    fixed (byte* bp = &span.GetPinnableReference())
+                        Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryLength, entryLength);
+                    SetHeader(entryLength, (byte*)physicalAddress);
+                    physicalAddress += Align(entryLength) + headerSize;
+                }
+            }
+            finally
+            {
+                EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            for (int i = 0; i < totalEntries; i++)
-            {
-                var span = readOnlySpanBatch.Get(i);
-                var entryLength = span.Length;
-                fixed (byte* bp = &span.GetPinnableReference())
-                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryLength, entryLength);
-                SetHeader(entryLength, (byte*)physicalAddress);
-                physicalAddress += Align(entryLength) + headerSize;
-            }
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-            if (AutoCommit) Commit();
+            if (autoCommit) Commit();
             return true;
         }
 
@@ -2839,7 +3105,7 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
-                ctx.completedRead.Release();
+                _ = ctx.completedRead.Release();
             }
             else
             {
@@ -2851,19 +3117,19 @@ namespace Tsavorite.core
                     logger?.LogDebug("Invalid record length found: {length}", length);
                     ctx.record.Return();
                     ctx.record = null;
-                    ctx.completedRead.Release();
+                    _ = ctx.completedRead.Release();
                 }
                 else
                 {
-                    int requiredBytes = headerSize + length;
+                    var requiredBytes = headerSize + length;
                     if (ctx.record.available_bytes >= requiredBytes)
                     {
-                        ctx.completedRead.Release();
+                        _ = ctx.completedRead.Release();
                     }
                     else
                     {
                         ctx.record.Return();
-                        allocator.AsyncReadRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
+                        allocator.AsyncReadBlittableRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
                     }
                 }
             }
@@ -2878,7 +3144,7 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
-                ctx.completedRead.Release();
+                _ = ctx.completedRead.Release();
             }
             else
             {
@@ -2888,7 +3154,7 @@ namespace Tsavorite.core
                     ctx.record.Return();
                     ctx.record = null;
                 }
-                ctx.completedRead.Release();
+                _ = ctx.completedRead.Release();
             }
         }
 
@@ -2962,7 +3228,6 @@ namespace Tsavorite.core
             return length;
         }
 
-
         private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {
             if (cannedException != null)
@@ -3018,7 +3283,7 @@ namespace Tsavorite.core
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
                     // anyways if no record can be enqueued
-                    while (!TryEnqueueCommitRecord(ref info)) Thread.Yield();
+                    while (!TryEnqueueCommitRecord(ref info)) _ = Thread.Yield();
                     commitTail = info.UntilAddress;
                 }
                 else
@@ -3030,14 +3295,13 @@ namespace Tsavorite.core
                     info.UntilAddress = commitTail = TailAddress;
                 }
 
-                Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
+                _ = Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
 
                 commitPolicy.OnCommitCreated(info);
                 // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
                 ongoingCommitRequests.Enqueue((commitTail, info));
             }
-
 
             // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
             // past this commit, we can manually trigger a commit callback for safety, and return.
@@ -3048,7 +3312,7 @@ namespace Tsavorite.core
             }
 
             // Otherwise, move to set read-only tail and flush 
-            bool isProtected = epoch.ThisInstanceProtected();
+            var isProtected = epoch.ThisInstanceProtected();
             if (!isProtected)
                 epoch.Resume();
             try

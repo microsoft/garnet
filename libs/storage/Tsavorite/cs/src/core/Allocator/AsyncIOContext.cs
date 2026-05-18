@@ -4,14 +4,15 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext<TKey, TValue>
+    public struct AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -19,22 +20,15 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key
+        /// Key; this is a shallow copy of the key in pendingContext, pointing to its requestKey.
         /// </summary>
-        public IHeapContainer<TKey> request_key;
+        public ConditionallyHoistedKey requestKey;
+
+        /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
+        public DiskLogRecord diskLogRecord;
 
         /// <summary>
-        /// Retrieved key
-        /// </summary>
-        public TKey key;
-
-        /// <summary>
-        /// Retrieved value
-        /// </summary>
-        public TValue value;
-
-        /// <summary>
-        /// Logical address
+        /// Logical address that was requested
         /// </summary>
         public long logicalAddress;
 
@@ -56,72 +50,88 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext<TKey, TValue>> callbackQueue;
-
-        /// <summary>
-        /// Async Operation ValueTask backer
-        /// </summary>
-        public TaskCompletionSource<AsyncIOContext<TKey, TValue>> asyncOperation;
+        public AsyncQueue<AsyncIOContext> callbackQueue;
 
         /// <summary>
         /// Synchronous completion event
         /// </summary>
-        internal AsyncIOContextCompletionEvent<TKey, TValue> completionEvent;
+        internal AsyncIOContextCompletionEvent completionEvent;
 
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public bool IsDefault() => callbackQueue is null && asyncOperation is null && completionEvent is null;
+        public readonly bool IsDefault() => callbackQueue is null && completionEvent is null;
 
         /// <summary>
         /// Dispose
         /// </summary>
-        public void Dispose()
+        public void DisposeRecord()
         {
-            // Do not dispose request_key as it is a shallow copy of the key in pendingContext
+            // Do not dispose requestKey as it is a shallow copy of the key in pendingContext
+            diskLogRecord.Dispose();
+            diskLogRecord = default;
             record?.Return();
             record = null;
         }
+
+        /// <inheritdoc/>
+        public override readonly string ToString()
+            => $"id {id}, key {requestKey}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
-    internal sealed class AsyncIOContextCompletionEvent<TKey, TValue> : IDisposable
+    internal sealed class AsyncIOContextCompletionEvent : IDisposable
     {
         internal SemaphoreSlim semaphore;
         internal Exception exception;
-        internal AsyncIOContext<TKey, TValue> request;
+        internal AsyncIOContext request;
 
         internal AsyncIOContextCompletionEvent()
         {
             semaphore = new SemaphoreSlim(0);
             request.id = -1;
-            request.minAddress = Constants.kInvalidAddress;
+            request.minAddress = kInvalidAddress;
             request.completionEvent = this;
         }
 
-        internal void Prepare(IHeapContainer<TKey> request_key, long logicalAddress)
+        /// <summary>
+        /// Prepares to issue an async IO. <paramref name="requestKey"/>
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="requestKey"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
+        /// </remarks>
+        internal void Prepare<TKey>(TKey requestKey, long logicalAddress, SectorAlignedBufferPool bufferPool)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            request.Dispose();
-            request.request_key = request_key;
+            request.DisposeRecord();
+            request.requestKey.Dispose();
+
+            request.requestKey = ConditionallyHoistedKey.Create(requestKey, bufferPool);
             request.logicalAddress = logicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(ref AsyncIOContext<TKey, TValue> ctx)
+        internal void Set(ref AsyncIOContext ctx)
         {
-            request.Dispose();
+            request.DisposeRecord();
+
             request = ctx;
             exception = null;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetException(Exception ex)
         {
-            request.Dispose();
+            request.DisposeRecord();
+            request.requestKey.Dispose();
+
             request = default;
             exception = ex;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         internal void Wait(CancellationToken token = default) => semaphore.Wait(token);
@@ -129,7 +139,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            request.Dispose();
+            request.DisposeRecord();
+            request.requestKey.Dispose();
             semaphore?.Dispose();
         }
     }

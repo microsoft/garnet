@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Garnet.server.BfTreeInterop</RootNamespace>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
+  </ItemGroup>
+
+  <!-- Platform-specific paths for native binary detection -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <NativeBuildOutput>$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so</NativeBuildOutput>
+    <NativePrebuilt>$(MSBuildThisFileDirectory)runtimes/linux-x64/native/libbftree_garnet.so</NativePrebuilt>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <NativeBuildOutput>$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll</NativeBuildOutput>
+    <NativePrebuilt>$(MSBuildThisFileDirectory)runtimes\win-x64\native\bftree_garnet.dll</NativePrebuilt>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <NativeBuildOutput>$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib</NativeBuildOutput>
+    <NativePrebuilt>$(MSBuildThisFileDirectory)runtimes/osx-x64/native/libbftree_garnet.dylib</NativePrebuilt>
+  </PropertyGroup>
+
+  <!-- Build Rust crate once in the outer cross-targeting build to avoid parallel
+       cargo/rustup races when multiple TFMs build simultaneously. -->
+  <Target Name="BuildRustCdylib" BeforeTargets="Build" Condition="'$(IsCrossTargetingBuild)' == 'true' or '$(TargetFrameworks)' == ''">
+    <Exec Command="cargo --version"
+          IgnoreExitCode="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="CargoProbeExitCode" />
+    </Exec>
+
+    <Exec Command="cargo build --release --locked --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
+          Condition="'$(CargoProbeExitCode)' == '0'" />
+
+    <Error Condition="'$(CargoProbeExitCode)' != '0' and !Exists('$(NativeBuildOutput)') and !Exists('$(NativePrebuilt)')"
+           Text="cargo not found and no pre-built native BfTree binary exists for this platform. Install Rust/cargo or provide a binary at $(NativePrebuilt)." />
+  </Target>
+
+  <!-- Include the native library so it propagates to consuming projects via ProjectReference.
+       When Rust is installed, the freshly-built binary from target/release/ takes precedence
+       over the pre-built binary in runtimes/ because Content items copy to the output root. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libbftree_garnet.so"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <Content Include="$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="bftree_garnet.dll"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libbftree_garnet.dylib"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib')" />
+  </ItemGroup>
+
+  <!-- NuGet packaging: include pre-built native binaries for all platforms.
+       In CI, native binaries are placed here by the pipeline before dotnet build. -->
+  <ItemGroup>
+    <ContentWithTargetPath Include="runtimes/linux-x64/native/libbftree_garnet.so"
+                           TargetPath="runtimes/linux-x64/native/libbftree_garnet.so"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/linux-x64/native/libbftree_garnet.so')" />
+    <ContentWithTargetPath Include="runtimes/win-x64/native/bftree_garnet.dll"
+                           TargetPath="runtimes/win-x64/native/bftree_garnet.dll"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/win-x64/native/bftree_garnet.dll')" />
+    <ContentWithTargetPath Include="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           TargetPath="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/osx-x64/native/libbftree_garnet.dylib')" />
+    <ContentWithTargetPath Include="runtimes/osx-arm64/native/libbftree_garnet.dylib"
+                           TargetPath="runtimes/osx-arm64/native/libbftree_garnet.dylib"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/osx-arm64/native/libbftree_garnet.dylib')" />
+  </ItemGroup>
+
+  <!-- Exclude Rust build artifacts from the C# project -->
+  <ItemGroup>
+    <None Remove="target/**" />
+    <None Remove="src/**" />
+  </ItemGroup>
+
+</Project>

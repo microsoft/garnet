@@ -146,7 +146,7 @@ namespace Garnet.server
                 else
                 {
                     outputIdsHandle = null;
-                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.AsSpan()));
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.Span));
                 }
 
                 var output_ids_len = outputIds.Length;
@@ -162,7 +162,7 @@ namespace Garnet.server
                 else
                 {
                     outputDistancesHandle = null;
-                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.AsSpan()));
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.Span));
                 }
 
                 var output_distances_len = outputDistances.Length / sizeof(float);
@@ -233,7 +233,7 @@ namespace Garnet.server
                 else
                 {
                     outputIdsHandle = null;
-                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.AsSpan()));
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.Span));
                 }
 
                 var output_ids_len = outputIds.Length;
@@ -249,7 +249,7 @@ namespace Garnet.server
                 else
                 {
                     outputDistancesHandle = null;
-                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.AsSpan()));
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.Span));
                 }
 
                 var output_distances_len = outputDistances.Length / sizeof(float);
