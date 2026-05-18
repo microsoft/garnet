@@ -68,7 +68,7 @@ namespace Garnet.server
 
         /// <summary>Gets the log-tied root directory for RI files. Used by the cluster replication layer
         /// to determine the target directory for received flush files on the replica side.</summary>
-        internal string RiLogRoot => riLogRoot;
+        public string RiLogRoot => riLogRoot;
 
         /// <summary>
         /// Tracks BfTree entries (activated + pending), keyed by <see cref="KeyId"/> = a Guid
@@ -930,21 +930,25 @@ namespace Garnet.server
         /// <summary>
         /// Represents a single RangeIndex file that must be shipped during replication.
         /// </summary>
-        internal readonly struct RangeIndexFileEntry
+        public readonly struct RangeIndexFileEntry
         {
             /// <summary>Full path to the file on the primary.</summary>
             public readonly string Path;
 
-            /// <summary>Target filename to recreate on the replica (relative to its root).</summary>
-            public readonly string FileName;
+            /// <summary>The 32-character key hash prefix identifying the RangeIndex tree.</summary>
+            public readonly string KeyHash;
+
+            /// <summary>The hlog logical address (for flush files); 0 for checkpoint snapshots.</summary>
+            public readonly long Address;
 
             /// <summary>Whether this is a per-flush file (true) or a per-checkpoint snapshot (false).</summary>
             public readonly bool IsFlushFile;
 
-            public RangeIndexFileEntry(string path, string fileName, bool isFlushFile)
+            public RangeIndexFileEntry(string path, string keyHash, long address, bool isFlushFile)
             {
                 Path = path;
-                FileName = fileName;
+                KeyHash = keyHash;
+                Address = address;
                 IsFlushFile = isFlushFile;
             }
         }
@@ -975,14 +979,17 @@ namespace Garnet.server
         /// <c>LogFileInfo</c> — exclusive upper bound for flush file filtering.</param>
         /// <returns>An enumerable of <see cref="RangeIndexFileEntry"/> describing files to
         /// transfer. Empty if RangeIndex is not configured or no files match.</returns>
-        internal IEnumerable<RangeIndexFileEntry> EnumerateFilesForReplication(
+        public IEnumerable<RangeIndexFileEntry> EnumerateFilesForReplication(
             Guid checkpointToken, long hlogStartAddress, long hlogEndAddress)
         {
             // 1. Per-flush files: <hash>.<addr:x16>.flush.bftree where addr ∈ [start, end)
             foreach (var (path, name, addr) in EnumerateFlushFiles())
             {
                 if (addr >= hlogStartAddress && addr < hlogEndAddress)
-                    yield return new RangeIndexFileEntry(path, name, isFlushFile: true);
+                {
+                    var keyHash = name[..HashPrefixLength];
+                    yield return new RangeIndexFileEntry(path, keyHash, addr, isFlushFile: true);
+                }
             }
 
             // 2. Per-checkpoint snapshot files: cpr-checkpoints/<token>/rangeindex/<hash>.bftree
@@ -994,7 +1001,8 @@ namespace Garnet.server
                     foreach (var path in Directory.EnumerateFiles(snapshotDir, "*.bftree"))
                     {
                         var name = System.IO.Path.GetFileName(path);
-                        yield return new RangeIndexFileEntry(path, name, isFlushFile: false);
+                        var keyHash = name[..HashPrefixLength];
+                        yield return new RangeIndexFileEntry(path, keyHash, address: 0, isFlushFile: false);
                     }
                 }
             }
