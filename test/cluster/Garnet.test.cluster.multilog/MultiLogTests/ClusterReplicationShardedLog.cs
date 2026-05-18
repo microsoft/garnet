@@ -370,5 +370,93 @@ namespace Garnet.test.cluster.MultiLogTests
             context.SimpleValidateDB(disableObjects, targetIndex);
             context.SimpleValidateDB(disableObjects, replicaIndex);
         }
+        [Test, Order(5)]
+        [Category("REPLICATION")]
+        public async Task ClusterAofUpgradeSLtoSLMRRecoverAsync([Values] bool useStoredProcedure)
+        {
+            var primary_count = 1;
+            var primaryNodeIndex = 0;
+
+            // Phase 1: Start in single-log single-replay mode (SL) and write data
+            context.CreateInstances(
+                primary_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: 1,
+                replayTaskCount: 1);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+
+            // Register stored proc if needed
+            if (useStoredProcedure)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
+            }
+
+            // Write standalone ops
+            string[] keys = ["{_}a", "{_}b", "{_}c", "{_}x", "{_}y", "{_}z"];
+            string[] values = ["10", "15", "20", "25", "30", "35"];
+
+            if (useStoredProcedure)
+            {
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, keys, values);
+            }
+            else
+            {
+                context.ExecuteTxnBulkIncrement(keys, values);
+            }
+
+            // Verify at primary before upgrade
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp, $"At primary before upgrade, key {keys[i]}");
+            }
+
+            // Commit AOF (no checkpoint) and stop
+            await context.nodes[primaryNodeIndex].Store.CommitAOFAsync(default).ConfigureAwait(false);
+            context.nodes[primaryNodeIndex].Dispose(false);
+
+            // Phase 2: Restart with multi-replay config (SLMR) — AOF replay uses multiple tasks
+            context.nodes[primaryNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(primaryNodeIndex),
+                tryRecover: true,
+                enableAOF: true,
+                useTLS: useTLS,
+                cleanClusterConfig: false,
+                asyncReplay: asyncReplay,
+                sublogCount: 1,
+                replayTaskCount: TestReplayTaskCount);
+
+            if (useStoredProcedure)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
+            }
+
+            context.nodes[primaryNodeIndex].Start();
+            context.CreateConnection(useTLS: useTLS);
+
+            // Verify SL-era data survived the multi-replay recovery
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp, $"At primary after SLMR upgrade, key {keys[i]}");
+            }
+
+            if (useStoredProcedure)
+            {
+                primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+                var result = ClusterTestContext.ExecuteBulkReadStoredProc(primaryServer, keys);
+                ClassicAssert.AreEqual(values, result);
+            }
+        }
     }
 }
