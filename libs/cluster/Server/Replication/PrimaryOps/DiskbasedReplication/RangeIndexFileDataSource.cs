@@ -53,6 +53,23 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public bool HasNextChunk => CurrentOffset < EndOffset;
 
+        /// <inheritdoc/>
+        public byte[] GetMetadata()
+        {
+            var keyHashBytes = System.Text.Encoding.ASCII.GetBytes(KeyHash);
+
+            if (Type == CheckpointFileType.STORE_RANGEINDEX_FLUSH)
+            {
+                var metadata = new byte[32 + 8];
+                Buffer.BlockCopy(keyHashBytes, 0, metadata, 0, 32);
+                BitConverter.TryWriteBytes(metadata.AsSpan(32), Address);
+                return metadata;
+            }
+
+            // Snapshot: keyHash only
+            return keyHashBytes;
+        }
+
         /// <summary>
         /// Creates a new RangeIndexFileDataSource.
         /// </summary>

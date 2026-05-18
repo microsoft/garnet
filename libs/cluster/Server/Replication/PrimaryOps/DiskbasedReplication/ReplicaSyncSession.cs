@@ -139,6 +139,18 @@ namespace Garnet.cluster
 
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                     checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
+
+                    // Add RangeIndex files if RI is enabled
+                    if (storeWrapper.serverOptions.EnableRangeIndexPreview)
+                    {
+                        checkpointTransmissionDriver.AddReader(new RangeIndexSnapshotReader(
+                            storeWrapper.rangeIndexManager,
+                            localEntry.metadata.storeHlogToken,
+                            hlog_size.hybridLogFileStartAddress,
+                            hlog_size.hybridLogFileEndAddress,
+                            logger));
+                    }
+
                     await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
                 }
                 #endregion

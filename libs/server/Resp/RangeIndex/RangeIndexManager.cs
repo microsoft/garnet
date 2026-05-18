@@ -253,11 +253,11 @@ namespace Garnet.server
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".scratch.cpr");
 
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
-        internal string LogFlushPath(string hashPrefix, long logicalAddress)
+        public string LogFlushPath(string hashPrefix, long logicalAddress)
             => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
 
         /// <summary>{cprDir}/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</summary>
-        internal string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
+        public string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
             => Path.Combine(cprDir ?? string.Empty, checkpointToken.ToString(), "rangeindex", hashPrefix + ".bftree");
 
         /// <summary>The directory holding per-checkpoint RI snapshots for a given token.</summary>

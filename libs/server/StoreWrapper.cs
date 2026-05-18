@@ -121,7 +121,7 @@ namespace Garnet.server
         /// <summary>
         /// RangeIndex (BfTree) manager shared across sessions
         /// </summary>
-        internal readonly RangeIndexManager rangeIndexManager;
+        public readonly RangeIndexManager rangeIndexManager;
 
         /// <summary>
         /// Definition for delegate creating a new logical database

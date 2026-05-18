@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -41,8 +40,8 @@ namespace Garnet.cluster
             var riDataSource = (RangeIndexFileDataSource)DataSource;
             var fileTokenBytes = DataSource.Token.ToByteArray();
 
-            // Serialize metadata: keyHash + address (flush only)
-            var metadata = SerializeMetadata(riDataSource);
+            // Get metadata from data source: keyHash + address (flush only)
+            var metadata = riDataSource.GetMetadata();
 
             // Send header with startAddress = -1 to indicate single-message control payload.
             var headerResp = await gcs.ExecuteClusterSnapshotData(
@@ -77,27 +76,6 @@ namespace Garnet.cluster
             if (!endResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
                     $"Primary error at RangeIndex TransmitAsync Completion {DataSource.Type} {endResp}"));
-        }
-
-        /// <summary>
-        /// Serializes the metadata payload for the header message.
-        /// FLUSH: keyHash (32 bytes ASCII) + address (8 bytes LE) = 40 bytes.
-        /// SNAPSHOT: keyHash (32 bytes ASCII) = 32 bytes.
-        /// </summary>
-        private static byte[] SerializeMetadata(RangeIndexFileDataSource source)
-        {
-            var keyHashBytes = Encoding.ASCII.GetBytes(source.KeyHash);
-
-            if (source.Type == CheckpointFileType.STORE_RANGEINDEX_FLUSH)
-            {
-                var metadata = new byte[32 + 8];
-                Buffer.BlockCopy(keyHashBytes, 0, metadata, 0, 32);
-                BitConverter.TryWriteBytes(metadata.AsSpan(32), source.Address);
-                return metadata;
-            }
-
-            // Snapshot: keyHash only
-            return keyHashBytes;
         }
 
         public void Dispose()
