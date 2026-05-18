@@ -118,7 +118,7 @@ namespace Garnet.server
         /// The size at which a value string becomes an overflow byte[]. Accepts bytes or k/m/g suffixes (e.g. "4k", "1m").
         /// Valid range: 64 bytes to 256m. Rounds down to previous power of 2 by Tsavorite.
         /// </summary>
-        public string ValueOverflowThreshold = "4k";
+        public string ValueOverflowThreshold = "16k";
 
         /// <summary>
         /// Wait for AOF to commit before returning results to client.
@@ -447,7 +447,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each read cache page in bytes (rounds down to power of 2)
         /// </summary>
-        public string ReadCachePageSize = "32m";
+        public string ReadCachePageSize = "4m";
 
         /// <summary>
         /// Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.
