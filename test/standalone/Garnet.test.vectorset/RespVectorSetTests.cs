@@ -381,6 +381,14 @@ namespace Garnet.test
             var exc15 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32", blob, "bar"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc15.Message);
 
+            // Empty vector payloads should be rejected for all binary types
+            var excEmptyFP32 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32", Array.Empty<byte>(), "bar"]));
+            ClassicAssert.AreEqual("ERR vector values must be non-empty", excEmptyFP32.Message);
+            var excEmptyXB8 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "XB8", Array.Empty<byte>(), "bar"]));
+            ClassicAssert.AreEqual("ERR vector values must be non-empty", excEmptyXB8.Message);
+            var excEmptySB8 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "SB8", Array.Empty<byte>(), "bar"]));
+            ClassicAssert.AreEqual("ERR vector values must be non-empty", excEmptySB8.Message);
+
             // Mismatch after creating a vector set
             _ = db.KeyDelete(vectorSetKey);
 

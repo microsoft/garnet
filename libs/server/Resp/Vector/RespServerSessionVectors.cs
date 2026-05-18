@@ -142,6 +142,11 @@ namespace Garnet.server
                     values = asBytes;
                 }
 
+                if (values.IsEmpty)
+                {
+                    return AbortWithErrorMessage("ERR vector values must be non-empty");
+                }
+
                 if (curIx >= parseState.Count)
                 {
                     return AbortWithWrongNumberOfArguments("VADD");
@@ -592,6 +597,11 @@ namespace Garnet.server
                     {
                         return AbortWithErrorMessage("VSIM expected ELE, FP32, or VALUES");
                     }
+                }
+
+                if (!element.HasValue && values.IsEmpty)
+                {
+                    return AbortWithErrorMessage("ERR vector values must be non-empty");
                 }
 
                 bool? withScores = null;
