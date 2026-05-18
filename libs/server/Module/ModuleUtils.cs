@@ -117,7 +117,7 @@ namespace Garnet.server
             {
                 var asmRef = metadataReader.GetAssemblyReference(refHandle);
                 refs.Add(new AssemblyName
-                { 
+                {
                     Name = metadataReader.GetString(asmRef.Name),
                     Version = asmRef.Version
                 });
