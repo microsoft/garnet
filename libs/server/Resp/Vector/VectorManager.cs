@@ -354,22 +354,7 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr, out _);
 
-            var valueDims = CalculateValueDimensions(valueType, values);
-
-            if (dimensions != valueDims)
-            {
-                // Matching Redis behavior
-                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {dimensions}");
-                return VectorManagerResult.BadParams;
-            }
-
-            if (providedReduceDims == 0 && reduceDims != 0)
-            {
-                // Matching Redis behavior, which is definitely a bit weird here
-                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {reduceDims}");
-                return VectorManagerResult.BadParams;
-            }
-            else if (providedReduceDims != 0 && providedReduceDims != reduceDims)
+            if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
                 return VectorManagerResult.BadParams;
             }
@@ -392,16 +377,39 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            var insert =
-                Service.Insert(
-                    context,
-                    indexPtr,
-                    element,
-                    valueType,
-                    values,
-                    attributes,
-                    out var needsQuantization
-                );
+            bool insert;
+            bool needsQuantization;
+            using (var vectorData = PrepareVectorData(quantType, valueType, values, out errorMsg))
+            {
+                if (!errorMsg.IsEmpty)
+                {
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (vectorData.ElementCount != dimensions)
+                {
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {vectorData.ElementCount} but set has {dimensions}");
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (providedReduceDims == 0 && reduceDims != 0)
+                {
+                    // Matching Redis behavior, which is definitely a bit weird here
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {vectorData.ElementCount} but set has {reduceDims}");
+                    return VectorManagerResult.BadParams;
+                }
+
+                insert =
+                    Service.Insert(
+                        context,
+                        indexPtr,
+                        element,
+                        vectorData.ReadOnlySpan,
+                        vectorData.ElementCount,
+                        attributes,
+                        out needsQuantization
+                    );
+            }
 
             if (insert)
             {
@@ -506,17 +514,18 @@ namespace Garnet.server
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
         internal VectorManagerResult ValueSimilarity(
-            ReadOnlySpan<byte> indexValue,
+            scoped ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
-            ReadOnlySpan<byte> values,
+            scoped ReadOnlySpan<byte> values,
             int count,
             float delta,
             int searchExplorationFactor,
-            ReadOnlySpan<byte> filter,
+            scoped ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
             bool includeAttributes,
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
+            scoped out ReadOnlySpan<byte> errorMsg,
             ref SpanByteAndMemory outputDistances,
             ref SpanByteAndMemory outputAttributes,
             ref SpanByteAndMemory filterBitmap
@@ -525,13 +534,6 @@ namespace Garnet.server
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
-
-            var valueDims = CalculateValueDimensions(valueType, values);
-            if (dimensions != valueDims)
-            {
-                outputIdFormat = VectorIdFormat.Invalid;
-                return VectorManagerResult.BadParams;
-            }
 
             // When a filter is present, over-retrieve candidates from DiskANN so that
             // post-filtering has enough results to fill the requested count.
@@ -577,25 +579,46 @@ namespace Garnet.server
                 outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
             }
 
-            var found =
-                Service.SearchVector(
-                    context,
-                    indexPtr,
-                    valueType,
-                    values,
-                    delta,
-                    effectiveEF,
-                    filter,
-                    maxFilteringEffort,
-                    outputIds,
-                    outputDistances,
-                    out var continuation
-                );
+            int found;
+            nint continuation;
+            using (var vectorData = PrepareVectorData(quantType, valueType, values, out var tempErrorMsg))
+            {
+                if (!tempErrorMsg.IsEmpty)
+                {
+                    // Have to copy for scoping reasons - it's an error path, so we'll just eat the perf hit for now
+                    errorMsg = tempErrorMsg.ToArray();
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (dimensions != vectorData.ElementCount)
+                {
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    errorMsg = default;
+                    return VectorManagerResult.BadParams;
+                }
+
+                found =
+                    Service.SearchVector(
+                        context,
+                        indexPtr,
+                        vectorData.ReadOnlySpan,
+                        vectorData.ElementCount,
+                        delta,
+                        effectiveEF,
+                        filter,
+                        maxFilteringEffort,
+                        outputIds,
+                        outputDistances,
+                        out continuation
+                    );
+            }
 
             if (found < 0)
             {
                 logger?.LogWarning("Error indicating response from vector service {found}", found);
                 outputIdFormat = VectorIdFormat.Invalid;
+                errorMsg = default;
                 return VectorManagerResult.BadParams;
             }
 
@@ -619,7 +642,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                _ = ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -633,13 +656,7 @@ namespace Garnet.server
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
-                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
-
+            errorMsg = default;
             return VectorManagerResult.OK;
         }
 
@@ -746,7 +763,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                _ = ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -759,13 +776,6 @@ namespace Garnet.server
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
-                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
 
             return VectorManagerResult.OK;
         }
@@ -933,22 +943,36 @@ namespace Garnet.server
                 var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
 
                 var from = asBytes.AsReadOnlySpan();
-                if (quantType == VectorQuantType.NoQuant)
+
+                // Internal vector format differs depend on the selected quantizer, so do that mapping as needed
+                switch (quantType)
                 {
-                    var fromFloat = MemoryMarshal.Cast<byte, float>(from);
-                    fromFloat.CopyTo(into);
-                }
-                else if (quantType == VectorQuantType.XPreQ8)
-                {
-                    for (var i = 0; i < asBytes.Length; i++)
-                    {
-                        into[i] = from[i];
-                    }
-                }
-                else
-                {
-                    // TODO: Handle Q8 and BIN as they are implemented
-                    throw new NotImplementedException($"Unexpected quantization: {quantType}");
+                    // All Redis quantizers store F32s
+                    case VectorQuantType.Bin:
+                    case VectorQuantType.Q8:
+                    case VectorQuantType.NoQuant:
+                        MemoryMarshal.Cast<byte, float>(from).CopyTo(into);
+                        break;
+
+                    // XBin_I8 stores _signed_ bytes
+                    case VectorQuantType.XBin_I8:
+                        for (var i = 0; i < from.Length; i++)
+                        {
+                            into[i] = (sbyte)from[i];
+                        }
+                        break;
+
+                    // NoQuant_U8 stores unsigned bytes
+                    case VectorQuantType.XNoQuant_U8:
+                        for (var i = 0; i < from.Length; i++)
+                        {
+                            into[i] = from[i];
+                        }
+                        break;
+
+                    case VectorQuantType.Invalid:
+                    default:
+                        throw new InvalidOperationException($"Unexpected VectorQuantType: {quantType}");
                 }
 
                 // Vector might have been deleted, so check that after getting data
@@ -957,25 +981,6 @@ namespace Garnet.server
             finally
             {
                 asBytes.Memory?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
-        /// </summary>
-        internal static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
-        {
-            if (valueType == VectorValueType.FP32)
-            {
-                return (uint)(values.Length / sizeof(float));
-            }
-            else if (valueType == VectorValueType.XB8)
-            {
-                return (uint)(values.Length);
-            }
-            else
-            {
-                throw new NotImplementedException($"{valueType}");
             }
         }
 

@@ -69,31 +69,17 @@ namespace Garnet.server
             NativeDiskANNMethods.drop_index(context, index);
         }
 
-        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, VectorValueType vectorType, ReadOnlySpan<byte> vector, ReadOnlySpan<byte> attributes, out bool needsQuantization)
+        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
         {
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
 
             var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            int vector_len;
-
-            if (vectorType == VectorValueType.FP32)
-            {
-                vector_len = vector.Length / sizeof(float);
-            }
-            else if (vectorType == VectorValueType.XB8)
-            {
-                vector_len = vector.Length;
-            }
-            else
-            {
-                throw new NotImplementedException($"{vectorType}");
-            }
 
             var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
             var attributes_len = attributes.Length;
 
-            var res = NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, vectorType, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len);
+            var res = NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vectorElementCount, (nint)attributes_data, (nuint)attributes_len);
             if (res == NativeDiskANNMethods.DiskANNInsertResult.False)
             {
                 needsQuantization = false;
@@ -125,8 +111,8 @@ namespace Garnet.server
         public int SearchVector(
             ulong context,
             nint index,
-            VectorValueType vectorType,
             ReadOnlySpan<byte> vector,
+            int vectorElementCount,
             float delta,
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
@@ -137,20 +123,6 @@ namespace Garnet.server
         )
         {
             var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            int vector_len;
-
-            if (vectorType == VectorValueType.FP32)
-            {
-                vector_len = vector.Length / sizeof(float);
-            }
-            else if (vectorType == VectorValueType.XB8)
-            {
-                vector_len = vector.Length;
-            }
-            else
-            {
-                throw new NotImplementedException($"{vectorType}");
-            }
 
             var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;
@@ -201,9 +173,8 @@ namespace Garnet.server
                 return NativeDiskANNMethods.search_vector(
                     context,
                     index,
-                    vectorType,
                     (nint)vector_data,
-                    (nuint)vector_len,
+                    (nuint)vectorElementCount,
                     delta,
                     searchExplorationFactor,
                     (nint)filter_data,
@@ -369,7 +340,6 @@ namespace Garnet.server
             nint index,
             nint id_data,
             nuint id_len,
-            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             nint attribute_data,
@@ -398,7 +368,6 @@ namespace Garnet.server
         public static partial int search_vector(
             ulong context,
             nint index,
-            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             float delta,

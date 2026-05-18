@@ -170,7 +170,7 @@ namespace Garnet.test
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -179,7 +179,7 @@ namespace Garnet.test
             // Insert
             unsafe
             {
-                var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
+                var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
                 ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
             }
 
@@ -365,7 +365,7 @@ namespace Garnet.test
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -374,7 +374,7 @@ namespace Garnet.test
             // Insert
             unsafe
             {
-                var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
+                var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
                 ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
             }
 
@@ -391,7 +391,7 @@ namespace Garnet.test
                 var numRes =
                     NativeDiskANNMethods.search_vector(
                         Context, rawIndex,
-                        VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length,
                         1f, outputDistances.Length, // SearchExplorationFactor must >= Count
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter)), (nuint)filter.Length,
                         0,
@@ -410,7 +410,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
             }
 
             // Search value
@@ -424,7 +424,7 @@ namespace Garnet.test
                 var numRes =
                     NativeDiskANNMethods.search_vector(
                         Context, rawIndex,
-                        VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length,
                         1f, outputDistances.Length, // SearchExplorationFactor must >= Count
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter)), (nuint)filter.Length,
                         0,
@@ -486,7 +486,7 @@ namespace Garnet.test
                 var insertRes = NativeDiskANNMethods.insert(
                     Context, rawIndex,
                     (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id2)), (nuint)id2.Length,
-                    VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length,
+                    (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length,
                     (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr2)), (nuint)attr2.Length
                 );
                 ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
