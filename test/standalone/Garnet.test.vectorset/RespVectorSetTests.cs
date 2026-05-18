@@ -164,6 +164,15 @@ namespace Garnet.test
             var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "XB8", byte4, new byte[] { 3, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res4);
 
+            // SB8 (signed bytes [-128, 127])
+            var sbyte5 = new byte[75];
+            for (var i = 0; i < sbyte5.Length; i++)
+            {
+                sbyte5[i] = (byte)(sbyte)(i - 37);  // range around zero: [-37 .. +37]
+            }
+            var res4b = db.Execute("VADD", ["foo", "REDUCE", "50", "SB8", sbyte5, new byte[] { 4, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res4b);
+
             // TODO: exact duplicates - what does Redis do?
 
             // Add without specifying reductions after first vector
@@ -267,6 +276,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VADDSB8Q8()
+        {
+            // Dedicated test for SB8 input with Q8 quantization (mirrors VADDXPREQB8 for the int8 path)
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var vectorData1 = new byte[75];
+            for (var i = 0; i < vectorData1.Length; i++)
+            {
+                vectorData1[i] = (byte)(sbyte)(i - 37);  // [-37 .. +37]
+            }
+
+            var vectorData2 = new byte[75];
+            for (var i = 0; i < vectorData2.Length; i++)
+            {
+                vectorData2[i] = (byte)(sbyte)(i + 50);  // [50 .. 124]
+            }
+
+            // Create a vector set with SB8 + Q8
+            var res1 = db.Execute("VADD", ["buzz", "SB8", vectorData1, new byte[] { 0, 0, 0, 0 }, "Q8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Add another element
+            var res2 = db.Execute("VADD", ["buzz", "SB8", vectorData2, new byte[] { 0, 0, 0, 1 }, "Q8"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify VEMB returns dequantized signed values: (float)(sbyte)byte
+            var embRes = (string[])db.Execute("VEMB", ["buzz", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(75, embRes.Length);
+            for (var i = 0; i < embRes.Length; i++)
+            {
+                ClassicAssert.AreEqual((float)(sbyte)vectorData1[i], float.Parse(embRes[i]));
+            }
+
+            // Verify non-existent element returns empty
+            var embEmpty = (string[])db.Execute("VEMB", ["buzz", new byte[] { 0, 0, 0, 9 }]);
+            ClassicAssert.AreEqual(0, embEmpty.Length);
+        }
+
+        [Test]
         public void VADDErrors()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -350,11 +399,13 @@ namespace Garnet.test
             var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
 
-            // Unsupported quantization types (Q8 and BIN are not yet supported)
+            // Unsupported quantization types (BIN is not yet supported; Q8 is now supported)
+            // exc28: default quant on a NOQUANT index with wrong dims → dim mismatch takes precedence
             var exc28 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc28.Message);
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 1 but set has 75", exc28.Message);
+            // exc29: Q8 is now a supported quantization type, so quant mismatch with NOQUANT index
             var exc29 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "Q8"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc29.Message);
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 1 but set has 75", exc29.Message);
             var exc30 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "BIN"]));
             ClassicAssert.AreEqual("ERR Unsupported quantization type", exc30.Message);
 
@@ -505,6 +556,17 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, res6.Length);
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
+
+            // SB8
+            var sbyte6b = new byte[75];
+            for (var i = 0; i < sbyte6b.Length; i++)
+            {
+                sbyte6b[i] = (byte)(sbyte)(i + 5);
+            }
+            var res6b = (byte[][])db.Execute("VSIM", ["foo", "SB8", sbyte6b, "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res6b.Length);
+            ClassicAssert.IsTrue(res6b.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res6b.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
             // COUNT > EF
             var byte7 = new byte[75];
