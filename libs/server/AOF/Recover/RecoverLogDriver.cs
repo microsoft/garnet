@@ -91,7 +91,10 @@ namespace Garnet.server
                         }
                         else
                         {
-                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}", entrySequenceNumber, untilSequenceNumber);
+                            // Sequence numbers are monotonically increasing — all subsequent entries will also exceed the threshold
+                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}, stopping", entrySequenceNumber, untilSequenceNumber);
+                            cts.Cancel();
+                            break;
                         }
                         entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
@@ -195,10 +198,14 @@ namespace Garnet.server
                                 var entryLogAddress = currentAddress + (ptr - record);
                                 Debug.Assert(entryLogAddress > 0, "Entry log address must be positive");
                                 // Check if entry is assigned for processing to this replay task and
-                                // the sequence number is bellow the threshold to ensure prefix consistency
-                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out var sequenceNumber) &&
-                                    (untilSequenceNumber == -1 || sequenceNumber <= untilSequenceNumber))
+                                // the sequence number is below the threshold to ensure prefix consistency
+                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out var sequenceNumber))
                                 {
+                                    if (untilSequenceNumber != -1 && sequenceNumber > untilSequenceNumber)
+                                    {
+                                        // Sequence numbers are monotonically increasing — stop processing this batch
+                                        break;
+                                    }
                                     aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, entryLogAddress);
                                     maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 }
