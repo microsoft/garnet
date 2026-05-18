@@ -714,6 +714,10 @@ namespace Garnet.server
                 // Single-physical-log + multi-replay: BasicHeader entries, use entry address for ordering
                 case AofHeaderType.BasicHeader:
                     sequenceNumber = entryAddress;
+                    // Keyless entries (transactions, checkpoints, flush, stored procedures) are processed by all tasks
+                    // because they may participate in barriers via ProcessSynchronizedOperation
+                    if (!header.opType.HasKey())
+                        return true;
                     var basicCurr = AofHeader.SkipHeader(ptr);
                     var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
                     return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
@@ -721,6 +725,9 @@ namespace Garnet.server
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     sequenceNumber = shardedHeader.sequenceNumber;
+                    // Keyless entries are processed by task 0 only
+                    if (!header.opType.HasKey())
+                        return replayTaskIdx == 0;
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
                     return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);

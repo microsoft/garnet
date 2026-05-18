@@ -306,7 +306,8 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m",
             string aofPageSize = null,
-            bool copyReadsToTail = false
+            bool copyReadsToTail = false,
+            int replayTaskCount = 1
             )
         {
             if (useAzureStorage)
@@ -386,6 +387,7 @@ namespace Garnet.test
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                AofReplayTaskCount = replayTaskCount,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,

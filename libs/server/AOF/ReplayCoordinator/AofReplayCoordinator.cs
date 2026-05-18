@@ -112,7 +112,7 @@ namespace Garnet.server
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <param name="entry"></param>
-            internal unsafe void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
+            internal void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
 
             /// <summary>
             /// This method will perform one of the followin
@@ -127,7 +127,7 @@ namespace Garnet.server
             /// <param name="asReplica"></param>
             /// <returns>Returns true if a txn operation was processed and added otherwise false</returns>
             /// <exception cref="GarnetException"></exception>
-            internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica, long entryAddress = 0)
+            internal bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica, long entryAddress = 0)
             {
                 var header = *(AofHeader*)ptr;
                 var replayContext = GetReplayContext(sublogIdx);
@@ -184,13 +184,22 @@ namespace Garnet.server
                         long startSeqNum = 0;
                         if (serverOptions.MultiLogEnabled)
                         {
-                            logAccessCount = headerType == AofHeaderType.SingleLogTransactionHeader
-                                ? (*(AofSingleLogTransactionHeader*)ptr).participantCount
-                                : (*(AofShardedLogTransactionHeader*)ptr).participantCount;
-
-                            startSeqNum = headerType == AofHeaderType.SingleLogTransactionHeader
-                                ? entryAddress
-                                : (*(AofShardedHeader*)ptr).sequenceNumber;
+                            switch (headerType)
+                            {
+                                case AofHeaderType.SingleLogTransactionHeader:
+                                    logAccessCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
+                                    startSeqNum = entryAddress;
+                                    break;
+                                case AofHeaderType.ShardedLogTransactionHeader:
+                                    logAccessCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                                    startSeqNum = (*(AofShardedHeader*)ptr).sequenceNumber;
+                                    break;
+                                default:
+                                    // BasicHeader from SL-era AOF: all replay tasks participate
+                                    logAccessCount = (short)serverOptions.AofReplayTaskCount;
+                                    startSeqNum = entryAddress;
+                                    break;
+                            }
                         }
                         aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount, startSeqNum);
                         break;
@@ -325,11 +334,17 @@ namespace Garnet.server
                             commitSeqNum = entryAddress;
                             partCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
                         }
-                        else
+                        else if (headerType == AofHeaderType.ShardedLogTransactionHeader)
                         {
                             var shardedHeader = *(AofShardedHeader*)ptr;
                             commitSeqNum = shardedHeader.sequenceNumber;
                             partCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                        }
+                        else
+                        {
+                            // BasicHeader from SL-era AOF: all replay tasks participate
+                            commitSeqNum = entryAddress;
+                            partCount = (short)serverOptions.AofReplayTaskCount;
                         }
 
                         // Acquire-barrier: synchronize all participants before locking using TxnStart sequence number
@@ -450,11 +465,17 @@ namespace Garnet.server
                         sequenceNumber = entryAddress;
                         participantCount = singleLogHeader.participantCount;
                     }
-                    else
+                    else if (headerType == AofHeaderType.ShardedLogTransactionHeader)
                     {
                         var shardedHeader = *(AofShardedHeader*)ptr;
                         sequenceNumber = shardedHeader.sequenceNumber;
                         participantCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                    }
+                    else
+                    {
+                        // BasicHeader from SL-era AOF: all replay tasks participate
+                        sequenceNumber = entryAddress;
+                        participantCount = (short)serverOptions.AofReplayTaskCount;
                     }
 
                     // Synchronized processing of stored proc operation

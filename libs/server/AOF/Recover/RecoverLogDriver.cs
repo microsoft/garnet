@@ -122,6 +122,13 @@ namespace Garnet.server
             }
             else
             {
+                // Wait for previous batch to complete before overwriting shared batch context
+                if (replayTasks != null)
+                {
+                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
+                    replayBatchContext.LeaderFollowerBarrier.Release();
+                }
+
                 CreateAndRunIntraPageParallelReplayTasks();
 
                 replayBatchContext.Record = record;
@@ -130,6 +137,14 @@ namespace Garnet.server
                 replayBatchContext.NextAddress = nextAddress;
                 replayBatchContext.IsProtected = isProtected;
                 replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+
+                // After the last batch, wait for workers and cancel to exit BulkConsumeAllAsync
+                if (nextAddress == untilAddress)
+                {
+                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
+                    replayBatchContext.LeaderFollowerBarrier.Release();
+                    cts.Cancel();
+                }
             }
         }
 
@@ -218,8 +233,9 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    // Signal work completion after processing
-                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                    // Signal work completion after processing (skip if cancelled to avoid blocking on resetReady)
+                    if (!cts.Token.IsCancellationRequested)
+                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                 }
             }
         }
