@@ -47,8 +47,6 @@ namespace Tsavorite.core
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var latchOperation = LatchOperation.None;
-
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
@@ -67,7 +65,8 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID
             };
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
+            // the transient X-lock on the hash bucket is released even if a Post*Operation callback (e.g. AOF append) throws.
             try
             {
                 // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
@@ -86,11 +85,11 @@ namespace Tsavorite.core
                 // Check for CPR consistency after checking if source is readcache.
                 if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
-                            goto LatchRelease;
+                            goto Done;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -119,7 +118,7 @@ namespace Tsavorite.core
                         {
                             if (TryRevivifyInChain(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref upsertInfo, out status, ref recordValue)
                                     || status != OperationStatus.SUCCESS)
-                                goto LatchRelease;
+                                goto Done;
                         }
                         goto CreateNewRecord;
                     }
@@ -131,12 +130,12 @@ namespace Tsavorite.core
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                        goto LatchRelease;
+                        goto Done;
                     }
                     if (upsertInfo.Action == UpsertAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
@@ -161,30 +160,22 @@ namespace Tsavorite.core
                     if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
                         CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
                 }
-                goto LatchRelease;
+                goto Done;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostUpsertOperation(ref key, ref input, ref value, ref upsertInfo, epoch);
-                TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
-            }
-
-        LatchRelease:
-            if (latchOperation != LatchOperation.None)
-            {
-                switch (latchOperation)
+                try
                 {
-                    case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        break;
-                    case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
-                        break;
-                    default:
-                        break;
+                    sessionFunctions.PostUpsertOperation(ref key, ref input, ref value, ref upsertInfo, epoch);
+                }
+                finally
+                {
+                    TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                 }
             }
+
+        Done:
             return status;
         }
 
@@ -271,7 +262,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // See explanatory comments in CheckCPRConsistencyRMW.
 

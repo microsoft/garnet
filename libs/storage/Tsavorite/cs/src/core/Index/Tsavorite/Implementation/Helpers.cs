@@ -137,13 +137,6 @@ namespace Tsavorite.core
             return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, recordLengths.fullRecordLength, ref sessionFunctions.Ctx.RevivificationStats);
         }
 
-        internal enum LatchOperation : byte
-        {
-            None,
-            Shared,
-            Exclusive
-        }
-
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a newly-inserted record.

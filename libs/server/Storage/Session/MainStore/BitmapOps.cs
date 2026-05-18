@@ -105,7 +105,8 @@ namespace Garnet.server
             {
                 uc.BeginUnsafe();
             readFromScratch:
-                var localHeadAddress = HeadAddress;
+                var localHeadAddress = uc.Session.HeadAddress;
+                var localReadCacheHeadAddress = uc.Session.ReadCacheHeadAddress;
                 var keysFound = 0;
 
                 for (var i = 1; i < keys.Length; i++)
@@ -113,7 +114,7 @@ namespace Garnet.server
                     var srcKey = keys[i];
                     //Read srcKey
                     var outputBitmap = SpanByteAndMemory.FromPinnedSpan(output);
-                    status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
+                    status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, localReadCacheHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
                         goto readFromScratch;
