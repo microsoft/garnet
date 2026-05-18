@@ -102,11 +102,13 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        // TODO: restore BIN and Q8 when implemented
+        // TODO: restore BIN, Q8, XBIN_I8 when implemented
         [Test]
-        [TestCase("XB8", "XPREQ8")]
-        [TestCase("XB8", "NOQUANT")]
-        [TestCase("FP32", "XPREQ8")]
+        [TestCase("XU8", "XNOQUANT_U8")]
+        [TestCase("XU8", "NOQUANT")]
+        [TestCase("XI8", "XNOQUANT_U8")]
+        [TestCase("XI8", "NOQUANT")]
+        [TestCase("FP32", "XNOQUANT_U8")]
         [TestCase("FP32", "NOQUANT")]
         public async Task BasicVADDReplicatesAsync(string vectorFormat, string quantizer)
         {
@@ -127,7 +129,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
             byte[] vectorAddData;
-            if (vectorFormatParsed == VectorValueType.XB8)
+            if (vectorFormatParsed == VectorValueType.XU8)
             {
                 vectorAddData = new byte[75];
                 vectorAddData[0] = 1;
@@ -135,6 +137,17 @@ namespace Garnet.test.cluster
                 {
                     vectorAddData[i] = (byte)(vectorAddData[i - 1] + 1);
                 }
+            }
+            if (vectorFormatParsed == VectorValueType.XI8)
+            {
+                var sbytes = new sbyte[75];
+                sbytes[0] = 1;
+                for (var i = 1; i < sbytes.Length; i++)
+                {
+                    sbytes[i] = (sbyte)(sbytes[i - 1] + 1);
+                }
+
+                vectorAddData = MemoryMarshal.Cast<sbyte, byte>(sbytes).ToArray();
             }
             else if (vectorFormatParsed == VectorValueType.FP32)
             {
@@ -157,7 +170,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(1, addRes);
 
             byte[] vectorSimData;
-            if (vectorFormatParsed == VectorValueType.XB8)
+            if (vectorFormatParsed == VectorValueType.XU8)
             {
                 vectorSimData = new byte[75];
                 vectorSimData[0] = 2;
@@ -165,6 +178,17 @@ namespace Garnet.test.cluster
                 {
                     vectorSimData[i] = (byte)(vectorSimData[i - 1] + 1);
                 }
+            }
+            else if (vectorFormatParsed == VectorValueType.XI8)
+            {
+                var sbytes = new sbyte[75];
+                sbytes[0] = 2;
+                for (var i = 1; i < sbytes.Length; i++)
+                {
+                    sbytes[i] = (sbyte)(sbytes[i - 1] + 1);
+                }
+
+                vectorSimData = MemoryMarshal.Cast<sbyte, byte>(sbytes).ToArray();
             }
             else if (vectorFormatParsed == VectorValueType.FP32)
             {
