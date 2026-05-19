@@ -1001,6 +1001,11 @@ namespace Garnet.server
                     foreach (var path in Directory.EnumerateFiles(snapshotDir, "*.bftree"))
                     {
                         var name = Path.GetFileName(path);
+
+                        // Skip files that don't match the expected format: <32-hex-hash>.bftree
+                        if (name.Length != HashPrefixLength + ".bftree".Length)
+                            continue;
+
                         var keyHash = name[..HashPrefixLength];
                         yield return new RangeIndexFileEntry(path, keyHash, address: 0, isFlushFile: false);
                     }
