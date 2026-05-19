@@ -100,11 +100,29 @@ namespace Tsavorite.benchmark
             UpsertPercent = ReadPercent + rumdPercents[1];
             RmwPercent = UpsertPercent + rumdPercents[2];
 
-            // This is the max possible count for zipf smalldata
-            InitCount = Options.UseSmallData ? 4599680 : 250000000;
+            // Default counts. --load-keys overrides InitCount.
+            long defaultInit = Options.UseSmallData ? 4599680 : 250000000;
+            InitCount = Options.LoadKeyCount > 0 ? Options.LoadKeyCount : defaultInit;
             TxnCount = Options.UseSmallData ? 10000000 : 1000000000;
             MaxKey = Options.UseSmallData ? 1 << 22 : 1 << 28;
             RecoverMode = Options.BackupAndRestore && Options.PeriodicCheckpointMilliseconds <= 0;
+
+            // Phase / Device validation
+            var phase = (Options.Phase ?? "both").ToLowerInvariant();
+            if (!verifyOption(phase == "load" || phase == "run" || phase == "both", "Phase", "must be one of: load, run, both"))
+                return;
+            if (phase == "run" && !RecoverMode)
+            {
+                Console.WriteLine("--phase run requires -k (recover from checkpoint)");
+                return;
+            }
+
+            var devTypeStr = (Options.Device ?? "default").ToLowerInvariant();
+            if (!verifyOption(devTypeStr is "native" or "randomaccess" or "filestream" or "null" or "default", "Device",
+                    "must be one of: native, randomaccess, filestream, null, default"))
+                return;
+
+            DataPath = BenchmarkSetup.ResolveDataPath(Options);
 
             error = false;
         }
@@ -363,9 +381,9 @@ namespace Tsavorite.benchmark
             Console.WriteLine($"loaded {txn_keys.Length:N0} txns in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
         }
 
-        internal const string DataPath = "D:/data/TsavoriteYcsbBenchmark";
+        internal readonly string DataPath;
 
-        internal static string DevicePath => $"{DataPath}/hlog";
+        internal string DevicePath => $"{DataPath}/hlog";
 
         internal string BackupPath => $"{DataPath}/{Distribution}_{(Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 

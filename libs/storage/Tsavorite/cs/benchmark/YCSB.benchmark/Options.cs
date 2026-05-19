@@ -31,7 +31,7 @@ namespace Tsavorite.benchmark
             HelpText = "Enable Backup and Restore of TsavoriteKV for fast test startup." +
                         "\n    True = Recover TsavoriteKV if a Checkpoint is available, else populate TsavoriteKV from data and Checkpoint it so it can be Restored in a subsequent run" +
                         "\n    False = Populate TsavoriteKV from data and do not Checkpoint a backup" +
-                        "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
+                        "\n    (Checkpoints are stored in directories under the data path in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
@@ -118,6 +118,91 @@ namespace Tsavorite.benchmark
         [Option("dumpdist", Required = false, Default = false,
             HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
         public bool DumpDistribution { get; set; }
+
+        // ===== Storage topology =====
+
+        [Option("page-size", Required = false, Default = null,
+            HelpText = "Page size, e.g. '4MB', '32m', '8192' (bytes). Overrides default and --sm.")]
+        public string PageSize { get; set; }
+
+        [Option("log-memory", Required = false, Default = null,
+            HelpText = "Log memory size, e.g. '64GB', '256m'. Overrides default and --sm.")]
+        public string LogMemory { get; set; }
+
+        [Option("segment-size", Required = false, Default = null,
+            HelpText = "On-disk segment size, e.g. '1GB'. Default = max(page-size, log-memory).")]
+        public string SegmentSize { get; set; }
+
+        [Option("mutable-fraction", Required = false, Default = 0.9,
+            HelpText = "Fraction of log memory kept mutable (1.0 = no flushing in pure in-memory runs).")]
+        public double MutableFraction { get; set; }
+
+        [Option("preallocate-log", Required = false, Default = true,
+            HelpText = "Preallocate all log pages at startup. Disable with --preallocate-log false to defer allocation.")]
+        public bool PreallocateLog { get; set; }
+
+        // ===== Device backend =====
+
+        [Option("device", Required = false, Default = "default",
+            HelpText = "Device backend: native (libaio/IOCP), randomaccess (.NET RandomAccess; Linux default), filestream (.NET Stream), null (no I/O), default")]
+        public string Device { get; set; }
+
+        [Option("device-throttle", Required = false, Default = 0,
+            HelpText = "Override IDevice.ThrottleLimit (max concurrent IOs). 0 = device default.")]
+        public int DeviceThrottle { get; set; }
+
+        [Option("device-completion-threads", Required = false, Default = 0,
+            HelpText = "Native completion thread count (libaio on Linux). 0 = device default (1).")]
+        public int DeviceCompletionThreads { get; set; }
+
+        [Option("device-io-backend", Required = false, Default = "default",
+            HelpText = "Native device IO backend (Linux only): default (=libaio), libaio, or uring. " +
+                       "uring requires the native lib to be built with -DUSE_URING=ON and liburing.so.2 to be available.")]
+        public string DeviceIoBackend { get; set; }
+
+        [Option("data-path", Required = false, Default = null,
+            HelpText = "Directory for hlog files and checkpoints. Default 'D:/data/TsavoriteYcsbBenchmark'.")]
+        public string DataPath { get; set; }
+
+        [Option("use-os-cache", Required = false, Default = false,
+            HelpText = "Allow OS page cache for managed devices (default off => O_DIRECT/FILE_FLAG_NO_BUFFERING when supported).")]
+        public bool UseOsCache { get; set; }
+
+        // ===== Runtime tuning =====
+
+        [Option("threadpool-min", Required = false, Default = 0,
+            HelpText = "Raise ThreadPool.SetMinThreads to this value (worker + completion). 0 = leave default.")]
+        public int ThreadPoolMin { get; set; }
+
+        // ===== Phase control =====
+
+        [Option("phase", Required = false, Default = "both",
+            HelpText = "Which phases to execute: load (insert only), run (RUMD only; requires -k recover), both (default).")]
+        public string Phase { get; set; }
+
+        [Option("load-keys", Required = false, Default = 0L,
+            HelpText = "Override #keys to insert in load phase. 0 = default (250M, or 4.6M with --sd).")]
+        public long LoadKeyCount { get; set; }
+
+        // ===== Reproducibility / hygiene =====
+
+        [Option("cleanup-data-files", Required = false, Default = false,
+            HelpText = "Delete any pre-existing hlog* files in data-path before the run.")]
+        public bool CleanupDataFiles { get; set; }
+
+        [Option("drop-page-cache", Required = false, Default = false,
+            HelpText = "Linux only: write 3 to /proc/sys/vm/drop_caches before the run (requires root; fails silently otherwise).")]
+        public bool DropPageCache { get; set; }
+
+        // ===== Diagnostics / output =====
+
+        [Option("print-config", Required = false, Default = true,
+            HelpText = "Print a consolidated config block at start. Disable with --print-config false.")]
+        public bool PrintConfig { get; set; }
+
+        [Option("csv-output", Required = false, Default = null,
+            HelpText = "Append load and run results as CSV rows to this file (creates the file with a header if missing).")]
+        public string CsvOutput { get; set; }
 
         internal CheckpointType PeriodicCheckpointType => PeriodicCheckpointUseSnapshot ? CheckpointType.Snapshot : CheckpointType.FoldOver;
 

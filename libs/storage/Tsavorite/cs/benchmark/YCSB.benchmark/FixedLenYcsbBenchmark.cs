@@ -89,7 +89,7 @@ namespace Tsavorite.benchmark
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = true;
             }
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
+            device = BenchmarkSetup.CreateDevice(testLoader.Options, testLoader.DevicePath, testLoader.RecoverMode);
 
             if (testLoader.Options.ThreadCount >= 16)
                 device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
@@ -110,6 +110,18 @@ namespace Tsavorite.benchmark
                 kvSettings.SegmentSize = 1L << 30;
                 kvSettings.LogMemorySize = 1L << 28;
             }
+
+            BenchmarkSetup.ApplyKVOverrides(testLoader.Options, kvSettings);
+
+            BenchmarkSetup.PrintConfig(
+                testLoader.Options,
+                testLoader.DataPath,
+                device,
+                kvSettings.PageSize,
+                kvSettings.LogMemorySize,
+                kvSettings.SegmentSize,
+                kvSettings.MutableFraction,
+                kvSettings.PreallocateLog);
 
             store = new(kvSettings
                 , StoreFunctions.Create(new FixedLengthKey.Comparer(), SpanByteRecordTriggers.Instance)

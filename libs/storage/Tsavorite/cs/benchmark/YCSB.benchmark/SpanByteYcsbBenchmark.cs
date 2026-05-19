@@ -93,24 +93,41 @@ namespace Tsavorite.benchmark
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = true;
             }
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
+            // Device + storage topology come from CLI flags (see BenchmarkSetup).
+            device = BenchmarkSetup.CreateDevice(testLoader.Options, testLoader.DevicePath, testLoader.RecoverMode);
+
+            var defaultLogMemSize = 1L << 35;
 
             var kvSettings = new KVSettings()
             {
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                LogMemorySize = 1L << 35,
+                LogMemorySize = defaultLogMemSize,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath
             };
 
             if (testLoader.Options.UseSmallMemoryLog)
             {
+                // --sm baseline: 4MB pages, 64MB log memory (16 pages).
                 kvSettings.PageSize = 1L << 22;
                 kvSettings.SegmentSize = 1L << 26;
                 kvSettings.LogMemorySize = 1L << 26;
             }
+
+            // Apply explicit flag overrides (page-size, log-memory, segment-size, mutable-fraction, preallocate-log).
+            BenchmarkSetup.ApplyKVOverrides(testLoader.Options, kvSettings);
+
+            BenchmarkSetup.PrintConfig(
+                testLoader.Options,
+                testLoader.DataPath,
+                device,
+                kvSettings.PageSize,
+                kvSettings.LogMemorySize,
+                kvSettings.SegmentSize,
+                kvSettings.MutableFraction,
+                kvSettings.PreallocateLog);
 
             store = new(kvSettings
                 , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordTriggers())
@@ -335,9 +352,34 @@ namespace Tsavorite.benchmark
 
                 waiter.Set();
                 var sw = Stopwatch.StartNew();
+
+                // Optional: periodic device-stats reporting during load
+                var reporterCts = new System.Threading.CancellationTokenSource();
+                Thread reporter = null;
+                if (Environment.GetEnvironmentVariable("TSAVORITE_DEVICE_INSTRUMENT") == "1" && device is NativeStorageDevice nsd)
+                {
+                    reporter = new Thread(() =>
+                    {
+                        var token = reporterCts.Token;
+                        var swl = Stopwatch.StartNew();
+                        while (!token.IsCancellationRequested)
+                        {
+                            Thread.Sleep(1000);
+                            if (token.IsCancellationRequested) break;
+                            var s = nsd.GetAndResetStats();
+                            var avgSubNs = s.submits > 0 ? s.submitNs / s.submits : 0;
+                            Console.WriteLine($"[t={swl.Elapsed.TotalSeconds:F1}s] curPending={s.curPending} peakPending={s.peakPending} subs/sec={s.submits} comp/sec={s.completes} avgSubmitNs={avgSubNs}");
+                        }
+                    })
+                    { IsBackground = true };
+                    reporter.Start();
+                }
+
                 foreach (Thread worker in workers)
                     worker.Join();
 
+                reporterCts?.Cancel();
+                reporter?.Join();
                 sw.Stop();
                 waiter.Reset();
 
