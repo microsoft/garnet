@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.test.cluster.MultiLogTests
 {
@@ -60,6 +61,8 @@ namespace Garnet.test.cluster.MultiLogTests
             var methods = typeof(ClusterReplicationShardedLog).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
             foreach (var method in methods)
                 enabledTests.TryAdd(method.Name, true);
+
+            monitorTests.Add("ClusterReplicationShardedLogTxnTest", LogLevel.Critical);
         }
 
         [SetUp]
@@ -72,6 +75,7 @@ namespace Garnet.test.cluster.MultiLogTests
             }
             asyncReplay = false;
             sublogCount = TestSublogCount;
+
             base.Setup();
         }
 
@@ -131,6 +135,7 @@ namespace Garnet.test.cluster.MultiLogTests
             // Attach replica
             resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
 
             string[] keys = ["{_}a", "{_}b", "{_}c", "{_}x", "{_}y", "{_}z"];
             string[] values = ["10", "15", "20", "25", "30", "35"];
