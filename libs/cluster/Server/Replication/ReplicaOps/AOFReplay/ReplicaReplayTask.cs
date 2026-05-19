@@ -18,7 +18,7 @@ namespace Garnet.cluster
     {
         public byte* entryPtr;
         public int payloadLength;
-        public long entryAddress;
+        public long logAddressSequenceNumber;
     }
 
     internal sealed class ReplicaReplayTask(
@@ -155,7 +155,7 @@ namespace Garnet.cluster
                 {
                     unsafe
                     {
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart, record.entryAddress);
+                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart, record.logAddressSequenceNumber);
 
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker

@@ -85,14 +85,14 @@ namespace Garnet.server
                         var entryPtr = ptr + entryLength;
                         var logAddressSequenceNumber = currentAddress + (ptr - record);
                         Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
-                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, logAddressSequenceNumber, out var entrySequenceNumber))
+                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, logAddressSequenceNumber, out var sequenceNumber))
                         {
                             aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);
                         }
                         else
                         {
                             // Sequence numbers are monotonically increasing — all subsequent entries will also exceed the threshold
-                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}, stopping", entrySequenceNumber, untilSequenceNumber);
+                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}, stopping", sequenceNumber, untilSequenceNumber);
                             cts.Cancel();
                             break;
                         }
