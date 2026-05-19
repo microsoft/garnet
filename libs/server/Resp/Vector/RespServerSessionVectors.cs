@@ -366,20 +366,6 @@ namespace Garnet.server
                 numLinks ??= 16;
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
-                // Validate that DiskANN is expected to succeed given data sizes
-                //
-                // Note that this goes away in store v2
-                if (values.Length > maximumVectorSetValueBytes)
-                {
-                    WriteError("ERR Vector exceed configured page size"u8);
-                    return true;
-                }
-
-                if (attributes.Value.Length > maximumVectorSetValueBytes)
-                {
-                    WriteError("ERR Attribute exceed configured page size"u8);
-                    return true;
-                }
 
                 if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant && quantType != VectorQuantType.Q8)
                 {
