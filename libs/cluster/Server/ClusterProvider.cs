@@ -27,6 +27,7 @@ namespace Garnet.cluster
         internal readonly ILoggerFactory loggerFactory;
         internal readonly StoreWrapper storeWrapper;
         internal readonly GarnetServerOptions serverOptions;
+        internal readonly RangeIndexManager rangeIndexManager;
         internal long GarnetCurrentEpoch = 1;
         ClusterAuthContainer authContainer;
 
@@ -47,6 +48,7 @@ namespace Garnet.cluster
         {
             this.storeWrapper = storeWrapper;
             this.serverOptions = storeWrapper.serverOptions;
+            this.rangeIndexManager = storeWrapper.rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
 
             authContainer = new ClusterAuthContainer

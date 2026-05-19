@@ -144,7 +144,7 @@ namespace Garnet.cluster
                     if (storeWrapper.serverOptions.EnableRangeIndexPreview)
                     {
                         checkpointTransmissionDriver.AddReader(new RangeIndexSnapshotReader(
-                            storeWrapper.rangeIndexManager,
+                            clusterProvider.rangeIndexManager,
                             localEntry.metadata.storeHlogToken,
                             hlog_size.hybridLogFileStartAddress,
                             hlog_size.hybridLogFileEndAddress,
