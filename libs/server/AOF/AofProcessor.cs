@@ -338,7 +338,7 @@ namespace Garnet.server
                         var streamingSequenceNumber = usingSinglePhysicalLogMultiReplay ? logAddressSequenceNumber : (*(AofShardedHeader*)ptr).sequenceNumber;
                         storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, streamingSequenceNumber);
                     }
-                break;
+                    break;
                 case AofEntryType.FlushAll:
                     if (!usingShardedLog)
                     {
