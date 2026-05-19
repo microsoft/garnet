@@ -328,8 +328,13 @@ namespace Tsavorite.core
                 {
                     Interlocked.Decrement(ref numPending);
 
-                    // Sequentialize all writes to same handle
-                    await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
+                    // When the segment was opened with O_DIRECT (true bypass of the page cache on Linux), the WriteAsync
+                    // above has already pushed the bytes through to the device on completion — issuing a per-write
+                    // FlushAsync (== fsync on Linux) is redundant and inflates write latency by ~hundreds of µs per
+                    // page. The page-cache fallback path still needs the explicit flush since .NET on Linux does not
+                    // honor FileOptions.WriteThrough as O_DSYNC.
+                    if (Volatile.Read(ref directIOSupportedCached) != 1)
+                        await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
@@ -430,7 +435,12 @@ namespace Tsavorite.core
             if (!osReadBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logReadHandle = new FileStream(
+            // On Linux, FILE_FLAG_NO_BUFFERING is a Windows-only bit that .NET silently drops, so the file ends up in
+            // the page cache. Open with libc O_DIRECT and wrap the SafeFileHandle in a FileStream to actually bypass it.
+            if (TryOpenLinuxDirectStream(segmentId, FileAccess.Read, out var logReadHandle))
+                return logReadHandle;
+
+            logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, 512, fo);
 
@@ -448,14 +458,59 @@ namespace Tsavorite.core
             if (disableFileBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logWriteHandle = new FileStream(
-                GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Write, FileShare.ReadWrite, 512, fo);
+            FileStream logWriteHandle;
+            if (TryOpenLinuxDirectStream(segmentId, FileAccess.Write, out logWriteHandle))
+            {
+                // logWriteHandle obtained via O_DIRECT path; ManagedLocalStorageDevice no longer needs the FlushAsync()
+                // it performs after each WriteAsync — O_DIRECT writes are already on the platter on completion.
+            }
+            else
+            {
+                logWriteHandle = new FileStream(
+                    GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                    FileAccess.Write, FileShare.ReadWrite, 512, fo);
+            }
 
             if (preallocateFile && segmentSize != -1)
                 SetFileSize(logWriteHandle, segmentSize);
 
             return logWriteHandle;
+        }
+
+        private int directIOSupportedCached = -1; // -1 unknown, 0 no, 1 yes
+
+        private bool TryOpenLinuxDirectStream(int segmentId, FileAccess access, out FileStream stream)
+        {
+            stream = null;
+            if (access == FileAccess.Read && osReadBuffering)
+                return false;
+            if (access == FileAccess.Write && !disableFileBuffering)
+                return false;
+            if (!OperatingSystem.IsLinux())
+                return false;
+
+            var directory = Path.GetDirectoryName(FileName);
+            if (Volatile.Read(ref directIOSupportedCached) == -1)
+            {
+                var supported = LinuxFileExtensions.IsDirectIOSupported(directory) ? 1 : 0;
+                _ = Interlocked.CompareExchange(ref directIOSupportedCached, supported, -1);
+            }
+            if (Volatile.Read(ref directIOSupportedCached) == 0)
+                return false;
+
+            try
+            {
+                var safeHandle = LinuxFileExtensions.OpenDirect(GetSegmentName(segmentId), access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, createIfMissing: true);
+                LinuxFileExtensions.MarkHandleAsAsync(safeHandle);
+                stream = new FileStream(safeHandle, access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, bufferSize: 1, isAsync: true);
+                return true;
+            }
+            catch (IOException ex)
+            {
+                logger?.LogInformation(ex, "O_DIRECT open failed for segment {segmentId}; falling back to page-cached FileStream", segmentId);
+                _ = Interlocked.Exchange(ref directIOSupportedCached, 0);
+                return false;
+            }
         }
 
         private (AsyncPool<Stream>, AsyncPool<Stream>) AddHandle(int _segmentId)
