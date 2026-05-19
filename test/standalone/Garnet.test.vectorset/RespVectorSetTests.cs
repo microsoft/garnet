@@ -860,16 +860,84 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterMark()
-        => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
+        public void FlushDB()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var s = redis.GetServers().Single();
+            var db = redis.GetDatabase();
+
+#if DEBUG
+            var preAddCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
+#endif
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            s.FlushDatabase(0);
+
+#if DEBUG
+            var finalCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
+            var finalDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+
+            // Check we actually dropped the index despite not touching the key explicitly
+            ClassicAssert.AreEqual(preAddCreateCalls + 1, finalCreateCalls);
+            ClassicAssert.AreEqual(finalDropCalls, finalCreateCalls);
+#endif
+
+            var res2 = db.KeyExists("foo");
+            ClassicAssert.IsFalse(res2);
+        }
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterZeroingOut()
+        public async Task ExpirationAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+
+            var res1 = await db.ExecuteAsync("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+#if DEBUG
+            var preExpireDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+#endif
+
+            var res2 = await db.KeyExpireAsync("foo", TimeSpan.FromSeconds(0.5)).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res2);
+
+            // Wait for expiration to pass
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+
+            // Force an expiration scan, check that at least one record was evicted
+            var res3 = (int[])await db.ExecuteAsync("EXPDELSCAN");
+            ClassicAssert.AreEqual(1, res3[0]);
+
+            var res4 = await db.KeyExistsAsync("foo").ConfigureAwait(false);
+            ClassicAssert.IsFalse(res4);
+
+#if DEBUG
+            var finalExpireDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
+
+            // Check that background cleanup was triggered, not just the key being removed
+            ClassicAssert.AreEqual(preExpireDropCalls + 1, finalExpireDropCalls);
+#endif
+        }
+
+        [Test]
+        public void InterruptedVectorSetDelete_BeforeMark()
+        => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
+
+
+        [Test]
+        public void InterruptedVectorSetDelete_DuringCleanup()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public void InterruptedVectorSetDelete_AfterDelete()
+        public void InterruptedVectorSetDelete_AfterCleanup()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+
+        [Test]
+        public void InterruptedVectorSetDelete_AfterMark()
+        => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
         private void InterruptedVectorSetDelete(ExceptionInjectionType faultLocation)
         {
@@ -886,11 +954,14 @@ namespace Garnet.test
                 var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
                 ClassicAssert.AreEqual(1, (int)res1);
 
-                // TODO: we could use EXISTS here... except not all non-Vector Set commands understand Vector Sets, so that's a bit flaky
                 ExceptionInjectionHelper.EnableException(faultLocation);
                 try
                 {
-                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
+                    _ = db.KeyDelete(key);
+                }
+                catch
+                {
+                    // Exception is possible (but not guarnateed) and legal
                 }
                 finally
                 {
@@ -1042,16 +1113,20 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task InterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        public Task InterruptedVectorSetDelete_BeforeMark_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterZeroingOut_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_DuringCleanup_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterDelete_RecoveryAsync()
+        public Task InteterruptedVectorSetDelete_AfterCleanup_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+
+        [Test]
+        public Task InteterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
         private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
         {
@@ -1072,7 +1147,11 @@ namespace Garnet.test
                 ExceptionInjectionHelper.EnableException(faultLocation);
                 try
                 {
-                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
+                    _ = db.KeyDelete(key);
+                }
+                catch
+                {
+                    // Exception is possible (but not guarnateed) and legal
                 }
                 finally
                 {

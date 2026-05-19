@@ -1218,6 +1218,7 @@ namespace Tsavorite.core
                 _ = RemoveExpiration();
             else if (!TrySetExpiration(srcLogRecord.Expiration))
                 return false;
+
             return true;
         }
 

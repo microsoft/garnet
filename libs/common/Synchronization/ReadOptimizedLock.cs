@@ -309,6 +309,43 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Acquire an exclusive lock for all possible hashes, blocking until that succeeds.
+        /// 
+        /// Will block all other locks until released.
+        /// </summary>
+        public readonly void AcquireAllExclusiveLock()
+        {
+            for (var i = 0; i < lockCounts.Length; i++)
+            {
+                ref var acquireRef = ref lockCounts[i];
+
+                while (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
+                {
+                    // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
+                    //
+                    // Backoff and try again
+                    _ = Thread.Yield();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Release a lock previously acquired with <see cref="AcquireAllExclusiveLock()"/>.
+        /// </summary>
+        public readonly void ReleaseAllExclusiveLock()
+        {
+            for (var i = 0; i < lockCounts.Length; i++)
+            {
+                ref var releaseRef = ref lockCounts[i];
+                while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                {
+                    // Optimistic shared lock got us, back off and try again
+                    _ = Thread.Yield();
+                }
+            }
+        }
+
+        /// <summary>
         /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock(long, out int)"/> or <see cref="AcquireSharedLock(long, out int)"/> to an exclusive lock.
         /// 
         /// If successful, will block all other locks until released.

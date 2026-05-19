@@ -19,12 +19,6 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
-        // This is a V8 GUID based on 'GARNET MIGRATION' ASCII string
-        // It cannot collide with processInstanceIds because it's v8
-        // It's unlikely other projects will select the value, so it's unlikely to collide with other v8s
-        // If it ends up in logs, it's ASCII equivalent looks suspicious enough to lead back here
-        private static readonly Guid MigratedInstanceId = new("4e524147-5445-8d20-8947-524154494f4e");
-
         /// <summary>
         /// Called to handle a key in a namespace being received during a migration.
         /// 
@@ -137,9 +131,9 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = RecreateIndexArg;
 
-            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out var processInstanceId);
+            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr);
 
-            Debug.Assert(processInstanceId == MigratedInstanceId, "Shouldn't receive a real process instance id during a migration");
+            Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
             // Extra validation in DEBUG
 #if DEBUG
@@ -311,7 +305,7 @@ namespace Garnet.server
 
                         namespaces ??= [];
 
-                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
                         for (var i = 0UL; i < ContextStep; i++)
                         {
                             _ = namespaces.Add(context + i);

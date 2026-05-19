@@ -77,6 +77,18 @@ namespace Garnet.server
                 return (migrating & mask) != 0;
             }
 
+            public readonly bool IsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                return (cleaningUp & mask) == mask;
+            }
+
             public readonly HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
             {
                 HashSet<ulong> ret = null;
@@ -235,6 +247,22 @@ namespace Garnet.server
                 Version++;
             }
 
+            public void ClearIsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "Should be in use if was marked for cleanup");
+                Debug.Assert((cleaningUp & mask) != 0, "About to clear cleanup when not marked for cleanup");
+                cleaningUp &= ~mask;
+
+                Version++;
+            }
+
             public void FinishedCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
@@ -330,6 +358,45 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Used to prevent new contexts from being issued during a FLUSHDB / FLUSHALL, as well as any new Vector Set operations from starting.
+        /// 
+        /// Also updates and clears cached <see cref="ContextMetadata"/> upon disposal.
+        /// </summary>
+        internal readonly struct FlushGuard : IDisposable
+        {
+            private readonly VectorManager manager;
+
+            internal FlushGuard(VectorManager manager)
+            {
+                this.manager = manager;
+
+                // Stop other Vector Set operations
+                this.manager.vectorSetLocks.AcquireAllExclusiveLock();
+
+                // Acquire a lock that will block all other attempts to issue a new context
+                Monitor.Enter(this.manager);
+            }
+
+            /// <inheritdoc/>
+            public readonly void Dispose()
+            {
+                if (manager == null)
+                {
+                    // This is the default instance, ignore disposal
+                    return;
+                }
+
+                manager.contextMetadata = default;
+
+                // Allow Vector Set operations again
+                manager.vectorSetLocks.ReleaseAllExclusiveLock();
+
+                // Allow new contexts to be issued
+                Monitor.Exit(manager);
+            }
+        }
+
         private ContextMetadata contextMetadata;
 
         /// <summary>
@@ -380,6 +447,24 @@ namespace Garnet.server
                     throw new GarnetException("No available Vector Sets contexts to allocate, timeout reached");
                 }
             }
+        }
+
+        /// <summary>
+        /// During a FLUSHDB (or FLUSHALL) we need to prevent new contexts and other updates to context metadata.
+        /// 
+        /// This method is called at the start of a flush and returns a guard instance which will block such
+        /// new creations until it is disposed.
+        /// 
+        /// This is pretty expensive, but flush should be rare and is @slow anyway.
+        /// </summary>
+        internal FlushGuard BeginFlush()
+        {
+            if (!IsEnabled)
+            {
+                return default;
+            }
+
+            return new FlushGuard(this);
         }
 
         /// <summary>
