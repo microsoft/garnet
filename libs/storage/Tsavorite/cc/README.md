@@ -21,7 +21,8 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 
 The native device builds with MSVC (Visual Studio 2022, Visual Studio 2026
 Insiders, or the standalone Build Tools). You need the **Desktop development
-with C++** workload installed.
+with C++** workload installed, plus the **Spectre-mitigated CRT libraries**
+(see prerequisites below).
 
 #### 1. Confirm CMake and Visual Studio are installed
 
@@ -42,7 +43,27 @@ To list what Visual Studio installs CMake will discover:
 Pre-release / Insiders editions only show up with the `-prerelease` flag —
 omitting it is the most common reason for a missing-VS error.
 
-#### 2. Pick a generator
+#### 2. Install the Spectre-mitigated CRT libraries
+
+Our `CMakeLists.txt` builds with `/Qspectre /guard:cf /sdl` (source-level
+Spectre v1 mitigation, Control Flow Guard, and Security Development
+Lifecycle checks) and the project requires the matching Spectre-mitigated
+CRT runtime libraries at link time. They are an *optional* component in
+the VS Installer:
+
+1. Open the **Visual Studio Installer**, click **Modify** on your VS
+   2022 or VS 2026 Insiders install.
+2. Switch to the **Individual components** tab.
+3. Search for `Spectre` and check the entry that matches your toolset and
+   architecture — e.g. **MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated
+   libs (Latest)** for VS 2022, or the equivalent **v144** / `v18` entry
+   for VS 2026 Insiders.
+4. Click **Modify** to install (about 200 MB).
+
+Skipping this step will surface as `error MSB8040: Spectre-mitigated
+libraries are required for this project` during `cmake --build`.
+
+#### 3. Pick a generator
 
 | Visual Studio                       | CMake generator string             |
 | ----------------------------------- | ---------------------------------- |
@@ -55,7 +76,7 @@ If `cmake --help` does not list your generator, your CMake is too old —
 upgrade with `winget install Kitware.CMake` or download a fresh build from
 <https://cmake.org/download/>.
 
-#### 3. Configure and build
+#### 4. Configure and build
 
 Create a `build` directory under `Tsavorite\cc` and configure from there:
 
