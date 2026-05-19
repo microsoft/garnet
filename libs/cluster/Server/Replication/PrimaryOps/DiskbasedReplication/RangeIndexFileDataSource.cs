@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,21 @@ namespace Garnet.cluster
         /// Default chunk size for streaming .bftree files (128 KB).
         /// </summary>
         internal const int DefaultChunkSize = 1 << 17;
+
+        /// <summary>
+        /// Length in bytes of the ASCII-encoded key hash in the metadata payload.
+        /// </summary>
+        internal const int KeyHashLength = 32;
+
+        /// <summary>
+        /// Length in bytes of the little-endian encoded logical address in the metadata payload.
+        /// </summary>
+        internal const int AddressLength = sizeof(long);
+
+        /// <summary>
+        /// Total metadata length for flush files (key hash + address).
+        /// </summary>
+        internal const int FlushMetadataLength = KeyHashLength + AddressLength;
 
         private readonly string filePath;
         private readonly int chunkSize;
@@ -60,9 +76,9 @@ namespace Garnet.cluster
 
             if (Type == CheckpointFileType.STORE_RANGEINDEX_FLUSH)
             {
-                var metadata = new byte[32 + 8];
-                Buffer.BlockCopy(keyHashBytes, 0, metadata, 0, 32);
-                BitConverter.TryWriteBytes(metadata.AsSpan(32), Address);
+                var metadata = new byte[FlushMetadataLength];
+                Buffer.BlockCopy(keyHashBytes, 0, metadata, 0, KeyHashLength);
+                BinaryPrimitives.WriteInt64LittleEndian(metadata.AsSpan(KeyHashLength), Address);
                 return metadata;
             }
 

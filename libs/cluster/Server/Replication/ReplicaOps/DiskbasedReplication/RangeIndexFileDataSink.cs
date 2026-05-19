@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using Garnet.common;
@@ -48,10 +49,10 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Deserializes the metadata payload and creates a sink targeting the correct file path.
-        /// <para>Metadata layout:</para>
+        /// <para>Metadata layout (sizes defined in <see cref="RangeIndexFileDataSource"/>):</para>
         /// <list type="bullet">
-        /// <item><b>STORE_RANGEINDEX_FLUSH</b>: keyHash (32 bytes ASCII) + address (8 bytes LE) = 40 bytes</item>
-        /// <item><b>STORE_RANGEINDEX_SNAPSHOT</b>: keyHash (32 bytes ASCII) = 32 bytes</item>
+        /// <item><b>STORE_RANGEINDEX_FLUSH</b>: keyHash (KeyHashLength bytes ASCII) + address (AddressLength bytes LE) = FlushMetadataLength bytes</item>
+        /// <item><b>STORE_RANGEINDEX_SNAPSHOT</b>: keyHash (KeyHashLength bytes ASCII)</item>
         /// </list>
         /// </summary>
         /// <param name="type">The checkpoint file type.</param>
@@ -61,17 +62,17 @@ namespace Garnet.cluster
         /// <param name="logger">Optional logger.</param>
         public static RangeIndexFileDataSink FromMetadata(CheckpointFileType type, Guid token, ReadOnlySpan<byte> metadata, RangeIndexManager riManager, ILogger logger = null)
         {
-            if (metadata.Length < 32)
+            if (metadata.Length < RangeIndexFileDataSource.KeyHashLength)
                 ExceptionUtils.ThrowException(new GarnetException($"RangeIndex metadata too short ({metadata.Length} bytes) for type {type}"));
 
-            var keyHash = Encoding.ASCII.GetString(metadata[..32]);
+            var keyHash = Encoding.ASCII.GetString(metadata[..RangeIndexFileDataSource.KeyHashLength]);
             string filePath;
 
             if (type == CheckpointFileType.STORE_RANGEINDEX_FLUSH)
             {
-                if (metadata.Length < 40)
-                    ExceptionUtils.ThrowException(new GarnetException($"RangeIndex flush metadata too short ({metadata.Length} bytes), expected 40"));
-                var address = BitConverter.ToInt64(metadata[32..40]);
+                if (metadata.Length < RangeIndexFileDataSource.FlushMetadataLength)
+                    ExceptionUtils.ThrowException(new GarnetException($"RangeIndex flush metadata too short ({metadata.Length} bytes), expected {RangeIndexFileDataSource.FlushMetadataLength}"));
+                var address = BinaryPrimitives.ReadInt64LittleEndian(metadata[RangeIndexFileDataSource.KeyHashLength..RangeIndexFileDataSource.FlushMetadataLength]);
                 filePath = riManager.LogFlushPath(keyHash, address);
             }
             else
