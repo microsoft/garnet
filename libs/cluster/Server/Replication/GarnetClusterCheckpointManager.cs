@@ -76,15 +76,13 @@ namespace Garnet.cluster
             // Try to parse new format where cookie is embedded inside the HybridLogRecoveryInfo
             try
             {
-                using (StreamReader s = new(new MemoryStream(checkpointMetadata)))
-                {
-                    recoveryInfo.Initialize(s);
-                }
+                using var s = new StreamReader(new MemoryStream(checkpointMetadata));
+                recoveryInfo.Initialize(s);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Best effort read of checkpoint metadata failed");
-                throw ex.InnerException;
+                throw;
             }
 
             return recoveryInfo;

@@ -1038,6 +1038,11 @@ namespace Garnet.test.cluster
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex, addCount);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            var primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
+            var replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
+            ClassicAssert.AreEqual("1", primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+
             for (var i = 0; i < 5; i++)
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryNodeIndex, logger: context.logger);
@@ -1046,12 +1051,12 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitCheckpoint(primaryNodeIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaNodeIndex, replicaLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
-            }
 
-            var primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            var replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            ClassicAssert.AreEqual("6", primaryVersion);
-            ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+                primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
+                replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
+                ClassicAssert.AreEqual($"{i + 2}", primaryVersion); // +2 because version started at 1 and our loop index is zero-based
+                ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+            }
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
 

@@ -22,6 +22,21 @@ using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
+    /// <summary>
+    /// Unique base port for each cluster test sub-project, enabling parallel test runs without port conflicts.
+    /// </summary>
+    public enum ClusterPortAssignment
+    {
+        ClusterTest = 7000,
+        ClusterMigrate = 7100,
+        ClusterReplication = 7200,
+        ClusterReplicationTls = 7300,
+        ClusterReplicationAsync = 7400,
+        ClusterReplicationDiskless = 7500,
+        ClusterVectorSets = 7600,
+        ClusterMultiLog = 7700,
+    }
+
     public class ClusterTestContext
     {
         public CredentialManager credManager;
@@ -35,7 +50,7 @@ namespace Garnet.test.cluster
         public ILogger logger;
 
         public int defaultShards = 3;
-        public static int Port = 7000;
+        public static int Port = (int)ClusterPortAssignment.ClusterTest;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
 
         public Random r = new();
         public ManualResetEventSlim waiter;
@@ -314,8 +329,8 @@ namespace Garnet.test.cluster
             int threadPoolMinIOCompletionThreads = 0)
         {
             var ipAddress = IPAddress.Loopback;
-            TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
-            endpoints = TestUtils.GetShardEndPoints(shards, useHostname ? IPAddress.Any : ipAddress, 7000);
+            TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
+            endpoints = TestUtils.GetShardEndPoints(shards, useHostname ? IPAddress.Any : ipAddress, Port);
 
             (nodes, nodeOptions) = TestUtils.CreateGarnetCluster(
                 TestFolder,
@@ -376,7 +391,7 @@ namespace Garnet.test.cluster
             foreach (var node in nodes)
                 node.Start();
 
-            endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, Port);
         }
 
         /// <summary>

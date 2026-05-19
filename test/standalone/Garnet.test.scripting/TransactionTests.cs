@@ -389,12 +389,12 @@ namespace Garnet.test
                     client.Connect();
                     client.Execute("MULTI");
                     var result = await client.ExecuteAsync([.. command]).ConfigureAwait(false);
-                    ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " failed transaction coverage");
+                    ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " failed transaction coverage inline");
                     client.Execute("DISCARD");
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Assert.Fail($"{commandInfo.Name} failed transaction coverage");
+                    Assert.Fail($"{commandInfo.Name} failed transaction coverage with exception: {ex.Message}");
                 }
             }
         }

@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
+        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery', 'Tsavorite.test.stress' ]
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
@@ -124,6 +124,7 @@ jobs:
             'Tsavorite.test.session.context' = 'libs/storage/Tsavorite/cs/test/test.session.context'
             'Tsavorite.test.hlog' = 'libs/storage/Tsavorite/cs/test/test.hlog'
             'Tsavorite.test.recovery' = 'libs/storage/Tsavorite/cs/test/test.recovery'
+            'Tsavorite.test.stress' = 'libs/storage/Tsavorite/cs/test/test.stress'
           }
           $dir = $tsavoriteDirMap['${{ matrix.test }}']
           echo "TSAVORITE_TEST_DIR=$dir" >> $env:GITHUB_ENV

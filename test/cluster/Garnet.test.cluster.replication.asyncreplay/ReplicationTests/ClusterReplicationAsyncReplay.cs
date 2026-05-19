@@ -7,7 +7,6 @@ namespace Garnet.test.cluster
 {
     [TestFixture]
     [NonParallelizable]
-    [Ignore("Skip to reduce CI duration.")]
     public class ClusterReplicationAsyncReplay : ClusterReplicationBaseTests
     {
         [SetUp]
