@@ -115,24 +115,26 @@ namespace Garnet.server
             internal void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
 
             /// <summary>
-            /// This method will perform one of the followin
+            /// This method will perform one of the following
             ///     1. TxnStart: Create a new transaction group
             ///     2. TxnCommit: Replay or buffer transaction group depending if we are in fuzzyRegion. 
             ///     3. TxnAbort: Clear corresponding sublog replay buffer.
             ///     4. Default: Add an operation to an existing transaction group
             /// </summary>
-            /// <param name="sublogIdx"></param>
+            /// <param name="virtualSublogIdx"></param>
             /// <param name="ptr"></param>
             /// <param name="length"></param>
             /// <param name="asReplica"></param>
+            /// <param name="logAddressSequenceNumber"></param>
             /// <returns>Returns true if a txn operation was processed and added otherwise false</returns>
             /// <exception cref="GarnetException"></exception>
-            internal bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica, long entryAddress = 0)
+            internal bool AddOrReplayTransactionOperation(int virtualSublogIdx, byte* ptr, int length, bool asReplica, long logAddressSequenceNumber = 0)
             {
                 var header = *(AofHeader*)ptr;
-                var replayContext = GetReplayContext(sublogIdx);
-                // First try to process this as an existing transaction
-                if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
+                var replayContext = GetReplayContext(virtualSublogIdx);
+                // Process operation as part of a transaction if it belongs to the same sessionId and
+                // there is already a transaction group associated with it.
+                if (aofReplayContext[virtualSublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
                 {
                     switch (header.opType)
                     {
@@ -140,7 +142,7 @@ namespace Garnet.server
                             throw new GarnetException("No nested transactions expected");
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
-                            UpdateMaxSequenceNumberFromHeader(sublogIdx, ptr, entryAddress);
+                            UpdateMaxSequenceNumberFromHeader();
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -148,12 +150,12 @@ namespace Garnet.server
                                 // If in fuzzy region we want to record the commit marker and
                                 // buffer the transaction group for later replay
                                 var commitMarker = new ReadOnlySpan<byte>(ptr, length);
-                                aofReplayContext[sublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
+                                aofReplayContext[virtualSublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
                             }
                             else
                             {
                                 // Otherwise process transaction group immediately
-                                ProcessTransactionGroup(sublogIdx, ptr, asReplica, group, entryAddress);
+                                ProcessTransactionGroup(virtualSublogIdx, ptr, asReplica, group, logAddressSequenceNumber);
                             }
 
                             // We want to clear and remove in both cases to make space for next txn from session
@@ -168,8 +170,8 @@ namespace Garnet.server
 
                     void ClearSessionTxn()
                     {
-                        aofReplayContext[sublogIdx].activeTxns[header.sessionID].Clear();
-                        _ = aofReplayContext[sublogIdx].activeTxns.Remove(header.sessionID);
+                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Clear();
+                        _ = aofReplayContext[virtualSublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
                     return true;
@@ -179,7 +181,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var headerType = (AofHeaderType)header.HeaderType;
+                        var headerType = header.HeaderType;
                         short logAccessCount = 0;
                         long startSeqNum = 0;
                         if (serverOptions.MultiLogEnabled)
@@ -188,7 +190,7 @@ namespace Garnet.server
                             {
                                 case AofHeaderType.SingleLogTransactionHeader:
                                     logAccessCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
-                                    startSeqNum = entryAddress;
+                                    startSeqNum = logAddressSequenceNumber;
                                     break;
                                 case AofHeaderType.ShardedLogTransactionHeader:
                                     logAccessCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
@@ -197,52 +199,49 @@ namespace Garnet.server
                                 default:
                                     // BasicHeader from SL-era AOF: all replay tasks participate
                                     logAccessCount = (short)serverOptions.AofReplayTaskCount;
-                                    startSeqNum = entryAddress;
+                                    startSeqNum = logAddressSequenceNumber;
                                     break;
                             }
                         }
-                        aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount, startSeqNum);
+                        aofReplayContext[virtualSublogIdx].AddTransactionGroup(header.sessionID, virtualSublogIdx, (byte)logAccessCount, startSeqNum);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
                         // We encountered a transaction end without start - this could happen because we truncated the AOF
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
-                        UpdateMaxSequenceNumberFromHeader(sublogIdx, ptr, entryAddress);
+                        UpdateMaxSequenceNumberFromHeader();
                         break;
                     default:
                         // Continue processing
                         return false;
                 }
 
-                // Processed this record succesfully
+                // Processed this record successfully
                 return true;
-            }
 
-            /// <summary>
-            /// Updates the max sequence number for the given sublog from the entry header.
-            /// For single-physical-log + multi-replay, uses the entry address; for multi-physical-log, uses embedded sequence number.
-            /// </summary>
-            void UpdateMaxSequenceNumberFromHeader(int sublogIdx, byte* ptr, long entryAddress)
-            {
-                var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
-                long sequenceNumber;
-                switch (headerType)
+                // U
+                void UpdateMaxSequenceNumberFromHeader()
                 {
-                    case AofHeaderType.BasicHeader:
-                    case AofHeaderType.SingleLogTransactionHeader:
-                        sequenceNumber = entryAddress;
-                        break;
-                    case AofHeaderType.ShardedHeader:
-                        sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
-                        break;
-                    case AofHeaderType.ShardedLogTransactionHeader:
-                        sequenceNumber = (*(AofShardedLogTransactionHeader*)ptr).shardedHeader.sequenceNumber;
-                        break;
-                    default:
-                        throw new GarnetException($"Unexpected header type {headerType}");
+                    var headerType = (*(AofHeader*)ptr).HeaderType;
+                    long sequenceNumber;
+                    switch (headerType)
+                    {
+                        case AofHeaderType.BasicHeader:
+                        case AofHeaderType.SingleLogTransactionHeader:
+                            sequenceNumber = logAddressSequenceNumber;
+                            break;
+                        case AofHeaderType.ShardedHeader:
+                            sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
+                            break;
+                        case AofHeaderType.ShardedLogTransactionHeader:
+                            sequenceNumber = (*(AofShardedLogTransactionHeader*)ptr).shardedHeader.sequenceNumber;
+                            break;
+                        default:
+                            throw new GarnetException($"Unexpected header type {headerType}");
+                    }
+                    aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, sequenceNumber);
                 }
-                aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, sequenceNumber);
             }
 
             /// <summary>
@@ -433,7 +432,7 @@ namespace Garnet.server
                                 entryPtr,
                                 entry.Length,
                                 asReplica: asReplica,
-                                entryAddress: entryAddress);
+                                logAddressSequenceNumber: entryAddress);
                         }
                     }
                 }

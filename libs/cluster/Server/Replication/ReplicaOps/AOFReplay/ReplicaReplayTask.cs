@@ -89,10 +89,10 @@ namespace Garnet.cluster
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
-                                var entryLogAddress = currentAddress + (ptr - record);
-                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out _))
+                                var logAddressSequenceNumber = currentAddress + (ptr - record);
+                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out _))
                                 {
-                                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, entryLogAddress);
+                                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
                                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                                     // point when we take a checkpoint at the checkpoint end marker
                                     if (isCheckpointStart)
