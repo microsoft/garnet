@@ -159,18 +159,28 @@ class QueueIoHandler {
 
  public:
   QueueIoHandler()
-    : io_object_{ 0 } {
+    : io_object_{ 0 }
+    , init_errno_{ 0 } {
   }
-  QueueIoHandler(size_t max_threads)
-    : io_object_{ 0 } {
+  /// Construct + io_setup. On failure, io_object_ stays 0 and init_errno_ holds the positive
+  /// errno value (so the caller can format an actionable error message instead of crashing on
+  /// an assert that's stripped in Release builds).
+  QueueIoHandler(size_t /*max_threads*/)
+    : io_object_{ 0 }
+    , init_errno_{ 0 } {
     int result = ::io_setup(kMaxEvents, &io_object_);
-    assert(result >= 0);
+    if (result < 0) {
+      init_errno_ = -result;
+      io_object_ = 0;  // ensure clean state for destructor
+    }
   }
 
   /// Move constructor
-  QueueIoHandler(QueueIoHandler&& other) {
-    io_object_ = other.io_object_;
+  QueueIoHandler(QueueIoHandler&& other)
+    : io_object_{ other.io_object_ }
+    , init_errno_{ other.init_errno_ } {
     other.io_object_ = 0;
+    other.init_errno_ = 0;
   }
 
   ~QueueIoHandler() {
@@ -179,6 +189,10 @@ class QueueIoHandler {
     if(io_object != 0)
       ::io_destroy(io_object);
   }
+
+  /// Non-zero iff io_setup failed during construction. The value is the positive errno.
+  int init_errno() const { return init_errno_; }
+  bool initialized() const { return io_object_ != 0; }
 
   /// Invoked whenever a Linux AIO completes.
   static void IoCompletionCallback(io_context_t ctx, struct iocb* iocb, long res, long res2);
@@ -222,6 +236,9 @@ class QueueIoHandler {
  private:
   /// The Linux AIO context used for IO completions.
   io_context_t io_object_;
+  /// If non-zero, the positive errno from a failed io_setup() in the constructor. Checked by
+  /// NativeDeviceImpl::Init() to surface an actionable error to the managed caller.
+  int init_errno_;
 };
 
 /// The QueueFile class encapsulates asynchronous reads and writes, using the specified AIO
@@ -317,30 +334,48 @@ class UringIoHandler {
   constexpr static int kMaxEvents = 128;
 
  public:
-  UringIoHandler() {
+  UringIoHandler()
+    : init_errno_{ 0 } {
     ring_ = new struct io_uring();
     int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
-    assert(ret == 0);
+    if (ret != 0) {
+      init_errno_ = -ret;
+      // ring_ is in an undefined state after io_uring_queue_init failure; free our wrapper
+      // immediately so the destructor doesn't try to io_uring_queue_exit on a partially-init ring.
+      delete ring_;
+      ring_ = nullptr;
+    }
   }
 
-  UringIoHandler(size_t max_threads) {
+  UringIoHandler(size_t /*max_threads*/)
+    : init_errno_{ 0 } {
     ring_ = new struct io_uring();
     int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
-    assert(ret == 0);
+    if (ret != 0) {
+      init_errno_ = -ret;
+      delete ring_;
+      ring_ = nullptr;
+    }
   }
 
   /// Move constructor
-  UringIoHandler(UringIoHandler&& other) {
-    ring_ = other.ring_;
-    other.ring_ = 0;
+  UringIoHandler(UringIoHandler&& other)
+    : ring_{ other.ring_ }
+    , init_errno_{ other.init_errno_ } {
+    other.ring_ = nullptr;
+    other.init_errno_ = 0;
   }
 
   ~UringIoHandler() {
-    if (ring_ != 0) {
+    if (ring_ != nullptr) {
       io_uring_queue_exit(ring_);
       delete ring_;
     }
   }
+
+  /// Non-zero iff io_uring_queue_init failed during construction. The value is the positive errno.
+  int init_errno() const { return init_errno_; }
+  bool initialized() const { return ring_ != nullptr; }
 
   /*
   /// Invoked whenever a Linux AIO completes.
@@ -384,6 +419,8 @@ private:
   /// The io_uring for all the I/Os
   struct io_uring* ring_;
   SpinLock sq_lock_, cq_lock_;
+  /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
+  int init_errno_;
 };
 
 /// The UringFile class encapsulates asynchronous reads and writes, using the specified

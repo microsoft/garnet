@@ -13,6 +13,7 @@ set (NATIVE_DEVICE_HEADERS
   device/light_epoch.h
   device/lss_allocator.h
   device/native_device.h
+  device/native_device_error.h
   device/phase.h
   device/status.h
   device/thread.h
