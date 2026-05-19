@@ -69,7 +69,7 @@ namespace Garnet.server
             if (!logRecord.Info.ValueIsObject)
             {
                 // Free BfTree and delete data files on key deletion.
-                if (reason == DisposeReason.Deleted && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
                 }
