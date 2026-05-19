@@ -78,9 +78,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+            context.CreateInstances(nodesCount, disableObjects: true, enableAOF: true,
                 enableRangeIndexPreview: true);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
@@ -105,9 +105,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+            context.CreateInstances(nodesCount, disableObjects: true, enableAOF: true,
                 enableRangeIndexPreview: true);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
@@ -142,9 +142,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+            context.CreateInstances(nodesCount, disableObjects: true, enableAOF: true,
                 lowMemory: true, enableRangeIndexPreview: true);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
@@ -176,9 +176,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true,
+            context.CreateInstances(nodesCount, tryRecover: true, disableObjects: true,
                 enableAOF: true, enableRangeIndexPreview: true);
             context.CreateConnection();
 
@@ -226,9 +226,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+            context.CreateInstances(nodesCount, disableObjects: true, enableAOF: true,
                 enableRangeIndexPreview: true);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
@@ -288,9 +288,9 @@ namespace Garnet.test.cluster
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
-            var nodes_count = 2;
+            var nodesCount = 2;
 
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+            context.CreateInstances(nodesCount, disableObjects: true, enableAOF: true,
                 enableRangeIndexPreview: true);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);

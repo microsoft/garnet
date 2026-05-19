@@ -50,7 +50,7 @@ namespace Garnet.cluster
 
             if (!headerResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
-                    $"Primary error at RangeIndex header {DataSource.Type} {headerResp} keyHash={riDataSource.KeyHash}"));
+                    $"Replica error at RangeIndex header {DataSource.Type} {headerResp} keyHash={riDataSource.KeyHash}"));
 
             // Stream file content in chunks
             while (DataSource.HasNextChunk)
@@ -65,7 +65,7 @@ namespace Garnet.cluster
 
                 if (!resp.Equals("OK"))
                     ExceptionUtils.ThrowException(new GarnetException(
-                        $"Primary error at RangeIndex TransmitAsync {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
+                        $"Replica error at RangeIndex TransmitAsync {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
             }
 
             // Send empty package to indicate end of transmission
@@ -75,7 +75,7 @@ namespace Garnet.cluster
 
             if (!endResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
-                    $"Primary error at RangeIndex TransmitAsync Completion {DataSource.Type} {endResp}"));
+                    $"Replica error at RangeIndex TransmitAsync Completion {DataSource.Type} {endResp}"));
         }
 
         public void Dispose()
