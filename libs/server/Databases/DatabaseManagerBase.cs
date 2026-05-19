@@ -300,10 +300,13 @@ namespace Garnet.server
         /// <param name="truncateAof">Truncate AOF log</param>
         protected static void FlushDatabase(GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
         {
-            db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            using (db.VectorManager?.BeginFlush())
+            {
+                db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
 
-            if (truncateAof)
-                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
+                if (truncateAof)
+                    db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
+            }
         }
 
         /// <summary>

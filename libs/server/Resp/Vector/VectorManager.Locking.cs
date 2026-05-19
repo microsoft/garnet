@@ -88,9 +88,9 @@ namespace Garnet.server
         /// </summary>
         internal bool NeedsRecreate(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-            return indexProcessInstanceId != processInstanceId;
+            return indexPtr == 0;
         }
 
         /// <summary>
@@ -137,14 +137,6 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                        {
-                            status = GarnetStatus.BADSTATE;
-
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                            return default;
-                        }
-
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -162,7 +154,7 @@ namespace Garnet.server
                             continue;
                         }
 
-                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                         input.arg1 = RecreateIndexArg;
 
@@ -290,14 +282,6 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                        {
-                            status = GarnetStatus.BADSTATE;
-
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                            return default;
-                        }
-
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -319,7 +303,7 @@ namespace Garnet.server
                         nint newlyAllocatedIndex;
                         if (needsRecreate)
                         {
-                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                             input.arg1 = RecreateIndexArg;
 
@@ -378,12 +362,6 @@ namespace Garnet.server
                                 {
                                     // Insertion failed, drop index
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
                             }
                             catch
@@ -392,12 +370,6 @@ namespace Garnet.server
                                 {
                                     // Drop to avoid a leak on error
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
 
                                 throw;
@@ -466,8 +438,6 @@ namespace Garnet.server
 
         /// <summary>
         /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
-        /// 
-        /// If the index is partially deleted, <paramref name="status"/> will be set to <see cref="GarnetStatus.BADSTATE"/> but the locks will be still acquired.
         /// </summary>
         internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
@@ -490,15 +460,6 @@ namespace Garnet.server
                 acquiredLock.Dispose();
 
                 throw;
-            }
-
-            if (status == GarnetStatus.OK)
-            {
-                // Even if we read the value, it might be in a bad state due to a prior delete
-                if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                {
-                    status = GarnetStatus.BADSTATE;
-                }
             }
 
             return acquiredLock;

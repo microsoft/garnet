@@ -40,7 +40,7 @@ namespace Garnet.test.cluster
             var config = new ClusterConfig().InitializeLocalWorker(
                 Generator.CreateHexId(),
                 "127.0.0.1",
-                7001,
+                ClusterTestContext.Port + 1,
                 configEpoch: 0,
                 Garnet.cluster.NodeRole.PRIMARY,
                 null,
@@ -93,13 +93,13 @@ namespace Garnet.test.cluster
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == nbInstances, "No node should've been removed from the cluster after an invalid id was passed.");
             Assert.That(nodesResult.Nodes.ElementAt(0).IsMyself);
-            Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == 7000, "Expected the node to be replying to be the one with port 7000.");
+            Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == ClusterTestContext.Port, $"Expected the node to be replying to be the one with ClusterTestContext.Port {ClusterTestContext.Port} pt 1.");
 
             context.clusterTestUtils.ClusterForget(0, nodesResult.Nodes.Last().NodeId, 0);
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == nbInstances - 1, "A node should've been removed from the cluster.");
             Assert.That(nodesResult.Nodes.ElementAt(0).IsMyself);
-            Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == 7000, "Expected the node to be replying to be the one with port 7000.");
+            Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == ClusterTestContext.Port, $"Expected the node to be replying to be the one with ClusterTestContext.Port {ClusterTestContext.Port} pt 2.");
         }
 
         [Test, Order(2)]
@@ -136,17 +136,17 @@ namespace Garnet.test.cluster
         public void ClusterAnyIPAnnounce()
         {
             context.nodes = new GarnetServer[1];
-            context.nodes[0] = context.CreateInstance(new IPEndPoint(IPAddress.Any, 7000));
+            context.nodes[0] = context.CreateInstance(new IPEndPoint(IPAddress.Any, ClusterTestContext.Port));
             context.nodes[0].Start();
 
-            context.endpoints = TestUtils.GetShardEndPoints(1, IPAddress.Loopback, 7000);
+            context.endpoints = TestUtils.GetShardEndPoints(1, IPAddress.Loopback, ClusterTestContext.Port);
             context.CreateConnection();
 
             var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
             var origin = config.Origin;
 
             var endpoint = origin.ToIPEndPoint();
-            ClassicAssert.AreEqual(7000, endpoint.Port);
+            ClassicAssert.AreEqual(ClusterTestContext.Port, endpoint.Port);
 
             using var client = TestUtils.GetGarnetClient(config.Origin);
             client.Connect();
@@ -163,7 +163,7 @@ namespace Garnet.test.cluster
             var config = new ClusterConfig().InitializeLocalWorker(
                 Generator.CreateHexId(),
                 "127.0.0.1",
-                7001,
+                ClusterTestContext.Port + 1,
                 configEpoch: 1,
                 Garnet.cluster.NodeRole.PRIMARY,
                 null,
@@ -187,7 +187,7 @@ namespace Garnet.test.cluster
             var config = new ClusterConfig().InitializeLocalWorker(
                 Generator.CreateHexId(),
                 "127.0.0.1",
-                7001,
+                ClusterTestContext.Port + 1,
                 configEpoch: 1,
                 Garnet.cluster.NodeRole.PRIMARY,
                 null,

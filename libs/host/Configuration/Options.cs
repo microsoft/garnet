@@ -564,7 +564,9 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
-        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
+        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes. Note that we do not have a KeyOverflowThreshold
+        // because it would complicate the minimum pagesize check that uses ValueOverflowThreshold check at startup; keys are usually small so calculating a
+        // minimum page size using a large(ish) Key threshold would have spurious errors. We'll defer that rare case to runtime checks.
         [MemorySizeValidation(isRequired: false)]
         [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
         public string ValueOverflowThreshold { get; set; }

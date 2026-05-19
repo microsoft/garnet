@@ -308,7 +308,6 @@ namespace Garnet
             CustomCommandManager customCommandManager)
         {
             var removeOutdated = !serverOptions.EnableCluster;
-
             // Two-roots layout for RangeIndex files:
             //  riLogRoot — log-tied (working file + per-flush snapshots), co-located with hlog.
             //              Falls back through LogDir → CheckpointDir → cwd, mirroring Tsavorite's
@@ -332,15 +331,14 @@ namespace Garnet
                     storeEpoch: storeEpoch,
                     logger: loggerFactory?.CreateLogger("RangeIndexManager"));
             }
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
-            var aof = CreateAOF(dbId);
-
             var vectorManager = new VectorManager(
                 dbId,
                 serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var aof = CreateAOF(dbId);
 
             return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
@@ -369,7 +367,7 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, RangeIndexManager rangeIndexManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, RangeIndexManager rangeIndexManager, VectorManager vectorManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
@@ -394,7 +392,7 @@ namespace Garnet
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager))
+                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)

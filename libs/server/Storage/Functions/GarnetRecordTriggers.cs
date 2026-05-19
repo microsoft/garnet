@@ -27,12 +27,19 @@ namespace Garnet.server
         internal readonly RangeIndexManager rangeIndexManager;
 
         /// <summary>
+        /// Reference to the VectorManager for Vector Set lifecycle management.
+        /// May be <c>null</c> if Vector Sets are not enabled.
+        /// </summary>
+        internal readonly VectorManager vectorManager;
+
+        /// <summary>
         /// Creates a GarnetRecordTriggers with a cache size tracker and optional RangeIndexManager.
         /// </summary>
-        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager = null)
+        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager, VectorManager vectorManager)
         {
             this.cacheSizeTracker = cacheSizeTracker;
             this.rangeIndexManager = rangeIndexManager;
+            this.vectorManager = vectorManager;
         }
 
         // Trigger gates: when EnableRangeIndexPreview=false (the default), GarnetServer
@@ -45,10 +52,10 @@ namespace Garnet.server
         public bool CallOnFlush => rangeIndexManager != null;
 
         /// <inheritdoc/>
-        public bool CallOnEvict => rangeIndexManager != null;
+        public bool CallOnEvict => rangeIndexManager != null || vectorManager != null;
 
         /// <inheritdoc/>
-        public bool CallOnDiskRead => rangeIndexManager != null;
+        public bool CallOnDiskRead => rangeIndexManager != null || vectorManager != null;
 
         /// <inheritdoc/>
         public bool CallPostCopyToTail => rangeIndexManager != null;
@@ -59,12 +66,19 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Free BfTree and delete data files on key deletion.
-            if (!logRecord.Info.ValueIsObject
-                && reason == DisposeReason.Deleted
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
+                // Free BfTree and delete data files on key deletion.
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
+                }
+
+                // Request Vector Set cleanup when the index key is deleted.
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager?.RequestDeletion(logRecord.ValueSpan);
+                }
             }
         }
 
@@ -82,23 +96,39 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source)
         {
-            // Free BfTree on page eviction under exclusive lock.
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
+                // Free BfTree on page eviction under exclusive lock.
+                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
+                }
+
+                // Drop DiskANN side of index
+                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
+                }
             }
         }
 
         /// <inheritdoc/>
         public readonly void OnDiskRead(ref LogRecord logRecord)
         {
-            // Invalidate stale TreeHandle bytes on records loaded from disk.
-            // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
-            if (!logRecord.Info.ValueIsObject
-                && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (!logRecord.Info.ValueIsObject)
             {
-                RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
+                // Invalidate stale TreeHandle bytes on records loaded from disk.
+                // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
+                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
+                }
+
+                // Clear DiskANN index pointer so we'll recreate it on first touch
+                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    VectorManager.ClearIndexPointer(logRecord.ValueSpan);
+                }
             }
         }
 
@@ -111,16 +141,23 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
-            // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
-            // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
-            if (rangeIndexManager is null
-                || logRecord.Info.ValueIsObject
-                || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
-                return;
+            if (!logRecord.Info.ValueIsObject)
+            {
+                // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
+                // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
+                // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
+                if (rangeIndexManager is not null && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
+                    rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
+                }
 
-            RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
-            rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
+                // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
+                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                {
+                    vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                }
+            }
         }
 
         /// <inheritdoc/>
