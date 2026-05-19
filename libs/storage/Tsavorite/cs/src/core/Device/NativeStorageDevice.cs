@@ -263,8 +263,29 @@ namespace Tsavorite.core
         public delegate void AsyncIOCallback(IntPtr context, int result, ulong bytesTransferred);
         readonly IntPtr nativeDevice;
 
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_Create", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_Create(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close);
+        /// <summary>
+        /// Selects the IO backend used by the underlying native device. On Linux,
+        /// <see cref="Libaio"/> uses the historical libaio path (the default). <see cref="Uring"/>
+        /// uses io_uring; this requires the native library to be built with FASTER_URING and
+        /// the host to have liburing.so.2 available. On Windows, only <see cref="Default"/> is
+        /// supported (Windows ThreadPool). Must stay in sync with NativeDeviceBackend in
+        /// native_device.h.
+        /// </summary>
+        public enum IoBackend : int
+        {
+            /// <summary>Platform default (libaio on Linux, ThreadPool on Windows).</summary>
+            Default = 0,
+            /// <summary>Linux libaio. Same as Default on Linux.</summary>
+            Libaio = 1,
+            /// <summary>Linux io_uring. Requires native lib built with FASTER_URING.</summary>
+            Uring = 2,
+        }
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_AvailableBackends", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_AvailableBackends();
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_Destroy", CallingConvention = CallingConvention.Cdecl)]
         static extern void NativeDevice_Destroy(IntPtr device);
@@ -302,16 +323,48 @@ namespace Tsavorite.core
         readonly SemaphoreSlim completionThreadSemaphore;
         int numCompletionThreads;
 
+        // Instrumentation: peak concurrent in-flight writes seen, and submit/complete counters.
+        // Set TSAVORITE_DEVICE_INSTRUMENT=1 in the environment to enable.
+        static readonly bool s_instrument = Environment.GetEnvironmentVariable("TSAVORITE_DEVICE_INSTRUMENT") == "1";
+        int peakNumPending;
+        long submitCount;
+        long completeCount;
+        long submitNanos;
+
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
             Interlocked.Decrement(ref numPending);
+            if (s_instrument) Interlocked.Increment(ref completeCount);
             var result = results[(int)context];
             result.callback((uint)errorCode, (uint)numBytes, result.context);
             freeResults.Enqueue((int)context);
         }
 
+        /// <summary>Diagnostic: snapshot and reset per-second submit/complete counters and peak in-flight.
+        /// Set environment variable <c>TSAVORITE_DEVICE_INSTRUMENT=1</c> to enable population.</summary>
+        public (int curPending, int peakPending, long submits, long completes, long submitNs) GetAndResetStats()
+        {
+            var stats = (numPending, peakNumPending, submitCount, completeCount, submitNanos);
+            peakNumPending = numPending;
+            submitCount = 0;
+            completeCount = 0;
+            submitNanos = 0;
+            return stats;
+        }
+
         /// <inheritdoc />
         public override bool Throttle() => numPending > ThrottleLimit;
+
+        /// <summary>
+        /// Returns the set of IO backends that the currently-loaded native library was built
+        /// with. Always includes <see cref="IoBackend.Default"/>; on Linux may also include
+        /// <see cref="IoBackend.Uring"/> if the native lib was compiled with FASTER_URING.
+        /// </summary>
+        public static (bool defaultAvailable, bool uringAvailable) GetAvailableBackends()
+        {
+            int mask = NativeDevice_AvailableBackends();
+            return ((mask & 1) != 0, (mask & 2) != 0);
+        }
 
         /// <summary>
         /// Constructor with more options for derived classes
@@ -321,11 +374,15 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="numCompletionThreads">Number of IO completion threads</param>
+        /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
-                                      long capacity = Devices.CAPACITY_UNSPECIFIED, int numCompletionThreads = 1, ILogger logger = null)
+                                      long capacity = Devices.CAPACITY_UNSPECIFIED,
+                                      int numCompletionThreads = 1,
+                                      IoBackend ioBackend = IoBackend.Default,
+                                      ILogger logger = null)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -345,7 +402,19 @@ namespace Tsavorite.core
                 Directory.CreateDirectory(path);
             this.logger = logger;
 
-            nativeDevice = NativeDevice_Create(filename, false, disableFileBuffering, deleteOnClose);
+            // Dispatch through the new CreateWithBackend entrypoint for all backends; the prebuilt
+            // native libraries shipped with the repo export this symbol on both Linux and Windows.
+            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackend);
+            if (nativeDevice == IntPtr.Zero)
+            {
+                var available = GetAvailableBackends();
+                throw new TsavoriteException(
+                    $"Requested IO backend '{ioBackend}' is not available in the loaded native_device library. " +
+                    $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
+                    (ioBackend == IoBackend.Uring
+                        ? "Rebuild the native library with -DUSE_URING=ON and install liburing-dev to enable io_uring."
+                        : "Verify the native library matches the requested backend."));
+            }
             results = new NativeResult[MaxResults];
 
             // If Queue IO is enabled, we spin up completion threads
@@ -450,9 +519,27 @@ namespace Tsavorite.core
 
             try
             {
-                if (Interlocked.Increment(ref numPending) <= 0)
+                var newPending = Interlocked.Increment(ref numPending);
+                if (newPending <= 0)
                     throw new Exception("Cannot operate on disposed device");
+                if (s_instrument)
+                {
+                    Interlocked.Increment(ref submitCount);
+                    var prevPeak = peakNumPending;
+                    while (newPending > prevPeak)
+                    {
+                        var actual = Interlocked.CompareExchange(ref peakNumPending, newPending, prevPeak);
+                        if (actual == prevPeak) break;
+                        prevPeak = actual;
+                    }
+                }
+                long ts0 = s_instrument ? Stopwatch.GetTimestamp() : 0;
                 int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << nativeSegmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
+                if (s_instrument)
+                {
+                    var elapsed = Stopwatch.GetTimestamp() - ts0;
+                    Interlocked.Add(ref submitNanos, (long)(elapsed * 1_000_000_000.0 / Stopwatch.Frequency));
+                }
 
                 if (_result != 0)
                 {
