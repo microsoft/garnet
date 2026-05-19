@@ -27,9 +27,8 @@ namespace Garnet.server
         readonly Func<byte[]> cookieGeneratorCallback;
         readonly bool usingSingleLog;
         readonly bool usingSinglePhysicalLog;
-        readonly uint physicalSublogMask;
-        readonly uint physicalSublogCountUpperBound;
-        readonly uint replayTaskCountMask;
+        readonly int physicalSublogCount;
+        readonly int replayTaskCount;
 
         public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
         {
@@ -71,10 +70,8 @@ namespace Garnet.server
                 this.shardedLog = new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger);
             }
 
-            var roundUp = BitOperations.RoundUpToPowerOf2((uint)serverOptions.AofPhysicalSublogCount);
-            physicalSublogMask = roundUp - 1;
-            physicalSublogCountUpperBound = (uint)BitOperations.PopCount(physicalSublogMask);
-            replayTaskCountMask = BitOperations.RoundUpToPowerOf2((uint)serverOptions.AofReplayTaskCount) - 1;
+            physicalSublogCount = serverOptions.AofPhysicalSublogCount;
+            replayTaskCount = serverOptions.AofReplayTaskCount;
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -92,11 +89,11 @@ namespace Garnet.server
             => GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPhysicalSublogIdx(long hash) => (int)((ulong)hash & physicalSublogMask);
+        public int GetPhysicalSublogIdx(long hash) => (int)((ulong)hash % (uint)physicalSublogCount);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetReplayTaskIdx(long hash) => (byte)(((ulong)hash >> (int)physicalSublogCountUpperBound) & replayTaskCountMask);
+        public int GetReplayTaskIdx(long hash) => (int)(((ulong)hash / (uint)physicalSublogCount) % (uint)replayTaskCount);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetVirtualSublogIdx(long hash) => GetPhysicalSublogIdx(hash) * serverOptions.AofReplayTaskCount + GetReplayTaskIdx(hash);
+        public int GetVirtualSublogIdx(long hash) => GetPhysicalSublogIdx(hash) * replayTaskCount + GetReplayTaskIdx(hash);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPhysicalSublogIdx(ReadOnlySpan<byte> key) => GetPhysicalSublogIdx(HASH(key));

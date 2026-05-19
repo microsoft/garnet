@@ -81,9 +81,6 @@ namespace Garnet.cluster
                         var isProtected = replayBatchContext.IsProtected;
                         var ptr = record;
 
-                        var maxSequenceNumber = 0L;
-
-                        // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
                         while (ptr < record + recordLength)
                         {
                             cts.Token.ThrowIfCancellationRequested();
@@ -93,18 +90,16 @@ namespace Garnet.cluster
                             {
                                 var entryPtr = ptr + entryLength;
                                 var entryLogAddress = currentAddress + (ptr - record);
-                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out var sequenceNumber))
+                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, entryLogAddress, out _))
                                 {
                                     replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, entryLogAddress);
                                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                                     // point when we take a checkpoint at the checkpoint end marker
                                     if (isCheckpointStart)
                                     {
-                                        // logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
                                         replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
                                     }
                                 }
-                                maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                             }
                             else if (payloadLength < 0)
@@ -124,8 +119,10 @@ namespace Garnet.cluster
                             ptr += entryLength;
                         }
 
-                        // Update max sequence number for this virtual sublog which is mapped
-                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
+                        // Advance frontier to nextAddress (past all entries in this page).
+                        // This ensures the read consistency protocol (which waits for frontier > sessionSeq)
+                        // can proceed once all writes in the page are complete.
+                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
                     }
                 }
                 catch (Exception ex)
