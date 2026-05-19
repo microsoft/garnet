@@ -324,7 +324,8 @@ namespace Garnet.test.cluster
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -383,7 +384,8 @@ namespace Garnet.test.cluster
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             foreach (var node in nodes)
                 node.Start();
@@ -450,9 +452,9 @@ namespace Garnet.test.cluster
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
-
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
@@ -486,7 +488,8 @@ namespace Garnet.test.cluster
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             return new GarnetServer(opts, loggerFactory);
         }
