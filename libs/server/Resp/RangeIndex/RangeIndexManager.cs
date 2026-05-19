@@ -1000,7 +1000,7 @@ namespace Garnet.server
                 {
                     foreach (var path in Directory.EnumerateFiles(snapshotDir, "*.bftree"))
                     {
-                        var name = System.IO.Path.GetFileName(path);
+                        var name = Path.GetFileName(path);
                         var keyHash = name[..HashPrefixLength];
                         yield return new RangeIndexFileEntry(path, keyHash, address: 0, isFlushFile: false);
                     }

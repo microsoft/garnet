@@ -86,6 +86,8 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
         {
+            if (stream.Position != startAddress)
+                ExceptionUtils.ThrowException(new GarnetException($"RangeIndexFileDataSink: expected stream position {startAddress} but found {stream.Position} for {filePath}"));
             stream.Write(data);
         }
 
