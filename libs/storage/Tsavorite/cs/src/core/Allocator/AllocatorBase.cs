@@ -1220,12 +1220,33 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
+            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
+            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
+            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
+            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
+            int spins = 0;
+            var localFlushEvent = flushEvent;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
                 // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
-                _ = Thread.Yield();
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    _ = Thread.Yield();
+                    continue;
+                }
+                try
+                {
+                    epoch.Suspend();
+                    _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
+                localFlushEvent = flushEvent;
+                spins = 0;
             }
 
             // 0: RETRY_LATER
