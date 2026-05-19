@@ -96,6 +96,10 @@ namespace Garnet.server
             {
                 vector_len = vector.Length;
             }
+            else if (vectorType == VectorValueType.SB8)
+            {
+                vector_len = vector.Length;
+            }
             else
             {
                 throw new NotImplementedException($"{vectorType}");
@@ -137,6 +141,10 @@ namespace Garnet.server
                 vector_len = vector.Length / sizeof(float);
             }
             else if (vectorType == VectorValueType.XB8)
+            {
+                vector_len = vector.Length;
+            }
+            else if (vectorType == VectorValueType.SB8)
             {
                 vector_len = vector.Length;
             }

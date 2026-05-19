@@ -14,9 +14,10 @@ namespace Garnet.server
         private bool NetworkVADD<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // VADD key [REDUCE dim] (FP32 | XB8 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN | XPREQ8] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
+            // VADD key [REDUCE dim] (FP32 | XB8 | SB8 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN | XPREQ8] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
+            // SB8 is a non-Redis extension, stands for: Signed Binary 8-bit values - encodes [-128, 127] per dimension
             // XPREQ8 is a non-Redis extension, stands for: eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
 
             const int MinM = 4;
@@ -125,6 +126,25 @@ namespace Garnet.server
 
                     valueType = VectorValueType.XB8;
                     values = asBytes;
+                }
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("SB8"u8))
+                {
+                    curIx++;
+                    if (curIx >= parseState.Count)
+                    {
+                        return AbortWithWrongNumberOfArguments("VADD");
+                    }
+
+                    var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    curIx++;
+
+                    valueType = VectorValueType.SB8;
+                    values = asBytes;
+                }
+
+                if (values.IsEmpty)
+                {
+                    return AbortWithErrorMessage("ERR vector values must be non-empty");
                 }
 
                 if (curIx >= parseState.Count)
@@ -346,7 +366,8 @@ namespace Garnet.server
                 numLinks ??= 16;
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
-                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
+
+                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant && quantType != VectorQuantType.Q8)
                 {
                     WriteError("ERR Unsupported quantization type"u8);
                     return true;
@@ -443,7 +464,7 @@ namespace Garnet.server
             const int DefaultIdSize = sizeof(ulong);
             const int DefaultAttributeSize = 32;
 
-            // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
+            // VSIM key (ELE | FP32 | XB8 | SB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
 
@@ -508,6 +529,19 @@ namespace Garnet.server
                         values = asBytes;
                         curIx++;
                     }
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("SB8"u8))
+                    {
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+
+                        valueType = VectorValueType.SB8;
+                        values = asBytes;
+                        curIx++;
+                    }
                     else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("VALUES"u8))
                     {
                         if (curIx >= parseState.Count)
@@ -549,6 +583,11 @@ namespace Garnet.server
                     {
                         return AbortWithErrorMessage("VSIM expected ELE, FP32, or VALUES");
                     }
+                }
+
+                if (!element.HasValue && values.IsEmpty)
+                {
+                    return AbortWithErrorMessage("ERR vector values must be non-empty");
                 }
 
                 bool? withScores = null;

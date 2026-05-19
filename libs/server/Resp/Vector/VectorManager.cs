@@ -862,9 +862,16 @@ namespace Garnet.server
                         into[i] = from[i];
                     }
                 }
+                else if (quantType == VectorQuantType.Q8)
+                {
+                    // Q8 stores signed bytes; dequantize by sign-extending to float
+                    for (var i = 0; i < asBytes.Length; i++)
+                    {
+                        into[i] = (float)(sbyte)from[i];
+                    }
+                }
                 else
                 {
-                    // TODO: Handle Q8 and BIN as they are implemented
                     throw new NotImplementedException($"Unexpected quantization: {quantType}");
                 }
 
@@ -887,6 +894,10 @@ namespace Garnet.server
                 return (uint)(values.Length / sizeof(float));
             }
             else if (valueType == VectorValueType.XB8)
+            {
+                return (uint)(values.Length);
+            }
+            else if (valueType == VectorValueType.SB8)
             {
                 return (uint)(values.Length);
             }

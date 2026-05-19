@@ -61,6 +61,11 @@ namespace Garnet.server
         /// Bytes (8 bit).
         /// </summary>
         XB8,
+
+        /// <summary>
+        /// Signed bytes (int8, [-128, 127]).
+        /// </summary>
+        SB8,
     }
 
     /// <summary>
