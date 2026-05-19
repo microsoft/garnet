@@ -266,11 +266,23 @@ namespace Tsavorite.core
         /// <summary>
         /// Selects the IO backend used by the underlying native device. On Linux,
         /// <see cref="Libaio"/> uses the historical libaio path (the default). <see cref="Uring"/>
-        /// uses io_uring; this requires the native library to be built with FASTER_URING and
-        /// the host to have liburing.so.2 available. On Windows, only <see cref="Default"/> is
-        /// supported (Windows ThreadPool). Must stay in sync with NativeDeviceBackend in
-        /// native_device.h.
+        /// uses io_uring. On Windows, only <see cref="Default"/> is supported (Windows ThreadPool).
         /// </summary>
+        /// <remarks>
+        /// Whether a given backend is actually available at runtime depends on how the loaded
+        /// <c>libnative_device.so</c> / <c>native_device.dll</c> was built. Call
+        /// <see cref="GetAvailableBackends"/> to probe at runtime.
+        /// <para>
+        /// Note: the Linux prebuilt shipped in <c>runtimes/linux-x64/native/</c> is built with
+        /// <c>USE_URING=ON</c> and therefore records <c>liburing.so.2</c> as a NEEDED ELF entry.
+        /// The dynamic linker must resolve it at load time even when only the <see cref="Libaio"/>
+        /// backend is selected. Deployments without liburing must build the native library
+        /// themselves with <c>-DUSE_URING=OFF</c>; in that case the <see cref="Uring"/> backend is
+        /// rejected at <see cref="NativeStorageDevice"/> construction and <see cref="Libaio"/> /
+        /// <see cref="Default"/> remain available.
+        /// </para>
+        /// Must stay in sync with <c>NativeDeviceBackend</c> in <c>native_device.h</c>.
+        /// </remarks>
         public enum IoBackend : int
         {
             /// <summary>Platform default (libaio on Linux, ThreadPool on Windows).</summary>
@@ -580,36 +592,38 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Close device
+        /// Close device. Shutdown ordering matters: any in-flight IOs must complete first so the
+        /// numPending CAS terminates; the completion threads must exit BEFORE we destroy the native
+        /// device, otherwise they can dereference a freed io_uring/libaio ring inside
+        /// <see cref="NativeDevice_QueueRun"/>.
         /// </summary>
         public override void Dispose()
         {
-            // Stop accepting new requests, drain all pending
+            // 1. Stop accepting new requests, then drain everything in flight.
+            //    The CAS races against WriteAsync / ReadAsync incrementing numPending; we spin until
+            //    a moment is observed where numPending == 0 and we successfully swap it to int.MinValue,
+            //    at which point no new submissions can succeed and all completions have fired.
             while (numPending >= 0)
             {
                 Interlocked.CompareExchange(ref numPending, int.MinValue, 0);
                 Thread.Yield();
             }
 
+            // 2. Tell the completion threads to stop, then WAIT for them to exit.
+            //    Each completion worker checks the token between QueueRun calls; the QueueRun timeout
+            //    inside the worker is short (see CompletionWorker below) so the longest stall here is
+            //    one timeout window. We must wait for them to be fully out of the native call before
+            //    step 3 frees the underlying handler, otherwise we have a use-after-free.
             if (numCompletionThreads > 0)
             {
-                // Stop completion threads
                 completionThreadToken.Cancel();
-            }
-
-            // Destroy - should end ongoing waits
-            // Potential rare race here, where Linux io_destroy may cause ongoing io_getevents to crash
-            NativeDevice_Destroy(nativeDevice);
-
-            if (numCompletionThreads > 0)
-            {
-                // Wait for completion thread to finish
                 completionThreadSemaphore.Wait();
-
-                // Dispose completion objects
                 completionThreadToken.Dispose();
                 completionThreadSemaphore.Dispose();
             }
+
+            // 3. Now that no thread is inside the native code, it is safe to destroy.
+            NativeDevice_Destroy(nativeDevice);
         }
 
         /// <inheritdoc/>
@@ -632,6 +646,13 @@ namespace Tsavorite.core
             return sectorSize;
         }
 
+        /// <summary>
+        /// Long-running drain loop for one completion thread. Each iteration blocks up to
+        /// <see cref="CompletionWorkerTimeoutSecs"/> seconds inside the native handler (waiting on
+        /// io_getevents / io_uring_wait_cqe_timeout) and then returns control here so we can observe
+        /// a cancellation request promptly. The short timeout ensures Dispose() does not stall: the
+        /// worst-case shutdown stall is one timeout window per blocked thread.
+        /// </summary>
         void CompletionWorker()
         {
             try
@@ -639,17 +660,25 @@ namespace Tsavorite.core
                 while (true)
                 {
                     if (completionThreadToken.IsCancellationRequested) break;
-                    NativeDevice_QueueRun(nativeDevice, 5);
+                    NativeDevice_QueueRun(nativeDevice, CompletionWorkerTimeoutSecs);
                     Thread.Yield();
                 }
             }
             finally
             {
+                // The last completion thread out of the building releases the semaphore that
+                // Dispose() is waiting on. Using Interlocked here is necessary because multiple
+                // completion threads race to this point on shutdown.
                 if (Interlocked.Decrement(ref numCompletionThreads) == 0)
                 {
                     completionThreadSemaphore.Release();
                 }
             }
         }
+
+        // Per-iteration timeout passed to NativeDevice_QueueRun by completion workers. Kept short so
+        // a cancelled worker exits the native call within roughly this many seconds; the cost of a
+        // shorter value is one extra syscall round-trip per idle second (negligible at server scale).
+        const int CompletionWorkerTimeoutSecs = 1;
     }
 }

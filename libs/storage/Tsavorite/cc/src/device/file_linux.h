@@ -265,6 +265,23 @@ class QueueFile : public File {
 
 #ifdef FASTER_URING
 
+// Architecture-independent CPU pause/yield hint used by SpinLock spin loops.
+// On x86_64 emits PAUSE (rep nop), on aarch64 emits YIELD; elsewhere acts as
+// a compiler barrier only. Centralised here so the spinlock and any other
+// uring-path spin waits stay portable across the architectures we ship for
+// (linux-x64 is the only RID we currently publish a prebuilt for, but the
+// source must build cleanly on aarch64 too — Tsavorite's CI matrix exercises
+// ARM64 build configs).
+inline void uring_cpu_relax() noexcept {
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__) || defined(__arm__)
+    asm volatile("yield" ::: "memory");
+#else
+    asm volatile("" ::: "memory");
+#endif
+}
+
 class alignas(64) SpinLock {
 public:
     SpinLock(): locked_(false) {}
@@ -276,7 +293,7 @@ public:
             }
 
             while (locked_.load(std::memory_order_relaxed)) {
-                __builtin_ia32_pause();
+                uring_cpu_relax();
             }
         }
     }

@@ -229,6 +229,30 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
 #ifdef FASTER_URING
 
+namespace {
+
+// Report a completed CQE to the caller. Negative CQE results are surfaced as
+// IOError (matching the libaio path in QueueIoHandler::IoCompletionCallback);
+// non-negative results carry the bytes-transferred count. Permanent errors
+// (-EINVAL/-EBADF/-EIO/-ENOSPC) MUST NOT be retried here — the C# wrapper
+// tracks each submitted op via numPending and relies on every submission
+// producing exactly one callback to balance that counter.
+inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* context) {
+    core::Status return_status;
+    size_t bytes_transferred;
+    if (io_res < 0) {
+        return_status = core::Status::IOError;
+        bytes_transferred = 0;
+    } else {
+        return_status = core::Status::Ok;
+        bytes_transferred = static_cast<size_t>(io_res);
+    }
+    context->callback(context->caller_context, return_status, bytes_transferred);
+    lss_allocator.Free(context);
+}
+
+} // anonymous namespace
+
 bool UringIoHandler::TryComplete() {
   struct io_uring_cqe* cqe = nullptr;
   cq_lock_.Acquire();
@@ -238,29 +262,7 @@ bool UringIoHandler::TryComplete() {
     auto *context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
     io_uring_cqe_seen(ring_, cqe);
     cq_lock_.Release();
-    Status return_status;
-    size_t byte_transferred;
-    if (io_res < 0) {
-      // Retry if it is failed.....
-      sq_lock_.Acquire();
-      struct io_uring_sqe *sqe = io_uring_get_sqe(ring_);
-      assert(sqe != 0);
-      if (context->is_read_) {
-        io_uring_prep_readv(sqe, context->fd_, &context->vec_, 1, context->offset_);
-      } else {
-        io_uring_prep_writev(sqe, context->fd_, &context->vec_, 1, context->offset_);
-      }
-      io_uring_sqe_set_data(sqe, context);
-      int retry_res = io_uring_submit(ring_);
-      assert(retry_res == 1);
-      sq_lock_.Release();
-      return false;
-    } else {
-      return_status = Status::Ok;
-      byte_transferred = io_res;
-    }
-    context->callback(context->caller_context, return_status, byte_transferred);
-    lss_allocator.Free(context);
+    DispatchUringCqe(io_res, context);
     return true;
   } else {
     cq_lock_.Release();
@@ -288,14 +290,18 @@ int UringIoHandler::QueueRun(int timeout_secs) {
         ts.tv_sec = timeout_secs;
         ts.tv_nsec = 0;
         struct io_uring_cqe* wait_cqe = nullptr;
-        int rc = io_uring_wait_cqe_timeout(ring_, &wait_cqe, &ts);
-        if (rc < 0) {
-            // -ETIME or other error; either way, drop into phase 2 to drain
-            // anything already present, then return.
-        }
+        // Return value is intentionally discarded: -ETIME means no event arrived
+        // within the timeout, other errors (e.g. -EINTR) are equally handled by
+        // falling through to phase 2 which drains anything already present.
+        (void)io_uring_wait_cqe_timeout(ring_, &wait_cqe, &ts);
     }
 
     // Phase 2: drain everything currently available, serialized via cq_lock_.
+    // Each completion (success or failure) is reported to the caller via the
+    // user callback; we do NOT retry failures here — the io_uring CQE result
+    // already reflects the kernel's final outcome for that submission, and
+    // retrying permanent errors such as -EINVAL/-EBADF/-EIO would loop forever
+    // and leak the in-flight count tracked by the C# layer.
     for (;;) {
         cq_lock_.Acquire();
         struct io_uring_cqe* cqe = nullptr;
@@ -309,32 +315,7 @@ int UringIoHandler::QueueRun(int timeout_secs) {
         io_uring_cqe_seen(ring_, cqe);
         cq_lock_.Release();
 
-        bool retry = false;
-        Status return_status = Status::Ok;
-        size_t byte_transferred = 0;
-        if (io_res < 0) {
-            // Resubmit on transient error.
-            sq_lock_.Acquire();
-            struct io_uring_sqe* sqe = io_uring_get_sqe(ring_);
-            assert(sqe != 0);
-            if (context->is_read_) {
-                io_uring_prep_readv(sqe, context->fd_, &context->vec_, 1, context->offset_);
-            } else {
-                io_uring_prep_writev(sqe, context->fd_, &context->vec_, 1, context->offset_);
-            }
-            io_uring_sqe_set_data(sqe, context);
-            int retry_res = io_uring_submit(ring_);
-            assert(retry_res == 1);
-            sq_lock_.Release();
-            retry = true;
-        } else {
-            byte_transferred = static_cast<size_t>(io_res);
-        }
-
-        if (!retry) {
-            context->callback(context->caller_context, return_status, byte_transferred);
-            lss_allocator.Free(context);
-        }
+        DispatchUringCqe(io_res, context);
         ++ret;
     }
 
