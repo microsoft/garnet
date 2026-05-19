@@ -235,7 +235,8 @@ Two non-obvious findings worth keeping in mind when tuning:
 | --- | --- | --- |
 | `--device TYPE` | `default` (= platform pick) | `native` (libaio/IOCP), `randomaccess`, `filestream`, `null`, `default` |
 | `--device-throttle N` | `0` (= device default) | Max concurrent IOs in flight |
-| `--device-completion-threads N` | `0` (= 1) | Native completion thread count (Linux libaio) |
+| `--device-io-backend B` | `default` | Native backend on Linux: `default` (= libaio), `libaio`, or `uring`. Ignored when `--device` is not `native`. |
+| `--device-completion-threads N` | `0` (= 1) | Native completion thread count (Linux libaio + uring) |
 | `--use-os-cache` | off | Allow OS page cache on managed devices (off = `O_DIRECT` / `FILE_FLAG_NO_BUFFERING`) |
 | `--data-path DIR` | `D:/data/TsavoriteYcsbBenchmark` | Where hlog files and checkpoints live |
 

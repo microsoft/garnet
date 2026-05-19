@@ -484,11 +484,11 @@ namespace Garnet
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
-        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). Uring requires the native library to be built with -DUSE_URING=ON and liburing.so.2 to be present.")]
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). The shipped native library is built with -DUSE_URING=ON and requires liburing.so.2 at load time for all backends; a -DUSE_URING=OFF rebuild only needs libaio.")]
         public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
 
         [IntRangeValidation(1, 64)]
-        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1). On io_uring this is the dominant knob for completion throughput.")]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
         public int? DeviceCompletionThreads { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,

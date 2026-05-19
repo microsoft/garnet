@@ -152,12 +152,13 @@ namespace Tsavorite.benchmark
         public int DeviceThrottle { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
-            HelpText = "Native completion thread count (libaio on Linux). 0 = device default (1).")]
+            HelpText = "Native completion thread count for DeviceType=Native (Linux libaio + uring). 0 = device default (1).")]
         public int DeviceCompletionThreads { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
             HelpText = "Native device IO backend (Linux only): default (=libaio), libaio, or uring. " +
-                       "uring requires the native lib to be built with -DUSE_URING=ON and liburing.so.2 to be available.")]
+                       "The shipped libnative_device.so is built with -DUSE_URING=ON, so liburing.so.2 " +
+                       "is a load-time dependency for all backends; rebuild with -DUSE_URING=OFF to drop it.")]
         public string DeviceIoBackend { get; set; }
 
         [Option("data-path", Required = false, Default = null,

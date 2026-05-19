@@ -19,82 +19,151 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 
 ### Building on Windows
 
-Create new directory "build" off the root directory (Tsavorite\cc). From the new
-"build" directory, execute:
+The native device builds with MSVC (Visual Studio 2022, Visual Studio 2026
+Insiders, or the standalone Build Tools). You need the **Desktop development
+with C++** workload installed.
 
-```sh
-cmake .. -G "<MSVC compiler>"
+#### 1. Confirm CMake and Visual Studio are installed
+
+CMake **3.21 or newer** is required for the Visual Studio 2022 generator;
+**3.31 or newer** is recommended for Visual Studio 2026 Insiders. Check with:
+
+```powershell
+cmake --version
 ```
 
-To see a list of supported MSVC compiler versions, just run "cmake -G". As of
-this writing, we're using Visual Studio 2022, so you would execute:
+To list what Visual Studio installs CMake will discover:
 
-```sh
-cmake .. -G "Visual Studio 17 2022" -A x64
+```powershell
+& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -prerelease -products * -format json |
+    Select-String -Pattern '"displayName"|"installationPath"|"installationVersion"'
 ```
 
-That will create build scripts inside your new "build" directory, including
-a `Tsavorite.sln` file that you can use inside Visual Studio. CMake will add several
-build profiles to `Tsavorite.sln`, including Debug/x64 and Release/x64.
+Pre-release / Insiders editions only show up with the `-prerelease` flag —
+omitting it is the most common reason for a missing-VS error.
 
-To build from the command line:
+#### 2. Pick a generator
 
-```sh
+| Visual Studio                       | CMake generator string             |
+| ----------------------------------- | ---------------------------------- |
+| Visual Studio 2026 Insiders         | `"Visual Studio 18 2026"`          |
+| Visual Studio 2022 (any edition)    | `"Visual Studio 17 2022"`          |
+| Build Tools 2022 (no IDE)           | `"Visual Studio 17 2022"`          |
+| Anything else / unsure              | `Ninja` (see below)                |
+
+If `cmake --help` does not list your generator, your CMake is too old —
+upgrade with `winget install Kitware.CMake` or download a fresh build from
+<https://cmake.org/download/>.
+
+#### 3. Configure and build
+
+Create a `build` directory under `Tsavorite\cc` and configure from there:
+
+```powershell
+cd libs\storage\Tsavorite\cc
+mkdir build
+cd build
+
+# Pick the line matching your VS edition:
+cmake -G "Visual Studio 18 2026" -A x64 ..    # VS 2026 Insiders (current dev tooling)
+cmake -G "Visual Studio 17 2022" -A x64 ..    # VS 2022 (any edition) / Build Tools 2022
+
 cmake --build . --config Release
 ```
 
-The outputs land in `build\src\Release\native_device.dll` and
-`build\src\Release\native_device.pdb`. `USE_URING` is a no-op on Windows; the
-Windows DLL only exposes the Default (IOCP) backend.
+That produces `build\src\Release\native_device.dll` (and a matching
+`native_device.pdb`). The CMake configuration also creates a `Tsavorite.sln`
+that you can open in Visual Studio for interactive development; both `Debug`
+and `Release` profiles are added for `x64`.
+
+`USE_URING` is a no-op on Windows; the Windows DLL only exposes the
+Default (IOCP) backend.
+
+##### Generator-agnostic fallback (Ninja)
+
+If you have Build Tools without an IDE, an unsupported / preview VS
+version, or you just want a faster command-line build, use Ninja. Open
+the **x64 Native Tools Command Prompt for VS \<version\>** (the start-menu
+shortcut that ships with every VS install) and run:
+
+```cmd
+cd libs\storage\Tsavorite\cc
+mkdir build && cd build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
+```
+
+Ninja picks up `cl.exe` from the developer prompt automatically, so it
+bypasses the generator-string lookup entirely.
 
 ### Building on Linux
 
-The Linux build requires several packages (both libraries and header files);
-see "CMakeFiles.txt" in the root directory (Tsavorite/cc) for the list of libraries
-being linked to, on Linux.
+#### 1. Install the required packages
 
-As of this writing, the required libraries are:
+The native device links against `aio` (libaio) and, when `USE_URING=ON`
+(the default), `uring` (liburing). Plus the usual build toolchain.
 
-- stdc++fs : for <experimental/filesytem>, used for cross-platform directory
-             creation.
-- uuid : support for GUIDs.
-- tbb : Intel's Thread Building Blocks library, used for concurrent_queue.
-- gcc
-- aio : Kernel Async I/O, used by QueueFile / QueueIoHandler.
-- uring : io_uring async-IO interface (enabled by default; see "Disabling
-          io_uring" below to opt out).
-- stdc++
-- pthread : thread library.
-
-On Debian/Ubuntu, install with:
+On **Debian / Ubuntu** (including Ubuntu 24.04 with the t64 ABI transition):
 
 ```sh
-sudo apt-get install build-essential cmake uuid-dev libaio-dev liburing-dev
+sudo apt-get install build-essential cmake libaio-dev liburing-dev
 ```
 
-Also, CMake on Linux, for the gcc compiler, generates build scripts for either
-Debug or Release build, but not both; so you'll have to run CMake twice, in two
-different directories, to get both Debug and Release build scripts.
-
-Create new directories "build/Debug" and "build/Release" off the root directory
-(Tsavorite/cc). From "build/Debug", run:
+On **Fedora / RHEL / Azure Linux**:
 
 ```sh
-cmake -DCMAKE_BUILD_TYPE=Debug ../..
+sudo dnf install gcc-c++ cmake libaio-devel liburing-devel
 ```
 
---and from "build/Release", run:
+On **Alpine** (musl): the prebuilt won't load — Alpine images use the
+managed `LocalStorageDevice` instead.
+
+CMake **3.21 or newer** is required.
+
+#### 2. Configure and build
+
+CMake on Linux generates scripts for **either** Debug or Release per build
+directory — run CMake twice, in two different directories, if you want
+both.
 
 ```sh
+cd libs/storage/Tsavorite/cc
+mkdir -p build/Release && cd build/Release
 cmake -DCMAKE_BUILD_TYPE=Release ../..
+make -j"$(nproc)"
 ```
 
-Then you can build Debug or Release binaries by running "make" inside the
-relevant build directory.
+Or, for a Debug build:
 
-The resulting `libnative_device.so` exposes both backends. Select one at
-runtime via the C# `IoBackend` enum, which Garnet surfaces as
-`--device-io-backend libaio|uring`. The Linux default is libaio.
+```sh
+mkdir -p build/Debug && cd build/Debug
+cmake -DCMAKE_BUILD_TYPE=Debug ../..
+make -j"$(nproc)"
+```
+
+The output is `build/<config>/libnative_device.so`. It exposes both
+backends; select one at runtime via the C# `IoBackend` enum, which
+Garnet surfaces as `--device-io-backend libaio|uring`. The Linux default
+is libaio.
+
+> **Runtime dependencies of the shipped prebuilt.** The Linux prebuilt
+> checked into this repo is built with `USE_URING=ON`, so it has BOTH
+> `libaio.so.1` *and* `liburing.so.2` recorded as `NEEDED` ELF entries.
+> Even if you only ever request the `Libaio` (or `Default`) backend, the
+> dynamic linker still has to resolve `liburing.so.2` at load time. The
+> Garnet Dockerfiles in the repo install `liburing2` / `liburing`
+> alongside `libaio` for this reason. If your deployment cannot install
+> liburing, build the native lib yourself with `-DUSE_URING=OFF` (see
+> "Disabling io_uring" below) and ship that artifact instead.
+
+> **Ubuntu 24.04 (t64 ABI) note.** Since the t64 transition the system
+> ships `libaio.so.1t64` instead of `libaio.so.1`. CMake's `-laio` will
+> find `/usr/lib/x86_64-linux-gnu/libaio.so` which is a symlink to the
+> `.1t64.0.2` file, so the build itself succeeds — but the resulting
+> binary records `libaio.so.1t64` in its `NEEDED` list. To restore the
+> portable name, run `patchelf --replace-needed libaio.so.1t64
+> libaio.so.1 libnative_device.so` after the build (see the prebuilt
+> update section below).
 
 #### Disabling io_uring (optional)
 
@@ -107,7 +176,9 @@ cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=OFF ../..
 ```
 
 The resulting binary links only libaio. Requesting the uring backend at
-runtime against such a build throws a clear error and Default/Libaio remain
+runtime against such a build returns null from
+`NativeDevice_CreateWithBackend`, which the C# layer surfaces as a
+clear `TsavoriteException`; the `Default` and `Libaio` backends remain
 available.
 
 ### Updating the shipped prebuilt binaries
@@ -121,15 +192,15 @@ the corresponding file in that directory and check it in.
 
 ```sh
 # from libs/storage/Tsavorite/cc, after a Release build with USE_URING=ON:
-cp build/Release/src/libnative_device.so \
+cp build/Release/libnative_device.so \
    ../cs/src/core/Device/runtimes/linux-x64/native/libnative_device.so
 ```
 
 The shipped Linux binary records `libaio.so.1` and `liburing.so.2` as its
-NEEDED entries. On distributions that have only `libaio.so.1t64` (Ubuntu 24.04
-and later), the Dockerfiles in the repo set up a `libaio.so.1 -> libaio.so.1t64`
-compat symlink. If you build on such a host the linker will record
-`libaio.so.1t64` instead; correct it with:
+NEEDED entries. On Ubuntu 24.04 and later (post-t64 ABI transition) the linker
+records `libaio.so.1t64` instead; the Dockerfiles in this repo install
+`libaio1t64` and create a `libaio.so.1 -> libaio.so.1t64` compat symlink, but
+we keep the checked-in NEEDED name portable by patching it:
 
 ```sh
 patchelf --replace-needed libaio.so.1t64 libaio.so.1 \
@@ -138,8 +209,12 @@ patchelf --replace-needed libaio.so.1t64 libaio.so.1 \
 
 **Windows (`win-x64`):**
 
+A VS generator places the binary under `src\Release\` (or `src\Debug\`); a
+Ninja build places it under `src\` directly. Adjust the source path
+accordingly:
+
 ```cmd
-:: from libs\storage\Tsavorite\cc, after a Release build:
+:: from libs\storage\Tsavorite\cc, after a Release build with the VS generator:
 copy /Y build\src\Release\native_device.dll ^
    ..\cs\src\core\Device\runtimes\win-x64\native\
 copy /Y build\src\Release\native_device.pdb ^
