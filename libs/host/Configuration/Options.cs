@@ -484,6 +484,13 @@ namespace Garnet
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). Uring requires the native library to be built with -DUSE_URING=ON and liburing.so.2 to be present.")]
+        public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1). On io_uring this is the dominant knob for completion throughput.")]
+        public int? DeviceCompletionThreads { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -895,7 +902,11 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(
+                        deviceType: deviceType,
+                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -911,6 +922,8 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
+                DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
