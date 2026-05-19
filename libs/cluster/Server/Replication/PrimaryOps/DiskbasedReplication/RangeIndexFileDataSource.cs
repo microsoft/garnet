@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -38,6 +39,7 @@ namespace Garnet.cluster
 
         private readonly string filePath;
         private readonly int chunkSize;
+        private readonly ILogger logger;
         private FileStream stream;
 
         /// <inheritdoc/>
@@ -95,7 +97,8 @@ namespace Garnet.cluster
         /// <param name="keyHash">The 32-character key hash prefix.</param>
         /// <param name="address">The hlog logical address (flush files only).</param>
         /// <param name="chunkSize">Maximum bytes to read per chunk.</param>
-        public RangeIndexFileDataSource(CheckpointFileType type, Guid token, string filePath, string keyHash, long address, int chunkSize = DefaultChunkSize)
+        /// <param name="logger">Optional logger.</param>
+        public RangeIndexFileDataSource(CheckpointFileType type, Guid token, string filePath, string keyHash, long address, int chunkSize = DefaultChunkSize, ILogger logger = null)
         {
             Type = type;
             Token = token;
@@ -103,6 +106,7 @@ namespace Garnet.cluster
             Address = address;
             this.filePath = filePath;
             this.chunkSize = chunkSize;
+            this.logger = logger;
 
             var fileInfo = new FileInfo(filePath);
             if (!fileInfo.Exists)
@@ -121,6 +125,14 @@ namespace Garnet.cluster
             var buffer = new byte[bytesToRead];
 
             var bytesRead = await stream.ReadAsync(buffer, 0, bytesToRead, cancellationToken).ConfigureAwait(false);
+
+            if (bytesRead == 0)
+            {
+                logger?.LogWarning("RangeIndexFileDataSource: unexpected EOF at offset {currentOffset}, expected {endOffset} for {filePath}", CurrentOffset, EndOffset, filePath);
+                CurrentOffset = EndOffset;
+                return new DataSourceReadResult([], chunkStartAddress: CurrentOffset);
+            }
+
             var chunkStart = CurrentOffset;
             CurrentOffset += bytesRead;
 
