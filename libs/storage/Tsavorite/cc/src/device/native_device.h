@@ -4,14 +4,35 @@
 #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING 1;
 #include "file_system_disk.h"  
 
-class NativeDevice {
+/// Abstract interface for a native device. Allows a single C ABI to dispatch to
+/// different IO backends (libaio, io_uring on Linux; ThreadPool on Windows).
+class INativeDevice {
 public:
-#if defined(_WIN32) || defined(_WIN64)
-    //typedef FASTER::environment::QueueIoHandler handler_t;
-    typedef FASTER::environment::ThreadPoolIoHandler handler_t;
-#else
-    typedef FASTER::environment::QueueIoHandler handler_t;
-#endif
+    virtual ~INativeDevice() = default;
+
+    virtual void Reset() = 0;
+    virtual uint32_t sector_size() const = 0;
+
+    virtual FASTER::core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,
+                                           FASTER::core::AsyncIOCallback callback, void* context) = 0;
+    virtual FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
+                                            FASTER::core::AsyncIOCallback callback, void* context) = 0;
+
+    virtual void CreateDir(const std::string& dir) = 0;
+    virtual bool TryComplete() = 0;
+    virtual uint64_t GetFileSize(uint64_t segment) = 0;
+    virtual void RemoveSegment(uint64_t segment) = 0;
+    virtual int QueueRun(int timeout_secs) = 0;
+};
+
+/// Templated native device implementation. HandlerT selects the IO backend:
+///   - QueueIoHandler on Linux         -> libaio backend
+///   - UringIoHandler on Linux         -> io_uring backend (requires FASTER_URING)
+///   - ThreadPoolIoHandler on Windows  -> Windows ThreadPool backend
+template <class HandlerT>
+class NativeDeviceImpl : public INativeDevice {
+public:
+    typedef HandlerT handler_t;
     typedef FASTER::device::FileSystemSegmentedFile<handler_t, 1073741824L> log_file_t;
 
 private:
@@ -39,7 +60,7 @@ private:
     };
 
 public:
-    NativeDevice(const std::string& file,
+    NativeDeviceImpl(const std::string& file,
         bool enablePrivileges = false,
         bool unbuffered = true,
         bool delete_on_close = false)
@@ -55,17 +76,17 @@ public:
         assert(result == FASTER::core::Status::Ok);
     }
 
-    ~NativeDevice() {
+    ~NativeDeviceImpl() override {
         FASTER::core::Thread::acquire_id();
         epoch_.ProtectAndDrain();
         FASTER::core::Status result = log_.Close();
         epoch_.Unprotect();
         FASTER::core::Thread::release_id();
         assert(result == FASTER::core::Status::Ok);
-	}
+    }
 
     /// Methods required by the (implicit) disk interface.
-    void Reset() {
+    void Reset() override {
         FASTER::core::Thread::acquire_id();
         epoch_.ProtectAndDrain();
         FASTER::core::Status result = log_.Close();
@@ -74,11 +95,12 @@ public:
     }
 
     /// Methods required by the (implicit) disk interface.
-    uint32_t sector_size() const {
+    uint32_t sector_size() const override {
         return static_cast<uint32_t>(log_.alignment());
     }
 
-    FASTER::core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) {
+    FASTER::core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,
+                                   FASTER::core::AsyncIOCallback callback, void* context) override {
         AsyncIoContext io_context{ context, callback };
         auto callback_ = [](FASTER::core::IAsyncContext* ctxt, FASTER::core::Status result, size_t bytes_transferred) {
             FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
@@ -92,7 +114,8 @@ public:
         return status;
     }
 
-    FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) {
+    FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
+                                    FASTER::core::AsyncIOCallback callback, void* context) override {
         AsyncIoContext io_context{ context, callback };
         auto callback_ = [](FASTER::core::IAsyncContext* ctxt, FASTER::core::Status result, size_t bytes_transferred) {
             FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
@@ -113,7 +136,7 @@ public:
         return log_;
     }
 
-    void CreateDir(const std::string& dir) {
+    void CreateDir(const std::string& dir) override {
         std::experimental::filesystem::path path{ dir };
         try {
             std::experimental::filesystem::remove_all(path);
@@ -129,15 +152,15 @@ public:
         return handler_;
     }
 
-    bool TryComplete() {
+    bool TryComplete() override {
         return handler_.TryComplete();
     }
 
-    uint64_t GetFileSize(uint64_t segment) {
+    uint64_t GetFileSize(uint64_t segment) override {
         return log_.size(segment);
     }
 
-    void RemoveSegment(uint64_t segment) {
+    void RemoveSegment(uint64_t segment) override {
         FASTER::core::Thread::acquire_id();
         epoch_.ProtectAndDrain();
         log_.RemoveSegment(segment);
@@ -145,7 +168,7 @@ public:
         FASTER::core::Thread::release_id();
     }
 
-    int QueueRun(int timeout_secs) {
+    int QueueRun(int timeout_secs) override {
         return handler_.QueueRun(timeout_secs);
     }
 
@@ -157,3 +180,24 @@ private:
     /// Store the data
     log_file_t log_;
 };
+
+/// Backend identifiers exposed across the C ABI. Must stay in sync with the C# enum
+/// NativeStorageDevice.IoBackend.
+enum NativeDeviceBackend : int32_t {
+    NativeDeviceBackend_Default = 0,  // Platform default (libaio on Linux, ThreadPool on Windows)
+    NativeDeviceBackend_Libaio  = 1,  // Linux only
+    NativeDeviceBackend_Uring   = 2,  // Linux only; requires the native lib to be built with FASTER_URING
+};
+
+#if defined(_WIN32) || defined(_WIN64)
+typedef NativeDeviceImpl<FASTER::environment::ThreadPoolIoHandler> NativeDeviceDefault;
+#else
+typedef NativeDeviceImpl<FASTER::environment::QueueIoHandler> NativeDeviceLibaio;
+typedef NativeDeviceLibaio NativeDeviceDefault;
+#ifdef FASTER_URING
+typedef NativeDeviceImpl<FASTER::environment::UringIoHandler> NativeDeviceUring;
+#endif
+#endif
+
+/// Back-compat alias. New code should prefer INativeDevice + NativeDeviceImpl<...>.
+typedef NativeDeviceDefault NativeDevice;

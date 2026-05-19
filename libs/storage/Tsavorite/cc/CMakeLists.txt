@@ -1,10 +1,14 @@
-cmake_minimum_required (VERSION 3.2.2)
+cmake_minimum_required (VERSION 3.10)
 
 set(CMAKE_CXX_STANDARD 14)
 
 project(Tsavorite)
 
-OPTION(USE_URING "Enable io_uring based IO handler" OFF)
+# io_uring is the modern Linux async-I/O backend; ship it by default so the
+# C# `IoBackend.Uring` selector is available out of the box. Set to OFF if
+# you need a build without a liburing runtime dependency (e.g., minimal
+# distros without liburing2). The flag is a no-op on Windows builds.
+OPTION(USE_URING "Enable io_uring based IO handler" ON)
 
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /Gm- /W3 /WX /EHsc /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Gd /TP")
@@ -23,8 +27,8 @@ else()
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g")
 
     if (USE_URING)
-      set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DUSE_URING")
-      set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DUSE_URING")
+      set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFASTER_URING")
+      set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DFASTER_URING")
     endif()
 endif()
 

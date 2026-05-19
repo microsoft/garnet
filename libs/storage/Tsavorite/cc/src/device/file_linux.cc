@@ -269,7 +269,76 @@ bool UringIoHandler::TryComplete() {
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
-    return 0; // not implemented
+    // Blocking drain of completed events, intended for a long-running completion
+    // thread. Mirrors libaio QueueIoHandler::QueueRun semantics: wait up to
+    // timeout_secs for at least one event, then drain everything currently
+    // available. Designed to be safe with N concurrent completion threads:
+    // the blocking wait is performed WITHOUT holding cq_lock_ (multiple threads
+    // may wait concurrently on the kernel side via io_uring_enter), and the
+    // user-space ring dequeue is serialized via cq_lock_ around peek+seen.
+    int ret = 0;
+
+    // Phase 1: block (without holding any lock) waiting for at least one CQE,
+    // or until the timeout expires. Don't consume (seen) the CQE here — let
+    // the peek path under cq_lock_ claim it. If multiple threads are blocked
+    // here, they all wake when an event arrives; the first one to acquire the
+    // lock claims the CQE, the others fall through with an empty peek and exit.
+    if (timeout_secs > 0) {
+        struct __kernel_timespec ts;
+        ts.tv_sec = timeout_secs;
+        ts.tv_nsec = 0;
+        struct io_uring_cqe* wait_cqe = nullptr;
+        int rc = io_uring_wait_cqe_timeout(ring_, &wait_cqe, &ts);
+        if (rc < 0) {
+            // -ETIME or other error; either way, drop into phase 2 to drain
+            // anything already present, then return.
+        }
+    }
+
+    // Phase 2: drain everything currently available, serialized via cq_lock_.
+    for (;;) {
+        cq_lock_.Acquire();
+        struct io_uring_cqe* cqe = nullptr;
+        int rc = io_uring_peek_cqe(ring_, &cqe);
+        if (rc != 0 || cqe == nullptr) {
+            cq_lock_.Release();
+            break;
+        }
+        int io_res = cqe->res;
+        auto* context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
+        io_uring_cqe_seen(ring_, cqe);
+        cq_lock_.Release();
+
+        bool retry = false;
+        Status return_status = Status::Ok;
+        size_t byte_transferred = 0;
+        if (io_res < 0) {
+            // Resubmit on transient error.
+            sq_lock_.Acquire();
+            struct io_uring_sqe* sqe = io_uring_get_sqe(ring_);
+            assert(sqe != 0);
+            if (context->is_read_) {
+                io_uring_prep_readv(sqe, context->fd_, &context->vec_, 1, context->offset_);
+            } else {
+                io_uring_prep_writev(sqe, context->fd_, &context->vec_, 1, context->offset_);
+            }
+            io_uring_sqe_set_data(sqe, context);
+            int retry_res = io_uring_submit(ring_);
+            assert(retry_res == 1);
+            sq_lock_.Release();
+            retry = true;
+        } else {
+            byte_transferred = static_cast<size_t>(io_res);
+        }
+
+        if (!retry) {
+            context->callback(context->caller_context, return_status, byte_transferred);
+            lss_allocator.Free(context);
+        }
+        ++ret;
+    }
+
+    return ret;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
