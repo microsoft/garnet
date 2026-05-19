@@ -25,6 +25,9 @@ namespace Tsavorite.core
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
 
+        /// <summary>The current head address; updated as pages are evicted during recovery.</summary>
+        public long headAddress;
+
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
         public ReadStatus[] readStatus;
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
@@ -117,15 +120,13 @@ namespace Tsavorite.core
         }
     }
 
-    internal struct RecoveryOptions
+    internal readonly struct RecoveryOptions
     {
-        internal long headAddress;
-        internal long fuzzyRegionStartAddress;
-        internal bool undoNextVersion;
+        internal readonly long fuzzyRegionStartAddress;
+        internal readonly bool undoNextVersion;
 
-        internal RecoveryOptions(long headAddress, long fuzzyRegionStartAddress, bool undoNextVersion)
+        internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion)
         {
-            this.headAddress = headAddress;
             this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
             this.undoNextVersion = undoNextVersion;
         }
@@ -162,8 +163,6 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        private const long NoPageFreed = -1;
-
         /// <summary>
         /// GetLatestCheckpointTokens
         /// </summary>
@@ -267,11 +266,7 @@ namespace Tsavorite.core
             return (long)(recoveredICInfo.info.num_ht_bytes + recoveredICInfo.info.num_ofb_bytes);
         }
 
-        private void GetClosestHybridLogCheckpointInfo(
-            long requestedVersion,
-            out Guid closestToken,
-            out HybridLogCheckpointInfo closest,
-            out byte[] cookie)
+        private void GetClosestHybridLogCheckpointInfo(long requestedVersion, out Guid closestToken, out HybridLogCheckpointInfo closest, out byte[] cookie)
         {
             HybridLogCheckpointInfo current;
             var closestVersion = long.MaxValue;
@@ -289,11 +284,13 @@ namespace Tsavorite.core
                     current = new HybridLogCheckpointInfo();
                     current.Recover(hybridLogToken, checkpointManager, out var currCookie);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
+
                     // This is larger than intended version, cannot recover to this.
-                    if (distanceToTarget < 0) continue;
-                    // We have found the exact version to recover to --- the above conditional establishes that the
-                    // checkpointed version is <= requested version, and if next version is larger than requestedVersion,
-                    // there cannot be any closer version. 
+                    if (distanceToTarget < 0)
+                        continue;
+
+                    // We have found the exact version to recover to: the above conditional establishes that the checkpointed version is <= requested version,
+                    // and if nextVersion is larger than requestedVersion, there cannot be any closer version. 
                     if (current.info.nextVersion > requestedVersion)
                     {
                         closest = current;
@@ -421,67 +418,6 @@ namespace Tsavorite.core
             lastVersion = 0;
         }
 
-        /// <summary>Synchronous recovery driver</summary>
-        private long InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion)
-        {
-            GetRecoveryInfo(indexToken, hybridLogToken, out var recoveredHLCInfo, out var recoveredICInfo);
-            return InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion);
-        }
-
-        /// <summary>Synchronous recovery driver</summary>
-        private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion)
-        {
-            hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
-
-            if (hlogBase.GetTailAddress() > hlogBase.GetFirstValidLogicalAddressOnPage(0))
-            {
-                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
-                Reset();
-            }
-
-            if (!GetInitialRecoveryAddress(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
-                RecoverFuzzyIndex(recoveredICInfo);
-
-            if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
-                return -1;
-            RecoveryOptions options = new(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
-
-            // Make index consistent for version v
-            long readOnlyAddress, lastFreedPage;
-            if (recoveredHLCInfo.info.useSnapshotFile == 0)
-            {
-                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
-                        recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options);
-
-                readOnlyAddress = tailAddress;
-            }
-            else
-            {
-                if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
-                    headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
-
-                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress taken at PERSISTENCE_CALLBACK, so it includes
-                // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files).
-                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
-                        recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
-
-                // Then recover snapshot into mutable region. Note that the ObjectAllocator will not write object log records for the mutable region;
-                // that only happens during flushes due to OnPagesMarkedReadOnly.
-                var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
-                        recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
-                        snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
-                        recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options);
-
-                if (snapshotLastFreedPage != NoPageFreed)
-                    lastFreedPage = snapshotLastFreedPage;
-
-                readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
-            }
-
-            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress, lastFreedPage);
-            return recoveredHLCInfo.info.version;
-        }
-
         /// <summary>Aynchronous recovery driver</summary>
         private ValueTask<long> InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)
         {
@@ -505,14 +441,15 @@ namespace Tsavorite.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             // Make index consistent for version v
-            long readOnlyAddress, lastFreedPage;
+            long readOnlyAddress;
+            RecoveryStatus recoveryStatus;
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
-                        recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options, cancellationToken).ConfigureAwait(false);
+                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, headAddress, options, cancellationToken).ConfigureAwait(false);
 
                 readOnlyAddress = tailAddress;
             }
@@ -523,42 +460,28 @@ namespace Tsavorite.core
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress taken at PERSISTENCE_CALLBACK, so it includes
                 // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files).
-                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
-                        recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
-                        new RecoveryOptions(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
+                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, headAddress, options, cancellationToken).ConfigureAwait(false);
 
                 // Then recover snapshot into mutable region. Note that the ObjectAllocator will not write object log records for the mutable region;
                 // that only happens during flushes due to OnPagesMarkedReadOnly.
-                var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
                         recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
                         snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
                         recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, cancellationToken).ConfigureAwait(false);
 
-                if (snapshotLastFreedPage != NoPageFreed)
-                    lastFreedPage = snapshotLastFreedPage;
-
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
-            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress, lastFreedPage);
+            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, recoveryStatus.headAddress, readOnlyAddress);
             return recoveredHLCInfo.info.version;
         }
 
-        private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
+        private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, long headAddress, long readOnlyAddress)
         {
-            // Adjust head and read-only address post-recovery
-            var _head = hlogBase.GetFirstValidLogicalAddressOnPage(1 + hlogBase.GetPage(tailAddress) - hlogBase.MaxAllocatedPageCount);
-
-            // If additional pages have been freed to accommodate memory constraints, adjust head address accordingly
-            if (lastFreedPage != NoPageFreed)
-            {
-                var nextAddress = hlogBase.GetFirstValidLogicalAddressOnPage(lastFreedPage + 1);
-                if (_head < nextAddress)
-                    _head = nextAddress;
-            }
-
-            if (_head > headAddress)
-                headAddress = _head;
+            // HeadAddress has already been adjusted for any evictions but make sure we are below any existing HeadAddress in the log.
+            if (headAddress < hlogBase.HeadAddress)
+                headAddress = hlogBase.HeadAddress;
             if (readOnlyAddress < headAddress)
                 readOnlyAddress = headAddress;
 
@@ -573,10 +496,7 @@ namespace Tsavorite.core
         /// Warning: use only when the system is not taking a checkpoint.
         /// </summary>
         /// <param name="version">Version to set the store to</param>
-        public void SetVersion(long version)
-        {
-            stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, version));
-        }
+        public void SetVersion(long version) => stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, version));
 
         /// <summary>
         /// Compute recovery address and determine where to recover from
@@ -657,10 +577,10 @@ namespace Tsavorite.core
             return true;
         }
 
-        private long ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
+        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
         {
-            // Before reading in additional pages, trim memory if needed to make room for the inline space (we can't know the heap size yet)
-            var freedPage = TrimLogMemorySize(recoveryStatus, tailPage: page, numPagesToRead);
+            // Before reading in additional pages, trim memory if needed to make room for the inline page space.
+            TrimLogPages(recoveryStatus, tailPage: page, numPagesToRead);
 
             // Set all page read statuses to Pending
             for (var p = page; p < endPage; p++)
@@ -668,183 +588,52 @@ namespace Tsavorite.core
 
             // Issue request to read pages as much as possible
             hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress, recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
-            return freedPage;
+                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1);
         }
 
-        /// <summary>
-        /// Called before 'pagesToRead' number of pages are read into memory, this method determines how many previously allocated pages 
-        /// must be (partially or completely) freed to avoid the total memory size to go beyond the specified maximum during recovery.
-        /// </summary>
-        /// <returns>True if <paramref name="minEvictPageCount"/> is nonzero, else false</returns>
-        private bool GetEvictionPageRange(long tailPage, int numPagesToRead, CancellationToken cancellationToken, out long startPage, out int minEvictPageCount, out int maxEvictPageCount)
+        private void TrimLogPages(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead)
         {
-            // The caller will iterate from startPage to endPage, so we use that as the basis for our eviction counts (which will start evicting at startPage).
-            // tailPage is the leading page index and start/endPage are the trailing page indexes: startPage is at the start of a full buffer of pages,
-            // and endPage is the start of the "usable" buffer capacity (the amount of pages we can actually use within the hlogBase.MaxAllocatedPageCount
-            // constraint) PLUS the number of pages to read. If hlogBase.MaxAllocatedPageCount is less than hlogBase.BufferSize, the the calling
-            // TrimLogMemorySize will probably be iterating over freed (non-allocated) pages from startPage to (endPage - numPagesToRead), and then
-            // will start actually evicting pages. NOTE: Currently numPagesToRead is always 1, but we may be able to optimize that in the future.
-            startPage = Math.Max(0, tailPage - hlogBase.BufferSize);
-            var endPage = Math.Max(0, tailPage - hlogBase.MaxAllocatedPageCount + numPagesToRead);
-
-            // TODO: Currently Recovery is still page-level eviction only. hlogBase.HeadAddress etc. are not yet set so we will have to propagate
-            // the new headAddress back up the path we currently pass the lastFreedPage.
-
-            // MinEvictPageCount is the number of pages we must clear so we can read numPagesToRead without violating the maximum page count constraint.
-            minEvictPageCount = Math.Max(0, (int)(endPage - startPage));
-            maxEvictPageCount = minEvictPageCount;
-            if (endPage <= startPage)
-                return false;
-
-            // If no log size tracker, just ensure MaxPageCount is not exceeded.
             if (hlogBase.logSizeTracker is null)
-                return minEvictPageCount > 0;
+                return;
 
-            // We have a log size tracker, so set minEvictPageCount to zero and maxEvictPageCount to the maximum number of pages we can evict;
-            // the caller will also test logSizeTracker.IsBeyondSizeLimitToReadPages during the eviction loop and jump out if it drops within budget.
-            maxEvictPageCount = Math.Max(minEvictPageCount, (int)(tailPage - startPage) - LogSizeTracker.MinResizeTargetPageCount);
-            return minEvictPageCount > 0 || hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead);
-        }
+            var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
+            var loadedPages = tailPage - headPage + 1;
+            var overBudgetAmount = hlogBase.logSizeTracker.RemainingBudget - (loadedPages + numPagesToRead) * hlogBase.PageSize;
 
-        private long TrimLogMemorySize(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead)
-        {
-            var lastFreedPage = NoPageFreed;
-            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int minEvictPageCount, out int maxEvictPageCount))
+            // We can only evict loadedPages, and only until we get to MinResizeTargetPageCount
+            for (var evictablePageCount = loadedPages; overBudgetAmount > 0 && evictablePageCount > LogSizeTracker.MinResizeTargetPageCount; evictablePageCount--)
             {
-                // Evict pages one at a time
-                for (var ii = 0; ii < maxEvictPageCount; ii++)
+                var pageIndex = hlogBase.GetPageIndexForPage(headPage);
+                if (hlogBase.IsAllocated(pageIndex))
                 {
-                    if (hlogBase.logSizeTracker is not null && ii >= minEvictPageCount && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead))
-                        break;
-                    var page = startPage + ii;
-                    var pageIndex = hlogBase.GetPageIndexForPage(page);
-                    if (hlogBase.IsAllocated(pageIndex))
-                    {
-                        recoveryStatus.WaitFlush(pageIndex);
-                        hlogBase.EvictPageForRecovery(page);
-                        lastFreedPage = page;
-                    }
+                    recoveryStatus.WaitFlush(pageIndex);
+                    hlogBase.EvictPageForRecovery(headPage);
                 }
+                overBudgetAmount -= hlogBase.PageSize;
+                headPage++;
+                recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(headPage);
             }
-
-            return lastFreedPage;
         }
 
-        private async Task<long> TrimLogMemorySizeAsync(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead, CancellationToken cancellationToken = default)
-        {
-            var lastFreedPage = NoPageFreed;
-            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int minEvictPageCount, out int maxEvictPageCount))
-            {
-                // Evict pages one at a time
-                for (var ii = 0; ii < maxEvictPageCount; ii++)
-                {
-                    if (hlogBase.logSizeTracker is not null && ii >= minEvictPageCount && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead))
-                        break;
-                    var page = startPage + ii;
-                    var pageIndex = hlogBase.GetPageIndexForPage(page);
-                    if (hlogBase.IsAllocated(pageIndex))
-                    {
-                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
-                        hlogBase.EvictPageForRecovery(page);
-                        lastFreedPage = page;
-                    }
-                }
-            }
-
-            return lastFreedPage;
-        }
-
-        private (long end, long freedPage) ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page)
+        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
             {
                 var numPagesToRead = (int)(readEndPage - page);
 
-                // Ensure that page slots that will be read into, have been flushed from previous reads. Due to the use of a single read semaphore,
-                // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
-                // we are not using the full BufferSize (and thus the page-read index is not equal to the page-flush index).
-                WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
-                return (readEndPage, ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead));
-            }
-
-            return (readEndPage, NoPageFreed);
-        }
-
-        private async ValueTask<(long end, long freedPage)> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
-        {
-            var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
-            if (page < readEndPage)
-            {
-                var numPagesToRead = (int)(readEndPage - page);
-
-                // Ensure that page slots that will be read into, have been flushed from previous reads. Due to the use of a single read semaphore,
-                // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
+                // Ensure that page slots that will be read into have been flushed from previous reads. Due to the use of a single read semaphore,
+                // this must be done in batches of all flushes followed by all reads to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-                return (readEndPage, ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead));
+                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead);
             }
 
-            return (readEndPage, NoPageFreed);
+            return readEndPage;
         }
 
         /// <summary>
-        /// Synchronously recover the hybrid log from hybrid log files (not snapshot files). This also deserializes any objects or overflow and creates
-        /// entries for them in the <see cref="ObjectIdMap"/>.
-        /// </summary>
-        /// <param name="scanFromAddress">The address to start scanning from; the lowest address at which we will bring pages into the circular buffer (may be in the middle of a page)</param>
-        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
-        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, </param>
-        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
-        /// <param name="checkpointType">The type of checkpoint</param>
-        /// <param name="options">The recovery options</param>
-        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
-        private long RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options)
-        {
-            long lastFreedPage = NoPageFreed;
-            if (untilAddress <= scanFromAddress)
-                return lastFreedPage;
-
-            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int numPagesToReadPerIteration);
-
-            Debug.Assert(hlogBase.logSizeTracker is null || numPagesToReadPerIteration == 1, "numPagesToReadPerIteration must be 1 when tracking sizes");
-            for (var page = startPage; page < endPage; page += numPagesToReadPerIteration)
-            {
-                var (end, freedPage) = ReadPagesForRecovery(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page);
-                if (freedPage != NoPageFreed)
-                    lastFreedPage = freedPage;
-
-                var trimPageReadCount = numPagesToReadPerIteration;
-                for (var p = page; p < end; p++)
-                {
-                    // Ensure page has been read into memory
-                    int pageIndex = hlogBase.GetPageIndexForPage(p);
-                    recoveryStatus.WaitRead(pageIndex);
-
-                    if (hlogBase.logSizeTracker is not null)
-                    {
-                        // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
-                        // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
-                        // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                        freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1, trimPageReadCount--);
-                        if (freedPage != NoPageFreed)
-                            lastFreedPage = freedPage;
-                    }
-
-                    // We make an extra pass to clear locks when reading every page back into memory
-                    ClearBitsOnPage(p, untilAddress, options);
-                    ProcessReadPageAndFlush(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
-                }
-            }
-
-            WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
-            return lastFreedPage;
-        }
-
-        /// <summary>
-        /// Synchronously recover the hybrid log from hybrid log files (not snapshot files). This also deserializes any objects or overflow and creates
-        /// entries for them in the <see cref="ObjectIdMap"/>.
+        /// Asynchronously recover the hybrid log from hybrid log files (not snapshot files).
         /// </summary>
         /// <param name="scanFromAddress">The address to start scanning from; the lowest address at which we will bring pages into the circular buffer (may be in the middle of a page)</param>
         /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
@@ -853,48 +642,33 @@ namespace Tsavorite.core
         /// <param name="checkpointType">The type of checkpoint</param>
         /// <param name="options">The recovery options</param>
         /// <param name="cancellationToken">The cancellation token</param>
-        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
-        private async ValueTask<long> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
-            CheckpointType checkpointType, RecoveryOptions options, CancellationToken cancellationToken)
+        private async ValueTask<RecoveryStatus> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
+            CheckpointType checkpointType, long headAddress, RecoveryOptions options, CancellationToken cancellationToken)
         {
-            long lastFreedPage = NoPageFreed;
-            if (untilAddress <= scanFromAddress)
-                return lastFreedPage;
-
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int numPagesToReadPerIteration);
+            recoveryStatus.headAddress = headAddress;
 
-            Debug.Assert(hlogBase.logSizeTracker is null || numPagesToReadPerIteration == 1, "numPagesToReadPerIteration must be 1 when tracking sizes");
+            if (untilAddress <= scanFromAddress)
+                return recoveryStatus;
+
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var (end, freedPage) = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
-                if (freedPage != NoPageFreed)
-                    lastFreedPage = freedPage;
-
-                var trimPageReadCount = numPagesToReadPerIteration;
+                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
                     var pageIndex = hlogBase.GetPageIndexForPage(p);
                     await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
-                    if (hlogBase.logSizeTracker is not null)
-                    {
-                        // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
-                        // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
-                        // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                        freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, trimPageReadCount--, cancellationToken).ConfigureAwait(false);
-                        if (freedPage != NoPageFreed)
-                            lastFreedPage = freedPage;
-                    }
-
                     // We make an extra pass to clear locks when reading every page back into memory
-                    ClearBitsOnPage(p, untilAddress, options);
-                    ProcessReadPageAndFlush(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
+                    ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress);
+                    ProcessReadPageAndFlush(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options, recoveryStatus, p, pageIndex);
                 }
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-            return lastFreedPage;
+            RecoveryLoadObjectsPass2(startPage, endPage, recoveryStatus.headAddress, untilAddress, objectLogDevice: null);
+            return recoveryStatus;
         }
 
         /// <summary>
@@ -915,9 +689,8 @@ namespace Tsavorite.core
             if (untilAddress > hlogBase.GetFirstValidLogicalAddressOnPage(endPage) && untilAddress > scanFromAddress)
                 endPage++;
 
-            // If heap memory is to be tracked, then read one page at a time to control memory usage
-            var totalPagesToRead = (int)(endPage - startPage);
-            numPagesToReadPerIteration = hlogBase.logSizeTracker is null ? Math.Min(hlogBase.BufferSize, totalPagesToRead) : 1;
+            // Read multiple pages up to the max page range we're loading, but eviction must keep at least LogSizeTracker.MinResizeTargetPageCount in the buffer.
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount, (int)(endPage - startPage));
             return new RecoveryStatus(hlogBase.BufferSize);
         }
 
@@ -932,7 +705,7 @@ namespace Tsavorite.core
         /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
         /// <param name="page">The page number to process</param>
         /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
-        private void ProcessReadPageAndFlush(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options,
+        private void ProcessReadPageAndFlush(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options,
             RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
@@ -957,7 +730,7 @@ namespace Tsavorite.core
         /// <param name="page">The page number to process</param>
         /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
         /// <returns></returns>
-        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus,
+        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus,
             long page, int pageIndex)
         {
             var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
@@ -989,12 +762,6 @@ namespace Tsavorite.core
             return false;
         }
 
-        private void WaitUntilAllPagesHaveBeenFlushed(long startPage, long endPage, RecoveryStatus recoveryStatus)
-        {
-            for (long page = startPage; page < endPage; page++)
-                recoveryStatus.WaitFlush(hlogBase.GetPageIndexForPage(page));
-        }
-
         private async ValueTask WaitUntilAllPagesHaveBeenFlushedAsync(long startPage, long endPage, RecoveryStatus recoveryStatus, CancellationToken cancellationToken)
         {
             for (long page = startPage; page < endPage; page++)
@@ -1002,7 +769,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Synchronously recover the hybrid log from snapshot files
+        /// Asynchronously recover the hybrid log from snapshot files.
         /// </summary>
         /// <param name="scanFromAddress">The address to start scanning from; the lowest address at which we will bring pages into the circular buffer (may be in the middle of a page)</param>
         /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
@@ -1012,80 +779,10 @@ namespace Tsavorite.core
         /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
         /// <param name="guid">The checkpoint token guid</param>
         /// <param name="options">The recovery options</param>
-        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
-        private long RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress,
-            long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options)
-        {
-            long lastFreedPage = NoPageFreed;
-            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
-                out long endPage, out long snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
-
-            // Notify application of checkpoint token before processing snapshot records
-            if (storeFunctions.CallOnDiskRead)
-                storeFunctions.OnRecovery(guid);
-
-            for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
-            {
-                var (_, freedPage) = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page);
-                if (freedPage != NoPageFreed)
-                    lastFreedPage = freedPage;
-                var end = Math.Min(page + numPagesToReadPerIteration, endPage);
-
-                for (long p = page; p < end; p++)
-                {
-                    int pageIndex = hlogBase.GetPageIndexForPage(p);
-                    if (p < snapshotEndPage)
-                    {
-                        // Ensure the page is read from file
-                        recoveryStatus.WaitRead(pageIndex);
-
-                        if (hlogBase.logSizeTracker is not null)
-                        {
-                            // Trim the log memory again in case we read large objects on the current page. Use 0 for numPagesToRead so we don't over-prune.
-                            freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1, 0);
-                            if (freedPage != NoPageFreed)
-                                lastFreedPage = freedPage;
-                        }
-
-                        // We make an extra pass to clear locks when reading pages back into memory
-                        ClearBitsOnPage(p, untilAddress, options, snapshotFromAddress: scanFromAddress);
-                    }
-                    else
-                    {
-                        recoveryStatus.WaitFlush(pageIndex);
-                        if (!hlogBase.IsAllocated(pageIndex))
-                            hlog.AllocatePage(pageIndex);
-                        else
-                            hlogBase.ClearPage(pageIndex);
-                    }
-                }
-
-                RecoverSnapshotPages(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options,
-                    endPage, snapshotEndPage, numPagesToReadPerIteration, recoveryStatus, page, end);
-            }
-
-            WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
-            recoveryStatus.Dispose();
-            return lastFreedPage;
-        }
-
-        /// <summary>
-        /// Asynchronously recover the hybrid log from snapshot files
-        /// </summary>
-        /// <param name="scanFromAddress">The address to start scanning from; the lowest address at which we will bring pages into the circular buffer (may be in the middle of a page)</param>
-        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
-        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, </param>
-        /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
-        /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
-        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
-        /// <param name="guid">The checkpoint token guid</param>
-        /// <param name="options">The recovery options</param>
-        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
-        private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress,
+        private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress,
             long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options,
             CancellationToken cancellationToken)
         {
-            long lastFreedPage = NoPageFreed;
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
                 out long endPage, out long snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
@@ -1095,9 +792,7 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var (_, freedPage) = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
-                if (freedPage != NoPageFreed)
-                    lastFreedPage = freedPage;
+                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
 
                 for (long p = page; p < end; p++)
@@ -1108,16 +803,8 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
-                        if (hlogBase.logSizeTracker is not null)
-                        {
-                            // Trim the log memory again in case we read large objects on the current page. Use 0 for numPagesToRead so we don't over-prune.
-                            freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, numPagesToRead: 0, cancellationToken).ConfigureAwait(false);
-                            if (freedPage != NoPageFreed)
-                                lastFreedPage = freedPage;
-                        }
-
                         // We make an extra pass to clear locks when reading pages back into memory
-                        ClearBitsOnPage(p, untilAddress, options, snapshotFromAddress: scanFromAddress);
+                        ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress, snapshotFromAddress: scanFromAddress);
                     }
                     else
                     {
@@ -1129,19 +816,94 @@ namespace Tsavorite.core
                     }
                 }
 
-                RecoverSnapshotPages(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options,
+                RecoverSnapshotPages(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options,
                     endPage, snapshotEndPage, numPagesToReadPerIteration, recoveryStatus, page, end);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+            RecoveryLoadObjectsPass2(startPage, endPage, scanFromAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice);
             recoveryStatus.Dispose();
-            return lastFreedPage;
+        }
+
+        private void RecoveryLoadObjectsPass2(long startPage, long endPage, long headAddress, long untilAddress, IDevice objectLogDevice)
+        {
+            var logicalHeadAddress = headAddress;
+            hlogBase.HeadAddress = logicalHeadAddress;
+
+            // If there is no size tracker, load all objects without eviction.
+            if (hlogBase.logSizeTracker is null)
+            {
+                for (var page = startPage; page < endPage; page++)
+                {
+                    var pageIndex = hlogBase.GetPageIndexForPage(page);
+                    if (!hlogBase.IsAllocated(pageIndex))
+                        continue;
+
+                    var fromAddress = page == hlogBase.GetPage(logicalHeadAddress) ? logicalHeadAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
+                    var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
+                    _ = hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice);
+                }
+                return;
+            }
+
+            // We have a size tracker so must consider eviction
+            for (var page = endPage - 1; page >= hlogBase.GetPage(logicalHeadAddress); page--)
+            {
+                var pageIndex = hlogBase.GetPageIndexForPage(page);
+                if (!hlogBase.IsAllocated(pageIndex))
+                    continue;
+
+                var fromAddress = page == hlogBase.GetPage(logicalHeadAddress) ? logicalHeadAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
+                var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
+                if (fromAddress >= pageUntilAddress)
+                    continue;
+
+                var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, fromAddress, pageUntilAddress);
+                if (totalPageObjectSize == 0)
+                    continue;
+
+                var remainingBudget = hlogBase.logSizeTracker.GetRemainingHeapBudget();
+                if (totalPageObjectSize <= remainingBudget)
+                {
+                    _ = hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice, remainingBudget);
+                    continue;
+                }
+
+                var currentHeadPage = hlogBase.GetPage(logicalHeadAddress);
+                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, (int)(page - currentHeadPage), remainingBudget, out var numPagesBelowToEvict);
+                var pageCountFreed = 0;
+                while (numPagesBelowToEvict > 0 && currentHeadPage < page)
+                {
+                    var headPageIndex = hlogBase.GetPageIndexForPage(currentHeadPage);
+                    if (hlogBase.IsAllocated(headPageIndex))
+                    {
+                        hlogBase.EvictPageForRecovery(currentHeadPage);
+                        pageCountFreed++;
+                    }
+
+                    logicalHeadAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage + 1);
+                    currentHeadPage++;
+                    numPagesBelowToEvict--;
+                }
+
+                var stopAddress = hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice,
+                    remainingBudget + ((long)pageCountFreed * hlogBase.GetPageSize()));
+                if (pageCutoff > logicalHeadAddress)
+                    logicalHeadAddress = pageCutoff;
+                if (stopAddress < pageUntilAddress)
+                    logicalHeadAddress = stopAddress;
+
+                if (logicalHeadAddress > hlogBase.GetFirstValidLogicalAddressOnPage(page))
+                    break;
+            }
+
+            hlogBase.HeadAddress = logicalHeadAddress;
         }
 
         /// <summary>
         /// For each page in the snapshot from [page, end), process the page for recovery.
         /// </summary>
-        private void RecoverSnapshotPages(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options,
+        private void RecoverSnapshotPages(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options,
             long endPage, long snapshotEndPage, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
         {
             for (long p = page; p < end; p++)
@@ -1201,13 +963,11 @@ namespace Tsavorite.core
                 recoveryDevicePageOffset = snapshotStartPage
             };
 
-            // Initially issue read request for all pages that can be held in memory
-            // If heap memory is to be tracked, then read one page at a time to control memory usage
-            var totalPagesToRead = (int)(snapshotEndPage - startPage);
-            numPagesToReadPerIteration = hlogBase.logSizeTracker is null ? Math.Min(hlogBase.BufferSize, totalPagesToRead) : 1;
+            // Read multiple pages up to the max page range we're loading, but eviction must keep at least LogSizeTracker.MinResizeTargetPageCount in the buffer.
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount, (int)(endPage - startPage));
         }
 
-        private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
             var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
@@ -1244,14 +1004,14 @@ namespace Tsavorite.core
         /// <param name="options">Recovery options (headAddress determines if page is in-memory)</param>
         /// <param name="snapshotFromAddress">If > 0, records at or above this address will get OnRecoverySnapshotRead.
         /// Records below this address are main-log records that happened to share the boundary page with the snapshot.</param>
-        private void ClearBitsOnPage(long page, long untilAddress, RecoveryOptions options, long snapshotFromAddress = 0)
+        private void ClearBitsOnPage(long page, long untilAddress, in RecoveryOptions options, long headAddress, long snapshotFromAddress = 0)
         {
             var startLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page);
             var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
             var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
             // no need to clear locks for records that will not end up in main memory
-            if (options.headAddress >= endLogicalAddress)
+            if (headAddress >= endLogicalAddress)
                 return;
 
             var pageSize = hlogBase.GetPageSize();
@@ -1266,9 +1026,8 @@ namespace Tsavorite.core
                 {
                     var recordLogicalAddress = startLogicalAddress + recordOffset;
 
-                    // On the snapshot path, skip records below snapshotFromAddress —
-                    // they are main-log records on the boundary page that were already
-                    // processed (with OnDiskRead) in the main-log recovery pass.
+                    // On the snapshot path, skip records below snapshotFromAddress; they are main-log records on the boundary page
+                    // that were already processed (with OnDiskRead) in the main-log recovery pass.
                     if (snapshotFromAddress == 0 || recordLogicalAddress >= snapshotFromAddress)
                     {
                         storeFunctions.OnDiskRead(ref logRecord);
@@ -1303,7 +1062,7 @@ namespace Tsavorite.core
         /// <param name="options">Recovery options</param>
         /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
-                                     long pageStartLogicalAddress, long pageStartPhysicalAddress, RecoveryOptions options)
+                                     long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");
@@ -1374,7 +1133,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
-        /// Restore log; called from TsavoriteLog
+        /// Restore log; called from TsavoriteLog. TODO: This sync version is invoked via BumpCurrentEpoch, which doesn't have async support.
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="headAddress"></param>
@@ -1454,7 +1213,7 @@ namespace Tsavorite.core
                 }
 
                 // Passing no objectLogDevice means we'll use the one in the allocator
-                AsyncReadPagesForRecovery(headPage, numPages, untilAddress, recoveryStatus);
+                AsyncReadPagesForRecovery(headPage, numPages, untilAddress, recoveryStatus, recoveryPhase: RecoveryPhase.None);
                 return true;
             }
 

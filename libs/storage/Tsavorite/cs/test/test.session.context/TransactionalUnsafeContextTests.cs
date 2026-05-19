@@ -358,7 +358,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressLUC([Values] CompletionSyncMode syncMode)
+        public async Task TestShiftHeadAddressLUC()
         {
             long input = 0;
             const int RandSeed = 10;
@@ -412,16 +412,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 AssertTotalLockCounts(0, 0);
 
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = luContext.CompletePending(true);
-                }
-                else
-                {
-                    luContext.EndUnsafe();
-                    await luContext.CompletePendingAsync().ConfigureAwait(false);
-                    luContext.BeginUnsafe();
-                }
+                luContext.EndUnsafe();
+                await luContext.CompletePendingAsync().ConfigureAwait(false);
+                luContext.BeginUnsafe();
 
                 // Shift head and retry - should not find in main memory now
                 store.Log.FlushAndEvict(true);
@@ -458,17 +451,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 // We did not lock all keys, only the "Action" ones - one lock per bucket, all shared in this test
                 AssertTotalLockCounts(0, expectedS);
 
-                CompletedOutputIterator<long, long, Empty> outputs;
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = luContext.CompletePendingWithOutputs(out outputs, wait: true);
-                }
-                else
-                {
-                    luContext.EndUnsafe();
-                    outputs = await luContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
-                    luContext.BeginUnsafe();
-                }
+                luContext.EndUnsafe();
+                var outputs = await luContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
+                luContext.BeginUnsafe();
 
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Unlock))
                 {

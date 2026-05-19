@@ -10,6 +10,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    internal enum RecoveryPhase : byte { None = 0, Pass1 = 1, Pass2 = 2 }
+
     /// <summary>
     /// Result of async page read
     /// </summary>
@@ -47,12 +49,12 @@ namespace Tsavorite.core
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxAddressOffsetOnPage;
 
-        /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
-        internal bool isForRecovery;
+        /// <summary>The recovery phase for this read. Non-<see cref="RecoveryPhase.None"/> uses the non-transient <see cref="ObjectIdMap"/>.</summary>
+        internal RecoveryPhase recoveryPhase;
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, isRecov {isForRecovery}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
+            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()

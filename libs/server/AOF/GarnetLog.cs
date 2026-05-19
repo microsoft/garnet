@@ -175,13 +175,8 @@ namespace Garnet.server
             }
         }
 
-        public void Recover()
-        {
-            if (singleLog != null)
-                singleLog.Recover();
-            else
-                shardedLog.Recover();
-        }
+        public ValueTask RecoverAsync()
+            => singleLog != null ? singleLog.RecoverAsync() : shardedLog.RecoverAsync();
 
         public bool RecoverLatestSequenceNumber(out long recoverUntilSequenceNumber)
         {

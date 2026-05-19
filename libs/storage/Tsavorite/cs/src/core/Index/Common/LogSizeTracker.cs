@@ -85,11 +85,14 @@ namespace Tsavorite.core
         public override string ToString()
         {
             return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}];"
-                 + $" isOver: [{IsBeyondSizeLimit}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
+                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
+        /// <summary>Returns the memory budget we have remaining</summary>
+        public long RemainingBudget => highTargetSize - TotalSize;
+
         /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
+        public bool IsOverBudget => TotalSize > highTargetSize;
 
         /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
         /// <param name="addingPage">If true, we are allocating a new page. Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/></param>
@@ -113,6 +116,10 @@ namespace Tsavorite.core
         /// we have pages we can (partially or completely) evict</summary>
         /// <remarks>This is called by Recovery.</remarks>
         public bool IsBeyondSizeLimitToReadPages(int numPagesToRead) => TotalSize + (numPagesToRead * logAccessor.allocatorBase.PageSize) > highTargetSize;
+
+        /// <summary>Returns the remaining heap budget available for loading objects during recovery pass 2.</summary>
+        /// <remarks>May return a negative value if already over budget.</remarks>
+        public long GetRemainingHeapBudget() => highTargetSize - TotalSize;
 
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>

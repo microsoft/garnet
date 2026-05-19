@@ -101,7 +101,7 @@ namespace Garnet.server
         /// <summary>
         /// Recover the cluster
         /// </summary>
-        void Recover();
+        ValueTask RecoverAsync();
 
         /// <summary>
         /// Reset gossip stats

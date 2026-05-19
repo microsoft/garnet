@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -41,7 +42,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public void ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
+        public async Task ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
         {
             var copyOnWrite = new FunctionsCopyOnWrite();
             ClientSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
@@ -115,7 +116,7 @@ namespace Tsavorite.test
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
-                _ = store.Recover(token);
+                _ = await store.RecoverAsync(token).ConfigureAwait(false);
                 session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 bContext = session.BasicContext;
 

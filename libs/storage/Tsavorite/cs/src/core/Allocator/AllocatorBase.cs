@@ -33,6 +33,12 @@ namespace Tsavorite.core
         internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+        /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
+        internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
+        /// <summary>This is used as the memory budget if we are not enforcing memory constraints.</summary>
+        internal const long NoBudget = long.MaxValue;
+        /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
+        internal virtual long LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice, long budgetLimit = NoBudget) => untilAddress;
     }
 
     /// <summary>
@@ -1013,7 +1019,7 @@ namespace Tsavorite.core
             // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
+            if (logSizeTracker is null || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1048,7 +1054,7 @@ namespace Tsavorite.core
             // First check whether we need to shift HeadAddress. If we are not forcing for flush and have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (needSHA || logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
+            if (needSHA || logSizeTracker is null || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1361,6 +1367,13 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Find the head address cutoff on a page for partial object loading. Only implemented by ObjectAllocator.</summary>
+        internal virtual long FindHeadAddressCutoffOnPage(long page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
+        {
+            numPagesBelowToEvict = 0;
+            return GetFirstValidLogicalAddressOnPage(page);
+        }
+
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal void EvictPageForRecovery(long page)
         {
@@ -1663,14 +1676,14 @@ namespace Tsavorite.core
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
         ///     <see cref="PageAsyncReadResult{TContext}"/> and thus must be Dispose()d).</summary>
-        public void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
-            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice);
+        internal void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
+            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
+            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
         {
             var usedDevice = logDevice ?? this.device;
 
@@ -1690,7 +1703,7 @@ namespace Tsavorite.core
                     context = context,
                     handle = completed,
                     maxAddressOffsetOnPage = PageSize,
-                    isForRecovery = true
+                    recoveryPhase = recoveryPhase
                 };
 
                 var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -1709,9 +1722,12 @@ namespace Tsavorite.core
                 if (logDevice != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
-                // Do *not* use "using" here as we need it to survive to the ReadAsync AsyncReadPagesForRecoveryCallback.
-                asyncResult.readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+                if (recoveryPhase == RecoveryPhase.Pass2)
+                {
+                    // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
+                    // Do *not* use "using" here as we need it to survive to the ReadAsync AsyncReadPagesForRecoveryCallback.
+                    asyncResult.readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+                }
 
                 // Call the overridden ReadAsync for the derived allocator class
                 ReadAsync(offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);

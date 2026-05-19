@@ -247,7 +247,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    Recover(-1);
+                    RecoverAsync(-1).AsTask().GetAwaiter().GetResult();
                 }
                 catch { }
             }
@@ -543,8 +543,7 @@ namespace Tsavorite.core
                 CommittedBeginAddress = beginAddress;
 
                 // Align monotonic page trackers to the restored address so that post-recovery producer
-                // drive and page-shift callbacks re-arm correctly (they only advance beyond the
-                // initial floor).
+                // drive and page-shift callbacks re-arm correctly (they only advance beyond the initial floor).
                 var resetPage = committedUntilAddress >> allocator.LogPageSizeBits;
                 Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
                 Volatile.Write(ref lastProducerObservedPage, resetPage);
@@ -567,15 +566,16 @@ namespace Tsavorite.core
         /// Recover TsavoriteLog to the specific commit number, or latest if -1
         /// </summary>
         /// <param name="requestedCommitNum">Requested commit number</param>
-        public void Recover(long requestedCommitNum = -1)
+        /// <param name="cancellationToken">Cancellation token</param>
+        public async ValueTask RecoverAsync(long requestedCommitNum = -1, CancellationToken cancellationToken = default)
         {
             if (CommittedUntilAddress > BeginAddress)
                 throw new TsavoriteException($"Already recovered until address {CommittedUntilAddress}");
 
-            if (requestedCommitNum == -1)
-                RestoreLatest(out RecoveredCookie);
-            else
-                RestoreSpecificCommit(requestedCommitNum, out RecoveredCookie);
+            RecoveredCookie = requestedCommitNum == -1
+                ? await RestoreLatestAsync(cancellationToken).ConfigureAwait(false)
+                : await RestoreSpecificCommitAsync(requestedCommitNum, cancellationToken).ConfigureAwait(false);
+            persistedCommitNum = commitNum;
         }
 
         /// <summary>
@@ -587,10 +587,7 @@ namespace Tsavorite.core
         {
             var log = new TsavoriteLog(logSettings, false);
             if (logSettings.TryRecoverLatest)
-            {
-                var cookie = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
-                log.RecoveredCookie = cookie;
-            }
+                await log.RecoverAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             return log;
         }
 
@@ -2748,18 +2745,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Synchronously recover instance to TsavoriteLog's latest valid commit, when being used as a readonly log iterator
-        /// </summary>
-        public void RecoverReadOnly()
-        {
-            if (!readOnlyMode)
-                throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
-
-            RestoreLatest(out _);
-            SignalWaitingROIterators();
-        }
-
-        /// <summary>
         /// Asynchronously recover instance to TsavoriteLog's latest commit, when being used as a readonly log iterator
         /// </summary>
         public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
@@ -2767,7 +2752,8 @@ namespace Tsavorite.core
             if (!readOnlyMode)
                 throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            _ = await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+            RecoveredCookie = await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+            persistedCommitNum = commitNum;
             SignalWaitingROIterators();
         }
 
@@ -2805,162 +2791,6 @@ namespace Tsavorite.core
                 info.CommitNum = commitNum;
 
             return true;
-        }
-
-        private void RestoreLatest(out byte[] cookie)
-        {
-            cookie = null;
-            TsavoriteLogRecoveryInfo info = new();
-
-            long scanStart = 0;
-            foreach (var metadataCommit in logCommitManager.ListCommits())
-            {
-                try
-                {
-                    if (LoadCommitMetadata(metadataCommit, out info))
-                    {
-                        scanStart = metadataCommit;
-                        break;
-                    }
-                }
-                catch { }
-            }
-
-            // Only in fast commit mode will we potentially need to recover from an entry in the log
-            if (fastCommitMode)
-            {
-                // Disable safe guards temporarily
-                CommittedUntilAddress = long.MaxValue;
-                beginAddress = info.BeginAddress;
-                allocator.HeadAddress = long.MaxValue;
-                try
-                {
-                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                    _ = scanIterator.ScanForwardForCommit(ref info);
-                }
-                catch { }
-            }
-
-            // If until address is 0, that means info is still its default value and we haven't been able to recover
-            // from any any commit. Set the log to its start position and return
-            if (info.UntilAddress == 0)
-            {
-                logger?.LogInformation("Unable to recover using any available commit");
-
-                // Reset variables to normal
-                allocator.Initialize();
-                CommittedUntilAddress = FirstValidAddress;
-                beginAddress = allocator.BeginAddress;
-                if (readOnlyMode)
-                    allocator.HeadAddress = long.MaxValue;
-                return;
-            }
-
-            if (!readOnlyMode)
-            {
-                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
-                if (info.BeginAddress > headAddress)
-                    headAddress = info.BeginAddress;
-
-                if (headAddress == 0)
-                    headAddress = FirstValidAddress;
-
-                try
-                {
-                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
-                }
-                catch
-                {
-                    if (!tolerateDeviceFailure) throw;
-                }
-            }
-
-            CompleteRestoreFromCommit(info);
-            cookie = info.Cookie;
-            commitNum = info.CommitNum;
-            // After recovery, persisted commitnum remains 0 so we need to set it to latest commit number
-            persistedCommitNum = info.CommitNum;
-            beginAddress = allocator.BeginAddress;
-            if (readOnlyMode)
-                allocator.HeadAddress = long.MaxValue;
-
-            if (scanStart > 0)
-                logCommitManager.OnRecovery(scanStart);
-        }
-
-        private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
-        {
-            cookie = null;
-            TsavoriteLogRecoveryInfo info = new();
-
-            // Find the closest commit metadata with commit num smaller than requested
-            long scanStart = 0;
-            foreach (var metadataCommit in logCommitManager.ListCommits())
-            {
-                if (metadataCommit > requestedCommitNum)
-                    continue;
-                try
-                {
-                    if (LoadCommitMetadata(metadataCommit, out info))
-                    {
-                        scanStart = metadataCommit;
-                        break;
-                    }
-                }
-                catch { }
-            }
-
-            // Need to potentially scan log for the entry 
-            if (scanStart < requestedCommitNum)
-            {
-                // If not in fast commit mode, do not scan log
-                if (!fastCommitMode)
-                    // In the case where precisely requested commit num is not available, can just throw exception
-                    throw new TsavoriteException("requested commit num is not available");
-
-                // If no exact metadata is found, scan forward to see if we able to find a commit entry
-                // Shut up safe guards, I know what I am doing
-                CommittedUntilAddress = long.MaxValue;
-                beginAddress = info.BeginAddress;
-                allocator.HeadAddress = long.MaxValue;
-                try
-                {
-                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                    if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
-                        throw new TsavoriteException("requested commit num is not available");
-                }
-                catch { }
-            }
-
-            // At this point, we should have found the exact commit num requested
-            Debug.Assert(info.CommitNum == requestedCommitNum, $"info.CommitNum {info.CommitNum} must equal requestedCommitNum {requestedCommitNum}");
-            if (!readOnlyMode)
-            {
-                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
-                if (info.BeginAddress > headAddress)
-                    headAddress = info.BeginAddress;
-
-                if (headAddress == 0)
-                    headAddress = FirstValidAddress;
-                try
-                {
-                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
-                }
-                catch
-                {
-                    if (!tolerateDeviceFailure) throw;
-                }
-            }
-
-            CompleteRestoreFromCommit(info);
-            cookie = info.Cookie;
-            commitNum = persistedCommitNum = info.CommitNum;
-            beginAddress = allocator.BeginAddress;
-            if (readOnlyMode)
-                allocator.HeadAddress = long.MaxValue;
-
-            if (scanStart > 0)
-                logCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
@@ -3013,6 +2843,75 @@ namespace Tsavorite.core
                 return null;
             }
 
+            if (!readOnlyMode)
+            {
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
+                if (info.BeginAddress > headAddress)
+                    headAddress = info.BeginAddress;
+
+                if (headAddress == 0)
+                    headAddress = FirstValidAddress;
+                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            CompleteRestoreFromCommit(info);
+            var cookie = info.Cookie;
+            commitNum = info.CommitNum;
+            beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
+
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
+
+            return cookie;
+        }
+
+        private async ValueTask<byte[]> RestoreSpecificCommitAsync(long requestedCommitNum, CancellationToken cancellationToken)
+        {
+            TsavoriteLogRecoveryInfo info = new();
+
+            // Find the closest commit metadata with commit num smaller than requested
+            long scanStart = 0;
+            foreach (var metadataCommit in logCommitManager.ListCommits())
+            {
+                if (metadataCommit > requestedCommitNum)
+                    continue;
+                try
+                {
+                    if (LoadCommitMetadata(metadataCommit, out info))
+                    {
+                        scanStart = metadataCommit;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            // Need to potentially scan log for the entry 
+            if (scanStart < requestedCommitNum)
+            {
+                // If not in fast commit mode, do not scan log
+                if (!fastCommitMode)
+                    // In the case where precisely requested commit num is not available, can just throw exception
+                    throw new TsavoriteException("requested commit num is not available");
+
+                // If no exact metadata is found, scan forward to see if we able to find a commit entry
+                // Shut up safe guards, I know what I am doing
+                CommittedUntilAddress = long.MaxValue;
+                beginAddress = info.BeginAddress;
+                allocator.HeadAddress = long.MaxValue;
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
+                        throw new TsavoriteException("requested commit num is not available");
+                }
+                catch { }
+            }
+
+            // At this point, we should have found the exact commit num requested
+            Debug.Assert(info.CommitNum == requestedCommitNum, $"info.CommitNum {info.CommitNum} must equal requestedCommitNum {requestedCommitNum}");
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);

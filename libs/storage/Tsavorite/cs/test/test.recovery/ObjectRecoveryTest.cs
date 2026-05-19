@@ -11,7 +11,6 @@ using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using static Tsavorite.test.TestUtils;
     using ClassAllocator = ObjectAllocator<StoreFunctions<AdId.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<AdId.Comparer, DefaultRecordTriggers>;
 
@@ -78,15 +77,12 @@ namespace Tsavorite.test.recovery.objects
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask ObjectRecoveryTest1([Values] CompletionSyncMode syncMode)
+        public async ValueTask ObjectRecoveryTest1()
         {
             Populate();
             PrepareToRecover();
 
-            if (syncMode == CompletionSyncMode.Async)
-                _ = await store.RecoverAsync(token, token).ConfigureAwait(false);
-            else
-                _ = store.Recover(token, token);
+            _ = await store.RecoverAsync(token, token).ConfigureAwait(false);
 
             Verify(token, token);
         }

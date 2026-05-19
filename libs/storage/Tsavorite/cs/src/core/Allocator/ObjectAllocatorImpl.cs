@@ -1104,6 +1104,16 @@ namespace Tsavorite.core
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
             var endAddress = pageStartAddress + result.maxAddressOffsetOnPage;
+            var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+
+            if (result.recoveryPhase == RecoveryPhase.Pass1)
+            {
+                // Pass 1: skip object deserialization.
+                _ = result.handle?.Signal();
+                result.callback(errorCode, numBytes, context);
+                result.Free();
+                return;
+            }
 
             while (recordAddress < endAddress)
             {
@@ -1131,8 +1141,6 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                var objectIdMapToUse = result.isForRecovery ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-
                 while (recordAddress < endAddress)
                 {
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
@@ -1142,17 +1150,7 @@ namespace Tsavorite.core
                     if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
-                        // key overflow for tombstoned records. Add it here so the tracker stays balanced.
-                        if (logRecord.Info.Tombstone)
-                        {
-                            if (logRecord.Info.KeyIsOverflow)
-                                logSizeTracker?.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
-                        }
-                        else
-                        {
-                            logSizeTracker?.UpdateSize(in logRecord, add: true);
-                        }
+                        TrackRecoveredObjectRecord(in logRecord);
                     }
                 }
 
@@ -1164,6 +1162,183 @@ namespace Tsavorite.core
             result.callback(errorCode, numBytes, context);
             result.Free();
             return;
+        }
+
+        private void TrackRecoveredObjectRecord(in LogRecord logRecord)
+        {
+            if (logSizeTracker is null)
+                return;
+
+            // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
+            // key overflow for tombstoned records. Add it here so the tracker stays balanced.
+            if (logRecord.Info.Tombstone)
+            {
+                if (logRecord.Info.KeyIsOverflow)
+                    logSizeTracker.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
+            }
+            else
+            {
+                logSizeTracker.UpdateSize(in logRecord, add: true);
+            }
+        }
+
+        /// <inheritdoc/>
+        internal override long CalculatePageObjectSizes(long page, long startAddress, long untilAddress)
+        {
+            var address = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
+            var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
+            long totalSize = 0;
+
+            while (address < stopAddress)
+            {
+                var logRecord = new LogRecord(GetPhysicalAddress(address));
+                var allocatedSize = logRecord.AllocatedSize;
+                if (allocatedSize <= 0)
+                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
+
+                if (GetOffsetOnPage(address) + allocatedSize > PageSize)
+                    break;
+
+                if (logRecord.Info.Valid && logRecord.Info.RecordHasObjects)
+                {
+                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+                    totalSize += keyLength + (long)valueLength;
+                }
+                address += allocatedSize;
+            }
+
+            return totalSize;
+        }
+
+        /// <inheritdoc/>
+        internal override long LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice, long budgetLimit = NoBudget)
+        {
+            var address = Math.Max(fromAddress, GetFirstValidLogicalAddressOnPage(page));
+            var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
+            if (address >= stopAddress)
+                return stopAddress;
+
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            var endKeyLength = 0;
+            ulong endValueLength = 0;
+
+            for (var scanAddress = address; scanAddress < stopAddress;)
+            {
+                var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                var allocatedSize = logRecord.AllocatedSize;
+                if (allocatedSize <= 0)
+                    break;
+
+                var nextAddress = scanAddress + allocatedSize;
+                if (GetOffsetOnPage(scanAddress) + allocatedSize > PageSize)
+                    break;
+
+                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                {
+                    if (!startPosition.IsSet)
+                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                }
+
+                scanAddress = nextAddress;
+            }
+
+            if (!startPosition.IsSet)
+                return stopAddress;
+
+            endPosition.Advance((ulong)endKeyLength + endValueLength);
+            var totalBytesToRead = endPosition - startPosition;
+            var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
+            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+            readBuffers.nextFileReadPosition = startPosition;
+            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
+
+            long budgetUsed = 0;
+            try
+            {
+                while (address < stopAddress)
+                {
+                    var logRecord = new LogRecord(GetPhysicalAddress(address), objectIdMapToUse);
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (allocatedSize <= 0)
+                        break;
+
+                    var nextAddress = address + allocatedSize;
+                    if (GetOffsetOnPage(address) + allocatedSize > PageSize)
+                        break;
+
+                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                    {
+                        _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+                        var recordSerializedObjectSize = keyLength + (long)valueLength;
+                        if (budgetLimit != NoBudget && budgetUsed + recordSerializedObjectSize > budgetLimit)
+                            return address;
+
+                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
+                        TrackRecoveredObjectRecord(in logRecord);
+                        budgetUsed += recordSerializedObjectSize;
+                    }
+
+                    address = nextAddress;
+                }
+            }
+            finally
+            {
+                logReader.OnEndReadRecords();
+            }
+
+            return stopAddress;
+        }
+
+        /// <inheritdoc/>
+        internal override long FindHeadAddressCutoffOnPage(long page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
+        {
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
+            var extraNeeded = totalPageObjectSize - remainingBudget;
+            if (extraNeeded <= 0)
+            {
+                numPagesBelowToEvict = 0;
+                return firstValidAddress;
+            }
+
+            var maxBudgetOnPage = remainingBudget + ((long)numPagesBelowCurrentPage * PageSize);
+            if (totalPageObjectSize <= maxBudgetOnPage)
+            {
+                numPagesBelowToEvict = (int)((extraNeeded + PageSize - 1) / PageSize);
+                return firstValidAddress;
+            }
+
+            numPagesBelowToEvict = numPagesBelowCurrentPage;
+            if (maxBudgetOnPage <= 0)
+                return stopAddress;
+
+            var bytesToSkip = totalPageObjectSize - maxBudgetOnPage;
+            var address = firstValidAddress;
+            while (address < stopAddress)
+            {
+                var logRecord = new LogRecord(GetPhysicalAddress(address));
+                var allocatedSize = logRecord.AllocatedSize;
+                if (allocatedSize <= 0)
+                    break;
+
+                var nextAddress = address + allocatedSize;
+                if (GetOffsetOnPage(address) + allocatedSize > PageSize)
+                    break;
+
+                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                {
+                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+                    bytesToSkip -= keyLength + (long)valueLength;
+                    if (bytesToSkip <= 0)
+                        return nextAddress;
+                }
+
+                address = nextAddress;
+            }
+
+            return stopAddress;
         }
 
         /// <summary>
