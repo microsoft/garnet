@@ -55,6 +55,17 @@ namespace Garnet.common.Parsing
         }
 
         /// <summary>
+        /// Throw an exception indicating that the RESP array argument count exceeds the allowed maximum.
+        /// </summary>
+        /// <param name="count">The argument count that was received.</param>
+        /// <param name="maxCount">The maximum allowed argument count.</param>
+        [DoesNotReturn]
+        public static void ThrowExcessiveArgumentCount(int count, int maxCount)
+        {
+            Throw($"RESP array argument count '{count}' exceeds maximum allowed count of '{maxCount}'.");
+        }
+
+        /// <summary>
         /// Throw NaN (not a number) exception.
         /// </summary>
         /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that could not be converted.</param>
