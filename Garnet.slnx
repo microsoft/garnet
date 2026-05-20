@@ -13,6 +13,9 @@
     <File Path=".azure/pipelines/credscan-exclusion.json" />
     <File Path=".azure/pipelines/policheck-exclusion.xml" />
   </Folder>
+  <Folder Name="/analyzer/">
+    <Project Path="analyzer/Garnet.analyzers/Garnet.analyzers.csproj" />
+  </Folder>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
     <Project Path="benchmark/Device.benchmark/Device.benchmark.csproj" />
