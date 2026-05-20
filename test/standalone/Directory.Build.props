@@ -3,4 +3,7 @@
   <PropertyGroup>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)garnet.runsettings</RunSettingsFilePath>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\analyzer\Garnet.analyzers\Garnet.analyzers.csproj" PrivateAssets="all" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+  </ItemGroup>
 </Project>
