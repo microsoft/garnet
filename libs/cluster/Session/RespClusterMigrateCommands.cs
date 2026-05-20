@@ -232,16 +232,13 @@ namespace Garnet.cluster
             if (sizeof(int) > end - ptr)
                 return false;
 
-            result = ptr;
             ref var sb = ref SpanByte.Reinterpret(ptr);
 
             // Use subtraction instead of ptr + TotalSize to avoid pointer arithmetic overflow
             if (sb.Length < 0 || sb.TotalSize > end - ptr)
-            {
-                result = default;
                 return false;
-            }
 
+            result = ptr;
             ptr += sb.TotalSize;
             return true;
         }
