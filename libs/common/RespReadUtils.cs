@@ -1240,7 +1240,8 @@ namespace Garnet.common
             ptr += sizeof(int);
 
             // 2. Validate record fits within the payload boundary.
-            if (recordLength < 0 || ptr + recordLength > end)
+            // Use subtraction instead of ptr + recordLength to avoid pointer arithmetic overflow.
+            if (recordLength < 0 || recordLength > end - ptr)
             {
                 recordSpan = default;
                 return false;

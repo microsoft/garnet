@@ -7804,7 +7804,7 @@ namespace Garnet.test.Resp.ACL
             {
                 var elem = Encoding.ASCII.GetString("\x0\x1\x2\x3"u8);
 
-                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elem, "CAS", "NOQUANT", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]).ConfigureAwait(false);
+                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "2", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elem, "CAS", "NOQUANT", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, val);
             }
         }
