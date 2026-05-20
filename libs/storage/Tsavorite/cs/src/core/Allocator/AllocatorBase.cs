@@ -1672,8 +1672,33 @@ namespace Tsavorite.core
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
             alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
-            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
+
+            // The caller asked for numBytes of payload. Issue an IO of exactly RoundUp(numBytes, sectorSize) — do NOT
+            // also include the leading sub-sector slop (fileOffset - alignedFileOffset) in the read length. Including
+            // the slop forces an extra trailing sector (e.g. 4096 -> 4608 when the start has 1..511 bytes of slop),
+            // which costs ~12.5% extra IO bandwidth on every non-aligned read. With slop excluded, the IO is always
+            // exactly numBytes (rounded up to a sector) — at the cost of returning numBytes - slop bytes of the record
+            // instead of numBytes. The chain walker handles short reads via a follow-up IO with the parsed record length.
+            alignedReadLength = (uint)RoundUp(numBytes, sectorSize);
+
+            // All callers (AsyncReadRecordToMemory, AsyncReadBlittableRecordToMemory) read a single record from a log
+            // page. Records in Tsavorite never span page boundaries (HandlePageOverflow guarantees this), so the IO
+            // must not extend past end-of-page. Without this clamp, a sector-aligned IO for an address near page-end
+            // crosses the page boundary; on page-aligned segments that also crosses a segment boundary, which the
+            // native (O_DIRECT) device rejects with IOError.
+            //
+            // Preferred strategy: back the start up so the IO ends exactly at page-end (keeps alignedReadLength
+            // intact, which preserves the caller's intended IO size and avoids the 4608-byte penalty). If the page is
+            // smaller than alignedReadLength (atypical), fall back to truncation. Both AlignedPageSizeBytes and
+            // sectorSize divide pageEndInFile, so backed-up alignedFileOffset stays sector-aligned.
+            var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
+            if (alignedFileOffset + alignedReadLength > pageEndInFile)
+            {
+                if (alignedReadLength <= (uint)AlignedPageSizeBytes)
+                    alignedFileOffset = pageEndInFile - alignedReadLength;
+                else
+                    alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
+            }
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
