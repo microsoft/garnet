@@ -718,9 +718,7 @@ namespace Tsavorite.core
                 int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
 
                 if (_result != 0)
-                {
                     throw new IOException("Error reading from log file", _result);
-                }
             }
             catch (IOException e)
             {
