@@ -5,7 +5,7 @@ on:
   workflow_run:
     workflows: ['Garnet .NET CI']
     types: [completed]
-    branches: [main]
+    branches: [main, release/v1]
   push:
     tags: 'v*'
 
