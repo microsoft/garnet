@@ -291,6 +291,5 @@ namespace Garnet.test.Resp
                 ClassicAssert.IsTrue(start == end);
             }
         }
-
     }
 }
