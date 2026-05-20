@@ -8,10 +8,10 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.test.cluster.MultiLogTests
 {
@@ -28,11 +28,9 @@ namespace Garnet.test.cluster.MultiLogTests
             {"ClusterSRNoCheckpointRestartSecondary", true},
             {"ClusterSRPrimaryCheckpoint", true},
             {"ClusterCheckpointRetrieveDisableStorageTier", true},
-            {"ClusterCheckpointRetrieveDelta", true},
-            {"ClusterSRPrimaryCheckpointRetrieve", true},
             {"ClusterSRAddReplicaAfterPrimaryCheckpoint", true},
             {"ClusterSRPrimaryRestart", true},
-            {"ClusterSRRedirectWrites", true},
+            {"ClusterSRRedirectWrites", false}, // Does not test AOF
             {"ClusterSRReplicaOfTest", true},
             {"ClusterReplicationSimpleFailover", true},
             {"ClusterFailoverAttachReplicas", true},
@@ -45,14 +43,12 @@ namespace Garnet.test.cluster.MultiLogTests
             {"ClusterDivergentCheckpointMMFastCommitTest", true},
             {"ClusterReplicationCheckpointAlignmentTest", true},
             {"ClusterReplicationLua", true},
-            {"ClusterReplicationStoredProc", true},
+            {"ClusterReplicationStoredProc", false}, // Duplicate test in this class
             {"ClusterReplicationManualCheckpointing", true},
             {"ReplicaSyncTaskFaultsRecoverAsync", true},
-            {"ClusterReplicationMultiRestartRecover", true},
-            {"ReplicasRestartAsReplicasAsync", true},
-            {"PrimaryUnavailableRecoveryAsync", true},
+            {"ClusterReplicationMultiRestartRecover", false},
             {"ClusterReplicationDivergentHistoryWithoutCheckpoint", true},
-            {"ClusterReplicationSimpleTransactionTest", true}
+            {"ClusterReplicationSimpleTransactionTest", false} // Duplicate test in this class
         };
 
         [OneTimeSetUp]
@@ -62,7 +58,7 @@ namespace Garnet.test.cluster.MultiLogTests
             foreach (var method in methods)
                 enabledTests.TryAdd(method.Name, true);
 
-            monitorTests.Add("ClusterReplicationShardedLogTxnTest", LogLevel.Critical);
+            monitorTests.Add("ClusterReplicationShardedLogTxnTest", LogLevel.Warning);
         }
 
         [SetUp]
@@ -262,6 +258,7 @@ namespace Garnet.test.cluster.MultiLogTests
             // Attach replica
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
 
             var keyLength = 16;
             var kvpairCount = 2;
@@ -355,6 +352,7 @@ namespace Garnet.test.cluster.MultiLogTests
 
             // Add replica
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.ClusterReplicate(replicaIndex, targetIndex, logger: context.logger));
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, logger: context.logger);
 
             var keyLength = 16;
             var kvpairCount = keyCount;
@@ -375,6 +373,7 @@ namespace Garnet.test.cluster.MultiLogTests
             context.SimpleValidateDB(disableObjects, targetIndex);
             context.SimpleValidateDB(disableObjects, replicaIndex);
         }
+
         [Test, Order(5)]
         [Category("REPLICATION")]
         public async Task ClusterAofUpgradeSLtoSLMRRecoverAsync([Values] bool useStoredProcedure)

@@ -63,6 +63,10 @@ namespace Garnet.cluster
                 {
                     await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
+                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplayAsync));
@@ -105,7 +109,7 @@ namespace Garnet.cluster
                             else if (payloadLength < 0)
                             {
                                 if (!clusterProvider.serverOptions.EnableFastCommit)
-                                    throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                                    ExceptionUtils.ThrowException(new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false));
 
                                 // Only a single thread should commit metadata
                                 if (replayTaskIdx == 0)
@@ -124,6 +128,10 @@ namespace Garnet.cluster
                         // can proceed once all writes in the page are complete.
                         appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
                     }
+                }
+                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
                 }
                 catch (Exception ex)
                 {
