@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -87,6 +87,9 @@ namespace Garnet.cluster
                     var payloadEndPtr = ptr + input.Length;
                     if (storeTypeSpan.Equals("SSTORE", StringComparison.OrdinalIgnoreCase))
                     {
+                        if (sizeof(int) > payloadEndPtr - payloadPtr)
+                            return;
+
                         var keyCount = *(int*)payloadPtr;
                         payloadPtr += 4;
                         var i = 0;
@@ -94,10 +97,11 @@ namespace Garnet.cluster
                         TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                         while (i < keyCount)
                         {
-                            ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += key.TotalSize;
-                            ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += value.TotalSize;
+                            if (!TryAdvanceSpanByte(ref payloadPtr, payloadEndPtr, out var keyPtr) || !TryAdvanceSpanByte(ref payloadPtr, payloadEndPtr, out var valuePtr))
+                                return;
+
+                            ref var key = ref SpanByte.Reinterpret(keyPtr);
+                            ref var value = ref SpanByte.Reinterpret(valuePtr);
 
                             // An error has occurred
                             if (migrateState > 0)
@@ -135,6 +139,9 @@ namespace Garnet.cluster
                     }
                     else if (storeTypeSpan.Equals("OSTORE", StringComparison.OrdinalIgnoreCase))
                     {
+                        if (sizeof(int) > payloadEndPtr - payloadPtr)
+                            return;
+
                         var keyCount = *(int*)payloadPtr;
                         payloadPtr += 4;
                         var i = 0;
@@ -171,6 +178,9 @@ namespace Garnet.cluster
                         // 
                         // Namespace'd element keys are handled by the SSTORE path
 
+                        if (sizeof(int) > payloadEndPtr - payloadPtr)
+                            return;
+
                         var keyCount = *(int*)payloadPtr;
                         payloadPtr += 4;
                         var i = 0;
@@ -178,10 +188,11 @@ namespace Garnet.cluster
                         TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                         while (i < keyCount)
                         {
-                            ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += key.TotalSize;
-                            ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += value.TotalSize;
+                            if (!TryAdvanceSpanByte(ref payloadPtr, payloadEndPtr, out var keyPtr) || !TryAdvanceSpanByte(ref payloadPtr, payloadEndPtr, out var valuePtr))
+                                return;
+
+                            ref var key = ref SpanByte.Reinterpret(keyPtr);
+                            ref var value = ref SpanByte.Reinterpret(valuePtr);
 
                             // An error has occurred
                             if (migrateState > 0)
@@ -206,6 +217,32 @@ namespace Garnet.cluster
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
+            return true;
+        }
+
+        /// <summary>
+        /// Validates that a serialized <see cref="SpanByte"/> (4-byte length header + payload)
+        /// fits within the [ptr, end) boundary, and advances ptr past it.
+        /// </summary>
+        internal static bool TryAdvanceSpanByte(ref byte* ptr, byte* end, out byte* result)
+        {
+            result = default;
+
+            // Need at least sizeof(int) for the length header
+            if (sizeof(int) > end - ptr)
+                return false;
+
+            result = ptr;
+            ref var sb = ref SpanByte.Reinterpret(ptr);
+
+            // Use subtraction instead of ptr + TotalSize to avoid pointer arithmetic overflow
+            if (sb.Length < 0 || sb.TotalSize > end - ptr)
+            {
+                result = default;
+                return false;
+            }
+
+            ptr += sb.TotalSize;
             return true;
         }
 
