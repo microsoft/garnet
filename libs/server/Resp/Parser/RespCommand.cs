@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -707,6 +708,12 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// Maximum number of elements allowed in a single RESP array command.
+        /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
+        /// </summary>
+        const int MaxRespArrayLength = 1 << 20; // 1,048,576
+
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
@@ -2929,6 +2936,11 @@ namespace Garnet.server
             {
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
+            }
+
+            if (count > MaxRespArrayLength)
+            {
+                RespParsingException.ThrowExcessiveArgumentCount(count, MaxRespArrayLength);
             }
 
             // Set up parse state
