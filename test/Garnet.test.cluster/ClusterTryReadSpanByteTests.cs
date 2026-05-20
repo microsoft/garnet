@@ -83,7 +83,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Header declares more payload bytes than actually present — the OOB attack vector.
+        /// Header declares more payload bytes than actually present.
         /// </summary>
         [Test]
         public void DeclaredLengthExceedsPayload_Fails()
@@ -166,7 +166,6 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// First SpanByte is valid but second one's declared length exceeds remaining buffer.
-        /// Simulates the attack: key is small and valid, value declares a huge length.
         /// </summary>
         [Test]
         public void SecondSpanByteOverflows_Fails()
@@ -180,7 +179,7 @@ namespace Garnet.test.cluster
                 pinned[4] = 0xAA;
                 pinned[5] = 0xBB;
 
-                // Malicious second SpanByte — claims 10000 bytes
+                // Second SpanByte claims 10000 bytes but only 3 remain
                 *(int*)(pinned + 6) = 10000;
 
                 var ptr = pinned;
