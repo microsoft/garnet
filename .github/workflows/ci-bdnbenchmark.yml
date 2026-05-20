@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'release/*'
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
