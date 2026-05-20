@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - dev
+      - release/v1
   pull_request:
     branches:
       - main
       - dev
+      - release/v1
   
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
