@@ -709,7 +709,7 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Maximum number of elements allowed in a single RESP array command.
+        /// Maximum number of arguments (excluding the command name) allowed in a single RESP command.
         /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
         /// </summary>
         const int MaxRespArrayLength = 1 << 20; // 1,048,576
