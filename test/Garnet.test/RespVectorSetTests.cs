@@ -207,7 +207,7 @@ namespace Garnet.test
 
             // Mismatch vector size for projection
             var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
-            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 5 but set has 75", exc3.Message);
+            ClassicAssert.AreEqual("ERR REDUCE dimension must be <= vector dimensions", exc3.Message);
         }
 
         [Test]
@@ -326,15 +326,15 @@ namespace Garnet.test
 
             // M out of range (Redis imposes M >= 4 and m <= 4096
             var exc13 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "1"]));
-            ClassicAssert.AreEqual("ERR invalid M", exc13.Message);
+            ClassicAssert.AreEqual("ERR M must be an integer between 4 and 4096", exc13.Message);
             var exc14 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "10000"]));
-            ClassicAssert.AreEqual("ERR invalid M", exc14.Message);
+            ClassicAssert.AreEqual("ERR M must be an integer between 4 and 4096", exc14.Message);
 
             // Missing/bad option value
             var exc20 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc20.Message);
             var exc21 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "0"]));
-            ClassicAssert.AreEqual("ERR invalid EF", exc21.Message);
+            ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc21.Message);
             var exc22 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc22.Message);
             var exc23 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M"]));
@@ -387,6 +387,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR invalid option after element", exc31.Message);
             var exc32 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "FOO"]));
             ClassicAssert.AreEqual("ERR invalid XDISTANCE_METRIC", exc32.Message);
+
+            // Invalid vector type keyword (not FP32, VALUES, or XB8)
+            var exc40 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["mykey", "GARBAGE", "data", "elem1"]));
+            ClassicAssert.AreEqual("ERR invalid vector specification", exc40.Message);
+
+            // VALUES count exceeding MaxVectorDimensions (65536) must be rejected
+            var exc41 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "100000", "1.0", "elem"]));
+            ClassicAssert.IsTrue(exc41.Message.Contains("maximum"), $"Expected dimension limit error, got: {exc41.Message}");
+
+            // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
+            var exc42 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "2000000000", "M", "32"]));
+            ClassicAssert.IsTrue(exc42.Message.Contains("EF must be an integer between"), $"Expected EF validation error, got: {exc42.Message}");
+
+            // REDUCE dim exceeding vector dimensions must be rejected
+            var exc43 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "100000", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+            ClassicAssert.IsTrue(exc43.Message.Contains("REDUCE dimension must be <= vector dimensions"), $"Expected REDUCE dimension limit error, got: {exc43.Message}");
             var exc33 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "XCOSINE_NORMALIZED"]));
             ClassicAssert.AreEqual("ERR Distance metric mismatch - got XCosine_Normalized but set has L2", exc33.Message);
         }
@@ -839,6 +855,61 @@ namespace Garnet.test
             var res3 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
                 "FILTER", ".rating / 2 > 2 and .year >= 1980", "COUNT", "3"]);
             ClassicAssert.AreEqual(2, res3.Length, "ELE + FILTER without WITHATTRIBS: arithmetic and comparison");
+        }
+
+        [Test]
+        public void VSIMErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("foo");
+
+            // Add a vector so the key exists (needed for FILTER-EF test)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // FILTER-EF exceeding MaxRetrieveCount must be rejected
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
+            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 0 and 100000000", exc1.Message);
+
+            // COUNT exceeding MaxRetrieveCount must be rejected
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
+            ClassicAssert.AreEqual("ERR COUNT must be an integer between 0 and 100000000", exc2.Message);
+
+            // VALUES count exceeding MaxVectorDimensions (65536) must be rejected
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "100000", "1.0"]));
+            ClassicAssert.AreEqual("ERR vector exceeds maximum of 65536 dimensions", exc3.Message);
+
+            // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
+            var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
+            ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
+        }
+
+        [Test]
+        public void VSIMWithDefaultFilterEFOverflowDoesNotCrash()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("foo");
+
+            // Add a vector with attributes so FILTER can be used
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Verify that a moderate COUNT with FILTER (no explicit FILTER-EF) works correctly.
+            // The default maxFilteringEffort = count*200. With count=1000, that's 200,000 which is safe.
+            // This validates the code path through the (long) cast fix without hitting resource limits.
+            var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "1000", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(2, res.Length, "Should return 1 result (1 pair of id+attribute) for year > 1950");
+
+            // Verify that COUNT values which would overflow count*200 in int32 are rejected.
+            // 10,737,419 * 200 = 2,147,483,800 > int32.MaxValue.
+            // Our (long) cast prevents the overflow, but MaxRetrieveCount caps COUNT itself.
+            // Any COUNT above MaxRetrieveCount (~178M) is rejected at parse time.
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "999999999", "WITHATTRIBS"]));
+            ClassicAssert.IsTrue(ex.Message.Contains("COUNT must be an integer between"), $"Expected COUNT validation error, got: {ex.Message}");
         }
 
         private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)

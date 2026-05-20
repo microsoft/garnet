@@ -291,5 +291,96 @@ namespace Garnet.test.Resp
                 ClassicAssert.IsTrue(start == end);
             }
         }
+
+        /// <summary>
+        /// Tests that GetSerializedRecordSpan correctly parses a valid length-prefixed record.
+        /// </summary>
+        [Test]
+        public static unsafe void GetSerializedRecordSpanValidTest()
+        {
+            // Layout: [int32 length = 5][5 bytes of data]
+            var data = new byte[sizeof(int) + 5];
+            fixed (byte* ptr = data)
+            {
+                *(int*)ptr = 5;
+                ptr[4] = 0xAA;
+                ptr[5] = 0xBB;
+                ptr[6] = 0xCC;
+                ptr[7] = 0xDD;
+                ptr[8] = 0xEE;
+
+                var start = ptr;
+                var end = ptr + data.Length;
+                var success = RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref start, end);
+
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(5, recordSpan.Length);
+                ClassicAssert.AreEqual(0xAA, recordSpan.ReadOnlySpan[0]);
+                ClassicAssert.AreEqual(0xEE, recordSpan.ReadOnlySpan[4]);
+                ClassicAssert.IsTrue(start == end);
+            }
+        }
+
+        /// <summary>
+        /// Tests that GetSerializedRecordSpan rejects a record whose declared length exceeds the payload boundary.
+        /// </summary>
+        [Test]
+        public static unsafe void GetSerializedRecordSpanOverflowLengthTest()
+        {
+            // Layout: [int32 length = 1000][only 3 bytes of actual data]
+            var data = new byte[sizeof(int) + 3];
+            fixed (byte* ptr = data)
+            {
+                *(int*)ptr = 1000;
+                ptr[4] = 0x01;
+                ptr[5] = 0x02;
+                ptr[6] = 0x03;
+
+                var start = ptr;
+                var end = ptr + data.Length;
+                var success = RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref start, end);
+
+                ClassicAssert.IsFalse(success);
+                ClassicAssert.AreEqual(0, recordSpan.Length);
+            }
+        }
+
+        /// <summary>
+        /// Tests that GetSerializedRecordSpan rejects a negative record length.
+        /// </summary>
+        [Test]
+        public static unsafe void GetSerializedRecordSpanNegativeLengthTest()
+        {
+            var data = new byte[sizeof(int) + 10];
+            fixed (byte* ptr = data)
+            {
+                *(int*)ptr = -1;
+
+                var start = ptr;
+                var end = ptr + data.Length;
+                var success = RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref start, end);
+
+                ClassicAssert.IsFalse(success);
+                ClassicAssert.AreEqual(0, recordSpan.Length);
+            }
+        }
+
+        /// <summary>
+        /// Tests that GetSerializedRecordSpan rejects when there's not enough data for the length prefix itself.
+        /// </summary>
+        [Test]
+        public static unsafe void GetSerializedRecordSpanInsufficientHeaderTest()
+        {
+            var data = new byte[2]; // Less than sizeof(int)
+            fixed (byte* ptr = data)
+            {
+                var start = ptr;
+                var end = ptr + data.Length;
+                var success = RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref start, end);
+
+                ClassicAssert.IsFalse(success);
+                ClassicAssert.AreEqual(0, recordSpan.Length);
+            }
+        }
     }
 }

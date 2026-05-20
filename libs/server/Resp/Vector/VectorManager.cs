@@ -51,7 +51,70 @@ namespace Garnet.server
         private const int MinimumSpacePerId = sizeof(int) + 8;
 
         /// <summary>
-        /// The process wide instances of DiskANN.
+        /// Maximum number of dimensions a vector can have.
+        /// Matches Redis's VSET_MAX_VECTOR_DIM (65,536).
+        /// </summary>
+        internal const int MaxVectorDimensions = 1 << 16;
+
+        /// <summary>
+        /// Maximum number of results that can be requested in a single VSIM query.
+        /// Practical limit to prevent integer overflow when computing buffer sizes
+        /// (e.g. retrieveCount * MinimumSpacePerId) and to avoid excessive allocations
+        /// from a single command (at 100M: ~400 MB for distances + ~1.2 GB for ids).
+        /// </summary>
+        internal const int MaxRetrieveCount = 100_000_000;
+
+        /// <summary>
+        /// Maximum exploration factor (EF) for build and search operations.
+        /// Matches Redis's hardcoded limit of 1,000,000.
+        /// </summary>
+        internal const int MaxExplorationFactor = 1_000_000;
+
+        /// <summary>
+        /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
+        /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
+        /// </summary>
+        private static void EnsureDistanceBufferSize(ref SpanByteAndMemory buffer, int retrieveCount)
+        {
+            // Verify no overflow: checked() ensures MaxRetrieveCount * sizeof(float) fits in int32
+            Debug.Assert(retrieveCount <= MaxRetrieveCount && checked(MaxRetrieveCount * sizeof(float)) > 0);
+            var sizeBytes = retrieveCount * sizeof(float);
+            if (sizeBytes > buffer.Length)
+            {
+                if (!buffer.IsSpanByte)
+                {
+                    buffer.Memory.Dispose();
+                }
+
+                buffer = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(sizeBytes), sizeBytes);
+            }
+
+            buffer.Length = sizeBytes;
+        }
+
+        /// <summary>
+        /// Ensures the VSIM id output buffer has at least <paramref name="retrieveCount"/> * <see cref="MinimumSpacePerId"/> bytes.
+        /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
+        /// If we're still wrong, we'll end up using continuation callbacks which have more overhead.
+        /// </summary>
+        private static void EnsureIdBufferSize(ref SpanByteAndMemory buffer, int retrieveCount)
+        {
+            // Verify no overflow: checked() ensures MaxRetrieveCount * MinimumSpacePerId fits in int32
+            Debug.Assert(retrieveCount <= MaxRetrieveCount && checked(MaxRetrieveCount * MinimumSpacePerId) > 0);
+            var sizeBytes = retrieveCount * MinimumSpacePerId;
+            if (sizeBytes > buffer.Length)
+            {
+                if (!buffer.IsSpanByte)
+                {
+                    buffer.Memory.Dispose();
+                }
+
+                buffer = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(sizeBytes), sizeBytes);
+            }
+        }
+
+        /// <summary>
+        /// This managers instance of <see cref="DiskANNService"/>.
         /// 
         /// We only need the one, even if we have multiple DBs, because all context is provided by DiskANN instances and Garnet storage.
         /// </summary>
@@ -525,32 +588,8 @@ namespace Garnet.server
                 retrieveCount = effectiveEF;
             }
 
-            // Make sure enough space in distances for requested count
-            if (retrieveCount > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
-            }
-
-            // Indicate requested # of matches
-            outputDistances.Length = retrieveCount * sizeof(float);
-
-            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            //
-            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
-            }
+            EnsureDistanceBufferSize(ref outputDistances, retrieveCount);
+            EnsureIdBufferSize(ref outputIds, retrieveCount);
 
             var found =
                 Service.SearchVector(
@@ -653,32 +692,8 @@ namespace Garnet.server
                 retrieveCount = effectiveEF;
             }
 
-            // Make sure enough space in distances for requested count
-            if (retrieveCount * sizeof(float) > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
-            }
-
-            // Indicate requested # of matches
-            outputDistances.Length = retrieveCount * sizeof(float);
-
-            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            //
-            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
-            }
+            EnsureDistanceBufferSize(ref outputDistances, retrieveCount);
+            EnsureIdBufferSize(ref outputIds, retrieveCount);
 
             var found =
                 Service.SearchElement(
@@ -896,7 +911,7 @@ namespace Garnet.server
                 internalIdBytes.Memory?.Dispose();
             }
 
-            Span<byte> asBytesSpan = stackalloc byte[(int)dimensions];
+            Span<byte> asBytesSpan = stackalloc byte[1024];
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
