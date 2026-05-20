@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Allure.NUnit;
 using Garnet.cluster;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -8,8 +9,9 @@ using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterTryAdvanceSpanByteTests
+    public unsafe class ClusterTryAdvanceSpanByteTests : AllureTestBase
     {
         /// <summary>
         /// Valid SpanByte: 4-byte header declaring 5 bytes, followed by 5 bytes of payload.
