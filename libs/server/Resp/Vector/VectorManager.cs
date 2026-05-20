@@ -114,7 +114,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This managers instance of <see cref="DiskANNService"/>.
+        /// The process wide instances of DiskANN.
         /// 
         /// We only need the one, even if we have multiple DBs, because all context is provided by DiskANN instances and Garnet storage.
         /// </summary>

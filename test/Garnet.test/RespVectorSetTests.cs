@@ -80,7 +80,7 @@ namespace Garnet.test
             var oversideAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
 
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", oversizedVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Vector exceed configured page size", exc1.Message);
+            ClassicAssert.AreEqual("ERR vector exceeds maximum of 65536 dimensions", exc1.Message);
 
             var basicVectorData = Enumerable.Repeat<byte>(3, 75).ToArray();
 
