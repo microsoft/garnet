@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - man
+      - main
       - release/v1
   pull_request:
     branches:
