@@ -100,6 +100,9 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
         ObjectIdMap TransientObjectIdMap { get; }
 
+        /// <summary>Return the <see cref="ObjectIdMap"/> for a specific page number (not index)</summary>
+        ObjectIdMap GetPageObjectIdMap(long pageNumber);
+
         /// <summary>Dispose an in-memory log record</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 

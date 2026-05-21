@@ -130,6 +130,9 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => _this.transientObjectIdMap;
 
         /// <inheritdoc/>
+        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => _this.objectPages[_this.GetPageIndexForPage(pageNumber)].objectIdMap;
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 

@@ -1108,7 +1108,7 @@ namespace Tsavorite.core
 
             if (result.recoveryPhase == RecoveryPhase.Pass1)
             {
-                // Pass 1: skip object deserialization.
+                // This is Recovery Pass 1, so skip object deserialization. (Frame reads are in RecoveryPhase.None)
                 _ = result.handle?.Signal();
                 result.callback(errorCode, numBytes, context);
                 result.Free();
@@ -1123,9 +1123,9 @@ namespace Tsavorite.core
 
                 if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                 {
-                    if (!startPosition.IsSet)
-                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
                     endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    if (!startPosition.IsSet)
+                        startPosition = endPosition;
                 }
             }
 
@@ -1135,7 +1135,8 @@ namespace Tsavorite.core
                 endPosition.Advance((ulong)endKeyLength + endValueLength);
                 totalBytesToRead = endPosition - startPosition;
 
-                // Iterate all records again to actually do the deserialization.
+                // Iterate all records again to actually do the deserialization. We are only in "Load Objects" mode for frame load; recovery loads objects
+                // via LoadObjectsForRecoveryPass2. So we do not consider eviction here.
                 result.readBuffers.nextFileReadPosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
@@ -1177,74 +1178,99 @@ namespace Tsavorite.core
                     logSizeTracker.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
             }
             else
-            {
                 logSizeTracker.UpdateSize(in logRecord, add: true);
-            }
         }
 
         /// <inheritdoc/>
         internal override long CalculatePageObjectSizes(long page, long startAddress, long untilAddress)
         {
-            var address = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
-            var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
+            var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
+            var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
             long totalSize = 0;
 
-            while (address < stopAddress)
+            while (recordAddress < endAddress)
             {
-                var logRecord = new LogRecord(GetPhysicalAddress(address));
+                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
                 var allocatedSize = logRecord.AllocatedSize;
                 if (allocatedSize <= 0)
                     ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
 
-                if (GetOffsetOnPage(address) + allocatedSize > PageSize)
-                    break;
+                recordAddress += allocatedSize;
+                if (recordAddress > endAddress)
+                    ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - endAddress} bytes");
 
                 if (logRecord.Info.Valid && logRecord.Info.RecordHasObjects)
                 {
                     _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
                     totalSize += keyLength + (long)valueLength;
                 }
-                address += allocatedSize;
             }
 
             return totalSize;
+        }
+
+        /// <summary>
+        /// Determine if this is the last valid record on the page.
+        /// </summary>
+        /// <param name="recordAddress">Address of the current record</param>
+        /// <param name="endAddress">Address of the end of the page</param>
+        /// <returns>True if this is the last valid record on the page, otherwise false</returns>
+        private bool IsLastRecordOnPage(long recordAddress, long endAddress, out long nextRecordAddress)
+        {
+            while (recordAddress < endAddress)
+            {
+                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
+                var allocatedSize = logRecord.AllocatedSize;
+                if (allocatedSize <= 0)
+                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
+
+                recordAddress += allocatedSize;
+                if (recordAddress > endAddress)
+                    ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - endAddress} bytes");
+
+                if (logRecord.Info.Valid)
+                {
+                    nextRecordAddress = recordAddress;
+                    return false;
+                }
+            }
+            nextRecordAddress = -1L;
+            return true;
         }
 
         /// <inheritdoc/>
         internal override long LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice, long budgetLimit = NoBudget)
         {
             var address = Math.Max(fromAddress, GetFirstValidLogicalAddressOnPage(page));
-            var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
-            if (address >= stopAddress)
-                return stopAddress;
+            var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
+            if (address >= endAddress)
+                return endAddress;
 
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;
 
-            for (var scanAddress = address; scanAddress < stopAddress;)
+            for (var recordAddress = address; recordAddress < endAddress; /*incremented in loop*/)
             {
-                var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
                 var allocatedSize = logRecord.AllocatedSize;
                 if (allocatedSize <= 0)
-                    break;
+                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
 
-                var nextAddress = scanAddress + allocatedSize;
-                if (GetOffsetOnPage(scanAddress) + allocatedSize > PageSize)
-                    break;
+                recordAddress += allocatedSize;
+                if (recordAddress > PageSize)
+                    ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - endAddress} bytes");
 
                 if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                 {
-                    if (!startPosition.IsSet)
-                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
                     endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    if (!startPosition.IsSet)
+                        startPosition = endPosition;
                 }
-
-                scanAddress = nextAddress;
             }
 
             if (!startPosition.IsSet)
-                return stopAddress;
+                return endAddress;
 
             endPosition.Advance((ulong)endKeyLength + endValueLength);
             var totalBytesToRead = endPosition - startPosition;
@@ -1257,16 +1283,16 @@ namespace Tsavorite.core
             long budgetUsed = 0;
             try
             {
-                while (address < stopAddress)
+                while (address < endAddress)
                 {
                     var logRecord = new LogRecord(GetPhysicalAddress(address), objectIdMapToUse);
                     var allocatedSize = logRecord.AllocatedSize;
                     if (allocatedSize <= 0)
-                        break;
+                        ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
 
                     var nextAddress = address + allocatedSize;
-                    if (GetOffsetOnPage(address) + allocatedSize > PageSize)
-                        break;
+                    if (nextAddress > endAddress)
+                        ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {nextAddress - endAddress} bytes");
 
                     if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
@@ -1288,54 +1314,52 @@ namespace Tsavorite.core
                 logReader.OnEndReadRecords();
             }
 
-            return stopAddress;
+            return endAddress;
         }
 
         /// <inheritdoc/>
         internal override long FindHeadAddressCutoffOnPage(long page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
         {
-            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var recordAddress = GetFirstValidLogicalAddressOnPage(page);
             var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
-            var extraNeeded = totalPageObjectSize - remainingBudget;
-            if (extraNeeded <= 0)
+            var overBudgetAmount = totalPageObjectSize - remainingBudget;
+            if (overBudgetAmount <= 0)
             {
                 numPagesBelowToEvict = 0;
-                return firstValidAddress;
+                return recordAddress;
             }
 
-            var maxBudgetOnPage = remainingBudget + ((long)numPagesBelowCurrentPage * PageSize);
-            if (totalPageObjectSize <= maxBudgetOnPage)
+            // We are over budget. First see if we can evict enough pages to get below budget.
+            var pagesToEvictToGetUnderBudget = (int)((overBudgetAmount + PageSize - 1) / PageSize);
+            if (pagesToEvictToGetUnderBudget <= numPagesBelowCurrentPage)
             {
-                numPagesBelowToEvict = (int)((extraNeeded + PageSize - 1) / PageSize);
-                return firstValidAddress;
+                // We can, and may even still have some pages left below us that can remain.
+                numPagesBelowToEvict = pagesToEvictToGetUnderBudget;
+                return recordAddress;
             }
 
+            // We cannot evict enough pages to get under budget. Evict all pages below, and then skip records on this page until we are under budget.
             numPagesBelowToEvict = numPagesBelowCurrentPage;
-            if (maxBudgetOnPage <= 0)
-                return stopAddress;
+            overBudgetAmount -= (long)numPagesBelowToEvict * PageSize;
 
-            var bytesToSkip = totalPageObjectSize - maxBudgetOnPage;
-            var address = firstValidAddress;
-            while (address < stopAddress)
+            while (recordAddress < stopAddress)
             {
-                var logRecord = new LogRecord(GetPhysicalAddress(address));
+                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
                 var allocatedSize = logRecord.AllocatedSize;
                 if (allocatedSize <= 0)
-                    break;
+                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
 
-                var nextAddress = address + allocatedSize;
-                if (GetOffsetOnPage(address) + allocatedSize > PageSize)
-                    break;
+                recordAddress += allocatedSize;
+                if (recordAddress > stopAddress)
+                    ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - stopAddress} bytes");
 
-                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                if (logRecord.Info.Valid && logRecord.Info.RecordHasObjects)
                 {
                     _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-                    bytesToSkip -= keyLength + (long)valueLength;
-                    if (bytesToSkip <= 0)
-                        return nextAddress;
+                    overBudgetAmount -= keyLength + (long)valueLength;
+                    if (overBudgetAmount <= 0)
+                        return recordAddress;
                 }
-
-                address = nextAddress;
             }
 
             return stopAddress;

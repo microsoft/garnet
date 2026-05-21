@@ -25,6 +25,8 @@ namespace Tsavorite.core
         ///     for object serialization to the object log.</summary>
         public const int kMaxSegmentSizeBits = 62;
 
+        public const int kMinPageCount = 2;
+
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMinMemorySizeBits = kMinPageSizeBits;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>

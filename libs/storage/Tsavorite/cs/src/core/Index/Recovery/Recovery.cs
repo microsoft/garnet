@@ -68,7 +68,7 @@ namespace Tsavorite.core
             while (readStatus[pageIndex] == ReadStatus.Pending)
                 readSemaphore.Wait();
             if (readStatus[pageIndex] == ReadStatus.Error)
-                throw new TsavoriteException($"Error reading page {pageIndex} from device");
+                ThrowTsavoriteException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -77,7 +77,7 @@ namespace Tsavorite.core
             while (readStatus[pageIndex] == ReadStatus.Pending)
                 await readSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             if (readStatus[pageIndex] == ReadStatus.Error)
-                throw new TsavoriteException($"Error reading page {pageIndex} from device");
+                ThrowTsavoriteException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -862,7 +862,7 @@ namespace Tsavorite.core
                 if (totalPageObjectSize == 0)
                     continue;
 
-                var remainingBudget = hlogBase.logSizeTracker.GetRemainingHeapBudget();
+                var remainingBudget = hlogBase.logSizeTracker.RemainingBudget;
                 if (totalPageObjectSize <= remainingBudget)
                 {
                     _ = hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice, remainingBudget);
