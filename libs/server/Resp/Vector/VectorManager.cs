@@ -911,7 +911,8 @@ namespace Garnet.server
                         MemoryMarshal.Cast<byte, float>(from).CopyTo(into);
                         break;
 
-                    // XBin_I8 stores _signed_ bytes
+                    // XNoQuant_I8 & XBin_I8 stores _signed_ bytes
+                    case VectorQuantType.XNoQuant_I8:
                     case VectorQuantType.XBin_I8:
                         for (var i = 0; i < from.Length; i++)
                         {
@@ -919,8 +920,9 @@ namespace Garnet.server
                         }
                         break;
 
-                    // NoQuant_U8 stores unsigned bytes
+                    // XNoQuant_I8 & NoQuant_U8 stores unsigned bytes
                     case VectorQuantType.XNoQuant_U8:
+                    case VectorQuantType.XBin_U8:
                         for (var i = 0; i < from.Length; i++)
                         {
                             into[i] = from[i];
