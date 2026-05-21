@@ -216,18 +216,33 @@ namespace Garnet.server.ACL
                 // Individual commands or command|subcommand pairs
                 string commandName = op.Substring(1);
 
-                if (!TryParseCommandForAcl(commandName, out RespCommand command))
+                if (TryParseCommandForAcl(commandName, out RespCommand command))
                 {
-                    throw new AclCommandDoesNotExistException(commandName);
+                    if (op[0] == '-')
+                    {
+                        user.RemoveCommand(command);
+                    }
+                    else
+                    {
+                        user.AddCommand(command);
+                    }
                 }
-
-                if (op[0] == '-')
+                else if (IsValidCustomCommandName(commandName))
                 {
-                    user.RemoveCommand(command);
+                    // Modules may not be loaded yet (ACL file is parsed before LoadModules), so we
+                    // store the name on the user and resolve it later (startup pass, SETUSER, dispatch).
+                    if (op[0] == '-')
+                    {
+                        user.RemoveCustomCommand(commandName);
+                    }
+                    else
+                    {
+                        user.AddCustomCommand(commandName);
+                    }
                 }
                 else
                 {
-                    user.AddCommand(command);
+                    throw new AclCommandDoesNotExistException(commandName);
                 }
             }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
@@ -305,6 +320,49 @@ namespace Garnet.server.ACL
             // Some commands aren't really commands, so ACLs shouldn't accept their names
             static bool IsInvalidCommandToAcl(RespCommand command)
             => command == RespCommand.INVALID || command == RespCommand.NONE || command.NormalizeForACLs() != command;
+        }
+
+        /// <summary>
+        /// Maximum length (in chars) of a custom command name accepted in an ACL rule.
+        /// </summary>
+        internal const int MaxCustomCommandNameLength = 64;
+
+        /// <summary>
+        /// Returns true if <paramref name="name"/> is a syntactically valid custom command name.
+        /// Strict validation prevents the unknown-name fallback from accepting RESP-meta bytes
+        /// or whitespace-bearing junk. Allowed: ASCII letters/digits and '.', '_', '-', '|';
+        /// first character must be alphanumeric.
+        /// </summary>
+        internal static bool IsValidCustomCommandName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length > MaxCustomCommandNameLength)
+            {
+                return false;
+            }
+
+            char first = name[0];
+            bool firstOk = (first >= 'A' && first <= 'Z')
+                        || (first >= 'a' && first <= 'z')
+                        || (first >= '0' && first <= '9');
+            if (!firstOk)
+            {
+                return false;
+            }
+
+            foreach (char c in name)
+            {
+                bool ok = (c >= 'A' && c <= 'Z')
+                       || (c >= 'a' && c <= 'z')
+                       || (c >= '0' && c <= '9')
+                       // '|' is permitted so custom names can mirror built-in subcommand notation (e.g. CLIENT|GETNAME).
+                       || c == '.' || c == '_' || c == '-' || c == '|';
+                if (!ok)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

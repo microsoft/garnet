@@ -127,12 +127,38 @@ namespace Garnet.server
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_userHandle != null));
 
+            // Custom (extension) commands: per-name allow/deny can override the generic bitmap bit,
+            // so route them through CanAccessCustomCommand. The switch arms match by name, which
+            // keeps the dispatch independent of RespCommand enum value ordering.
+            if (_authenticator.IsAuthenticated)
+            {
+                string customName = cmd switch
+                {
+                    RespCommand.CustomRawStringCmd => currentCustomRawStringCommand?.NameStr,
+                    RespCommand.CustomObjCmd => currentCustomObjectCommand?.NameStr,
+                    RespCommand.CustomTxn => currentCustomTransaction?.NameStr,
+                    RespCommand.CustomProcedure => currentCustomProcedure?.NameStr,
+                    _ => null,
+                };
+
+                if (customName != null)
+                {
+                    if (!_userHandle.User.CanAccessCustomCommand(cmd, customName))
+                    {
+                        OnACLOrNoScriptFailure(this, cmd);
+                        return false;
+                    }
+                    return true;
+                }
+            }
+
             // Authentication and authorization checks must be performed against the effective user.
             if ((!_authenticator.IsAuthenticated || !_userHandle.User.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
                 OnACLOrNoScriptFailure(this, cmd);
                 return false;
             }
+
             return true;
         }
 

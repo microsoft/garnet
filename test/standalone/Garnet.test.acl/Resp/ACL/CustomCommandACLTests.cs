@@ -1,0 +1,678 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.common;
+using Garnet.server;
+using Garnet.server.ACL;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
+
+namespace Garnet.test.Resp.ACL
+{
+    /// <summary>
+    /// Tests for per-name ACLs on custom (extension) commands.
+    /// Exercises the parser fallback, deny-precedence semantics, SETUSER strict validation,
+    /// case-insensitivity, name validation, the per-user cap, and ACL save/load round-trip.
+    /// </summary>
+    [TestFixture]
+    public class CustomCommandACLTests : TestBase
+    {
+        private const string DefaultPassword = nameof(CustomCommandACLTests);
+        private const string DefaultUser = "default";
+
+        private GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
+                useAcl: true, enableLua: false,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
+
+            ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out var respCustomCommandsInfo));
+            ClassicAssert.IsNotNull(respCustomCommandsInfo);
+
+            // Two raw-string commands so we can test deny-precedence (allow one, deny another in the same category).
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
+
+            // Minimal no-op transaction proc + procedure registered so we can cover the
+            // CustomTxn and CustomProcedure dispatch branches of CheckACLPermissions
+            // (the bitmap-only fallthrough path is exercised by SETWPIFPGT/MYDICTGET).
+            server.Register.NewTransactionProc("NOOPTXN", () => new AclNoOpTxn(), new RespCommandsInfo { Arity = -1 });
+            server.Register.NewProcedure("NOOPPROC", () => new AclNoOpProc(), new RespCommandsInfo { Arity = -1 });
+
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        // ----- Connection helpers ---------------------------------------------------------------
+
+        private static async Task<GarnetClient> ConnectAsync(string user, string password)
+        {
+            var c = TestUtils.GetGarnetClient();
+            await c.ConnectAsync().ConfigureAwait(false);
+            var auth = await c.ExecuteForStringResultAsync("AUTH", [user, password]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", auth);
+            return c;
+        }
+
+        private static async Task<string> SetUserAsync(GarnetClient admin, string user, params string[] ops)
+        {
+            return await admin.ExecuteForStringResultAsync("ACL", new[] { "SETUSER", user, "on", ">pw" }.Concat(ops).ToArray()).ConfigureAwait(false);
+        }
+
+        private static async Task<Exception> CaptureExceptionAsync(Func<Task> action)
+        {
+            try
+            {
+                await action().ConfigureAwait(false);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        // ----- Parser-level (unit) tests -------------------------------------------------------
+
+        [Test]
+        public void Parser_AcceptsUnknownNameAsCustomCommand()
+        {
+            // Unknown names that pass the format check should land on the custom-name path
+            // rather than throwing AclCommandDoesNotExistException.
+            var user = new User("alice");
+            ACLParser.ApplyACLOpToUser(ref user, "+json.get");
+
+            CollectionAssert.Contains(user.CustomCommandsAllowed, "JSON.GET");
+            CollectionAssert.DoesNotContain(user.CustomCommandsDenied, "JSON.GET");
+        }
+
+        [Test]
+        public void Parser_RejectsNameWithWhitespace()
+        {
+            // Tokens are split by whitespace at the file/wire level, but a name token that
+            // somehow carries embedded whitespace (or other forbidden chars) must still be rejected.
+            var user = new User("alice");
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+bad\tname"));
+        }
+
+        [Test]
+        public void Parser_RejectsNonAsciiName()
+        {
+            var user = new User("alice");
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+jsön.get"));
+        }
+
+        [Test]
+        public void Parser_RejectsNameOverLengthLimit()
+        {
+            var user = new User("alice");
+            string longName = new string('a', ACLParser.MaxCustomCommandNameLength + 1);
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+" + longName));
+        }
+
+        [Test]
+        public void Parser_RejectsNameWithLeadingNonAlphanumeric()
+        {
+            // Real RESP command names always begin with [A-Za-z0-9]. Names like "-foo",
+            // ".foo", "_foo", "|foo" must be rejected so the unknown-name fallback can't
+            // absorb tokens that look like punctuation or stray separators.
+            var user = new User("alice");
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+-foo"));
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+.foo"));
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+_foo"));
+            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+|foo"));
+        }
+
+        [Test]
+        public void Parser_AcceptsNameAtLengthLimit()
+        {
+            var user = new User("alice");
+            string maxName = new string('a', ACLParser.MaxCustomCommandNameLength);
+            ACLParser.ApplyACLOpToUser(ref user, "+" + maxName);
+            CollectionAssert.Contains(user.CustomCommandsAllowed, maxName.ToUpperInvariant());
+        }
+
+        [Test]
+        public void Parser_DenyPrecedenceOnSameName()
+        {
+            // +name then -name → name lives in deny set only (deny wins).
+            var user = new User("alice");
+            ACLParser.ApplyACLOpToUser(ref user, "+@custom");
+            ACLParser.ApplyACLOpToUser(ref user, "+json.set");
+            ACLParser.ApplyACLOpToUser(ref user, "-json.set");
+
+            CollectionAssert.DoesNotContain(user.CustomCommandsAllowed, "JSON.SET");
+            CollectionAssert.Contains(user.CustomCommandsDenied, "JSON.SET");
+        }
+
+        [Test]
+        public void Parser_LastWriteWins_AllowAfterDeny()
+        {
+            // -name then +name → name lives in allow set only.
+            var user = new User("alice");
+            ACLParser.ApplyACLOpToUser(ref user, "-json.set");
+            ACLParser.ApplyACLOpToUser(ref user, "+json.set");
+
+            CollectionAssert.Contains(user.CustomCommandsAllowed, "JSON.SET");
+            CollectionAssert.DoesNotContain(user.CustomCommandsDenied, "JSON.SET");
+        }
+
+        [Test]
+        public void Parser_CaseInsensitiveNormalization()
+        {
+            var user1 = new User("alice");
+            ACLParser.ApplyACLOpToUser(ref user1, "+JSON.GET");
+
+            var user2 = new User("bob");
+            ACLParser.ApplyACLOpToUser(ref user2, "+json.get");
+
+            var user3 = new User("carol");
+            ACLParser.ApplyACLOpToUser(ref user3, "+Json.Get");
+
+            // All three normalize to the same uppercase entry so dispatch-time lookup matches NameStr.
+            CollectionAssert.Contains(user1.CustomCommandsAllowed, "JSON.GET");
+            CollectionAssert.Contains(user2.CustomCommandsAllowed, "JSON.GET");
+            CollectionAssert.Contains(user3.CustomCommandsAllowed, "JSON.GET");
+        }
+
+        [Test]
+        public void Parser_DescribeUserRoundTripPreservesCustomSets()
+        {
+            // Regression for ACL file persistence: writing a user out via DescribeUser and parsing
+            // the resulting line back must produce an equivalent permission set. If rationalization
+            // drops -name / +name tokens (or the parser fails to re-absorb them), saved ACL files
+            // would silently change semantics on reload.
+            var u = new User("alice");
+            u.AddCategory(RespAclCategories.Custom);
+            u.AddCustomCommand("MYDICTGET");
+            u.RemoveCustomCommand("SETWPIFPGT");
+
+            string desc = u.DescribeUser();
+            var u2 = ACLParser.ParseACLRule(desc);
+
+            ClassicAssert.IsTrue(u.CopyCommandPermissionSet().IsEquivalentTo(u2.CopyCommandPermissionSet()),
+                $"Round-tripped user should be equivalent. Description: {desc}");
+            CollectionAssert.Contains(u2.CustomCommandsAllowed, "MYDICTGET");
+            CollectionAssert.Contains(u2.CustomCommandsDenied, "SETWPIFPGT");
+        }
+
+        // ----- Per-user cap (unit) -------------------------------------------------------------
+
+        [Test]
+        public void User_EnforcesMaxCustomCommandsPerUserCap()
+        {
+            // Adding up to the cap should succeed; the (cap+1)th distinct entry must throw.
+            var user = new User("alice");
+            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
+            {
+                user.AddCustomCommand($"cmd_{i}");
+            }
+
+            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
+
+            var ex = Assert.Throws<ACLException>(() => user.AddCustomCommand("overflow_cmd"));
+            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
+        }
+
+        [Test]
+        public void User_CapIgnoresIdempotentReAdds()
+        {
+            // Re-adding an existing entry must not consume cap budget.
+            var user = new User("alice");
+            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
+            {
+                user.AddCustomCommand($"cmd_{i}");
+            }
+            // Re-adding any name already present should be a no-op even at the cap.
+            Assert.DoesNotThrow(() => user.AddCustomCommand("cmd_0"));
+            Assert.DoesNotThrow(() => user.AddCustomCommand("CMD_0")); // case-insensitive
+        }
+
+        [Test]
+        public void User_CapAllowsSwapBetweenAllowAndDeny()
+        {
+            // At the cap, toggling an existing entry between allow and deny must succeed —
+            // the post-op total is unchanged.
+            var user = new User("alice");
+            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
+            {
+                user.AddCustomCommand($"cmd_{i}");
+            }
+            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
+            Assert.AreEqual(0, user.CustomCommandsDenied.Count);
+
+            // Move cmd_0 from allow -> deny. Net change = 0. Must not throw.
+            Assert.DoesNotThrow(() => user.RemoveCustomCommand("cmd_0"));
+            Assert.AreEqual(User.MaxCustomCommandsPerUser - 1, user.CustomCommandsAllowed.Count);
+            Assert.AreEqual(1, user.CustomCommandsDenied.Count);
+            CollectionAssert.Contains(user.CustomCommandsDenied, "CMD_0");
+
+            // Move cmd_0 back from deny -> allow. Net change = 0. Must not throw.
+            Assert.DoesNotThrow(() => user.AddCustomCommand("cmd_0"));
+            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
+            Assert.AreEqual(0, user.CustomCommandsDenied.Count);
+
+            // True overflow (new name not in either set) must still throw.
+            var ex = Assert.Throws<ACLException>(() => user.AddCustomCommand("genuinely_new"));
+            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
+        }
+
+        [Test]
+        public void User_RemoveCustomCommandHonorsCapForNewNames()
+        {
+            // Regression: cap on the Remove path must still fire for genuinely new entries
+            // (the swap-allowed change must not weaken the limit for fresh deny entries).
+            var user = new User("alice");
+            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
+            {
+                user.AddCustomCommand($"cmd_{i}");
+            }
+
+            var ex = Assert.Throws<ACLException>(() => user.RemoveCustomCommand("never_seen"));
+            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
+        }
+
+        [Test]
+        public void User_AddCustomCommand_NullThrows()
+        {
+            // Public API must not NRE on null input.
+            var user = new User("alice");
+            Assert.Throws<ArgumentNullException>(() => user.AddCustomCommand(null));
+            Assert.Throws<ArgumentNullException>(() => user.RemoveCustomCommand(null));
+        }
+
+        [Test]
+        public void PermissionSet_CustomSetsAreCaseInsensitive()
+        {
+            // Regression for the comparer hardening: callers must not have to uppercase
+            // before checking Contains. Add via the User-level API (which uppercases),
+            // then verify Contains hits regardless of caller casing.
+            var user = new User("alice");
+            user.AddCustomCommand("Json.Get");
+
+            var perms = user.CopyCommandPermissionSet();
+            ClassicAssert.IsTrue(perms.CustomAllowed.Contains("JSON.GET"));
+            ClassicAssert.IsTrue(perms.CustomAllowed.Contains("json.get"));
+            ClassicAssert.IsTrue(perms.CustomAllowed.Contains("Json.Get"));
+
+            // Deny set should behave the same way.
+            user.RemoveCustomCommand("Json.Get");
+            perms = user.CopyCommandPermissionSet();
+            ClassicAssert.IsFalse(perms.CustomAllowed.Contains("JSON.GET"));
+            ClassicAssert.IsTrue(perms.CustomDenied.Contains("JSON.GET"));
+            ClassicAssert.IsTrue(perms.CustomDenied.Contains("json.get"));
+        }
+
+        // ----- CommandPermissionSet (unit) -----------------------------------------------------
+
+        [Test]
+        public void PermissionSet_DenyBeatsBitmap()
+        {
+            // User with +@custom (sets generic CustomRawStringCmd bit) and -setwpifpgt (per-name deny).
+            // CanAccessCustomCommand(CustomRawStringCmd, "SETWPIFPGT") must return false because deny wins.
+            var user = new User("alice");
+            user.AddCategory(RespAclCategories.Custom);
+            user.RemoveCustomCommand("SETWPIFPGT");
+
+            ClassicAssert.IsFalse(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "SETWPIFPGT"));
+            ClassicAssert.IsTrue(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "MYDICTGET"));
+        }
+
+        [Test]
+        public void PermissionSet_AllowOverridesMissingBitmap()
+        {
+            // User with -@all but +setwpifpgt: bitmap bit not set for CustomRawStringCmd, but per-name allow grants access.
+            var user = new User("alice");
+            user.RemoveCategory(RespAclCategories.All);
+            user.AddCustomCommand("SETWPIFPGT");
+
+            ClassicAssert.IsTrue(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "SETWPIFPGT"));
+            ClassicAssert.IsFalse(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "MYDICTGET"));
+        }
+
+        [Test]
+        public void PermissionSet_AllSentinelAllowsEverything()
+        {
+            var user = new User("alice");
+            user.AddCategory(RespAclCategories.All);
+
+            ClassicAssert.IsTrue(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "ANYTHING.GOES"));
+            ClassicAssert.IsTrue(user.CanAccessCustomCommand(RespCommand.CustomProcedure, "WHATEVER"));
+        }
+
+        [Test]
+        public void PermissionSet_AllSentinelMinusName_DeniesThatName()
+        {
+            // +@all -setwpifpgt: must transition off the sentinel via Copy() and honor the deny.
+            var user = new User("alice");
+            user.AddCategory(RespAclCategories.All);
+            user.RemoveCustomCommand("SETWPIFPGT");
+
+            ClassicAssert.IsFalse(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "SETWPIFPGT"));
+            // Everything else still allowed because the (non-sentinel) bitmap has all bits set.
+            ClassicAssert.IsTrue(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "OTHER"));
+        }
+
+        [Test]
+        public void PermissionSet_DefaultFailsClosed()
+        {
+            // Fresh user with no permissions must deny custom commands.
+            var user = new User("alice");
+            ClassicAssert.IsFalse(user.CanAccessCustomCommand(RespCommand.CustomRawStringCmd, "ANYTHING"));
+        }
+
+        [Test]
+        public void PermissionSet_IsEquivalentToConsidersCustomSets()
+        {
+            // Two users with the same bitmap but different per-name sets must NOT be equivalent.
+            // (Regression test for description rationalization not dropping deny tokens.)
+            var u1 = new User("a");
+            u1.AddCategory(RespAclCategories.Custom);
+
+            var u2 = new User("b");
+            u2.AddCategory(RespAclCategories.Custom);
+            u2.RemoveCustomCommand("SETWPIFPGT");
+
+            ClassicAssert.IsFalse(u1.CopyCommandPermissionSet().IsEquivalentTo(u2.CopyCommandPermissionSet()));
+        }
+
+        // ----- ACL SETUSER strict validation (integration) -------------------------------------
+
+        [Test]
+        public async Task SetUser_RejectsUnknownCustomName()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            var ex = await CaptureExceptionAsync(async () =>
+            {
+                await SetUserAsync(admin, "alice", "+definitely_not_registered");
+            });
+
+            ClassicAssert.IsNotNull(ex, "Expected SETUSER to fail for unknown custom command name");
+            StringAssert.Contains("Unknown custom command", ex.Message);
+        }
+
+        [Test]
+        public async Task SetUser_AcceptsRegisteredCustomName()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            var res = await SetUserAsync(admin, "alice", "+setwpifpgt");
+            ClassicAssert.AreEqual("OK", res);
+        }
+
+        [Test]
+        public async Task SetUser_RejectsInvalidNameSyntax()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            // Non-ASCII character in name — must be rejected before the strict registration check.
+            var ex = await CaptureExceptionAsync(async () =>
+            {
+                await SetUserAsync(admin, "alice", "+jsön.get");
+            });
+            ClassicAssert.IsNotNull(ex);
+        }
+
+        [Test]
+        public async Task SetUser_AcceptsCommandRegisteredWithoutCommandInfo()
+        {
+            // Regression: IsCustomCommandRegistered must succeed for commands registered without
+            // RespCommandsInfo. Before the polish pass it consulted the info-only dict and would
+            // false-reject. We register an extra command here with null commandInfo and verify
+            // SETUSER's strict validation accepts it.
+            const string noInfoName = "NOINFOCMD";
+            server.Register.NewCommand(noInfoName, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
+                commandInfo: null, commandDocs: null);
+
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            var res = await SetUserAsync(admin, "bob", "+" + noInfoName.ToLowerInvariant());
+            ClassicAssert.AreEqual("OK", res);
+        }
+
+        // Reflects out the live AccessControlList from a running server. `GarnetServer.Provider`
+        // is internal to Garnet.host (no InternalsVisibleTo for Garnet.test.acl), so reflection
+        // is the least-invasive escape hatch — used only to seed loose-loaded state for these
+        // two regression tests.
+        private static AccessControlList GetAcl(GarnetServer s)
+        {
+            var providerProp = typeof(GarnetServer).GetField("Provider",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            var provider = providerProp.GetValue(s);
+            var storeWrapperProp = provider.GetType().GetProperty("StoreWrapper",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            var sw = storeWrapperProp.GetValue(provider);
+            var aclField = sw.GetType().GetField("accessControlList");
+            return (AccessControlList)aclField.GetValue(sw);
+        }
+
+        [Test]
+        public async Task SetUser_AllowsSwapOfLooseLoadedName()
+        {
+            // Regression: an ACL file may carry +name for a module that hasn't registered yet
+            // (loose-by-default at file load). A later SETUSER toggling that name allow->deny
+            // must succeed — the name is already on the user, so SETUSER is not introducing
+            // a brand-new unresolved reference. Previously this threw "Unknown custom command".
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            var ok = await SetUserAsync(admin, "alice", "on");
+            ClassicAssert.AreEqual("OK", ok);
+
+            const string LooseName = "LOOSELOADED_PROBE";
+            var acl = GetAcl(server);
+            ClassicAssert.IsNotNull(acl);
+            var aliceHandle = acl.GetUserHandle("alice");
+            ClassicAssert.IsNotNull(aliceHandle);
+
+            // Inject a loose-loaded name via the parser path (bypassing SETUSER's strict check,
+            // which is exactly what AccessControlList.Load does at startup for ACL-file entries).
+            var injected = new User(aliceHandle.User);
+            ACLParser.ApplyACLOpToUser(ref injected, "+" + LooseName.ToLowerInvariant());
+            CollectionAssert.Contains(injected.CustomCommandsAllowed, LooseName);
+            ClassicAssert.IsTrue(aliceHandle.TrySetUser(injected, aliceHandle.User));
+
+            // Toggle allow->deny over the wire. Pre-fix: throws. Post-fix: succeeds.
+            var toggle = await SetUserAsync(admin, "alice", "-" + LooseName.ToLowerInvariant());
+            ClassicAssert.AreEqual("OK", toggle);
+
+            var aliceAfter = acl.GetUserHandle("alice").User;
+            CollectionAssert.Contains(aliceAfter.CustomCommandsDenied, LooseName);
+            CollectionAssert.DoesNotContain(aliceAfter.CustomCommandsAllowed, LooseName);
+        }
+
+        [Test]
+        public async Task SetUser_AllowsSwapOfLooseLoadedName_DenyToAllow()
+        {
+            // Mirror of the above for the other direction (deny -> allow).
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            var ok = await SetUserAsync(admin, "alice", "on");
+            ClassicAssert.AreEqual("OK", ok);
+
+            const string LooseName = "LOOSELOADED_PROBE2";
+            var acl = GetAcl(server);
+            var aliceHandle = acl.GetUserHandle("alice");
+
+            var injected = new User(aliceHandle.User);
+            ACLParser.ApplyACLOpToUser(ref injected, "-" + LooseName.ToLowerInvariant());
+            CollectionAssert.Contains(injected.CustomCommandsDenied, LooseName);
+            ClassicAssert.IsTrue(aliceHandle.TrySetUser(injected, aliceHandle.User));
+
+            var toggle = await SetUserAsync(admin, "alice", "+" + LooseName.ToLowerInvariant());
+            ClassicAssert.AreEqual("OK", toggle);
+
+            var aliceAfter = acl.GetUserHandle("alice").User;
+            CollectionAssert.Contains(aliceAfter.CustomCommandsAllowed, LooseName);
+            CollectionAssert.DoesNotContain(aliceAfter.CustomCommandsDenied, LooseName);
+        }
+
+        // ----- Dispatch-level deny / allow (integration) ---------------------------------------
+
+        [Test]
+        public async Task Dispatch_DenyPrecedence_PlusCategoryMinusName()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            await SetUserAsync(admin, "alice", "+@custom", "-setwpifpgt");
+
+            using var alice = await ConnectAsync("alice", "pw");
+
+            // SETWPIFPGT must be denied (explicit -name beats +@custom).
+            var denied = await CaptureExceptionAsync(async () =>
+            {
+                await alice.ExecuteForStringResultAsync("SETWPIFPGT", ["k", "v", "\0\0\0\0\0\0\0\0"]).ConfigureAwait(false);
+            });
+            ClassicAssert.IsNotNull(denied, "SETWPIFPGT should have been denied by -setwpifpgt");
+            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+
+            // MYDICTGET is still permitted (only SETWPIFPGT was denied).
+            var mydict = await alice.ExecuteForStringResultAsync("MYDICTGET", ["foo", "bar"]).ConfigureAwait(false);
+            // Returns nil/null on miss; just confirms the call wasn't rejected by ACL.
+            ClassicAssert.IsNull(mydict);
+        }
+
+        [Test]
+        public async Task Dispatch_PlusNameFromNone_AllowsOnlyThatCommand()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            // Strip everything, then add only SETWPIFPGT.
+            await SetUserAsync(admin, "alice", "-@all", "+ping", "+auth", "+setwpifpgt");
+
+            using var alice = await ConnectAsync("alice", "pw");
+
+            // Permitted command works.
+            var ok = await alice.ExecuteForStringResultAsync("SETWPIFPGT", ["k", "v", "\0\0\0\0\0\0\0\0"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", ok);
+
+            // Sibling custom command is denied.
+            var denied = await CaptureExceptionAsync(async () =>
+            {
+                await alice.ExecuteForStringResultAsync("MYDICTGET", ["foo", "bar"]).ConfigureAwait(false);
+            });
+            ClassicAssert.IsNotNull(denied, "MYDICTGET should not be reachable without +mydictget or +@custom");
+        }
+
+        [Test]
+        public async Task Dispatch_CaseInsensitiveOnTheWire()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            // Mixed-case in the SETUSER token; dispatch-time lookup is against uppercased NameStr.
+            await SetUserAsync(admin, "alice", "-@all", "+ping", "+auth", "+SeTwPiFpGt");
+
+            using var alice = await ConnectAsync("alice", "pw");
+            var ok = await alice.ExecuteForStringResultAsync("SETWPIFPGT", ["k", "v", "\0\0\0\0\0\0\0\0"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", ok);
+        }
+
+        // ----- ACL GETUSER / LIST round-trip ---------------------------------------------------
+
+        [Test]
+        public async Task GetUser_IncludesCustomNameTokens()
+        {
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            await SetUserAsync(admin, "alice", "+@custom", "-setwpifpgt");
+
+            // ACL LIST returns a description per user; alice's row must contain -setwpifpgt.
+            var lines = await admin.ExecuteForStringArrayResultAsync("ACL", ["LIST"]).ConfigureAwait(false);
+            ClassicAssert.IsNotNull(lines);
+            string aliceLine = lines.FirstOrDefault(l => l != null && l.StartsWith("user alice "));
+            ClassicAssert.IsNotNull(aliceLine, "alice should appear in ACL LIST");
+            StringAssert.Contains("-setwpifpgt", aliceLine.ToLowerInvariant());
+        }
+
+        [Test]
+        public async Task Dispatch_CustomTxn_DenyPrecedence()
+        {
+            // Covers the CustomTxn branch of CheckACLPermissions.
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+
+            // +@custom would grant the txn via the bitmap; -NOOPTXN must still beat it.
+            await SetUserAsync(admin, "alice", "+@custom", "-NOOPTXN");
+            using var alice = await ConnectAsync("alice", "pw");
+
+            var denied = await CaptureExceptionAsync(async () =>
+            {
+                await alice.ExecuteForStringResultAsync("NOOPTXN").ConfigureAwait(false);
+            });
+            ClassicAssert.IsNotNull(denied, "NOOPTXN should have been denied by -NOOPTXN");
+            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+        }
+
+        [Test]
+        public async Task Dispatch_CustomTxn_AllowFromMinusAll()
+        {
+            // Covers the CustomTxn allow path when the generic bitmap bit is clear.
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            await SetUserAsync(admin, "alice", "-@all", "+ping", "+auth", "+NOOPTXN");
+            using var alice = await ConnectAsync("alice", "pw");
+
+            var ok = await alice.ExecuteForStringResultAsync("NOOPTXN").ConfigureAwait(false);
+            // NoOp returns SUCCESS via the default txn response; we only care the call wasn't denied.
+            ClassicAssert.IsNotNull(ok);
+        }
+
+        [Test]
+        public async Task Dispatch_CustomProcedure_DenyPrecedence()
+        {
+            // Covers the CustomProcedure branch of CheckACLPermissions.
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            await SetUserAsync(admin, "alice", "+@custom", "-NOOPPROC");
+            using var alice = await ConnectAsync("alice", "pw");
+
+            var denied = await CaptureExceptionAsync(async () =>
+            {
+                await alice.ExecuteForStringResultAsync("NOOPPROC").ConfigureAwait(false);
+            });
+            ClassicAssert.IsNotNull(denied, "NOOPPROC should have been denied by -NOOPPROC");
+            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+        }
+
+        [Test]
+        public async Task Dispatch_CustomProcedure_AllowFromMinusAll()
+        {
+            // Covers the CustomProcedure allow path when the generic bitmap bit is clear.
+            using var admin = await ConnectAsync(DefaultUser, DefaultPassword);
+            await SetUserAsync(admin, "alice", "-@all", "+ping", "+auth", "+NOOPPROC");
+            using var alice = await ConnectAsync("alice", "pw");
+
+            var ok = await alice.ExecuteForStringResultAsync("NOOPPROC").ConfigureAwait(false);
+            ClassicAssert.IsNotNull(ok);
+        }
+    }
+
+    // No-op transaction proc / procedure used only by the ACL dispatch tests above.
+    // Kept inline so the test suite stays self-contained and doesn't pull in NoOpModule.
+    internal sealed class AclNoOpTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+            => true;
+
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            WriteSimpleString(ref output, "OK");
+        }
+    }
+
+    internal sealed class AclNoOpProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            WriteSimpleString(ref output, "OK");
+            return true;
+        }
+    }
+}

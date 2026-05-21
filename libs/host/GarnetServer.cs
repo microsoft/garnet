@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -302,6 +303,61 @@ namespace Garnet
                 servers[i].Register(WireFormat.ASCII, Provider);
 
             LoadModules(customCommandManager);
+
+            // ACL rules are parsed before modules load, so per-name custom-command entries land
+            // on users unresolved. Sweep them now against the registered modules.
+            ValidateCustomCommandACLs(customCommandManager);
+        }
+
+        private void ValidateCustomCommandACLs(CustomCommandManager customCommandManager)
+        {
+            if (opts.AuthSettings is not AclAuthenticationSettings)
+            {
+                return;
+            }
+
+            var acl = storeWrapper.accessControlList;
+            if (acl == null)
+            {
+                return;
+            }
+
+            var unresolved = new List<(string user, string name)>();
+            foreach (var kv in acl.GetUserHandles())
+            {
+                var u = kv.Value.User;
+                foreach (var name in u.CustomCommandsAllowed)
+                {
+                    if (!customCommandManager.IsCustomCommandRegistered(name))
+                    {
+                        unresolved.Add((kv.Key, name));
+                    }
+                }
+                foreach (var name in u.CustomCommandsDenied)
+                {
+                    if (!customCommandManager.IsCustomCommandRegistered(name))
+                    {
+                        unresolved.Add((kv.Key, name));
+                    }
+                }
+            }
+
+            if (unresolved.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var (user, name) in unresolved)
+            {
+                logger?.LogWarning("ACL rule references custom command '{name}' for user '{user}' which is not registered with any loaded module", name, user);
+            }
+
+            if (opts.AclStrictCustomCommands)
+            {
+                // Strict mode: fail closed so operators can't accidentally ship an ACL with typos
+                // that would silently match no command (and therefore deny by default at dispatch).
+                throw new GarnetException($"ACL strict mode: {unresolved.Count} unresolved (user, custom-command) entries in ACL rules. Disable acl-strict-custom-commands or load the appropriate module(s).");
+            }
         }
 
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,

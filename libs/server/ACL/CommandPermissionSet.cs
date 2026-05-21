@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -20,6 +22,12 @@ namespace Garnet.server.ACL
 
         // Each bit corresponds to RespCommand + subcommand
         private readonly ulong[] _commandList;
+
+        // Per-name allow/deny sets for custom (extension) commands. These names live outside
+        // the bitmap range because custom RespCommand IDs are assigned dynamically above
+        // LastValidCommand. OrdinalIgnoreCase matches CustomCommandManager's normalization.
+        private FrozenSet<string> _customAllowed = FrozenSet<string>.Empty;
+        private FrozenSet<string> _customDenied = FrozenSet<string>.Empty;
 
         private CommandPermissionSet(string description)
             : this(new ulong[CommandListLength], description)
@@ -63,6 +71,36 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Returns true if the given custom (extension) command can be run.
+        /// Deny precedence: an explicit -name beats any +@category that would otherwise allow it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CanRunCustomCommand(RespCommand genericCmd, string customName)
+        {
+            if (this == All)
+            {
+                return true;
+            }
+
+            if (_customDenied.Contains(customName))
+            {
+                return false;
+            }
+
+            if (_customAllowed.Contains(customName))
+            {
+                return true;
+            }
+
+            // Fall back to the generic bitmap bit (set by +@custom/+@all/+CustomRawStringCmd).
+            int index = (int)genericCmd;
+            int ulongIndex = index / 64;
+            int bitIndex = index % 64;
+
+            return (_commandList[ulongIndex] & (1UL << bitIndex)) != 0;
+        }
+
+        /// <summary>
         /// Copy this permission set.
         /// </summary>
         public CommandPermissionSet Copy()
@@ -78,8 +116,64 @@ namespace Garnet.server.ACL
                 Array.Copy(this._commandList, copy, this._commandList.Length);
             }
 
-            return new(copy, Description);
+            // FrozenSet is immutable; sharing the reference is safe and avoids re-hashing on copy.
+            return new(copy, Description)
+            {
+                _customAllowed = this._customAllowed,
+                _customDenied = this._customDenied,
+            };
         }
+
+        /// <summary>
+        /// Add a custom command name to the per-name allow list.
+        /// Removes any matching entry from the deny list (last-write-wins).
+        /// Not thread safe; callers must use the CAS pattern on User._enabledCommands.
+        /// </summary>
+        internal void AddCustomCommand(string normalizedName)
+        {
+            if (_customDenied.Contains(normalizedName))
+            {
+                var deniedCopy = new HashSet<string>(_customDenied, StringComparer.OrdinalIgnoreCase);
+                deniedCopy.Remove(normalizedName);
+                _customDenied = deniedCopy.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (!_customAllowed.Contains(normalizedName))
+            {
+                var allowedCopy = new HashSet<string>(_customAllowed, StringComparer.OrdinalIgnoreCase) { normalizedName };
+                _customAllowed = allowedCopy.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>
+        /// Add a custom command name to the per-name deny list.
+        /// Removes any matching entry from the allow list (last-write-wins).
+        /// Not thread safe; callers must use the CAS pattern on User._enabledCommands.
+        /// </summary>
+        internal void RemoveCustomCommand(string normalizedName)
+        {
+            if (_customAllowed.Contains(normalizedName))
+            {
+                var allowedCopy = new HashSet<string>(_customAllowed, StringComparer.OrdinalIgnoreCase);
+                allowedCopy.Remove(normalizedName);
+                _customAllowed = allowedCopy.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (!_customDenied.Contains(normalizedName))
+            {
+                var deniedCopy = new HashSet<string>(_customDenied, StringComparer.OrdinalIgnoreCase) { normalizedName };
+                _customDenied = deniedCopy.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>
+        /// Total count of per-name custom command entries (allow + deny).
+        /// </summary>
+        internal int CustomEntryCount => _customAllowed.Count + _customDenied.Count;
+
+        internal FrozenSet<string> CustomAllowed => _customAllowed;
+
+        internal FrozenSet<string> CustomDenied => _customDenied;
 
         /// <summary>
         /// Enable this command / sub-command pair.
@@ -157,7 +251,15 @@ namespace Garnet.server.ACL
             }
             else
             {
-                return this._commandList.AsSpan().SequenceEqual(other._commandList);
+                if (!this._commandList.AsSpan().SequenceEqual(other._commandList))
+                {
+                    return false;
+                }
+
+                // Per-name custom sets must also match for equivalence; otherwise rationalization
+                // could drop tokens like `-json.set` that meaningfully change runtime behavior.
+                return this._customAllowed.SetEquals(other._customAllowed)
+                    && this._customDenied.SetEquals(other._customDenied);
             }
         }
 

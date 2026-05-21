@@ -307,13 +307,17 @@ namespace Garnet.test.Resp.ACL
             //    Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
             //}
 
-            // Test None rejected
+            // Test None now accepted (per-name custom-command ACL fallthrough)
             {
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users3.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +none");
 
-                // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Before per-name custom-command ACLs landed this threw. The token is now
+                // accepted as a custom-command name at load (loose-by-default). Operators that
+                // want typo protection enable acl-strict-custom-commands, which would cause
+                // startup to fail after module load if the name is not registered.
+                using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+                Assert.That(server, Is.Not.Null);
             }
 
 
@@ -322,8 +326,11 @@ namespace Garnet.test.Resp.ACL
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users4.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +invalid");
 
-                // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Same change of contract as +none above: arbitrary alphanumeric tokens are
+                // now accepted as custom-command names at load. Strict mode is the mechanism
+                // for catching typos.
+                using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+                Assert.That(server, Is.Not.Null);
             }
         }
 

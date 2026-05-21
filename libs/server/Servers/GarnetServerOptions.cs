@@ -47,6 +47,13 @@ namespace Garnet.server
         public IAuthenticationSettings AuthSettings = null;
 
         /// <summary>
+        /// If true, the server refuses to start when an ACL rule references a custom command name
+        /// that no loaded module has registered. If false (default), unresolved names are logged
+        /// as warnings.
+        /// </summary>
+        public bool AclStrictCustomCommands = false;
+
+        /// <summary>
         /// Enable append-only file (write ahead log)
         /// </summary>
         public bool EnableAOF = false;

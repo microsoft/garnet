@@ -173,6 +173,10 @@ namespace Garnet
         [Option("acl-file", Required = false, HelpText = "External ACL user file.")]
         public string AclFile { get; set; }
 
+        [OptionValidation]
+        [Option("acl-strict-custom-commands", Required = false, HelpText = "If true, the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. If false (default), unresolved names are loaded as-is and logged as warnings.")]
+        public bool? AclStrictCustomCommands { get; set; }
+
         [Option("aad-authority", Required = false, HelpText = "The authority of AAD authentication.")]
         public string AadAuthority { get; set; }
 
@@ -851,6 +855,7 @@ namespace Garnet
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
+                AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
