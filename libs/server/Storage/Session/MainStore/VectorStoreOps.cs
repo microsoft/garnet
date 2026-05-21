@@ -43,10 +43,24 @@ namespace Garnet.server
         XNoQuant_U8 = 4,
 
         /// <summary>
+        /// Vectors stored as bytes (8 bits signed). XNoQuant_I8 is a non-Redis extension, stands for: 
+        /// eXtension No Quantization Integer 8 bits
+        /// 
+        /// XPREQ8 aliases to this.
+        /// </summary>
+        XNoQuant_I8 = 5,
+
+        /// <summary>
         /// Vectors stored as bytes (8 bits signed). XBin_I8 is a non-Redis extension, stands for: 
         /// eXtension Binary quantized Integer 8 bits
         /// </summary>
-        XBin_I8 = 5,
+        XBin_I8 = 6,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits unsigned). XBin_U8 is a non-Redis extension, stands for: 
+        /// eXtension Binary quantized Unsigned integer 8 bits
+        /// </summary>
+        XBin_U8 = 7,
     }
 
     /// <summary>

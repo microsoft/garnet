@@ -79,6 +79,8 @@ namespace Garnet.server
         ///   <item><see cref="VectorQuantType.Q8"/> -&gt; <see cref="VectorValueType.FP32"/></item>
         ///   <item><see cref="VectorQuantType.Bin"/> -&gt; <see cref="VectorValueType.FP32"/></item>
         ///   <item><see cref="VectorQuantType.XNoQuant_U8"/> -&gt; <see cref="VectorValueType.XU8"/></item>
+        ///   <item><see cref="VectorQuantType.XBin_U8"/> -&gt; <see cref="VectorValueType.XU8"/></item>
+        ///   <item><see cref="VectorQuantType.XNoQuant_I8"/> -&gt; <see cref="VectorValueType.XI8"/></item>
         ///   <item><see cref="VectorQuantType.XBin_I8"/> -&gt; <see cref="VectorValueType.XI8"/></item>
         /// </list>
         /// 
@@ -102,8 +104,9 @@ namespace Garnet.server
                         case VectorValueType.Invalid:
                         default: throw new InvalidOperationException($"Unexpected VectorValueType: {valueType}");
                     }
-                // NoQuant_U8 expected U8 vectors
+                // XNoQuant_U8 and XBin_U8 expected U8 vectors
                 case VectorQuantType.XNoQuant_U8:
+                case VectorQuantType.XBin_U8:
                     switch (valueType)
                     {
                         case VectorValueType.FP32: return ConvertF32ToU8(providedData, out error);
@@ -115,7 +118,8 @@ namespace Garnet.server
                         case VectorValueType.Invalid:
                         default: throw new InvalidOperationException($"Unexpected VectorValueType: {valueType}");
                     }
-                // XBin_I8 expects I8 vectors
+                // XNoQuant_I8 and XBin_I8 expects I8 vectors
+                case VectorQuantType.XNoQuant_I8:
                 case VectorQuantType.XBin_I8:
                     switch (valueType)
                     {

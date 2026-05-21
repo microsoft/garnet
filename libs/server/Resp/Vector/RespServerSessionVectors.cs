@@ -229,6 +229,18 @@ namespace Garnet.server
 
                         continue;
                     }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XNoQuant_I8;
+                        curIx++;
+
+                        continue;
+                    }
                     else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8))
                     {
                         if (quantType != null)
@@ -237,6 +249,18 @@ namespace Garnet.server
                         }
 
                         quantType = VectorQuantType.XBin_I8;
+                        curIx++;
+
+                        continue;
+                    }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XBin_U8;
                         curIx++;
 
                         continue;
@@ -391,7 +415,7 @@ namespace Garnet.server
                 GarnetStatus res;
                 VectorManagerResult result;
                 ReadOnlySpan<byte> customErrMsg;
-                if (quantType is VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 && reduceDim != 0)
+                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
@@ -1234,7 +1258,9 @@ namespace Garnet.server
                 VectorQuantType.Bin => "bin"u8,
                 VectorQuantType.Q8 => "q8"u8,
                 VectorQuantType.XNoQuant_U8 => "xnoquant_u8"u8,
+                VectorQuantType.XNoQuant_I8 => "xnoquant_i8"u8,
                 VectorQuantType.XBin_I8 => "xbin_i8"u8,
+                VectorQuantType.XBin_U8 => "xbin_u8"u8,
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 
