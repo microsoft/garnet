@@ -74,6 +74,11 @@ namespace Garnet.cluster
                     break;
                 }
 
+                // Guard: if cancellation happened during WaitReadyWorkAsync, exit cleanly
+                // without falling through to the processing block (which would issue a spurious SignalCompleted)
+                if (cts.Token.IsCancellationRequested)
+                    break;
+
                 try
                 {
                     unsafe

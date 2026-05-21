@@ -132,7 +132,8 @@ namespace Garnet.cluster
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
 
             // Wait for replay to complete.
-            replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token);
+            if (!replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
+                ExceptionUtils.ThrowException(new GarnetException("Timed out waiting for parallel replay tasks to complete", LogLevel.Warning, clientResponse: false));
             // Release participants for next cycle
             replayBatchContext.LeaderFollowerBarrier.Release();
 
