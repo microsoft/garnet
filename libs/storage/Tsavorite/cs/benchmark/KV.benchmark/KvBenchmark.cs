@@ -75,7 +75,7 @@ namespace Tsavorite.kvbench
         readonly TsavoriteKV<KvStoreFunctions, KvAllocator> store;
 
         long chunkCounter; // global chunk id for the run phase (matches YCSB pattern)
-        const long kChunkSize = 256;
+        const long kChunkSize = 640;
 
         public KvBenchmark(Options opts)
         {
@@ -335,7 +335,8 @@ namespace Tsavorite.kvbench
                 if (isPureReadFast32Uniform)
                 {
                     localOps = RunReadOnlyUniformFast32(
-                        bContext, ref rng, (uint)keyCount, ref pinnedInput, ref output,
+                        bContext, (uint)(Options.Seed * 0x9E3779B9UL + (ulong)(threadIdx + 1)),
+                        (uint)keyCount, ref pinnedInput, ref output,
                         ref mySlot, ref doneFlag);
                 }
                 else
@@ -364,21 +365,29 @@ namespace Tsavorite.kvbench
 
         /// <summary>
         /// Hot loop for the canonical case: 100 % reads, uniform keys, key count fits in uint.
-        /// Kept deliberately small so the JIT inlines BasicContext.Read into this body.
+        /// Uses xorshift32 inline (matches YCSB's RandomGenerator; ~10 % faster than the
+        /// struct-method xoshiro256** path because the JIT generates tighter code for
+        /// inline state-mutation vs a method call into a struct). Kept deliberately small
+        /// so the JIT inlines BasicContext.Read into this body.
         /// </summary>
         static long RunReadOnlyUniformFast32(
             Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
-            ref XoshiroRng rng, uint keyCount32,
+            uint seed, uint keyCount32,
             ref PinnedSpanByte pinnedInput, ref SpanByteAndMemory output,
             ref PaddedLong slot, ref bool doneFlag)
         {
             KvKey key = default;
             long localOps = 0;
+            uint x = seed == 0 ? 1u : seed;
+            uint y = 362436069u, z = 521288629u, w = 88675123u;
             while (!Volatile.Read(ref doneFlag))
             {
                 for (long i = 0; i < kChunkSize; i++)
                 {
-                    key.Value = rng.NextUInt32() % keyCount32;
+                    uint t = x ^ (x << 11);
+                    x = y; y = z; z = w;
+                    w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
+                    key.Value = w % keyCount32;
                     bContext.Read(key, ref pinnedInput, ref output, Empty.Default);
                     ++localOps;
                 }
@@ -389,6 +398,7 @@ namespace Tsavorite.kvbench
             bContext.CompletePending(true);
             return localOps;
         }
+
 
         /// <summary>
         /// General-purpose RUMD hot loop. Larger than the fast path because it

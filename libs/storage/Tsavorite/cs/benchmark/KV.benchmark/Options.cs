@@ -67,8 +67,8 @@ namespace Tsavorite.kvbench
             HelpText = "Total in-memory log size (e.g. 16GB). Auto-default sizes for whole dataset in mutable region (read-only baseline).")]
         public string LogMemory { get; set; }
 
-        [Option("page-size", Required = false, Default = "16MB",
-            HelpText = "Page size (e.g. 16MB).")]
+        [Option("page-size", Required = false, Default = "32MB",
+            HelpText = "Page size (e.g. 32MB). Default matches the YCSB.benchmark KVSettings default for direct comparison.")]
         public string PageSize { get; set; }
 
         [Option("segment-size", Required = false, Default = "1GB",

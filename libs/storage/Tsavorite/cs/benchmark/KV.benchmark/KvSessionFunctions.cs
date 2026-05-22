@@ -17,7 +17,17 @@ namespace Tsavorite.kvbench
     /// </summary>
     public sealed class KvSessionFunctions : SpanByteFunctions<Empty>
     {
-        internal const int kReaderCopyBytes = 64;
+        // Default 32 bytes (half a cache line; matches YCSB's measurement choice for
+        // apples-to-apples comparison — isolates "engine read-path overhead" from
+        // memcpy bandwidth). Can be overridden via env var KV_READER_COPY_BYTES.
+        internal static readonly int kReaderCopyBytes = ParseEnvCopyBytes();
+
+        static int ParseEnvCopyBytes()
+        {
+            var s = Environment.GetEnvironmentVariable("KV_READER_COPY_BYTES");
+            if (int.TryParse(s, out var v) && v >= 0) return v;
+            return 32;
+        }
 
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
