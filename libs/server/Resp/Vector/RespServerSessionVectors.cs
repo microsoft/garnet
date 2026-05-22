@@ -580,7 +580,6 @@ namespace Garnet.server
                     }
                     else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
                     {
-                        curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
@@ -599,7 +598,6 @@ namespace Garnet.server
                     }
                     else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XI8"u8))
                     {
-                        curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
