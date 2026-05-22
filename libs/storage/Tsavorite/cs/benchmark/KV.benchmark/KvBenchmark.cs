@@ -74,8 +74,8 @@ namespace Tsavorite.kvbench
         readonly IDevice device;
         readonly TsavoriteKV<KvStoreFunctions, KvAllocator> store;
 
-        long chunkCounter; // global chunk id for the run phase (matches YCSB pattern)
-        const long kChunkSize = 640;
+        long chunkCounter; // global chunk id for the run phase
+        const long kChunkSize = 256;
 
         public KvBenchmark(Options opts)
         {
@@ -142,6 +142,7 @@ namespace Tsavorite.kvbench
             // Reset shared state.
             doneBox[0].Value = false;
             Volatile.Write(ref chunkCounter, 0);
+            Volatile.Write(ref idx_, 0);
             for (int i = 0; i < scoreboard.Length; i++)
                 Volatile.Write(ref scoreboard[i].Value, 0);
             gate.Reset();
@@ -257,28 +258,65 @@ namespace Tsavorite.kvbench
         {
             Pinning.PinWorker(threadIdx);
 
-            // Per-thread RNG seeded distinctly via SplitMix64 mixing.
-            ulong basis = Options.Seed * 0x9E3779B97F4A7C15UL + (ulong)(threadIdx + 1);
-            var rng = new XoshiroRng(basis);
-            var zipf = ZipfConstants != null ? new ZipfGenerator(ZipfConstants) : default;
+            using var session = store.NewSession<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions>(functions);
+            var bContext = session.BasicContext;
 
-            // Per-thread buffers. Value-size ≤ 4 KB by validation, so stackalloc is safe.
-            byte* valuePtr = stackalloc byte[Options.ValueSize];
-            byte* inputPtr = stackalloc byte[Options.ValueSize];
-            byte* outputPtr = stackalloc byte[KvSessionFunctions.kReaderCopyBytes];
+            ref var mySlot = ref scoreboard[threadIdx + 1];
+            ref var doneFlag = ref doneBox[0].Value;
 
-            // Bake a per-thread "value pattern" into the value buffer so writes
-            // are not all zeros (would be a degenerate workload on some allocators).
-            for (int i = 0; i < Options.ValueSize; i++)
-                valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
-            for (int i = 0; i < Options.ValueSize; i++)
-                inputPtr[i] = (byte)((threadIdx * 17 + i + 1) & 0xFF);
-
-            var valueSpan = new Span<byte>(valuePtr, Options.ValueSize);
-            var inputSpan = new Span<byte>(inputPtr, Options.ValueSize);
-            var outputSpan = new Span<byte>(outputPtr, KvSessionFunctions.kReaderCopyBytes);
-            var pinnedInput = PinnedSpanByte.FromPinnedSpan(inputSpan);
-            var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
+            // Pre-build per-thread txn key array (mirrors YCSB's `txn_keys_[]`).
+            // 1M entries × 16B (KvKey size) = 16MB per thread — fits in L3.
+            // YCSB's RunYcsbSafeContext cycles through the array by resetting idx_=0 when it hits txnKeysCount.
+            // Allocated BEFORE the gate so it's outside the timed region.
+            KvKey[] txn_keys = null;
+            const int kTxnKeysCount = 1 << 20; // 1M
+            if (!isLoad)
+            {
+                txn_keys = new KvKey[kTxnKeysCount];
+                if (Options.UseZipf)
+                {
+                    var seedZ = new XoshiroRng(Options.Seed * 0x9E3779B97F4A7C15UL + (ulong)(threadIdx + 1));
+                    var zipfLocal = new ZipfGenerator(ZipfConstants);
+                    for (int j = 0; j < kTxnKeysCount; j++)
+                    {
+                        var kk = zipfLocal.Next(ref seedZ);
+                        if (kk >= Options.Keys) kk = Options.Keys - 1;
+                        txn_keys[j].Value = kk;
+                    }
+                }
+                else
+                {
+                    // YCSB-style xorshift32 seed pattern.
+                    uint x = (uint)(Options.Seed) + (uint)(threadIdx + 1);
+                    if (x == 0) x = 1;
+                    uint y = 362436069u, zz = 521288629u, w = 88675123u;
+                    if (Options.Keys <= uint.MaxValue)
+                    {
+                        uint kc32 = (uint)Options.Keys;
+                        for (int j = 0; j < kTxnKeysCount; j++)
+                        {
+                            uint t = x ^ (x << 11);
+                            x = y; y = zz; zz = w;
+                            w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
+                            txn_keys[j].Value = w % kc32;
+                        }
+                    }
+                    else
+                    {
+                        ulong kc64 = (ulong)Options.Keys;
+                        for (int j = 0; j < kTxnKeysCount; j++)
+                        {
+                            uint t1 = x ^ (x << 11);
+                            x = y; y = zz; zz = w;
+                            ulong rhi = (w = (w ^ (w >> 19)) ^ (t1 ^ (t1 >> 8)));
+                            uint t2 = x ^ (x << 11);
+                            x = y; y = zz; zz = w;
+                            ulong rlo = (w = (w ^ (w >> 19)) ^ (t2 ^ (t2 >> 8)));
+                            txn_keys[j].Value = (long)(((rhi << 32) | rlo) % kc64);
+                        }
+                    }
+                }
+            }
 
             // Workload partition for load phase.
             long loadFrom = 0, loadTo = 0;
@@ -287,12 +325,6 @@ namespace Tsavorite.kvbench
                 loadFrom = (long)((double)Options.Keys * threadIdx / Options.Threads);
                 loadTo = (long)((double)Options.Keys * (threadIdx + 1) / Options.Threads);
             }
-
-            using var session = store.NewSession<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions>(functions);
-            var bContext = session.BasicContext;
-
-            ref var mySlot = ref scoreboard[threadIdx + 1];
-            ref var doneFlag = ref doneBox[0].Value;
 
             ready.Signal();
             gate.Wait();
@@ -303,7 +335,12 @@ namespace Tsavorite.kvbench
 
             if (isLoad)
             {
-                // Each thread inserts its partition deterministically.
+                // Per-thread load buffer (matches YCSB Setup pattern). Stackalloc inside isLoad branch.
+                byte* valuePtr = stackalloc byte[Options.ValueSize];
+                for (int i = 0; i < Options.ValueSize; i++)
+                    valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
+                var valueSpan = new Span<byte>(valuePtr, Options.ValueSize);
+
                 KvKey key = default;
                 for (long k = loadFrom; k < loadTo; k++)
                 {
@@ -321,53 +358,18 @@ namespace Tsavorite.kvbench
             }
             else
             {
-                // Dispatch to a small focused loop per workload kind so the JIT
-                // inline budget is small enough to inline BasicContext.Read into
-                // the hot loop body (rather than emitting an out-of-line call).
-                // For pure-read uniform 32-bit workloads (the lean-benchmark
-                // baseline), we run the most minimal loop possible.
-                var keyCount = Options.Keys;
-                var fast32 = keyCount > 0 && keyCount <= uint.MaxValue;
-                var readPct = Options.ReadPct;
-                var useZipf = Options.UseZipf;
                 var deleteReinsert = Options.RumdHasDeletes();
-                var isPureReadFast32Uniform = !useZipf && fast32 && readPct == 100;
-                if (isPureReadFast32Uniform)
-                {
-                    var variant = Environment.GetEnvironmentVariable("KV_BENCH_VARIANT") ?? "default";
-                    if (variant == "ycsb-literal")
-                    {
-                        // Pre-generate a per-thread key array (1M keys = 16MB) outside the timed region,
-                        // exactly mirroring YCSB's pre-built txn_keys[] pattern.
-                        var keysArr = new KvKey[1 << 20];
-                        uint xs = (uint)(1 + threadIdx);
-                        uint ys = 362436069u, zs = 521288629u, ws = 88675123u;
-                        for (int j = 0; j < keysArr.Length; j++)
-                        {
-                            uint tt = xs ^ (xs << 11);
-                            xs = ys; ys = zs; zs = ws;
-                            ws = (ws ^ (ws >> 19)) ^ (tt ^ (tt >> 8));
-                            keysArr[j].Value = ws % (uint)keyCount;
-                        }
-                        localOps = RunReadOnlyUniformFast32_YcsbLiteral(
-                            bContext, keysArr, ref pinnedInput, ref output, ref doneFlag);
-                    }
-                    else
-                    {
-                        localOps = RunReadOnlyUniformFast32(
-                            bContext, (uint)(Options.Seed * 0x9E3779B9UL + (ulong)(threadIdx + 1)),
-                            (uint)keyCount, ref pinnedInput, ref output,
-                            ref mySlot, ref doneFlag);
-                    }
-                }
-                else
-                {
-                    (localOps, hits, misses, deletesReinserted) = RunGeneralRumd(
-                        bContext, ref rng, zipf, valueSpan, ref pinnedInput, ref output,
-                        ref mySlot, ref doneFlag, keyCount, fast32,
-                        Options.ReadPct, Options.UpsertPctCumulative, Options.RmwPctCumulative,
-                        useZipf, deleteReinsert);
-                }
+
+                // RunYcsbStyle: literal byte-equivalent of YCSB.benchmark.SpanByteYcsbBenchmark.RunYcsbSafeContext.
+                // All hot-path buffers (value/input/output) are declared INSIDE the method so the JIT
+                // treats them as stack locals (no extra deref per Read), matching YCSB exactly.
+                (localOps, hits, misses, deletesReinserted) = RunYcsbStyle(
+                    bContext, ref mySlot, ref doneFlag,
+                    txn_keys, kTxnKeysCount, threadIdx,
+                    Options.ValueSize,
+                    Options.ReadPct, Options.UpsertPctCumulative, Options.RmwPctCumulative,
+                    deleteReinsert,
+                    seed: (uint)(Options.Seed) + (uint)(threadIdx + 1));
             }
 
             // Final flush of the partial in-flight chunk so post-join sum is complete.
@@ -382,156 +384,107 @@ namespace Tsavorite.kvbench
             stats.FinalExitTicks = Stopwatch.GetTimestamp();
         }
 
-        // ====== Focused per-workload run loops (kept small so BasicContext.Read inlines) ======
+        // ====== Per-thread RUN hot loop (mirrors YCSB.benchmark RunYcsbSafeContext) ======
 
         /// <summary>
-        /// Diagnostic: literal copy of YCSB's RunYcsbSafeContext inner loop.
-        /// Uses pre-built key array + xorshift32 for op selection + per-op done check +
-        /// no scoreboard write + counters incremented after each branch. ONLY difference
-        /// from YCSB is KvKey vs KeySpanByte (both 16-byte structs with same KeyBytes).
+        /// Per-thread RUN hot loop that is structurally byte-for-byte equivalent to
+        /// YCSB.benchmark's <c>SpanByteYcsbBenchmark.RunYcsbSafeContext</c> — see comments
+        /// inline below correlating each block. This mirrored structure is critical:
+        /// JIT-emits the same control-flow / branch density / inlining shape as YCSB's
+        /// loop, so any single-thread perf delta isolates engine differences from
+        /// benchmark harness differences.
         /// </summary>
-        static long RunReadOnlyUniformFast32_YcsbLiteral(
+        long idx_; // global chunk counter for the run phase (matches YCSB)
+
+        unsafe (long localOps, long reads, long writes, long deletes) RunYcsbStyle(
             Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
-            KvKey[] txn_keys,
-            ref PinnedSpanByte pinnedInput, ref SpanByteAndMemory output,
-            ref bool doneFlag)
+            ref PaddedLong slot, ref bool doneFlag,
+            KvKey[] txn_keys, long txnKeysCount, int threadIdx,
+            int valueSize,
+            int readPercent, int upsertPercent, int rmwPercent,
+            bool deleteReinsert,
+            uint seed)
         {
-            // xorshift32 a la YCSB's RandomGenerator
-            uint x = 1u;  // YCSB uses seed=1+thread_idx; for thread 0 this is 1
-            uint y = 362436069u, z = 521288629u, w = 88675123u;
-            long reads_done = 0;
-            long arr_idx = 0;
-            long arr_mask = txn_keys.Length - 1; // power of 2 for cheap wrap
+            // ===== Per-thread locals (declared INSIDE the method, like YCSB.RunYcsbSafeContext) =====
+            // Stackalloc inside the method means the JIT treats input/output as stack slots
+            // with no extra indirection per Read — matches YCSB's local-buffer pattern exactly.
+            byte* valuePtr = stackalloc byte[valueSize];
+            byte* inputPtr = stackalloc byte[valueSize];
+            byte* outputPtr = stackalloc byte[KvSessionFunctions.kReaderCopyBytes];
 
-            while (!Volatile.Read(ref doneFlag))
-            {
-                long chunk_idx = arr_idx;
-                arr_idx = (arr_idx + 640) & arr_mask;
+            // Bake per-thread value/input patterns so writes aren't all zeros.
+            for (int i = 0; i < valueSize; i++)
+                valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
+            for (int i = 0; i < valueSize; i++)
+                inputPtr[i] = (byte)((threadIdx * 17 + i + 1) & 0xFF);
 
-                for (long idx = chunk_idx; idx < chunk_idx + 640 && !Volatile.Read(ref doneFlag); ++idx)
-                {
-                    if ((idx & 511) == 0)
-                        bContext.CompletePending(false);
+            Span<byte> value = new(valuePtr, valueSize);
+            Span<byte> input = new(inputPtr, valueSize);
+            Span<byte> output_ = new(outputPtr, KvSessionFunctions.kReaderCopyBytes);
 
-                    var key = txn_keys[idx & arr_mask];
+            var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output_);
 
-                    // YCSB's rng.Generate(100) for op selection (always read path since 100% reads)
-                    uint t = x ^ (x << 11);
-                    x = y; y = z; z = w;
-                    w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
-                    // int r = (int)(w % 100u);  // 100% reads, skip the branch
-                    bContext.Read(key, ref pinnedInput, ref output, Empty.Default);
-                    ++reads_done;
-                }
-            }
-            bContext.CompletePending(true);
-            return reads_done;
-        }
-
-        /// <summary>
-        /// Hot loop for the canonical case: 100 % reads, uniform keys, key count fits in uint.
-        /// Uses xorshift32 inline (matches YCSB's RandomGenerator; ~10 % faster than the
-        /// struct-method xoshiro256** path because the JIT generates tighter code for
-        /// inline state-mutation vs a method call into a struct). Kept deliberately small
-        /// so the JIT inlines BasicContext.Read into this body.
-        /// </summary>
-        static long RunReadOnlyUniformFast32(
-            Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
-            uint seed, uint keyCount32,
-            ref PinnedSpanByte pinnedInput, ref SpanByteAndMemory output,
-            ref PaddedLong slot, ref bool doneFlag)
-        {
-            KvKey key = default;
-            long localOps = 0;
+            // Single xorshift32 instance — byte-for-byte identical to YCSB.RandomGenerator.Generate(uint max).
             uint x = seed == 0 ? 1u : seed;
             uint y = 362436069u, z = 521288629u, w = 88675123u;
+
+            long reads_done = 0, writes_done = 0, deletes_done = 0;
+
             while (!Volatile.Read(ref doneFlag))
             {
-                for (long i = 0; i < kChunkSize; i++)
+                long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
+                while (chunk_idx >= txnKeysCount)
                 {
+                    if (chunk_idx == txnKeysCount)
+                        idx_ = 0;
+                    chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
+                }
+
+                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !Volatile.Read(ref doneFlag); ++idx)
+                {
+                    if (idx % 512 == 0)
+                    {
+                        bContext.CompletePending(false);
+                    }
+
+                    var key = txn_keys[idx];
+
                     uint t = x ^ (x << 11);
                     x = y; y = z; z = w;
                     w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
-                    key.Value = w % keyCount32;
-                    bContext.Read(key, ref pinnedInput, ref output, Empty.Default);
-                    ++localOps;
+                    int r = (int)(w % 100u);
+
+                    if (r < readPercent)
+                    {
+                        bContext.Read(key, ref pinnedInputSpan, ref _output, Empty.Default);
+                        ++reads_done;
+                        continue;
+                    }
+                    if (r < upsertPercent)
+                    {
+                        bContext.Upsert(key, value, Empty.Default);
+                        ++writes_done;
+                        continue;
+                    }
+                    if (r < rmwPercent)
+                    {
+                        bContext.RMW(key, ref pinnedInputSpan, Empty.Default);
+                        ++writes_done;
+                        continue;
+                    }
+                    bContext.Delete(key, Empty.Default);
+                    if (deleteReinsert)
+                        bContext.Upsert(key, value, Empty.Default);
+                    ++deletes_done;
                 }
-                if ((localOps & 511) == 0)
-                    bContext.CompletePending(false);
-                Volatile.Write(ref slot.Value, localOps);
+
+                // Live scoreboard tick per chunk (cheap; supports SumScoreboard in-flight throughput sampler).
+                Volatile.Write(ref slot.Value, reads_done + writes_done + deletes_done);
             }
             bContext.CompletePending(true);
-            return localOps;
-        }
-
-
-        /// <summary>
-        /// General-purpose RUMD hot loop. Larger than the fast path because it
-        /// handles upsert / RMW / delete branches; ContextRead may not inline here.
-        /// </summary>
-        static (long localOps, long hits, long misses, long deletesReinserted) RunGeneralRumd(
-            Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
-            ref XoshiroRng rng, ZipfGenerator zipf,
-            Span<byte> valueSpan, ref PinnedSpanByte pinnedInput, ref SpanByteAndMemory output,
-            ref PaddedLong slot, ref bool doneFlag,
-            long keyCount, bool fast32,
-            int readPct, int upPct, int rmwPct,
-            bool useZipf, bool deleteReinsert)
-        {
-            uint keyCount32 = fast32 ? (uint)keyCount : 0u;
-            KvKey key = default;
-            long localOps = 0, hits = 0, misses = 0, deletesReinserted = 0;
-            while (!Volatile.Read(ref doneFlag))
-            {
-                for (long i = 0; i < kChunkSize; i++)
-                {
-                    long k;
-                    if (useZipf)
-                    {
-                        k = zipf.Next(ref rng);
-                        if (k >= keyCount) k = keyCount - 1;
-                    }
-                    else if (fast32)
-                    {
-                        k = rng.NextUInt32() % keyCount32;
-                    }
-                    else
-                    {
-                        k = (long)(rng.NextUInt64() % (ulong)keyCount);
-                    }
-                    key.Value = k;
-
-                    int r = (int)(rng.NextUInt32() % 100u);
-                    if (r < readPct)
-                    {
-                        bContext.Read(key, ref pinnedInput, ref output, Empty.Default);
-                    }
-                    else if (r < upPct)
-                    {
-                        bContext.Upsert(key, valueSpan, Empty.Default);
-                    }
-                    else if (r < rmwPct)
-                    {
-                        bContext.RMW(key, ref pinnedInput, Empty.Default);
-                    }
-                    else
-                    {
-                        bContext.Delete(key, Empty.Default);
-                        if (deleteReinsert)
-                        {
-                            bContext.Upsert(key, valueSpan, Empty.Default);
-                            ++deletesReinserted;
-                            ++localOps;
-                        }
-                    }
-                    ++localOps;
-                }
-                if ((localOps & 511) == 0)
-                    bContext.CompletePending(false);
-                Volatile.Write(ref slot.Value, localOps);
-            }
-            bContext.CompletePending(true);
-            return (localOps, hits, misses, deletesReinserted);
+            long localOps = reads_done + writes_done + deletes_done + (deleteReinsert ? deletes_done : 0);
+            return (localOps, reads_done, writes_done, deletes_done);
         }
 
         // ====== Validation ======
