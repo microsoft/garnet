@@ -134,7 +134,7 @@ namespace Garnet.server
                     if (!notFoundOutput.IsSpanByte)
                     {
                         // Couldn't write not found response in place, so copy it over
-                        SendAndReset(output.SpanByteAndMemory.Memory, writer.GetPosition());
+                        SendAndReset(notFoundOutput.Memory, writer.GetPosition());
                     }
                     else
                     {
@@ -212,7 +212,7 @@ namespace Garnet.server
                         if (!notFoundOutput.IsSpanByte)
                         {
                             // Couldn't write not found response in place, so copy it over
-                            SendAndReset(output.SpanByteAndMemory.Memory, writer.GetPosition());
+                            SendAndReset(notFoundOutput.Memory, writer.GetPosition());
                         }
                         else
                         {
