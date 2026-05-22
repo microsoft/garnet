@@ -130,7 +130,7 @@ namespace Garnet.server
 
                     customRawStringCommand.functions.NotFound(key, ref input, ref writer);
 
-                    SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
+                    SendAndReset(output.SpanByteAndMemory.Memory, writer.AsReadOnlySpan().Length);
                 }
                 else if (status == GarnetStatus.WRONGTYPE)
                 {
@@ -197,7 +197,7 @@ namespace Garnet.server
                         var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                         customObjectCommand.functions.NotFound(key, ref input, ref writer);
 
-                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
+                        SendAndReset(output.SpanByteAndMemory.Memory, writer.AsReadOnlySpan().Length);
                         break;
                     case GarnetStatus.WRONGTYPE:
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -281,7 +281,7 @@ namespace Garnet.server
                     var writer = new RespMemoryWriter(respProtocolVersion, ref _output.SpanByteAndMemory);
                     customCommand.functions.NotFound(key, ref stringInput, ref writer);
 
-                    output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                    output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan[..writer.AsReadOnlySpan().Length]);
 
                     _output.SpanByteAndMemory.Memory.Dispose();
                 }
@@ -356,7 +356,7 @@ namespace Garnet.server
 
                         customObjCommand.functions.NotFound(key.ReadOnlySpan, ref input, ref writer);
 
-                        output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                        output = scratchBufferAllocator.CreateArgSlice(writer.AsReadOnlySpan().Length);
 
                         _output.SpanByteAndMemory.Memory.Dispose();
                         break;
