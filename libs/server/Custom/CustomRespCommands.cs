@@ -123,7 +123,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                 }
-                else
+                else if (status == GarnetStatus.NOTFOUND)
                 {
                     Debug.Assert(output.SpanByteAndMemory.Memory == null);
                     var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
@@ -131,6 +131,11 @@ namespace Garnet.server
                     customRawStringCommand.functions.NotFound(key, ref input, ref writer);
 
                     SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
+                }
+                else if (status == GarnetStatus.WRONGTYPE)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 
