@@ -76,6 +76,14 @@ namespace Garnet.server
         public virtual bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo) => throw new NotImplementedException();
 
         /// <summary>
+        /// Called when a read command does not find a value.
+        /// 
+        /// Default implementation writes a null value (either _\r\n or *-1\r\n for RESP 3 or 2 respectively).
+        /// </summary>
+        public virtual void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        => writer.WriteNull();
+
+        /// <summary>
         /// Aborts the execution of the current object store command and outputs
         /// an error message to indicate a wrong number of arguments for the given command.
         /// </summary>
