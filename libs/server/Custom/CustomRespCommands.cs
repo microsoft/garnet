@@ -131,7 +131,6 @@ namespace Garnet.server
                     customRawStringCommand.functions.NotFound(key, ref input, ref writer);
 
                     SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                    output.SpanByteAndMemory.Memory?.Dispose();
                 }
             }
 
@@ -194,8 +193,6 @@ namespace Garnet.server
                         customObjectCommand.functions.NotFound(key, ref input, ref writer);
 
                         SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-
-                        output.SpanByteAndMemory.Memory.Dispose();
                         break;
                     case GarnetStatus.WRONGTYPE:
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
