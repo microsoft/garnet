@@ -334,10 +334,31 @@ namespace Tsavorite.kvbench
                 var isPureReadFast32Uniform = !useZipf && fast32 && readPct == 100;
                 if (isPureReadFast32Uniform)
                 {
-                    localOps = RunReadOnlyUniformFast32(
-                        bContext, (uint)(Options.Seed * 0x9E3779B9UL + (ulong)(threadIdx + 1)),
-                        (uint)keyCount, ref pinnedInput, ref output,
-                        ref mySlot, ref doneFlag);
+                    var variant = Environment.GetEnvironmentVariable("KV_BENCH_VARIANT") ?? "default";
+                    if (variant == "ycsb-literal")
+                    {
+                        // Pre-generate a per-thread key array (1M keys = 16MB) outside the timed region,
+                        // exactly mirroring YCSB's pre-built txn_keys[] pattern.
+                        var keysArr = new KvKey[1 << 20];
+                        uint xs = (uint)(1 + threadIdx);
+                        uint ys = 362436069u, zs = 521288629u, ws = 88675123u;
+                        for (int j = 0; j < keysArr.Length; j++)
+                        {
+                            uint tt = xs ^ (xs << 11);
+                            xs = ys; ys = zs; zs = ws;
+                            ws = (ws ^ (ws >> 19)) ^ (tt ^ (tt >> 8));
+                            keysArr[j].Value = ws % (uint)keyCount;
+                        }
+                        localOps = RunReadOnlyUniformFast32_YcsbLiteral(
+                            bContext, keysArr, ref pinnedInput, ref output, ref doneFlag);
+                    }
+                    else
+                    {
+                        localOps = RunReadOnlyUniformFast32(
+                            bContext, (uint)(Options.Seed * 0x9E3779B9UL + (ulong)(threadIdx + 1)),
+                            (uint)keyCount, ref pinnedInput, ref output,
+                            ref mySlot, ref doneFlag);
+                    }
                 }
                 else
                 {
@@ -362,6 +383,50 @@ namespace Tsavorite.kvbench
         }
 
         // ====== Focused per-workload run loops (kept small so BasicContext.Read inlines) ======
+
+        /// <summary>
+        /// Diagnostic: literal copy of YCSB's RunYcsbSafeContext inner loop.
+        /// Uses pre-built key array + xorshift32 for op selection + per-op done check +
+        /// no scoreboard write + counters incremented after each branch. ONLY difference
+        /// from YCSB is KvKey vs KeySpanByte (both 16-byte structs with same KeyBytes).
+        /// </summary>
+        static long RunReadOnlyUniformFast32_YcsbLiteral(
+            Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
+            KvKey[] txn_keys,
+            ref PinnedSpanByte pinnedInput, ref SpanByteAndMemory output,
+            ref bool doneFlag)
+        {
+            // xorshift32 a la YCSB's RandomGenerator
+            uint x = 1u;  // YCSB uses seed=1+thread_idx; for thread 0 this is 1
+            uint y = 362436069u, z = 521288629u, w = 88675123u;
+            long reads_done = 0;
+            long arr_idx = 0;
+            long arr_mask = txn_keys.Length - 1; // power of 2 for cheap wrap
+
+            while (!Volatile.Read(ref doneFlag))
+            {
+                long chunk_idx = arr_idx;
+                arr_idx = (arr_idx + 640) & arr_mask;
+
+                for (long idx = chunk_idx; idx < chunk_idx + 640 && !Volatile.Read(ref doneFlag); ++idx)
+                {
+                    if ((idx & 511) == 0)
+                        bContext.CompletePending(false);
+
+                    var key = txn_keys[idx & arr_mask];
+
+                    // YCSB's rng.Generate(100) for op selection (always read path since 100% reads)
+                    uint t = x ^ (x << 11);
+                    x = y; y = z; z = w;
+                    w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
+                    // int r = (int)(w % 100u);  // 100% reads, skip the branch
+                    bContext.Read(key, ref pinnedInput, ref output, Empty.Default);
+                    ++reads_done;
+                }
+            }
+            bContext.CompletePending(true);
+            return reads_done;
+        }
 
         /// <summary>
         /// Hot loop for the canonical case: 100 % reads, uniform keys, key count fits in uint.

@@ -155,7 +155,8 @@ namespace Tsavorite.kvbench
         {
             if (Threads < 1) return "--threads must be >= 1";
             if (Keys <= 0) return "--keys must be > 0";
-            if (ValueSize < 8 || ValueSize > 4096) return "--value-size must be in [8, 4096] (lean benchmark targets the inline-value path)";
+        // Validate --value-size: 32..4096 (Reader copies 32 bytes; value must be at least that).
+        if (ValueSize < 32 || ValueSize > 4096) return "--value-size must be in [32, 4096]";
             if (Hashpack <= 0) return "--hashpack must be > 0";
             if (RunSec < 0) return "--runsec must be >= 0";
             if (WarmupSec < 0) return "--warmup-sec must be >= 0";
