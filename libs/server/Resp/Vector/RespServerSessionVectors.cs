@@ -566,7 +566,7 @@ namespace Garnet.server
                         values = asBytes;
                         curIx++;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
                     {
                         curIx++;
                         if (curIx >= parseState.Count)
@@ -580,7 +580,7 @@ namespace Garnet.server
                         valueType = VectorValueType.XU8;
                         values = asBytes;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XI8"u8))
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XI8"u8))
                     {
                         curIx++;
                         if (curIx >= parseState.Count)
