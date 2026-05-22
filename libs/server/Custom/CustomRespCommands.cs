@@ -127,7 +127,7 @@ namespace Garnet.server
                 {
                     Debug.Assert(output.SpanByteAndMemory.Memory == null);
                     var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                    
+
                     customRawStringCommand.functions.NotFound(key, ref input, ref writer);
 
                     SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
@@ -351,11 +351,11 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                         var writer = new RespMemoryWriter(respProtocolVersion, ref _output.SpanByteAndMemory);
-                        
+
                         customObjCommand.functions.NotFound(key.ReadOnlySpan, ref input, ref writer);
 
                         output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
-                        
+
                         _output.SpanByteAndMemory.Memory.Dispose();
                         break;
                     case GarnetStatus.WRONGTYPE:
