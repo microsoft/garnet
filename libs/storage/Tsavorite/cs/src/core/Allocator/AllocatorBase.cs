@@ -1654,6 +1654,11 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
+            // Clamp the read to page boundary; PageSize is a power of 2 greater than sectorSize.
+            var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedFileOffset & PageSizeMask));
+            if (alignedReadLength > maxReadLength)
+                alignedReadLength = maxReadLength;
+
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
@@ -2049,7 +2054,7 @@ namespace Tsavorite.core
             // TODO: Optimize for non-ReadAtAddress tombstoned records to not have to retrieve the full record or, if we have it, not deserialize objects.
 
             // Initialize to "key is not present (data too small) or does not match so get previous record" length to read
-            prevLengthToRead = IStreamBuffer.InitialIOSize;
+            prevLengthToRead = IStreamBuffer.DefaultInitialIORecordSize;
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
@@ -2116,8 +2121,8 @@ namespace Tsavorite.core
             try
             {
                 // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
-                // InitialIOSize request can be fulfilled.
-                ctx.record.available_bytes = (int)numBytes;
+                // DefaultInitialIORecordSize request can be fulfilled. Adjust for valid_offset as in the original read-length calculations.
+                ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
 
                 Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}");
 

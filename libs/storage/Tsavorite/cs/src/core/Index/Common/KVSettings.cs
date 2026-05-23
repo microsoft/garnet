@@ -153,6 +153,15 @@ namespace Tsavorite.core
         /// </summary>
         public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
 
+        /// <summary>Sentinel value indicating that the default <see cref="IStreamBuffer.DefaultInitialIORecordSize"/> should be used.</summary>
+        public const int UseDefaultInitialIORecordSize = -1;
+
+        /// <summary>
+        /// Initial IO size for reading records from disk. <see cref="UseDefaultInitialIORecordSize"/> means unset;
+        /// the resolution chain (store → session → per-read → <see cref="IStreamBuffer.DefaultInitialIORecordSize"/>) determines the actual value.
+        /// </summary>
+        public int InitialIORecordSize = UseDefaultInitialIORecordSize;
+
         /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.

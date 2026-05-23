@@ -20,8 +20,11 @@ namespace Tsavorite.core
         /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
         internal const int BufferSize = 1 << LogSettings.kMinObjectLogSegmentSizeBits;
 
-        /// <summary>Initial IO size to read.</summary>
-        internal static int InitialIOSize => Environment.SystemPageSize;
+        /// <summary>Default initial IO record size to read from disk.</summary>
+        public const int DefaultInitialIORecordSize = 32;
+
+        /// <summary>Maximum allowed initial IO record size.</summary>
+        internal const int MaxInitialIORecordSize = 1 << 22; // 4 MB
 
         /// <summary>
         /// We use these buffers for only read or only write operations, never both at the same time.

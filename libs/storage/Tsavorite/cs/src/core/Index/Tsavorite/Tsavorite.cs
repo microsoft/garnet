@@ -31,6 +31,8 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
+        /// <summary>Initial IO record size from <see cref="KVSettings"/>; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means unset.</summary>
+        internal readonly int InitialIORecordSize;
         internal readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
@@ -196,6 +198,7 @@ namespace Tsavorite.core
             }
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
+            InitialIORecordSize = kvSettings.InitialIORecordSize;
             Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
             LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
@@ -750,15 +753,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
-                                                                          TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions,
+                                                                          out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
              where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref rmwOptions);
             OperationStatus internalStatus;
 
             do

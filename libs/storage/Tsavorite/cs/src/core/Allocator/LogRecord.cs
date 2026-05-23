@@ -403,6 +403,39 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
+        /// <summary>
+        /// Computes the expected allocated record size from component lengths and optional-field expectations, without requiring
+        /// an actual record in memory. This uses the same layout math as <see cref="RecordSizeInfo.CalculateSizes"/>.
+        /// </summary>
+        /// <param name="keyDataLength">Length of the key data in bytes.</param>
+        /// <param name="valueDataLength">Length of the value data in bytes. For object values, use <see cref="ObjectIdMap.ObjectIdSize"/>.</param>
+        /// <param name="extendedNamespaceLength">Length of any extended namespace data preceding the key (0 if none).</param>
+        /// <param name="expectETag">Whether the record is expected to have an ETag optional field.</param>
+        /// <param name="expectExpiration">Whether the record is expected to have an Expiration optional field.</param>
+        /// <param name="expectObject">Whether the record is expected to have an object (key overflow, value overflow, or value object),
+        ///     which requires an <see cref="ObjectLogPositionSize"/>-byte object-log position field.</param>
+        /// <returns>The expected allocated (record-aligned) size in bytes, including <see cref="RecordInfo"/> header.</returns>
+        public static int GetExpectedIORecordSize(int keyDataLength, int valueDataLength, int extendedNamespaceLength = 0,
+            bool expectETag = false, bool expectExpiration = false, bool expectObject = false)
+        {
+            var optionalSize = (expectETag ? ETagSize : 0) + (expectExpiration ? ExpirationSize : 0) + (expectObject ? ObjectLogPositionSize : 0);
+
+            var numKeyLengthBytes = RecordDataHeader.GetByteCount(keyDataLength);
+
+            // Start with the max RecordLengthBytes (4) to compute an upper bound, then refine; this is necessary because
+            // the record length we're getting the byte count for is based on the aligned record size.
+            const int initialRecordLengthBytes = sizeof(int);
+            var actualSize = RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + numKeyLengthBytes + initialRecordLengthBytes
+                             + extendedNamespaceLength + keyDataLength + valueDataLength + optionalSize;
+
+            var allocatedSize = Utility.RoundUp(actualSize, Constants.kRecordAlignment);
+            var numRecordLengthBytes = RecordDataHeader.GetByteCount(allocatedSize);
+            actualSize -= initialRecordLengthBytes - numRecordLengthBytes;
+
+            allocatedSize = Utility.RoundUp(actualSize, Constants.kRecordAlignment);
+            return allocatedSize;
+        }
+
         internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);

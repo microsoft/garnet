@@ -121,6 +121,12 @@ namespace Garnet.server
         public string ValueOverflowThreshold = "16k";
 
         /// <summary>
+        /// Initial IO read size for records on disk. Accepts bytes or k/m/g suffixes (e.g. "4k", "8k").
+        /// null means use the default (<see cref="IStreamBuffer.DefaultInitialIORecordSize"/> bytes).
+        /// </summary>
+        public string InitialIORecordSize = null;
+
+        /// <summary>
         /// Wait for AOF to commit before returning results to client.
         /// Warning: will greatly increase operation latency.
         /// </summary>
@@ -606,6 +612,7 @@ namespace Garnet.server
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
                 MaxInlineValueSize = ValueOverflowThresholdBytes(),
+                InitialIORecordSize = GetInitialIORecordSizeBytes(),
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -835,6 +842,26 @@ namespace Garnet.server
                     nameof(ValueOverflowThreshold), ValueOverflowThreshold, 1L << valueBits, clampedBytes, PageSize, 1L << pageBits);
                 return (int)clampedBytes;
             }
+
+            return (int)sizeInBytes;
+        }
+
+        /// <summary>
+        /// Parse <see cref="InitialIORecordSize"/> as a byte count.
+        /// Returns <see cref="KVSettings.UseDefaultInitialIORecordSize"/> if the value is null or empty (use default).
+        /// </summary>
+        /// <returns>The byte value used for <c>KVSettings.InitialIORecordSize</c>, or <see cref="KVSettings.UseDefaultInitialIORecordSize"/> if unset.</returns>
+        /// <exception cref="Exception">Thrown when the value cannot be parsed.</exception>
+        public int GetInitialIORecordSizeBytes()
+        {
+            if (string.IsNullOrEmpty(InitialIORecordSize))
+                return KVSettings.UseDefaultInitialIORecordSize;
+
+            if (!TryParseSize(InitialIORecordSize, out var sizeInBytes))
+                throw new Exception($"Unable to parse {nameof(InitialIORecordSize)} value '{InitialIORecordSize}'. Expected a memory size string (e.g. '4k', '8k').");
+
+            if (sizeInBytes <= 0)
+                throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) must be positive.");
 
             return (int)sizeInBytes;
         }

@@ -1653,5 +1653,43 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(10, serverOptions.ReadCachePageSizeBits());
             }
         }
+
+        [Test]
+        public void InitialIORecordSizeParsing()
+        {
+            // Default value from defaults.conf is null (unset)
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.IsNull(options.InitialIORecordSize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsNull(serverOptions.InitialIORecordSize);
+                ClassicAssert.AreEqual(KVSettings.UseDefaultInitialIORecordSize, serverOptions.GetInitialIORecordSizeBytes());
+            }
+
+            // Various valid memory size strings (CLI)
+            foreach (var (input, expectedBytes) in new[] { ("24", 24), ("4k", 4096), ("8k", 8192) })
+            {
+                var args = new[] { "--initial-io-record-size", input };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"CLI parsing failed for '{input}'");
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(input, options.InitialIORecordSize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(expectedBytes, serverOptions.GetInitialIORecordSizeBytes(), $"Expected {expectedBytes} bytes for '{input}'");
+            }
+
+            // JSON parsing of a valid memory size string
+            {
+                const string JSON = @"{ ""InitialIORecordSize"": ""4k"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual("4k", options.InitialIORecordSize);
+                ClassicAssert.AreEqual(4096, options.GetServerOptions().GetInitialIORecordSizeBytes());
+            }
+        }
     }
 }

@@ -81,7 +81,7 @@ namespace Tsavorite.core
         /// <item>If we have an Overflow or Object value, read and store it in the transient <see cref="ObjectIdMap"/> in <paramref name="logRecord"/>.</item>
         /// </list>
         /// </summary>
-        /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
+        /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.DefaultInitialIORecordSize"/> or less.</param>
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>

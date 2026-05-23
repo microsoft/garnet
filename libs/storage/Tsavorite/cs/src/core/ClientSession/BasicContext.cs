@@ -376,32 +376,38 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
-            => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
+        {
+            RMWOptions rmwOptions = default;
+            return RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, ref rmwOptions, out _, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(key, rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
+            => RMW(key, rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, ref rmwOptions, out _, userContext);
 
         /// <inheritdoc/>
         public Status RMW(TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out recordMetadata, userContext);
+        {
+            RMWOptions rmwOptions = default;
+            return RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, ref rmwOptions, out recordMetadata, userContext);
+        }
 
         /// <inheritdoc/>
         public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var keyHash = rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
-            return RMW(key, keyHash, ref input, ref output, out recordMetadata, userContext);
+            return RMW(key, keyHash, ref input, ref output, ref rmwOptions, out recordMetadata, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status RMW(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        private Status RMW(TKey key, long keyHash, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
             {
-                return store.ContextRMW(key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextRMW(key, keyHash, ref input, ref output, ref rmwOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {

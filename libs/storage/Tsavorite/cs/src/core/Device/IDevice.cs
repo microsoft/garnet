@@ -18,6 +18,9 @@ namespace Tsavorite.core
     /// </summary>
     public interface IDevice : IDisposable
     {
+        /// <summary>Default device sector size used when the actual sector size cannot be determined.</summary>
+        const int DefaultDeviceSectorSize = 4096;
+
         /// <summary>
         /// Size of sector
         /// </summary>
