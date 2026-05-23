@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <SignAssembly>true</SignAssembly>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Match YCSB.benchmark which doesn't override GC mode (Workstation default).
+         Server GC's per-CPU background threads can interfere with single-thread runs;
+         pass DOTNET_gcServer=1 explicitly when running multi-threaded benchmarks. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\Tsavorite.core.csproj" />
+  </ItemGroup>
+</Project>
