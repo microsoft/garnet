@@ -82,17 +82,39 @@ EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 
 **File:** `libs/server/Resp/Parser/RespCommand.cs`
 
-Two parsing paths exist:
+Two parsing tiers exist:
 
-### Fast path: `FastParseCommand()` / `FastParseArrayCommand()`
-Two fast-path methods exist with different constraints:
-- **`FastParseCommand()`**: For commands with a fixed number of arguments and command names up to **9 characters**. Uses `ulong` pointer comparisons on `(count << 4) | length` patterns.
-- **`FastParseArrayCommand()`**: For commands with a variable number of arguments and command names up to **16 characters**. Uses similar `ulong` comparison patterns but accommodates longer names.
+### Hash table path: `RespCommandHashLookup` (primary path for most commands)
+The hash table in `libs/server/Resp/Parser/RespCommandHashLookupData.cs` provides O(1) lookup for all built-in commands. This is the **recommended path for all new commands**.
 
-Only add here if the command name is a simple word (no dots or special characters).
+**To add a new primary command**, add one line to `PopulatePrimaryTable()` in `RespCommandHashLookupData.cs`:
+```csharp
+Add("DELIFGREATER", RespCommand.DELIFGREATER);
+```
 
-### Slow path: `SlowParseCommand()`
-For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit the fast-path pattern.
+**To add a command with subcommands** (e.g., `MYPARENT SUBCMD`):
+1. Add the parent with `hasSub: true` in `PopulatePrimaryTable()`:
+   ```csharp
+   Add("MYPARENT", RespCommand.MYPARENT, hasSub: true);
+   ```
+2. Define the subcommand array in `RespCommandHashLookupData.cs`:
+   ```csharp
+   private static readonly (string Name, RespCommand Command)[] MyparentSubcommands =
+   [
+       ("SUBCMD1", RespCommand.MYPARENT_SUBCMD1),
+       ("SUBCMD2", RespCommand.MYPARENT_SUBCMD2),
+   ];
+   ```
+3. Build the table in the static constructor in `RespCommandHashLookup.cs`:
+   ```csharp
+   myparentSubTable = BuildSubTable(MyparentSubcommands, out myparentSubTableMask);
+   ```
+4. Wire it into `LookupSubcommand()` in `RespCommandHashLookup.cs`:
+   ```csharp
+   RespCommand.MYPARENT => (myparentSubTable, myparentSubTableMask),
+   ```
+
+**⚠️ Important:** Use the exact wire-protocol spelling for the hash table name string. Some commands use hyphens (e.g., `"SET-CONFIG-EPOCH"` not `"SETCONFIGEPOCH"`). Check `CmdStrings.cs` for the canonical spelling.
 
 **⚠️ Convention:** Define the command name string in **`libs/server/Resp/CmdStrings.cs`** and reference it from the parser, rather than using inline `"..."u8` literals. This keeps command name strings centralized and reusable (e.g., for error messages).
 
@@ -101,26 +123,12 @@ For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit
 public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
 ```
 
-**Pattern for slow-path commands:**
-```csharp
-else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
-{
-    return RespCommand.DELIFGREATER;
-}
-```
+### SIMD fast path: `FastParseCommand()` (optional, for hottest commands only)
+Static `Vector128<byte>` patterns defined in `libs/server/Resp/Parser/RespCommandSimdPatterns.cs` that match the full RESP encoding (`*N\r\n$L\r\nCMD\r\n`) in a single 16-byte comparison. Use the `RespPattern(argCount, "CMD")` helper to create new patterns. Only needed for the most performance-critical commands with:
+- Fixed argument count (single digit)
+- Command names of 3-6 characters (total encoded length must fit in 16 bytes)
 
-**Pattern for dot-prefixed commands (e.g., `RI.CREATE`):**
-```csharp
-else if (command.SequenceEqual(CmdStrings.RICREATE))
-{
-    return RespCommand.RICREATE;
-}
-```
-
-Add this before the final `return RespCommand.INVALID;` at the end of `SlowParseCommand`.
-
-**⚠️ Caveat: Dot-prefixed commands and ACL**
-If your command uses a dot (e.g., `RI.CREATE`), you must also update **`libs/server/ACL/ACLParser.cs`** so that the ACL system can map the dotted wire name to the enum name. Search for how existing dot-handling works (look for `Replace(".", "")` or similar normalization).
+Most new commands should **NOT** be added here — the hash table + MRU cache provide excellent performance for all commands. Only add SIMD patterns if benchmarking shows the command is a bottleneck.
 
 ---
 
