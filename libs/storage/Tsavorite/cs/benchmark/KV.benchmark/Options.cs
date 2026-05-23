@@ -185,7 +185,7 @@ namespace Tsavorite.kvbench
             if (LoadThreads < 0) return "--load-threads must be >= 0 (0 = same as --threads)";
             ResolvedLoadThreads = LoadThreads > 0 ? LoadThreads : Threads;
 
-            var sweep = RunThreadsSweep?.ToArray() ?? Array.Empty<int>();
+            var sweep = RunThreadsSweep?.ToArray() ?? [];
             if (sweep.Length > 0)
             {
                 if (sweep.Any(t => t < 1)) return "--run-threads-sweep entries must be >= 1";
@@ -193,7 +193,7 @@ namespace Tsavorite.kvbench
             }
             else
             {
-                ResolvedRunThreadsSweep = new[] { Threads };
+                ResolvedRunThreadsSweep = [Threads];
             }
             ResolvedMaxThreads = Math.Max(ResolvedLoadThreads, ResolvedRunThreadsSweep.Max());
 
@@ -212,7 +212,7 @@ namespace Tsavorite.kvbench
             Distribution = dist;
             UseZipf = dist == "zipf";
 
-            var rumd = Rumd?.ToArray() ?? new[] { 100, 0, 0, 0 };
+            var rumd = Rumd?.ToArray() ?? [100, 0, 0, 0];
             if (rumd.Length != 4) return "--rumd must be 4 numbers";
             if (rumd.Any(x => x < 0)) return "--rumd entries must be >= 0";
             if (rumd.Sum() != 100) return $"--rumd must sum to 100 (got {rumd.Sum()})";

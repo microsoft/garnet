@@ -36,7 +36,7 @@ namespace Tsavorite.kvbench
             Enabled = !opts.NoNumaPin;
             IsLinux = OperatingSystem.IsLinux();
             IsWindows = OperatingSystem.IsWindows();
-            NodeCpus = Array.Empty<int>();
+            NodeCpus = [];
             if (!Enabled)
             {
                 DiagnosticMessage = "NUMA pinning disabled (--no-numa-pin)";
@@ -109,7 +109,7 @@ namespace Tsavorite.kvbench
             // Intersect with the process's allowed mask (sched_getaffinity).
             var allowed = LinuxSchedGetAffinity();
             var intersected = nodeCpus.Where(c => allowed.Contains(c)).ToList();
-            if (intersected.Count == 0) return Array.Empty<int>();
+            if (intersected.Count == 0) return [];
 
             // Group by physical core (one CPU per core first, then add siblings).
             var visited = new HashSet<int>();
