@@ -9,29 +9,34 @@ using Tsavorite.core;
 namespace Tsavorite.kvbench
 {
     /// <summary>
-    /// 8-byte key holding a single long value. Stored in a stack/array of 16-byte
-    /// slots (padding for cache-line alignment of subsequent value bytes inside the
-    /// log record). Only the first 8 bytes are part of the key for hash + equality.
+    /// 11-byte key with the 8-byte payload at the END of the byte sequence.
+    /// Layout in a Tsavorite record: hdr(13) + key(11) + value → value at offset 24 (8-byte aligned).
+    /// Record size stays 120 (same as the 8-byte key with padding); no cache footprint growth.
+    /// Uses <see cref="KvKeyComparer"/> to hash/compare only the trailing 8 payload bytes (not all 11).
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = DataSize)]
     public struct KvKey : IKey
     {
-        internal const int DataSize = 16;
+        internal const int DataSize = 11;
+        internal const int PayloadOffset = DataSize - sizeof(long); // 3
 
         [FieldOffset(0)]
-        public long Value;
+        public byte pad0, pad1, pad2;
 
-        [FieldOffset(sizeof(long))]
-        public int padding1, padding2;
+        /// <summary>The 8-byte key payload — written by callers via <c>key.Value = ...</c>.</summary>
+        [FieldOffset(PayloadOffset)]
+        public long Value;
 
         public override readonly string ToString() => "{ " + Value + " }";
 
         public readonly bool IsPinned => false;
 
+        /// <summary>All 11 bytes are exposed (padding included) so that copies into the log are byte-exact.
+        /// Hashing/equality uses only the trailing payload — see <see cref="KvKeyComparer"/>.</summary>
         public unsafe ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => new(Unsafe.AsPointer(ref this), sizeof(long));
+            get => new(Unsafe.AsPointer(ref this), DataSize);
         }
 
         public readonly bool HasNamespace => false;

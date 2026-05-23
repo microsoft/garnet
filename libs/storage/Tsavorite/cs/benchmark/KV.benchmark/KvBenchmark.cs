@@ -10,8 +10,8 @@ using Tsavorite.core;
 namespace Tsavorite.kvbench
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using KvStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
-    using KvAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>>;
+    using KvStoreFunctions = StoreFunctions<KvKeyComparer, SpanByteRecordTriggers>;
+    using KvAllocator = ObjectAllocator<StoreFunctions<KvKeyComparer, SpanByteRecordTriggers>>;
 
     /// <summary>Headline result for one phase (load or one run iteration).</summary>
     public sealed class PhaseResult
@@ -118,7 +118,7 @@ namespace Tsavorite.kvbench
 
             store = new TsavoriteKV<KvStoreFunctions, KvAllocator>(
                 kvSettings,
-                StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordTriggers()),
+                StoreFunctions.Create(KvKeyComparer.Instance, new SpanByteRecordTriggers()),
                 (allocSettings, sf) => new KvAllocator(allocSettings, sf));
         }
 
