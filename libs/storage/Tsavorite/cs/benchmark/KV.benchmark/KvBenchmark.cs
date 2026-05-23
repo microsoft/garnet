@@ -172,8 +172,15 @@ namespace Tsavorite.kvbench
                 threads[idx].Start();
             }
 
-            // All workers parked on the gate; capture GC + tick baselines just before releasing.
+            // All workers parked on the gate. Force a full GC + finalizer pass + GC NOW so any
+            // pending garbage from setup / prior phase is reclaimed BEFORE the timed window opens.
+            // The double-Collect handles object resurrection during finalization. Hot loop is
+            // allocation-free (~4 KB per worker for stackallocs), so this purely guards against
+            // a stray Gen2 firing mid-window and biasing one iteration.
             ready.Wait();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
             var gc0 = GC.CollectionCount(0);
             var gc1 = GC.CollectionCount(1);
             var gc2 = GC.CollectionCount(2);

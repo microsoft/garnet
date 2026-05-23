@@ -354,6 +354,13 @@ and typically produces stdev% well under 1 %.
 For mixed RUMD, the same key/op stream is replayed each iteration, but
 writes from prior iterations remain visible.
 
+**GC quiescence**: between iterations the benchmark forces a full
+Gen2 collection + finalizer pass + Gen2 collection again *after* all
+workers have parked on the start gate but *before* the timed window
+opens. This guarantees the per-iteration `gc_delta` reflects only
+collections that actually happened during the measured window (almost
+always `0/0/0` since the hot loop is allocation-free).
+
 ## NUMA + ThreadPool
 
 On Linux, `KvNumaPinning` reads `/sys/devices/system/node/node<N>/cpulist`,
