@@ -68,7 +68,7 @@ namespace Tsavorite.kvbench
         public string LogMemory { get; set; }
 
         [Option("page-size", Required = false, Default = "32MB",
-            HelpText = "Page size (e.g. 32MB). Default matches the YCSB.benchmark KVSettings default for direct comparison.")]
+            HelpText = "Page size (e.g. 32MB).")]
         public string PageSize { get; set; }
 
         [Option("segment-size", Required = false, Default = "1GB",

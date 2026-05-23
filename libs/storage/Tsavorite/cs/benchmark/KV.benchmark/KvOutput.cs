@@ -71,7 +71,7 @@ namespace Tsavorite.kvbench
                 _ => $"[{r.Phase}]    ",
             };
             var rate = r.OpsPerSec.ToString("N0", CultureInfo.InvariantCulture);
-            Console.WriteLine($"{tag}{r.TotalOpsForThroughput:N0} ops in {r.ElapsedSec:N3} s  ({rate} ops/sec)  hits={r.Hits:N0} misses={r.Misses:N0} reinserts={r.DeletesReinserted:N0} overshoot={r.OvershootOps:N0} exit-lag={r.MaxWorkerExitLagMs:N1}ms gc={r.GcGen0Delta}/{r.GcGen1Delta}/{r.GcGen2Delta} alloc/wkr={r.AllocBytesByWorkerMax}B");
+            Console.WriteLine($"{tag}{r.TotalOpsForThroughput:N0} ops in {r.ElapsedSec:N3} s  ({rate} ops/sec)  reads={r.Reads:N0} writes={r.Writes:N0} deletes={r.Deletes:N0} overshoot={r.OvershootOps:N0} exit-lag={r.MaxWorkerExitLagMs:N1}ms gc={r.GcGen0Delta}/{r.GcGen1Delta}/{r.GcGen2Delta} alloc/wkr={r.AllocBytesByWorkerMax}B");
         }
 
         public void EmitAggregateHuman(IList<PhaseResult> iters)
@@ -148,9 +148,9 @@ namespace Tsavorite.kvbench
               .Append(",")  // ops_per_sec (we'll instead emit mean below)
               .Append(",")  // overshoot
               .Append(",")  // exit_lag
-              .Append(",")  // hits
-              .Append(",")  // misses
-              .Append(",")  // reinserts
+              .Append(",")  // reads
+              .Append(",")  // writes
+              .Append(",")  // deletes
               .Append(",")  // gc0
               .Append(",")  // gc1
               .Append(",")  // gc2
@@ -182,9 +182,9 @@ namespace Tsavorite.kvbench
             sb.Append($"\"final_total_ops\":{r.FinalTotalOps},");
             sb.Append($"\"overshoot_ops\":{r.OvershootOps},");
             sb.Append($"\"max_worker_exit_lag_ms\":{Dbl(r.MaxWorkerExitLagMs)},");
-            sb.Append($"\"hits\":{r.Hits},");
-            sb.Append($"\"misses\":{r.Misses},");
-            sb.Append($"\"deletes_reinserted\":{r.DeletesReinserted},");
+            sb.Append($"\"reads\":{r.Reads},");
+            sb.Append($"\"writes\":{r.Writes},");
+            sb.Append($"\"deletes\":{r.Deletes},");
             sb.Append($"\"interrupted\":{(r.Interrupted ? "true" : "false")},");
             sb.Append($"\"error\":{(r.ErrorMessage is null ? "null" : JsonString(r.ErrorMessage))},");
             sb.Append("\"log\":{");
@@ -253,7 +253,7 @@ namespace Tsavorite.kvbench
         }
 
         static string CsvHeader() =>
-            "schema_version,timestamp_utc,git_sha,hostname,phase,iteration,threads,keys,value_size,distribution,rumd,delete_reinsert,reader_copy_bytes,device,device_throttle,device_completion_threads,device_io_backend,session_context,hashpack_configured,hashpack_effective,index_size_requested,index_size_applied,log_memory,page_size,segment_size,mutable_fraction,warmup_sec,runsec,elapsed_sec,total_ops_for_throughput,ops_per_sec,overshoot_ops,max_worker_exit_lag_ms,hits,misses,deletes_reinserted,gc_gen0,gc_gen1,gc_gen2,alloc_bytes_by_worker_max,log_begin,log_head,log_readonly,log_tail,agg_mean_ops_per_sec,agg_stdev_ops_per_sec,agg_trimmed_mean,agg_min,agg_max";
+            "schema_version,timestamp_utc,git_sha,hostname,phase,iteration,threads,keys,value_size,distribution,rumd,delete_reinsert,reader_copy_bytes,device,device_throttle,device_completion_threads,device_io_backend,session_context,hashpack_configured,hashpack_effective,index_size_requested,index_size_applied,log_memory,page_size,segment_size,mutable_fraction,warmup_sec,runsec,elapsed_sec,total_ops_for_throughput,ops_per_sec,overshoot_ops,max_worker_exit_lag_ms,reads,writes,deletes,gc_gen0,gc_gen1,gc_gen2,alloc_bytes_by_worker_max,log_begin,log_head,log_readonly,log_tail,agg_mean_ops_per_sec,agg_stdev_ops_per_sec,agg_trimmed_mean,agg_min,agg_max";
 
         string CsvRow(PhaseResult r, KvNumaPinning pinning)
         {
@@ -264,9 +264,9 @@ namespace Tsavorite.kvbench
               .Append(",").Append(Dbl(r.OpsPerSec))
               .Append(",").Append(r.OvershootOps)
               .Append(",").Append(Dbl(r.MaxWorkerExitLagMs))
-              .Append(",").Append(r.Hits)
-              .Append(",").Append(r.Misses)
-              .Append(",").Append(r.DeletesReinserted)
+              .Append(",").Append(r.Reads)
+              .Append(",").Append(r.Writes)
+              .Append(",").Append(r.Deletes)
               .Append(",").Append(r.GcGen0Delta)
               .Append(",").Append(r.GcGen1Delta)
               .Append(",").Append(r.GcGen2Delta)

@@ -70,9 +70,9 @@ numactl --membind=0 --cpunodebind=0 \
 
 Sample result on a 2 × 80-core / 2-NUMA host:
 ```
-[run 1] 566,958,848 ops in 5.000 s  (113,386,218 ops/sec)  hits=566,974,720 misses=0 gc=0/0/0 alloc/wkr=4360B
-[run 2] 567,287,296 ops in 5.000 s  (113,451,754 ops/sec)  hits=567,303,424 misses=0 gc=0/0/0 alloc/wkr=4328B
-[run 3] 567,573,760 ops in 5.000 s  (113,509,656 ops/sec)  hits=567,589,888 misses=0 gc=0/0/0 alloc/wkr=4328B
+[run 1] 566,958,848 ops in 5.000 s  (113,386,218 ops/sec)  reads=566,974,720 writes=0 deletes=0 gc=0/0/0 alloc/wkr=4360B
+[run 2] 567,287,296 ops in 5.000 s  (113,451,754 ops/sec)  reads=567,303,424 writes=0 deletes=0 gc=0/0/0 alloc/wkr=4328B
+[run 3] 567,573,760 ops in 5.000 s  (113,509,656 ops/sec)  reads=567,589,888 writes=0 deletes=0 gc=0/0/0 alloc/wkr=4328B
 [aggregate] iterations=3 mean=113,449,209 ops/sec stdev=50,425.7 (0.0%) min=113,386,218 max=113,509,656 trimmed=113,451,754
 ```
 
@@ -238,14 +238,20 @@ column -t -s , /tmp/kv-sweep.csv | head
 - Synthetic data only.
 - `ObjectAllocator` only.
 
-### Hot-loop architecture (why throughput stays close to YCSB.benchmark)
+### Hot-loop architecture
 
-At startup the engine **dispatches once** to one of several focused per-workload worker methods, each small enough that the JIT inlines `BasicContext.Read` into the hot-loop body rather than emitting an out-of-line call. Currently:
+`RunWorkload` is a single per-thread method:
 
-- `RunReadOnlyUniformFast32` — pure-read uniform 32-bit keys (the canonical reference baseline). Minimal body; `BasicContext.Read` is fully inlined (verified via `DOTNET_JitDisasm`).
-- `RunGeneralRumd` — general RUMD path (mixed reads/upserts/RMWs/deletes, zipf, 64-bit key counts).
+- **Per-op inline xorshift32 key gen** — uniform: `wk & (N-1)` if `N` is a power of two (1 cycle), otherwise Lemire's fast modulo `((ulong)wk * N) >> 32` (~5 cycles). 64-bit keyCount paths use plain `% N`.
+- **Per-op independent xorshift32 coin toss** for op selection (read/upsert/RMW/delete). Two independent RNG states are MANDATORY when distribution=zipf: zipf consumes its source RNG non-uniformly, so reusing it for op-select would bias the rumd ratio.
+- **Pre-computed op cutoffs** in the 32-bit RNG domain so the coin toss is `wr < cutoff` with no per-op multiply.
+- **Chunk-boundary done check** — saves a per-op `Volatile.Read(ref doneFlag)`. Stop latency is bounded at one chunk (~0.3 ms at 2 M ops/sec).
+- **`CompletePending(false)` every 512 ops** — JIT folds the literal `% 512` to a bitmask.
+- **`Interlocked.Add(ref globalChunkIdx, kChunkSize)`** for chunk scheduling — at single thread it's no slower than a thread-local counter and at multi-thread it gives even chunk distribution across workers.
+- **Hot-path buffers (`value`, `input`, `output`) are stackalloc'd in `WorkerProc`** and passed into `RunWorkload` by `ref`. This is measurably (~3.7 %) faster than declaring them inside `RunWorkload`: a smaller method body lets the JIT inline `BasicContext.Read` into the hot loop rather than emitting an out-of-line `call ContextRead`.
+- **`KvSessionFunctions.Reader` copies a constant 32 bytes** (one cache line). The `32` is a `const int`, not a `static readonly int`, so the JIT const-folds the `Slice(0, 32).CopyTo(...)` into a single SSE memcpy (≈15 % single-thread improvement over a non-const length).
 
-This matters because at single-thread on a 100 M-key workload, the difference between an inlined `BasicContext.Read` and an out-of-line call is roughly **30–40 % throughput** — much more than the per-op work in the call itself, because the inlined version lets the JIT keep arguments in registers and skip a full call-prologue/epilogue.
+At single thread on a 100M-key SpanByte workload (96-byte values, BasicContext, in-memory log), the difference between an inlined `BasicContext.Read` and an out-of-line call is roughly **30–40 % throughput** — much more than the per-op work in the call itself, because the inlined version lets the JIT keep arguments in registers and skip a full call-prologue/epilogue.
 
 
 ## Output schema
@@ -256,7 +262,7 @@ The startup **config block** echoes every resolved flag plus NUMA placement.
 
 Per-phase line shape:
 ```
-[<phase>][optionally <iter>] <ops> ops in <sec> s  (<ops/sec>)  hits=N misses=N reinserts=N overshoot=N exit-lag=Xms gc=g0/g1/g2 alloc/wkr=Nbytes
+[<phase>][optionally <iter>] <ops> ops in <sec> s  (<ops/sec>)  reads=N writes=N deletes=N overshoot=N exit-lag=Xms gc=g0/g1/g2 alloc/wkr=Nbytes
 ```
 
 After the last iteration, an `[aggregate]` line with `mean`, `stdev`, `stdev%`,
@@ -270,11 +276,15 @@ aggregate row with `phase: "aggregate"`. Schema is `schema_version: "1"`.
 
 Top-level fields include: `phase`, `iteration`, `ops_per_sec`, `elapsed_sec`,
 `total_ops_for_throughput`, `final_total_ops`, `overshoot_ops`,
-`max_worker_exit_lag_ms`, `hits`, `misses`, `deletes_reinserted`, `interrupted`,
+`max_worker_exit_lag_ms`, `reads`, `writes`, `deletes`, `interrupted`,
 `error`, `log.{begin,head,readonly,tail}_address`, `gc_delta.{gen0,gen1,gen2,alloc_bytes_by_worker_max}`,
 `config.*` (every flag's resolved value), `host.*` (hostname, OS, dotnet version,
 git sha, NUMA node, worker CPU mask, Server GC, GC latency mode, tiered compilation,
 THP mode, data path, RAM), and `argv` (the exact command-line that produced the row).
+
+The `reads` / `writes` / `deletes` counters are per-RESP-op (not per-record):
+when `--rumd ...,d=N` is non-zero, every delete is immediately followed by a
+re-insert (Upsert) which is counted under `writes`.
 
 ### CSV (`--csv-output FILE`)
 

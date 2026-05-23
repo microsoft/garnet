@@ -24,9 +24,9 @@ namespace Tsavorite.kvbench
         public long FinalTotalOps { get; init; }
         public long OvershootOps { get; init; }
         public double MaxWorkerExitLagMs { get; init; }
-        public long Hits { get; init; }
-        public long Misses { get; init; }
-        public long DeletesReinserted { get; init; }
+        public long Reads { get; init; }
+        public long Writes { get; init; }
+        public long Deletes { get; init; }
         public long LogBegin { get; init; }
         public long LogHead { get; init; }
         public long LogReadOnly { get; init; }
@@ -45,9 +45,9 @@ namespace Tsavorite.kvbench
     internal sealed class WorkerStats
     {
         public long LocalOps;
-        public long Hits;
-        public long Misses;
-        public long DeletesReinserted;
+        public long Reads;
+        public long Writes;
+        public long Deletes;
         public long AllocBytesDelta;
         public long FinalExitTicks; // Stopwatch.GetTimestamp() right before exit
     }
@@ -142,7 +142,7 @@ namespace Tsavorite.kvbench
             // Reset shared state.
             doneBox[0].Value = false;
             Volatile.Write(ref chunkCounter, 0);
-            Volatile.Write(ref idx_, 0);
+            Volatile.Write(ref globalChunkIdx, 0);
             for (int i = 0; i < scoreboard.Length; i++)
                 Volatile.Write(ref scoreboard[i].Value, 0);
             gate.Reset();
@@ -204,14 +204,14 @@ namespace Tsavorite.kvbench
 
             var finalTotal = 0L;
             var maxAlloc = 0L;
-            long hits = 0, misses = 0, deletesReinserted = 0;
+            long reads = 0, writes = 0, deletes = 0;
             double maxExitLagMs = 0;
             foreach (var s in stats)
             {
                 finalTotal += s.LocalOps;
-                hits += s.Hits;
-                misses += s.Misses;
-                deletesReinserted += s.DeletesReinserted;
+                reads += s.Reads;
+                writes += s.Writes;
+                deletes += s.Deletes;
                 if (s.AllocBytesDelta > maxAlloc) maxAlloc = s.AllocBytesDelta;
                 var lagMs = (s.FinalExitTicks - doneTicks) * 1000.0 / Stopwatch.Frequency;
                 if (lagMs > maxExitLagMs) maxExitLagMs = lagMs;
@@ -230,9 +230,9 @@ namespace Tsavorite.kvbench
                 FinalTotalOps = finalTotal,
                 OvershootOps = Math.Max(0, finalTotal - totalForThroughput),
                 MaxWorkerExitLagMs = maxExitLagMs,
-                Hits = hits,
-                Misses = misses,
-                DeletesReinserted = deletesReinserted,
+                Reads = reads,
+                Writes = writes,
+                Deletes = deletes,
                 LogBegin = store.Log.BeginAddress,
                 LogHead = store.Log.HeadAddress,
                 LogReadOnly = store.Log.ReadOnlyAddress,
@@ -276,12 +276,12 @@ namespace Tsavorite.kvbench
             gate.Wait();
 
             long localOps = 0;
-            long hits = 0, misses = 0, deletesReinserted = 0;
+            long reads = 0, writes = 0, deletes = 0;
             var allocBefore = GC.GetAllocatedBytesForCurrentThread();
 
             if (isLoad)
             {
-                // Per-thread load buffer (matches YCSB Setup pattern). Stackalloc inside isLoad branch.
+                // Per-thread load buffer. Stackalloc inside isLoad branch.
                 byte* valuePtr = stackalloc byte[Options.ValueSize];
                 for (int i = 0; i < Options.ValueSize; i++)
                     valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
@@ -301,6 +301,7 @@ namespace Tsavorite.kvbench
                     }
                 }
                 bContext.CompletePending(true);
+                writes = localOps;
             }
             else
             {
@@ -320,7 +321,7 @@ namespace Tsavorite.kvbench
                 var pinnedInputD = PinnedSpanByte.FromPinnedSpan(inputSpanD);
                 var outputD = SpanByteAndMemory.FromPinnedSpan(outputSpanD);
 
-                (localOps, hits, misses, deletesReinserted) = RunYcsbStyle(
+                (localOps, reads, writes, deletes) = RunWorkload(
                     bContext, ref mySlot, ref doneFlag, threadIdx,
                     Options.Keys, Options.UseZipf,
                     valueSpanD, ref pinnedInputD, ref outputD,
@@ -334,28 +335,33 @@ namespace Tsavorite.kvbench
 
             var allocAfter = GC.GetAllocatedBytesForCurrentThread();
             stats.LocalOps = localOps;
-            stats.Hits = hits;
-            stats.Misses = misses;
-            stats.DeletesReinserted = deletesReinserted;
+            stats.Reads = reads;
+            stats.Writes = writes;
+            stats.Deletes = deletes;
             stats.AllocBytesDelta = allocAfter - allocBefore;
             stats.FinalExitTicks = Stopwatch.GetTimestamp();
         }
 
-        // ====== Per-thread RUN hot loop (mirrors YCSB.benchmark RunYcsbSafeContext) ======
+        // ====== Per-thread RUN hot loop ======
 
         /// <summary>
-        /// Per-thread RUN hot loop that is structurally byte-for-byte equivalent to
-        /// YCSB.benchmark's <c>SpanByteYcsbBenchmark.RunYcsbSafeContext</c> — see comments
-        /// inline below correlating each block. This mirrored structure is critical:
-        /// JIT-emits the same control-flow / branch density / inlining shape as YCSB's
-        /// loop, so any single-thread perf delta isolates engine differences from
-        /// benchmark harness differences.
+        /// Per-thread RUN hot loop. Structure:
+        /// <list type="bullet">
+        ///   <item>Per-op inline xorshift32 key gen (bitmask for pow2 keyCount, Lemire fast-mod otherwise).</item>
+        ///   <item>Per-op independent xorshift32 coin toss for op selection (read/upsert/RMW/delete).</item>
+        ///   <item>Chained <c>if (r &lt; pct) { ... continue; }</c> branches.</item>
+        ///   <item>Per-op done check in inner-loop condition.</item>
+        ///   <item><c>CompletePending(false)</c> every 512 ops.</item>
+        ///   <item>Per-chunk scoreboard tick for in-flight throughput sampling.</item>
+        /// </list>
+        /// Two independent RNG states are MANDATORY when distribution=zipf: zipf consumes
+        /// its source RNG non-uniformly, so reusing it for op-select would bias the rumd ratio.
         /// </summary>
-        long idx_; // global chunk counter for the run phase (matches YCSB)
+        long globalChunkIdx;
 
 
         // ===== buffers passed in by ref (stackalloc'd outside the method) =====
-        unsafe (long localOps, long reads, long writes, long deletes) RunYcsbStyle(
+        unsafe (long localOps, long reads, long writes, long deletes) RunWorkload(
             Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
             ref PaddedLong slot, ref bool doneFlag, int threadIdx,
             long keyCount, bool useZipf,
@@ -378,18 +384,27 @@ namespace Tsavorite.kvbench
             bool keysPow2 = fast32 && (keyCount32 & (keyCount32 - 1)) == 0;
             uint keyMask32 = fast32 ? keyCount32 - 1 : 0u;
 
+            // Pre-compute op-select cutoffs in the 32-bit RNG domain, so the per-op coin toss
+            // is just `wr < cutoff` (no multiply, no divide). The cutoffs map
+            // wr ∈ [0, 2^32) → action with probability pct/100.
+            // For pct=100: cutoff = 2^32 (always greater than any uint wr), so check is always true.
+            ulong readCutoff = ((ulong)(uint)readPercent << 32) / 100;
+            ulong upsertCutoff = ((ulong)(uint)upsertPercent << 32) / 100;
+            ulong rmwCutoff = ((ulong)(uint)rmwPercent << 32) / 100;
+
             long reads_done = 0, writes_done = 0, deletes_done = 0;
+            KvKey key = default;  // Hoisted to avoid per-op 16-byte zero-init for the KvKey struct.
 
             while (!Volatile.Read(ref doneFlag))
             {
-                long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
-
-                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !Volatile.Read(ref doneFlag); ++idx)
+                long chunk_idx = Interlocked.Add(ref globalChunkIdx, kChunkSize) - kChunkSize;
+                long chunk_end = chunk_idx + kChunkSize;
+                // done is checked at chunk boundary only — saves a per-op volatile read + branch.
+                // Worst-case stop latency: one chunk (~640 ops ≈ 0.3 ms at 2M ops/sec). Acceptable.
+                for (long idx = chunk_idx; idx < chunk_end; ++idx)
                 {
                     if (idx % 512 == 0)
                         bContext.CompletePending(false);
-
-                    KvKey key = default;
                     if (useZipf)
                     {
                         long kk = zipf.Next(ref rngStruct);
@@ -419,36 +434,41 @@ namespace Tsavorite.kvbench
                     uint tr = xr ^ (xr << 11);
                     xr = yr; yr = zr; zr = wr;
                     wr = (wr ^ (wr >> 19)) ^ (tr ^ (tr >> 8));
-                    int r = (int)(uint)(((ulong)wr * 100u) >> 32);
+                    // No per-op multiply: compare wr directly against precomputed cutoffs.
+                    ulong rcoin = wr;
 
-                    if (r < readPercent)
+                    if (rcoin < readCutoff)
                     {
                         bContext.Read(key, ref pinnedInputSpan, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
-                    if (r < upsertPercent)
+                    if (rcoin < upsertCutoff)
                     {
                         bContext.Upsert(key, value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    if (r < rmwPercent)
+                    if (rcoin < rmwCutoff)
                     {
                         bContext.RMW(key, ref pinnedInputSpan, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     bContext.Delete(key, Empty.Default);
-                    if (deleteReinsert)
-                        bContext.Upsert(key, value, Empty.Default);
                     ++deletes_done;
+                    if (deleteReinsert)
+                    {
+                        bContext.Upsert(key, value, Empty.Default);
+                        ++writes_done;
+                    }
                 }
 
+                // Live scoreboard tick per chunk — now includes reinserts (counted as writes).
                 Volatile.Write(ref slot.Value, reads_done + writes_done + deletes_done);
             }
             bContext.CompletePending(true);
-            long localOps = reads_done + writes_done + deletes_done + (deleteReinsert ? deletes_done : 0);
+            long localOps = reads_done + writes_done + deletes_done;
             return (localOps, reads_done, writes_done, deletes_done);
         }
 

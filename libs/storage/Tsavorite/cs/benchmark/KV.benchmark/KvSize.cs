@@ -7,7 +7,6 @@ namespace Tsavorite.kvbench
 {
     /// <summary>
     /// Size string parsing/formatting helpers ("4mb", "16GB", "1024" → bytes).
-    /// Lifted from YCSB BenchmarkSetup so we have no compile-time dependency on it.
     /// </summary>
     internal static class KvSize
     {
