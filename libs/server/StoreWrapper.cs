@@ -121,7 +121,7 @@ namespace Garnet.server
         /// <summary>
         /// RangeIndex (BfTree) manager shared across sessions
         /// </summary>
-        public readonly RangeIndexManager rangeIndexManager;
+        internal readonly RangeIndexManager rangeIndexManager;
 
         /// <summary>
         /// Definition for delegate creating a new logical database
@@ -280,7 +280,7 @@ namespace Garnet.server
             }
 
             if (clusterFactory != null)
-                clusterProvider = clusterFactory.CreateClusterProvider(this);
+                clusterProvider = clusterFactory.CreateClusterProvider(this, rangeIndexManager);
             ctsCommit = new();
 
             if (!serverOptions.EnableCluster)

@@ -44,11 +44,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Create new cluster provider
         /// </summary>
-        public ClusterProvider(StoreWrapper storeWrapper)
+        public ClusterProvider(StoreWrapper storeWrapper, RangeIndexManager rangeIndexManager)
         {
             this.storeWrapper = storeWrapper;
             this.serverOptions = storeWrapper.serverOptions;
-            this.rangeIndexManager = storeWrapper.rangeIndexManager;
+            this.rangeIndexManager = rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
 
             authContainer = new ClusterAuthContainer
