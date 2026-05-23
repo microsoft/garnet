@@ -308,9 +308,21 @@ namespace Tsavorite.kvbench
                 var deleteReinsert = Options.RumdHasDeletes();
 
                 // Stackalloc OUTSIDE the hot-loop method; pass buffers as ref params (~3.7% faster than stackalloc-inside).
-                byte* valuePtrD = stackalloc byte[Options.ValueSize];
-                byte* inputPtrD = stackalloc byte[Options.ValueSize];
-                byte* outputPtrD = stackalloc byte[KvSessionFunctions.kReaderCopyBytes];
+                // ALIGNMENT NOTE: stackalloc gives 8-byte alignment, but Reader's
+                // `srcLogRecord.ValueSpan.Slice(0, 32).CopyTo(...)` JITs to a single
+                // `vmovdqu ymm0, [src]` + `vmovdqu [dst], ymm0` (32-byte AVX2). The SOURCE is always 5-byte
+                // unaligned within an 8-byte-aligned Tsavorite record (offset 21 from record start), so with
+                // e.g. 120 B records the value start cycles 21,13,5,61,53,45,37,29 mod 64 — half of reads
+                // already cross a cache line on the source side, which we can't fix without changing the log
+                // layout. But we CAN ensure the DESTINATION and INPUT buffers are 32-byte aligned by
+                // overallocating + rounding up; that removes the dest-side cross-line penalty and is worth
+                // ~3 % at memory-bound scale (100 M+ keys).
+                byte* valueRaw = stackalloc byte[Options.ValueSize + 31];
+                byte* valuePtrD = (byte*)(((nuint)valueRaw + 31u) & ~(nuint)31u);
+                byte* inputRaw = stackalloc byte[Options.ValueSize + 31];
+                byte* inputPtrD = (byte*)(((nuint)inputRaw + 31u) & ~(nuint)31u);
+                byte* outputRaw = stackalloc byte[KvSessionFunctions.kReaderCopyBytes + 31];
+                byte* outputPtrD = (byte*)(((nuint)outputRaw + 31u) & ~(nuint)31u);
                 for (int i = 0; i < Options.ValueSize; i++)
                     valuePtrD[i] = (byte)((threadIdx * 31 + i) & 0xFF);
                 for (int i = 0; i < Options.ValueSize; i++)
