@@ -197,8 +197,10 @@ column -t -s , /tmp/kv-sweep.csv | head
 | --- | --- | --- |
 | `--hashpack` | `2.0` | Hash packing factor. `index_size_requested = (long)(keys / hashpack) << 6`. Note the engine rounds **down** to the nearest power of 2, so the effective hashpack is typically higher than configured — both `requested` and `applied` are emitted in metadata. |
 | `--log-memory` | auto | Total in-memory log window (e.g. `16GB`). Auto-default = `NextPow2(keys × recordSize / 0.9)`, capped at 70 % of host MemAvailable. Explicit values bypass the RAM cap. |
-| `--page-size` | `16MB` | Page size (e.g. `16MB`, `4MB`). |
-| `--segment-size` | `1GB` | On-disk segment size. |
+| `--page-size` | `16MB` | Page size (e.g. `16MB`, `4MB`). **Matches Garnet `defaults.conf` PageSize=16m**. |
+| `--segment-size` | `1GB` | On-disk segment size. **Matches Garnet SegmentSize=1g**. |
+| `--max-inline-value-size` | `16KB` | `KVSettings.MaxInlineValueSize` — values larger than this overflow to a separate heap object. **Matches Garnet `ValueOverflowThreshold=16k`**. |
+| `--preallocate-log` | `false` | When `true`, pre-touches every log page at startup so first-touch faults don't bias the timed window. **Default `false` matches Garnet**; enable for the most stable single-thread benchmark numbers (cost: 6 s per 16 GB of log at setup). |
 
 ### Device (5)
 
@@ -231,8 +233,8 @@ column -t -s , /tmp/kv-sweep.csv | head
 
 ### Hard-coded (no flag)
 
-- `MutableFraction = 0.9` (KVSettings default).
-- `PreallocateLog = true` (in-memory log pages physically committed at startup).
+- `MutableFraction = 0.9` (KVSettings default; matches Garnet `MutablePercent=90`).
+- `MaxInlineKeySize = 128 B` (KVSettings default; matches Garnet).
 - `O_DIRECT` / `FILE_FLAG_NO_BUFFERING` on managed devices.
 - Run-dir scoped cleanup (no recursive delete of `--data-path`).
 - Session context: **`BasicContext` only** (safe path — per-op epoch resume/suspend is included in every measurement).

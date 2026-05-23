@@ -109,8 +109,9 @@ namespace Tsavorite.kvbench
             sb.Append($"\"page_size\":{_opts.ResolvedPageSizeBytes},");
             sb.Append($"\"segment_size\":{_opts.ResolvedSegmentSizeBytes},");
             sb.Append($"\"record_size_estimated\":{_opts.ResolvedRecordSizeBytes},");
+            sb.Append($"\"max_inline_value_size\":{_opts.ResolvedMaxInlineValueSizeBytes},");
             sb.Append("\"mutable_fraction\":0.9,");
-            sb.Append("\"preallocate_log\":true,");
+            sb.Append($"\"preallocate_log\":{(_opts.PreallocateLog ? "true" : "false")},");
             sb.Append($"\"device\":\"{_opts.ResolvedDeviceType}\",");
             sb.Append($"\"device_throttle\":{_opts.DeviceThrottle},");
             sb.Append($"\"device_completion_threads\":{_opts.DeviceCompletionThreads},");

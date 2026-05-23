@@ -101,15 +101,19 @@ namespace Tsavorite.kvbench
             var logPath = opts.ResolvedDeviceType == DeviceType.Null ? null : Path.Combine(RunDir, "hlog");
             device = CreateDevice(opts, logPath);
 
+            // Defaults below match Garnet's defaults.conf for apples-to-apples comparison with the
+            // Garnet RESP server. Anything not exposed via CLI stays at the Tsavorite KVSettings
+            // default (MutableFraction=0.9, MaxInlineKeySize=128B — both also match Garnet).
             var kvSettings = new KVSettings
             {
                 IndexSize = opts.ResolvedIndexRequestedBytes,
                 LogDevice = device,
-                PreallocateLog = true,
                 LogMemorySize = opts.ResolvedLogMemoryBytes,
-                PageSize = opts.ResolvedPageSizeBytes,
-                SegmentSize = opts.ResolvedSegmentSizeBytes,
-                // MutableFraction stays at the KVSettings default (0.9).
+                PageSize = opts.ResolvedPageSizeBytes,                 // Garnet default: 16 MB
+                SegmentSize = opts.ResolvedSegmentSizeBytes,           // Garnet default: 1 GB
+                MaxInlineValueSize = (int)opts.ResolvedMaxInlineValueSizeBytes, // Garnet default: 16 KB
+                PreallocateLog = opts.PreallocateLog,                  // Garnet default: false (CLI override available)
+                // MutableFraction stays at the KVSettings/Garnet default (0.9).
             };
 
             store = new TsavoriteKV<KvStoreFunctions, KvAllocator>(

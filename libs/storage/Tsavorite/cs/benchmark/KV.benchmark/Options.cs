@@ -67,13 +67,21 @@ namespace Tsavorite.kvbench
             HelpText = "Total in-memory log size (e.g. 16GB). Auto-default sizes for whole dataset in mutable region (read-only baseline).")]
         public string LogMemory { get; set; }
 
-        [Option("page-size", Required = false, Default = "32MB",
-            HelpText = "Page size (e.g. 32MB).")]
+        [Option("page-size", Required = false, Default = "16MB",
+            HelpText = "Page size (e.g. 16MB, 32MB). Default matches Garnet (defaults.conf PageSize=16m).")]
         public string PageSize { get; set; }
 
         [Option("segment-size", Required = false, Default = "1GB",
-            HelpText = "On-disk segment size (e.g. 1GB).")]
+            HelpText = "On-disk segment size (e.g. 1GB). Default matches Garnet (defaults.conf SegmentSize=1g).")]
         public string SegmentSize { get; set; }
+
+        [Option("max-inline-value-size", Required = false, Default = "16KB",
+            HelpText = "Max inline value size (KVSettings.MaxInlineValueSize). Values larger than this overflow to a separate heap object. Default matches Garnet (defaults.conf ValueOverflowThreshold=16k).")]
+        public string MaxInlineValueSize { get; set; }
+
+        [Option("preallocate-log", Required = false, Default = false,
+            HelpText = "Pre-touch every log page at startup to commit physical pages. Default matches Garnet (false). Enable for stable single-thread benchmarks where first-touch page faults would bias the timed window.")]
+        public bool PreallocateLog { get; set; }
 
         // ===== Device =====
 
@@ -147,6 +155,7 @@ namespace Tsavorite.kvbench
         internal long ResolvedIndexRequestedBytes;
         internal long ResolvedIndexAppliedBytes;
         internal long ResolvedRecordSizeBytes;
+        internal long ResolvedMaxInlineValueSizeBytes;
         internal int ReadPct, UpsertPctCumulative, RmwPctCumulative;
         internal bool UseZipf;
         internal Tsavorite.core.DeviceType ResolvedDeviceType;
@@ -159,8 +168,9 @@ namespace Tsavorite.kvbench
         {
             if (Threads < 1) return "--threads must be >= 1";
             if (Keys <= 0) return "--keys must be > 0";
-        // Validate --value-size: 32..4096 (Reader copies 32 bytes; value must be at least that).
-        if (ValueSize < 32 || ValueSize > 4096) return "--value-size must be in [32, 4096]";
+            // Validate --value-size: lower bound 32 (Reader copies 32 bytes), upper bound 1MB
+            // (validated against --max-inline-value-size below for the per-record cap).
+            if (ValueSize < 32 || ValueSize > 1024 * 1024) return "--value-size must be in [32, 1048576]";
             if (Hashpack <= 0) return "--hashpack must be > 0";
             if (RunSec < 0) return "--runsec must be >= 0";
             if (WarmupSec < 0) return "--warmup-sec must be >= 0";
@@ -188,6 +198,10 @@ namespace Tsavorite.kvbench
             if (ResolvedPageSizeBytes <= 0) return $"--page-size invalid: {PageSize}";
             ResolvedSegmentSizeBytes = KvSize.ParseSize(SegmentSize);
             if (ResolvedSegmentSizeBytes <= 0) return $"--segment-size invalid: {SegmentSize}";
+            ResolvedMaxInlineValueSizeBytes = KvSize.ParseSize(MaxInlineValueSize);
+            if (ResolvedMaxInlineValueSizeBytes <= 0) return $"--max-inline-value-size invalid: {MaxInlineValueSize}";
+            if (ValueSize > ResolvedMaxInlineValueSizeBytes)
+                return $"--value-size ({ValueSize}) exceeds --max-inline-value-size ({ResolvedMaxInlineValueSizeBytes}); values larger than the inline threshold overflow to heap and skew the benchmark.";
 
             // Estimated record size: 8 RecordInfo + 5 length-byte hdr + 8 key + value, aligned to 8.
             var rec = 21L + ValueSize;

@@ -59,6 +59,8 @@ namespace Tsavorite.kvbench
             Console.WriteLine($"  log-memory       : {KvSize.FormatSize(_opts.ResolvedLogMemoryBytes)}");
             Console.WriteLine($"  page-size        : {KvSize.FormatSize(_opts.ResolvedPageSizeBytes)}");
             Console.WriteLine($"  segment-size     : {KvSize.FormatSize(_opts.ResolvedSegmentSizeBytes)}");
+            Console.WriteLine($"  max-inline-value : {KvSize.FormatSize(_opts.ResolvedMaxInlineValueSizeBytes)} (values larger overflow to heap)");
+            Console.WriteLine($"  preallocate-log  : {_opts.PreallocateLog}");
             Console.WriteLine($"  record-size (est): {_opts.ResolvedRecordSizeBytes} B");
             Console.WriteLine($"  data-path        : {_dataPath}");
             Console.WriteLine($"  report-interval  : {(_opts.ReportIntervalSec <= 0 ? "off (reference mode)" : _opts.ReportIntervalSec + "s")}");
