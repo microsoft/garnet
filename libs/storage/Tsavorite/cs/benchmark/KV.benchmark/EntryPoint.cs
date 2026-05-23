@@ -102,6 +102,9 @@ namespace Tsavorite.kvbench
                     output.EmitAggregateCsv(iterResults, engine.Pinning);
                 }
 
+                // Final clean summary block.
+                output.EmitFinalSummary(loadResult, iterResults, engine.Pinning);
+
                 return 0;
             }
             catch (Exception ex)

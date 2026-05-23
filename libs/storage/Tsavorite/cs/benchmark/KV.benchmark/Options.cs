@@ -124,8 +124,12 @@ namespace Tsavorite.kvbench
         public int ReportIntervalSec { get; set; }
 
         [Option("json-output", Required = false, Default = null,
-            HelpText = "Append JSON summary rows to this file.")]
+            HelpText = "Append pretty-printed JSON summary rows to this file (one row per phase).")]
         public string JsonOutput { get; set; }
+
+        [Option("json-stdout", Required = false, Default = false,
+            HelpText = "Also emit single-line `KV-RESULT-JSON: {...}` blobs to stdout for log scraping. Off by default.")]
+        public bool JsonStdout { get; set; }
 
         [Option("csv-output", Required = false, Default = null,
             HelpText = "Append CSV summary rows to this file.")]

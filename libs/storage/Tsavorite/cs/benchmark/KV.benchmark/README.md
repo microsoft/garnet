@@ -224,9 +224,10 @@ column -t -s , /tmp/kv-sweep.csv | head
 | --- | --- | --- |
 | `--report-interval-sec` | `1` | Live throughput tick (seconds). `0` disables — **recommended for canonical numbers**. |
 | `--validate` | off | After load: single-threaded readback of every key. Aborts (exit 2) on mismatch. |
-| `--json-output FILE` | none | Append JSON summary rows to FILE. |
+| `--json-output FILE` | none | Append **pretty-printed** JSON summary rows to FILE (one row per phase). |
+| `--json-stdout` | off | Also emit single-line `KV-RESULT-JSON: {…}` blobs to stdout for log scraping. |
 | `--csv-output FILE` | none | Append CSV rows to FILE. |
-| `--quiet` | off | Suppress human-readable progress/config; final results still print. |
+| `--quiet` | off | Suppress human-readable progress/config; final summary still prints. |
 
 ### Hard-coded (no flag)
 
@@ -266,13 +267,22 @@ Per-phase line shape:
 ```
 
 After the last iteration, an `[aggregate]` line with `mean`, `stdev`, `stdev%`,
-`min`, `max`, and (when `-i ≥ 3`) `trimmed`.
+`min`, `max`, and (when `-i ≥ 3`) `trimmed`, followed by a multi-line
+`KV.benchmark — final summary` block that recaps config, load, and run perf
+in a readable form.
 
-### JSON (`KV-RESULT-JSON: …`)
+### JSON
 
-One self-contained JSON object per phase (load / each run iteration) on stdout
-(also appended to `--json-output FILE` if set). After the last iteration, an
-aggregate row with `phase: "aggregate"`. Schema is `schema_version: "1"`.
+By default, NO JSON is written to stdout — the per-phase blob is huge and
+clutters the terminal. Two opt-ins:
+
+- `--json-output FILE` — appends a **pretty-printed** JSON object per phase
+  (load / each run iter / final aggregate) to FILE. Good for archiving or
+  diffing across runs.
+- `--json-stdout` — also emits a single-line `KV-RESULT-JSON: {…}` blob per
+  phase to stdout. Useful for log-scraping pipelines.
+
+Schema is `schema_version: "1"`.
 
 Top-level fields include: `phase`, `iteration`, `ops_per_sec`, `elapsed_sec`,
 `total_ops_for_throughput`, `final_total_ops`, `overshoot_ops`,

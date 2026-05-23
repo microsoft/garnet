@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 
 namespace Tsavorite.kvbench
 {
@@ -86,15 +87,16 @@ namespace Tsavorite.kvbench
 
         public void EmitResultJson(PhaseResult r, KvNumaPinning pinning)
         {
-            if (!_jsonEnabled && _opts.Quiet) return;
+            if (!_jsonEnabled && !_opts.JsonStdout) return;
             var json = BuildResultJson(r, pinning);
-            if (!_opts.Quiet) Console.WriteLine(ResultPrefix + json);
-            if (_jsonEnabled) AppendLine(_opts.JsonOutput, ResultPrefix + json);
+            if (_opts.JsonStdout) Console.WriteLine(ResultPrefix + json);
+            if (_jsonEnabled) AppendLine(_opts.JsonOutput, PrettyJson(json));
         }
 
         public void EmitAggregateJson(IList<PhaseResult> iters, KvNumaPinning pinning)
         {
             if (iters == null || iters.Count == 0) return;
+            if (!_jsonEnabled && !_opts.JsonStdout) return;
             var ops = iters.Select(p => p.OpsPerSec).ToArray();
             var mean = ops.Average();
             var stddev = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
@@ -113,9 +115,9 @@ namespace Tsavorite.kvbench
             sb.Append($"\"max_ops_per_sec\":{Dbl(ops.Max())},");
             sb.Append($"\"timestamp_utc\":\"{DateTime.UtcNow:O}\"");
             sb.Append('}');
-            var line = ResultPrefix + sb.ToString();
-            if (!_opts.Quiet) Console.WriteLine(line);
-            if (_jsonEnabled) AppendLine(_opts.JsonOutput, line);
+            var compact = sb.ToString();
+            if (_opts.JsonStdout) Console.WriteLine(ResultPrefix + compact);
+            if (_jsonEnabled) AppendLine(_opts.JsonOutput, PrettyJson(compact));
         }
 
         public void EmitResultCsv(PhaseResult r, KvNumaPinning pinning)
@@ -395,6 +397,91 @@ namespace Tsavorite.kvbench
                 w.WriteLine(line);
             }
             catch { /* best-effort */ }
+        }
+
+        // Pretty-print a compact JSON string using System.Text.Json. Best-effort: if parsing fails
+        // (shouldn't happen for our self-generated JSON), fall back to the compact form.
+        static string PrettyJson(string compactJson)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(compactJson);
+                using var ms = new MemoryStream();
+                using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
+                {
+                    doc.WriteTo(writer);
+                }
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
+            catch
+            {
+                return compactJson;
+            }
+        }
+
+        // ===== Final clean text summary =====
+
+        /// <summary>
+        /// Emits a single readable block summarizing the whole run: config (one line), load, and
+        /// aggregated run perf. Prints to stdout (always, regardless of --quiet).
+        /// </summary>
+        public void EmitFinalSummary(PhaseResult loadResult, IList<PhaseResult> runIters, KvNumaPinning pinning)
+        {
+            static string Rate(double opsPerSec) =>
+                opsPerSec >= 1e9 ? $"{opsPerSec / 1e9:F2} G ops/sec"
+                : opsPerSec >= 1e6 ? $"{opsPerSec / 1e6:F2} M ops/sec"
+                : opsPerSec >= 1e3 ? $"{opsPerSec / 1e3:F1} K ops/sec"
+                : $"{opsPerSec:F0} ops/sec";
+
+            const string sep = "==============================================================================";
+            Console.WriteLine();
+            Console.WriteLine(sep);
+            Console.WriteLine("  KV.benchmark — final summary");
+            Console.WriteLine(sep);
+
+            // Config (one line each)
+            var hashStr = $"hashpack={_opts.Hashpack:F2} → index {KvSize.FormatSize(_opts.ResolvedIndexAppliedBytes)} (effective {EffectiveHashpack():F2})";
+            var dist = _opts.UseZipf ? $"zipf θ={_opts.ZipfTheta:F2}" : "uniform";
+            Console.WriteLine($"  workload     : {_opts.Keys:N0} keys × {_opts.ValueSize}B value, rumd={string.Join(",", _opts.Rumd)}, {dist}");
+            Console.WriteLine($"  parallelism  : threads={_opts.Threads}, pinned={pinning.DescribeWorkerCpus()} (NUMA node {_opts.NumaNode})");
+            Console.WriteLine($"  storage      : {hashStr}");
+            Console.WriteLine($"                 log={KvSize.FormatSize(_opts.ResolvedLogMemoryBytes)} (pages {KvSize.FormatSize(_opts.ResolvedPageSizeBytes)}, segments {KvSize.FormatSize(_opts.ResolvedSegmentSizeBytes)}, record ≈{_opts.ResolvedRecordSizeBytes}B)");
+            Console.WriteLine($"                 device={_opts.ResolvedDeviceType}, session=BasicContext (safe path)");
+            Console.WriteLine($"  timing       : warmup={_opts.WarmupSec}s, run={_opts.RunSec}s × {_opts.Iterations} iter(s)");
+
+            // Load
+            Console.WriteLine();
+            if (loadResult != null)
+            {
+                Console.WriteLine($"  Load phase:");
+                Console.WriteLine($"    {loadResult.TotalOpsForThroughput:N0} ops in {loadResult.ElapsedSec:F3} s   →   {Rate(loadResult.OpsPerSec)}");
+                Console.WriteLine($"    log tail = {loadResult.LogTail:N0} bytes");
+            }
+
+            // Run (aggregated)
+            if (runIters != null && runIters.Count > 0)
+            {
+                var ops = runIters.Select(p => p.OpsPerSec).ToArray();
+                var mean = ops.Average();
+                var stddev = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
+                var pct = mean > 0 ? stddev / mean * 100 : 0;
+                var trimmed = ops.Length >= 3 ? TrimmedMean(ops) : mean;
+
+                Console.WriteLine();
+                Console.WriteLine($"  Run phase ({runIters.Count} iteration{(runIters.Count == 1 ? "" : "s")}):");
+                Console.WriteLine($"    mean      : {Rate(mean)}   ± {pct:F1}% (stdev {stddev:N0} ops/sec)");
+                if (ops.Length >= 3)
+                    Console.WriteLine($"    trimmed   : {Rate(trimmed)}   (drops hi+lo)");
+                Console.WriteLine($"    min..max  : {Rate(ops.Min())}  ..  {Rate(ops.Max())}");
+                Console.Write("    per-iter  : ");
+                for (int i = 0; i < ops.Length; i++)
+                {
+                    if (i > 0) Console.Write(", ");
+                    Console.Write($"{ops[i] / 1e6:F2}M");
+                }
+                Console.WriteLine();
+            }
+            Console.WriteLine(sep);
         }
     }
 }
