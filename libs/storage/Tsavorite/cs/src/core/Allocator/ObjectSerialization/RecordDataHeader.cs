@@ -65,8 +65,8 @@ namespace Tsavorite.core
 
         // The bottom 6 bits are length bytecounts
         /// <summary>
-        /// 2 bits (4, 5) for the number of bytes for the Filler Length. There must always be a filler, so we can store the filler size indicator as 2 bits
-        /// which when offset by 1 allows for 1-4 bytes. If the value is 4, then there are enough bytes to hold an int, and that int is the last 4
+        /// 2 bits (4, 5) for the number of bytes for the Filler Length. There must always be a filler length if RecordInfo.HasFiller is set, so we can store the filler
+        /// size indicator as 2 bits which when offset by 1 allows for 1-4 bytes. If the value is 4, then there are enough bytes to hold an int, and that int is the last 4
         /// bytes of the record and contains the actual filler length. Otherwise, the value is between 1-3 and is the actual filler length.
         /// </summary>
         const int kFillerLengthIndicatorBitMask = (1 << kFillerLengthIndicatorBits) - 1;

@@ -628,7 +628,7 @@ namespace Tsavorite.core
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
+            AlignedPageSizeBytes = RoundUp(PageSize, Math.Max(sectorSize, IStreamBuffer.MinIORecordRequestSize));
 
             if (BufferSize > 0)
             {
@@ -1654,10 +1654,19 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
-            // Clamp the read to page boundary; PageSize is a power of 2 greater than sectorSize.
-            var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedFileOffset & PageSizeMask));
-            if (alignedReadLength > maxReadLength)
-                alignedReadLength = maxReadLength;
+            // Clamp the read to page boundary; PageSize is a power of 2 that is greater than sectorSize.
+            {
+                var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedFileOffset & PageSizeMask));
+                if (alignedReadLength > maxReadLength)
+                    alignedReadLength = maxReadLength;
+                Debug.Assert(maxReadLength >= IStreamBuffer.MinIORecordRequestSize, $"Max read length {maxReadLength} must be at least minimum IO record request size {IStreamBuffer.MinIORecordRequestSize}");
+            }
+
+            // Always read at least an optimal block size, and let the record know it has this much data available (depending on what is actually retrieved).
+            // Thus, with DefaultInitialIORecordSize currently set to 32, we will likely still get the full record. We've aligned PageSize to this so there
+            // will be room on the page for this read.
+            if (alignedReadLength < IStreamBuffer.MinIORecordRequestSize)
+                alignedReadLength = IStreamBuffer.MinIORecordRequestSize;
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
