@@ -9,8 +9,8 @@ using Tsavorite.core;
 namespace Tsavorite.kvbench
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using KvStoreFunctions = StoreFunctions<KvKeyComparer, SpanByteRecordTriggers>;
-    using KvAllocator = ObjectAllocator<StoreFunctions<KvKeyComparer, SpanByteRecordTriggers>>;
+    using KvStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
+    using KvAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>>;
 
     // Per-thread worker entrypoint + RUN-phase hot loop.
     // Kept in its own file so the hot path is easy to reason about and review:
