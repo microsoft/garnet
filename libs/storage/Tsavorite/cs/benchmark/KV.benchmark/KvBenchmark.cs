@@ -92,10 +92,14 @@ namespace Tsavorite.kvbench
 
             // Pin the SETUP thread BEFORE building the store — first-touch policy
             // puts the hash index + log buffer on the requested NUMA node.
-            Pinning = new KvNumaPinning(opts, opts.Threads);
+            // Pinning's worker count is updated per phase; size for the MAX so the
+            // worker_cpu_mask diagnostic also covers all phases.
+            Pinning = new KvNumaPinning(opts, opts.ResolvedMaxThreads);
             Pinning.PinSetupOrReporter();
 
-            scoreboard = GC.AllocateArray<PaddedLong>(opts.Threads + 2, pinned: true);
+            // Scoreboard sized for the largest phase. Slots 1..MaxThreads are per-worker;
+            // slot 0 and the last slot are sentinel padding.
+            scoreboard = GC.AllocateArray<PaddedLong>(opts.ResolvedMaxThreads + 2, pinned: true);
             ZipfConstants = opts.UseZipf ? new ZipfConstants(opts.Keys, opts.ZipfTheta) : null;
 
             var logPath = opts.ResolvedDeviceType == DeviceType.Null ? null : Path.Combine(RunDir, "hlog");
@@ -124,16 +128,16 @@ namespace Tsavorite.kvbench
 
         // ====== Public phase API ======
 
-        /// <summary>Loads <c>Options.Keys</c> records, deterministically partitioned across workers.</summary>
+        /// <summary>Loads <c>Options.Keys</c> records using <c>Options.ResolvedLoadThreads</c> workers.</summary>
         public PhaseResult Load()
-            => RunWorkers(phase: "load", isLoad: true, durationSec: 0, iteration: 0);
+            => RunWorkers(phase: "load", isLoad: true, durationSec: 0, iteration: 0, threadCount: Options.ResolvedLoadThreads);
 
-        /// <summary>Runs one warmup window (if configured) followed by a measured run window.</summary>
-        public PhaseResult RunIteration(int iteration)
+        /// <summary>Runs one warmup window (if configured) followed by a measured run window using <paramref name="threadCount"/> workers.</summary>
+        public PhaseResult RunIteration(int iteration, int threadCount)
         {
             if (Options.WarmupSec > 0)
-                RunWorkers(phase: "warmup", isLoad: false, durationSec: Options.WarmupSec, iteration: iteration);
-            return RunWorkers(phase: "run", isLoad: false, durationSec: Options.RunSec, iteration: iteration);
+                RunWorkers(phase: "warmup", isLoad: false, durationSec: Options.WarmupSec, iteration: iteration, threadCount: threadCount);
+            return RunWorkers(phase: "run", isLoad: false, durationSec: Options.RunSec, iteration: iteration, threadCount: threadCount);
         }
 
         // ====== Worker orchestration ======
@@ -142,7 +146,7 @@ namespace Tsavorite.kvbench
         /// Spawns Workers, sleeps for the run window (or waits for load to finish),
         /// signals done, joins, and assembles the <see cref="PhaseResult"/>.
         /// </summary>
-        PhaseResult RunWorkers(string phase, bool isLoad, int durationSec, int iteration)
+        PhaseResult RunWorkers(string phase, bool isLoad, int durationSec, int iteration, int threadCount)
         {
             // Reset shared state for this phase.
             doneBox[0].Value = false;
@@ -150,16 +154,17 @@ namespace Tsavorite.kvbench
             for (int i = 0; i < scoreboard.Length; i++)
                 Volatile.Write(ref scoreboard[i].Value, 0);
             gate.Reset();
+            Pinning.WorkerCount = threadCount;  // updates the FirstUnpinnedCpu used by the reporter
 
-            var threads = new Thread[Options.Threads];
-            var stats = new WorkerStats[Options.Threads];
-            var ready = new CountdownEvent(Options.Threads);
+            var threads = new Thread[threadCount];
+            var stats = new WorkerStats[threadCount];
+            var ready = new CountdownEvent(threadCount);
 
-            for (int i = 0; i < Options.Threads; i++)
+            for (int i = 0; i < threadCount; i++)
             {
                 int idx = i;
                 stats[idx] = new WorkerStats();
-                threads[idx] = new Thread(() => WorkerProc(idx, isLoad, stats[idx], ready))
+                threads[idx] = new Thread(() => WorkerProc(idx, isLoad, stats[idx], ready, threadCount))
                 {
                     IsBackground = false,
                     Name = $"kv-bench-{phase}-{idx}",
@@ -182,7 +187,7 @@ namespace Tsavorite.kvbench
                 // Load: each partition is bounded; just wait for workers to finish.
                 foreach (var t in threads) t.Join();
                 doneTicks = Stopwatch.GetTimestamp();
-                totalForThroughput = SumScoreboard();
+                totalForThroughput = SumScoreboard(threadCount);
             }
             else if (durationSec <= 0)
             {
@@ -190,7 +195,7 @@ namespace Tsavorite.kvbench
                 Thread.MemoryBarrier();
                 doneBox[0].Value = true;
                 doneTicks = Stopwatch.GetTimestamp();
-                totalForThroughput = SumScoreboard();
+                totalForThroughput = SumScoreboard(threadCount);
                 foreach (var t in threads) t.Join();
             }
             else
@@ -198,7 +203,7 @@ namespace Tsavorite.kvbench
                 Thread.Sleep(TimeSpan.FromSeconds(durationSec));
                 doneBox[0].Value = true;
                 doneTicks = Stopwatch.GetTimestamp();
-                totalForThroughput = SumScoreboard();
+                totalForThroughput = SumScoreboard(threadCount);
                 foreach (var t in threads) t.Join();
             }
 
@@ -244,11 +249,11 @@ namespace Tsavorite.kvbench
             };
         }
 
-        /// <summary>Sums all per-thread scoreboard slots (sentinel slots [0] and [N+1] stay zero).</summary>
-        long SumScoreboard()
+        /// <summary>Sums per-thread scoreboard slots [1..threadCount] (sentinel slots stay zero).</summary>
+        long SumScoreboard(int threadCount)
         {
             long total = 0;
-            for (int i = 1; i <= Options.Threads; i++)
+            for (int i = 1; i <= threadCount; i++)
                 total += Volatile.Read(ref scoreboard[i].Value);
             return total;
         }

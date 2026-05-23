@@ -16,15 +16,15 @@ namespace Tsavorite.kvbench
     {
         const string ResultPrefix = "KV-RESULT-JSON: ";
 
-        public void EmitResultJson(PhaseResult r, KvNumaPinning pinning)
+        public void EmitResultJson(PhaseResult r, KvNumaPinning pinning, int threadCount = 0)
         {
             if (!_jsonEnabled && !_opts.JsonStdout) return;
-            var json = BuildResultJson(r, pinning);
+            var json = BuildResultJson(r, pinning, threadCount);
             if (_opts.JsonStdout) Console.WriteLine(ResultPrefix + json);
             if (_jsonEnabled) AppendLine(_opts.JsonOutput, PrettyJson(json));
         }
 
-        public void EmitAggregateJson(IList<PhaseResult> iters, KvNumaPinning pinning)
+        public void EmitAggregateJson(IList<PhaseResult> iters, KvNumaPinning pinning, int threadCount = 0)
         {
             if (iters == null || iters.Count == 0) return;
             if (!_jsonEnabled && !_opts.JsonStdout) return;
@@ -38,6 +38,7 @@ namespace Tsavorite.kvbench
             sb.Append('{');
             sb.Append($"\"schema_version\":\"{SchemaVersion}\",");
             sb.Append("\"phase\":\"aggregate\",");
+            if (threadCount > 0) sb.Append($"\"threads\":{threadCount},");
             sb.Append($"\"iterations\":{iters.Count},");
             sb.Append($"\"mean_ops_per_sec\":{Dbl(mean)},");
             sb.Append($"\"stdev_ops_per_sec\":{Dbl(stddev)},");
@@ -52,18 +53,14 @@ namespace Tsavorite.kvbench
             if (_jsonEnabled) AppendLine(_opts.JsonOutput, PrettyJson(compact));
         }
 
-        /// <summary>
-        /// Builds the per-phase JSON object (compact form). Schema: top-level fields per result,
-        /// nested <c>log</c> / <c>gc_delta</c> / <c>config</c> / <c>host</c> blocks, plus <c>argv</c>
-        /// and <c>timestamp_utc</c>. See README "Output schema" for the field list.
-        /// </summary>
-        string BuildResultJson(PhaseResult r, KvNumaPinning pinning)
+        string BuildResultJson(PhaseResult r, KvNumaPinning pinning, int threadCount = 0)
         {
             var sb = new StringBuilder(2048);
             sb.Append('{');
             sb.Append($"\"schema_version\":\"{SchemaVersion}\",");
             sb.Append($"\"phase\":\"{r.Phase}\",");
             sb.Append($"\"iteration\":{r.Iteration},");
+            if (threadCount > 0) sb.Append($"\"threads\":{threadCount},");
             sb.Append($"\"ops_per_sec\":{Dbl(r.OpsPerSec)},");
             sb.Append($"\"elapsed_sec\":{Dbl(r.ElapsedSec)},");
             sb.Append($"\"total_ops_for_throughput\":{r.TotalOpsForThroughput},");
@@ -93,6 +90,8 @@ namespace Tsavorite.kvbench
             // Config block — every resolved flag.
             sb.Append("\"config\":{");
             sb.Append($"\"threads\":{_opts.Threads},");
+            sb.Append($"\"load_threads\":{_opts.ResolvedLoadThreads},");
+            sb.Append($"\"run_threads_sweep\":\"{string.Join(",", _opts.ResolvedRunThreadsSweep)}\",");
             sb.Append($"\"keys\":{_opts.Keys},");
             sb.Append($"\"value_size\":{_opts.ValueSize},");
             sb.Append($"\"reader_copy_bytes\":{KvSessionFunctions.kReaderCopyBytes},");

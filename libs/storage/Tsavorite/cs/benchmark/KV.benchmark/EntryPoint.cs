@@ -42,7 +42,8 @@ namespace Tsavorite.kvbench
             }
 
             KvBenchmark engine = null;
-            var iterResults = new List<PhaseResult>();
+            // Per-thread-count run results (key = thread count, value = iter list)
+            var sweepResults = new Dictionary<int, List<PhaseResult>>();
 
             // Idempotent shutdown handlers (only fires once; the finally-path call is a no-op
             // unless an interrupt has set the guard first).
@@ -85,25 +86,35 @@ namespace Tsavorite.kvbench
                     Console.WriteLine("[validate] OK");
                 }
 
-                // ---- Run iterations ----
-                for (int it = 1; it <= opts.Iterations; it++)
+                // ---- Run sweep ----
+                // Run the full --iterations loop ONCE for each thread count in the sweep
+                // (single load → multiple run experiments).
+                PhaseResult lastRun = null;
+                foreach (var t in opts.ResolvedRunThreadsSweep)
                 {
-                    var r = engine.RunIteration(it);
-                    iterResults.Add(r);
-                    output.EmitPhaseHuman(r);
-                    output.EmitResultJson(r, engine.Pinning);
-                    output.EmitResultCsv(r, engine.Pinning);
-                }
-
-                if (iterResults.Count > 0)
-                {
-                    output.EmitAggregateHuman(iterResults);
-                    output.EmitAggregateJson(iterResults, engine.Pinning);
-                    output.EmitAggregateCsv(iterResults, engine.Pinning);
+                    var iters = new List<PhaseResult>();
+                    sweepResults[t] = iters;
+                    if (opts.ResolvedRunThreadsSweep.Length > 1)
+                        Console.WriteLine($"[sweep] starting run phase with threads={t}");
+                    for (int it = 1; it <= opts.Iterations; it++)
+                    {
+                        var r = engine.RunIteration(it, t);
+                        iters.Add(r);
+                        lastRun = r;
+                        output.EmitPhaseHuman(r, threadCount: t);
+                        output.EmitResultJson(r, engine.Pinning, threadCount: t);
+                        output.EmitResultCsv(r, engine.Pinning, threadCount: t);
+                    }
+                    if (iters.Count > 0)
+                    {
+                        output.EmitAggregateHuman(iters, threadCount: t);
+                        output.EmitAggregateJson(iters, engine.Pinning, threadCount: t);
+                        output.EmitAggregateCsv(iters, engine.Pinning, threadCount: t);
+                    }
                 }
 
                 // Final clean summary block.
-                output.EmitFinalSummary(loadResult, iterResults, engine.Pinning);
+                output.EmitFinalSummary(loadResult, sweepResults, engine.Pinning);
 
                 return 0;
             }

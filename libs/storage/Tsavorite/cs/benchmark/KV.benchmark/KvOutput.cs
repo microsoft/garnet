@@ -68,35 +68,38 @@ namespace Tsavorite.kvbench
             Console.WriteLine("===========================");
         }
 
-        public void EmitPhaseHuman(PhaseResult r)
+        public void EmitPhaseHuman(PhaseResult r, int threadCount = 0)
         {
             if (_opts.Quiet) return;
             var tag = r.Phase switch
             {
                 "load" => "[load]   ",
                 "warmup" => "[warmup] ",
-                "run" => $"[run {r.Iteration}] ",
+                "run" => threadCount > 0 ? $"[run t={threadCount} i={r.Iteration}] " : $"[run {r.Iteration}] ",
                 _ => $"[{r.Phase}]    ",
             };
             var rate = r.OpsPerSec.ToString("N0", CultureInfo.InvariantCulture);
             Console.WriteLine($"{tag}{r.TotalOpsForThroughput:N0} ops in {r.ElapsedSec:N3} s  ({rate} ops/sec)  reads={r.Reads:N0} writes={r.Writes:N0} deletes={r.Deletes:N0} overshoot={r.OvershootOps:N0} exit-lag={r.MaxWorkerExitLagMs:N1}ms gc={r.GcGen0Delta}/{r.GcGen1Delta}/{r.GcGen2Delta} alloc/wkr={r.AllocBytesByWorkerMax}B");
         }
 
-        public void EmitAggregateHuman(IList<PhaseResult> iters)
+        public void EmitAggregateHuman(IList<PhaseResult> iters, int threadCount = 0)
         {
             if (_opts.Quiet) return;
             var ops = iters.Select(p => p.OpsPerSec).ToArray();
             var mean = ops.Average();
             var stddev = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
             var pct = mean > 0 ? stddev / mean * 100 : 0;
-            Console.WriteLine($"[aggregate] iterations={iters.Count} mean={mean:N0} ops/sec stdev={stddev:N1} ({pct:N1}%) min={ops.Min():N0} max={ops.Max():N0}{(iters.Count >= 3 ? $" trimmed={TrimmedMean(ops):N0}" : "")}");
+            var prefix = threadCount > 0 ? $"[aggregate t={threadCount}]" : "[aggregate]";
+            Console.WriteLine($"{prefix} iterations={iters.Count} mean={mean:N0} ops/sec stdev={stddev:N1} ({pct:N1}%) min={ops.Min():N0} max={ops.Max():N0}{(iters.Count >= 3 ? $" trimmed={TrimmedMean(ops):N0}" : "")}");
         }
 
         /// <summary>
         /// Prints a single readable block summarising config, load, and run perf at end of run.
+        /// When the run-thread sweep has multiple entries, the run phase is reported as a table
+        /// with one row per thread count (with speedup vs the smallest sweep entry).
         /// Always prints (regardless of --quiet) since this is the headline output.
         /// </summary>
-        public void EmitFinalSummary(PhaseResult loadResult, IList<PhaseResult> runIters, KvNumaPinning pinning)
+        public void EmitFinalSummary(PhaseResult loadResult, IDictionary<int, List<PhaseResult>> sweepResults, KvNumaPinning pinning)
         {
             static string Rate(double opsPerSec) =>
                 opsPerSec >= 1e9 ? $"{opsPerSec / 1e9:F2} G ops/sec"
@@ -112,7 +115,10 @@ namespace Tsavorite.kvbench
 
             var dist = _opts.UseZipf ? $"zipf θ={_opts.ZipfTheta:F2}" : "uniform";
             Console.WriteLine($"  workload     : {_opts.Keys:N0} keys × {_opts.ValueSize}B value, rumd={string.Join(",", _opts.Rumd)}, {dist}");
-            Console.WriteLine($"  parallelism  : threads={_opts.Threads}, pinned={pinning.DescribeWorkerCpus()} (NUMA node {_opts.NumaNode})");
+            var runThreadsStr = _opts.ResolvedRunThreadsSweep.Length == 1
+                ? _opts.ResolvedRunThreadsSweep[0].ToString(CultureInfo.InvariantCulture)
+                : string.Join(",", _opts.ResolvedRunThreadsSweep);
+            Console.WriteLine($"  parallelism  : load-threads={_opts.ResolvedLoadThreads}, run-threads={runThreadsStr}, pinned={pinning.DescribeWorkerCpus()} (NUMA node {_opts.NumaNode})");
             Console.WriteLine($"  storage      : hashpack={_opts.Hashpack:F2} → index {KvSize.FormatSize(_opts.ResolvedIndexAppliedBytes)} (effective {EffectiveHashpack():F2})");
             Console.WriteLine($"                 log={KvSize.FormatSize(_opts.ResolvedLogMemoryBytes)} (pages {KvSize.FormatSize(_opts.ResolvedPageSizeBytes)}, segments {KvSize.FormatSize(_opts.ResolvedSegmentSizeBytes)}, record ≈{_opts.ResolvedRecordSizeBytes}B)");
             Console.WriteLine($"                 device={_opts.ResolvedDeviceType}, session=BasicContext (safe path)");
@@ -121,34 +127,64 @@ namespace Tsavorite.kvbench
             if (loadResult != null)
             {
                 Console.WriteLine();
-                Console.WriteLine($"  Load phase:");
+                Console.WriteLine($"  Load phase ({_opts.ResolvedLoadThreads} thread{(_opts.ResolvedLoadThreads == 1 ? "" : "s")}):");
                 Console.WriteLine($"    {loadResult.TotalOpsForThroughput:N0} ops in {loadResult.ElapsedSec:F3} s   →   {Rate(loadResult.OpsPerSec)}");
                 Console.WriteLine($"    log tail = {loadResult.LogTail:N0} bytes");
             }
 
-            if (runIters != null && runIters.Count > 0)
+            if (sweepResults != null && sweepResults.Count > 0)
             {
-                var ops = runIters.Select(p => p.OpsPerSec).ToArray();
-                var mean = ops.Average();
-                var stddev = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
-                var pct = mean > 0 ? stddev / mean * 100 : 0;
-                var trimmed = ops.Length >= 3 ? TrimmedMean(ops) : mean;
-
                 Console.WriteLine();
-                Console.WriteLine($"  Run phase ({runIters.Count} iteration{(runIters.Count == 1 ? "" : "s")}):");
-                Console.WriteLine($"    mean      : {Rate(mean)}   ± {pct:F1}% (stdev {stddev:N0} ops/sec)");
-                if (ops.Length >= 3)
-                    Console.WriteLine($"    trimmed   : {Rate(trimmed)}   (drops hi+lo)");
-                Console.WriteLine($"    min..max  : {Rate(ops.Min())}  ..  {Rate(ops.Max())}");
-                Console.Write("    per-iter  : ");
-                for (int i = 0; i < ops.Length; i++)
+                if (sweepResults.Count == 1)
                 {
-                    if (i > 0) Console.Write(", ");
-                    Console.Write($"{ops[i] / 1e6:F2}M");
+                    // Single thread count: show the same detail as before.
+                    var (tc, iters) = (sweepResults.Keys.First(), sweepResults.Values.First());
+                    EmitRunPhaseBlock(tc, iters, Rate);
                 }
-                Console.WriteLine();
+                else
+                {
+                    // Sweep: print a compact table with speedup vs the smallest entry.
+                    Console.WriteLine($"  Run sweep ({_opts.Iterations} iteration{(_opts.Iterations == 1 ? "" : "s")} per thread count):");
+                    Console.WriteLine($"    {"threads",7} | {"trimmed",14} | {"mean",14} | {"stdev%",7} | speedup");
+                    Console.WriteLine($"    {new string('-', 7)}-+-{new string('-', 14)}-+-{new string('-', 14)}-+-{new string('-', 7)}-+--------");
+                    var ordered = sweepResults.OrderBy(kv => kv.Key).ToList();
+                    double basis = 0;
+                    foreach (var (tc, iters) in ordered)
+                    {
+                        var ops = iters.Select(p => p.OpsPerSec).ToArray();
+                        var mean = ops.Average();
+                        var sd = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
+                        var pct = mean > 0 ? sd / mean * 100 : 0;
+                        var trimmed = ops.Length >= 3 ? TrimmedMean(ops) : mean;
+                        if (basis == 0) basis = trimmed;
+                        var speedup = basis > 0 ? trimmed / basis : 0;
+                        Console.WriteLine($"    {tc,7} | {Rate(trimmed),14} | {Rate(mean),14} | {pct,6:F1}% | {speedup,6:F2}×");
+                    }
+                }
             }
             Console.WriteLine(sep);
+        }
+
+        void EmitRunPhaseBlock(int threadCount, IList<PhaseResult> iters, Func<double, string> rate)
+        {
+            var ops = iters.Select(p => p.OpsPerSec).ToArray();
+            var mean = ops.Average();
+            var stddev = ops.Length > 1 ? Math.Sqrt(ops.Select(o => Math.Pow(o - mean, 2)).Sum() / ops.Length) : 0;
+            var pct = mean > 0 ? stddev / mean * 100 : 0;
+            var trimmed = ops.Length >= 3 ? TrimmedMean(ops) : mean;
+
+            Console.WriteLine($"  Run phase ({iters.Count} iteration{(iters.Count == 1 ? "" : "s")}, {threadCount} thread{(threadCount == 1 ? "" : "s")}):");
+            Console.WriteLine($"    mean      : {rate(mean)}   ± {pct:F1}% (stdev {stddev:N0} ops/sec)");
+            if (ops.Length >= 3)
+                Console.WriteLine($"    trimmed   : {rate(trimmed)}   (drops hi+lo)");
+            Console.WriteLine($"    min..max  : {rate(ops.Min())}  ..  {rate(ops.Max())}");
+            Console.Write("    per-iter  : ");
+            for (int i = 0; i < ops.Length; i++)
+            {
+                if (i > 0) Console.Write(", ");
+                Console.Write($"{ops[i] / 1e6:F2}M");
+            }
+            Console.WriteLine();
         }
 
         // ====== Helpers shared across human / JSON / CSV ======

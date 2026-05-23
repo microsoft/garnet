@@ -24,7 +24,7 @@ namespace Tsavorite.kvbench
         /// Per-thread worker. Owns its Tsavorite session, picks the load or run path,
         /// and writes its final counters into <paramref name="stats"/>.
         /// </summary>
-        unsafe void WorkerProc(int threadIdx, bool isLoad, WorkerStats stats, CountdownEvent ready)
+        unsafe void WorkerProc(int threadIdx, bool isLoad, WorkerStats stats, CountdownEvent ready, int threadCount)
         {
             Pinning.PinWorker(threadIdx);
 
@@ -38,8 +38,8 @@ namespace Tsavorite.kvbench
             long loadFrom = 0, loadTo = 0;
             if (isLoad)
             {
-                loadFrom = (long)((double)Options.Keys * threadIdx / Options.Threads);
-                loadTo = (long)((double)Options.Keys * (threadIdx + 1) / Options.Threads);
+                loadFrom = (long)((double)Options.Keys * threadIdx / threadCount);
+                loadTo = (long)((double)Options.Keys * (threadIdx + 1) / threadCount);
             }
 
             ready.Signal();

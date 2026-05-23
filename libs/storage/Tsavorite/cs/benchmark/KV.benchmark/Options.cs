@@ -16,8 +16,16 @@ namespace Tsavorite.kvbench
         // ===== Workload =====
 
         [Option('t', "threads", Required = false, Default = 1,
-            HelpText = "Worker thread count (default 1; pass nodeCpus to saturate the pinned NUMA node).")]
+            HelpText = "Default run-phase worker thread count (also used for load if --load-threads is unspecified). Pass nodeCpus to saturate the pinned NUMA node.")]
         public int Threads { get; set; }
+
+        [Option("load-threads", Required = false, Default = 0,
+            HelpText = "Threads to use for the load phase. 0 = same as --threads. Useful when you want a fast parallel load followed by a single-thread or sweep run.")]
+        public int LoadThreads { get; set; }
+
+        [Option("run-threads-sweep", Separator = ',', Required = false, Default = null,
+            HelpText = "Comma-separated list of run-phase thread counts. When specified, the engine loads ONCE and then runs the full --iterations sweep for each thread count (1,2,4,8,16). Overrides --threads for the run phase.")]
+        public IEnumerable<int> RunThreadsSweep { get; set; }
 
         [Option('n', "keys", Required = false, Default = 100_000_000L,
             HelpText = "Number of unique keys in the dataset.")]
@@ -161,12 +169,34 @@ namespace Tsavorite.kvbench
         internal Tsavorite.core.DeviceType ResolvedDeviceType;
         internal Tsavorite.core.NativeStorageDevice.IoBackend ResolvedIoBackend;
 
+        /// <summary>Thread count used for the load phase (load-threads if specified, else threads).</summary>
+        internal int ResolvedLoadThreads;
+        /// <summary>Thread counts for the run phase: either the sweep list (if --run-threads-sweep was set) or [Threads].</summary>
+        internal int[] ResolvedRunThreadsSweep;
+        /// <summary>Maximum worker count across all phases — used to size the scoreboard.</summary>
+        internal int ResolvedMaxThreads;
+
         /// <summary>
         /// Validate inputs and resolve all auto-defaults. Returns null on success or an error message.
         /// </summary>
         internal string Resolve()
         {
             if (Threads < 1) return "--threads must be >= 1";
+            if (LoadThreads < 0) return "--load-threads must be >= 0 (0 = same as --threads)";
+            ResolvedLoadThreads = LoadThreads > 0 ? LoadThreads : Threads;
+
+            var sweep = RunThreadsSweep?.ToArray() ?? Array.Empty<int>();
+            if (sweep.Length > 0)
+            {
+                if (sweep.Any(t => t < 1)) return "--run-threads-sweep entries must be >= 1";
+                ResolvedRunThreadsSweep = sweep;
+            }
+            else
+            {
+                ResolvedRunThreadsSweep = new[] { Threads };
+            }
+            ResolvedMaxThreads = Math.Max(ResolvedLoadThreads, ResolvedRunThreadsSweep.Max());
+
             if (Keys <= 0) return "--keys must be > 0";
             // Validate --value-size: lower bound 32 (Reader copies 32 bytes), upper bound 1MB
             // (validated against --max-inline-value-size below for the per-record cap).

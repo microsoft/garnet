@@ -169,15 +169,44 @@ done
 column -t -s , /tmp/kv-sweep.csv | head
 ```
 
+### 9. Run-thread scalability sweep (single load → multiple thread counts)
+
+```bash
+numactl --membind=0 --cpunodebind=0 \
+  dotnet KV.benchmark.dll -n 100000000 -v 96 \
+    --load-threads 32 --run-threads-sweep 1,2,4,8,16,32 \
+    --device null --rumd 100,0,0,0 \
+    --runsec 15 --warmup-sec 5 -i 3
+```
+
+Loads the 100 M-key dataset ONCE using 32 threads, then runs the full
+`--iterations` loop at each thread count in the sweep. The final summary
+prints a compact table with trimmed mean, stdev%, and speedup vs the
+smallest thread count:
+
+```
+  Run sweep (3 iterations per thread count):
+    threads |        trimmed |           mean |  stdev% | speedup
+    --------+----------------+----------------+---------+--------
+          1 | 2.08 M ops/sec | 2.05 M ops/sec |    2.8% |   1.00×
+          2 | 4.22 M ops/sec | 4.22 M ops/sec |    0.9% |   2.03×
+          4 | 8.29 M ops/sec | 8.32 M ops/sec |    0.8% |   3.99×
+          8 |16.53 M ops/sec |16.75 M ops/sec |    2.7% |   7.95×
+         16 |33.94 M ops/sec |34.02 M ops/sec |    1.9% |  16.32×
+         32 |69.94 M ops/sec |69.99 M ops/sec |    0.2% |  33.64×
+```
+
 ## All flags
 
-### Workload (8)
+### Workload (10)
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-t / --threads` | `1` | Worker thread count. Default 1 = single-thread baseline; pass `nodeCpus` to saturate the pinned NUMA node. |
+| `-t / --threads` | `1` | Default run-phase worker count (also used for load if `--load-threads` is unspecified). |
+| `--load-threads` | `0` | Threads to use for the LOAD phase. `0` = same as `--threads`. Useful when you want a fast parallel load followed by single-thread or sweep runs on the same dataset. |
+| `--run-threads-sweep` | none | Comma-separated list of run-phase thread counts (e.g. `1,2,4,8,16,32`). When set, the engine loads ONCE and then runs the full `--iterations` loop for each thread count. Overrides `--threads` for the run phase. |
 | `-n / --keys` | `100_000_000` | Number of unique keys. |
-| `-v / --value-size` | `100` | Value length in bytes. Range: **8 ≤ value-size ≤ 4096** (inline-value path only). |
+| `-v / --value-size` | `100` | Value length in bytes. Range: **32 ≤ value-size ≤ `--max-inline-value-size`** (inline-value path only). |
 | `--rumd` | `100,0,0,0` | Percent of [reads, upserts, RMWs, deletes] (sum=100). When `d% > 0`, deletes auto-reinsert. |
 | `-d / --distribution` | `uniform` | `uniform` or `zipf`. |
 | `--zipf-theta` | `0.99` | Zipf skew parameter. |

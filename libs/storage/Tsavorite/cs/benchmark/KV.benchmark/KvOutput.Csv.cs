@@ -14,17 +14,17 @@ namespace Tsavorite.kvbench
     // Header is written automatically when the file is first created.
     internal sealed partial class KvOutput
     {
-        public void EmitResultCsv(PhaseResult r, KvNumaPinning pinning)
+        public void EmitResultCsv(PhaseResult r, KvNumaPinning pinning, int threadCount = 0)
         {
             if (!_csvEnabled) return;
             var path = _opts.CsvOutput;
             var fresh = !File.Exists(path);
             using var w = new StreamWriter(path, append: true);
             if (fresh) w.WriteLine(CsvHeader());
-            w.WriteLine(CsvRow(r, pinning));
+            w.WriteLine(CsvRow(r, pinning, threadCount));
         }
 
-        public void EmitAggregateCsv(IList<PhaseResult> iters, KvNumaPinning pinning)
+        public void EmitAggregateCsv(IList<PhaseResult> iters, KvNumaPinning pinning, int threadCount = 0)
         {
             if (!_csvEnabled || iters == null || iters.Count == 0) return;
             var ops = iters.Select(p => p.OpsPerSec).ToArray();
@@ -37,9 +37,8 @@ namespace Tsavorite.kvbench
             using var w = new StreamWriter(path, append: true);
             if (fresh) w.WriteLine(CsvHeader());
 
-            // Same column shape with phase=aggregate; per-iter columns blank, agg columns populated.
             var sb = new StringBuilder();
-            CsvAppendCommon(sb, "aggregate", iters.Count, pinning);
+            CsvAppendCommon(sb, "aggregate", iters.Count, pinning, threadCount);
             sb.Append(",")  // elapsed
               .Append(",")  // total_ops_for_throughput
               .Append(",")  // ops_per_sec
@@ -67,10 +66,10 @@ namespace Tsavorite.kvbench
         static string CsvHeader() =>
             "schema_version,timestamp_utc,git_sha,hostname,phase,iteration,threads,keys,value_size,distribution,rumd,delete_reinsert,reader_copy_bytes,device,device_throttle,device_completion_threads,device_io_backend,session_context,hashpack_configured,hashpack_effective,index_size_requested,index_size_applied,log_memory,page_size,segment_size,mutable_fraction,warmup_sec,runsec,elapsed_sec,total_ops_for_throughput,ops_per_sec,overshoot_ops,max_worker_exit_lag_ms,reads,writes,deletes,gc_gen0,gc_gen1,gc_gen2,alloc_bytes_by_worker_max,log_begin,log_head,log_readonly,log_tail,agg_mean_ops_per_sec,agg_stdev_ops_per_sec,agg_trimmed_mean,agg_min,agg_max";
 
-        string CsvRow(PhaseResult r, KvNumaPinning pinning)
+        string CsvRow(PhaseResult r, KvNumaPinning pinning, int threadCount = 0)
         {
             var sb = new StringBuilder(512);
-            CsvAppendCommon(sb, r.Phase, r.Iteration, pinning);
+            CsvAppendCommon(sb, r.Phase, r.Iteration, pinning, threadCount);
             sb.Append(",").Append(Dbl(r.ElapsedSec))
               .Append(",").Append(r.TotalOpsForThroughput)
               .Append(",").Append(Dbl(r.OpsPerSec))
@@ -91,7 +90,9 @@ namespace Tsavorite.kvbench
             return sb.ToString();
         }
 
-        void CsvAppendCommon(StringBuilder sb, string phase, int iteration, KvNumaPinning pinning)
+        // threadCount > 0 overrides the default _opts.Threads column (used by the run-sweep so
+        // each row carries the thread count it was actually measured at).
+        void CsvAppendCommon(StringBuilder sb, string phase, int iteration, KvNumaPinning pinning, int threadCount = 0)
         {
             sb.Append(SchemaVersion).Append(",")
               .Append(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)).Append(",")
@@ -99,7 +100,7 @@ namespace Tsavorite.kvbench
               .Append(CsvEsc(Environment.MachineName)).Append(",")
               .Append(phase).Append(",")
               .Append(iteration).Append(",")
-              .Append(_opts.Threads).Append(",")
+              .Append(threadCount > 0 ? threadCount : _opts.Threads).Append(",")
               .Append(_opts.Keys).Append(",")
               .Append(_opts.ValueSize).Append(",")
               .Append(_opts.Distribution).Append(",")
