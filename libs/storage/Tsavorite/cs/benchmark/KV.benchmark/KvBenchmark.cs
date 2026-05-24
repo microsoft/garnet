@@ -80,7 +80,7 @@ namespace Tsavorite.kvbench
         readonly IDevice device;
         readonly TsavoriteKV<KvStoreFunctions, KvAllocator> store;
 
-        const long kChunkSize = 640;             // ops per chunk in load & run loops
+        const long kChunkSize = 512;             // power-of-two so (n & (kChunkSize-1)) is a correct mask
 
         public KvBenchmark(Options opts)
         {
