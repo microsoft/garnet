@@ -58,17 +58,17 @@ namespace Tsavorite.kvbench
                 var valueSpan = new Span<byte>(valuePtr, Options.ValueSize);
 
                 KvKey key = default;
-                for (long k = loadFrom; k < loadTo; k++)
+                for (long chunkStart = loadFrom; chunkStart < loadTo; chunkStart += kChunkSize)
                 {
-                    key.Value = k;
-                    bContext.Upsert(key, valueSpan, Empty.Default);
-                    ++localOps;
-                    if ((localOps & (kChunkSize - 1)) == 0)
+                    long chunkEnd = Math.Min(chunkStart + kChunkSize, loadTo);
+                    bContext.CompletePending(false);
+                    for (long k = chunkStart; k < chunkEnd; k++)
                     {
-                        if ((localOps & 65535) == 0)
-                            bContext.CompletePending(false);
-                        Volatile.Write(ref mySlot.Value, localOps);
+                        key.Value = k;
+                        bContext.Upsert(key, valueSpan, Empty.Default);
                     }
+                    localOps = chunkEnd - loadFrom;
+                    Volatile.Write(ref mySlot.Value, localOps);
                 }
                 bContext.CompletePending(true);
                 writes = localOps;
@@ -178,11 +178,9 @@ namespace Tsavorite.kvbench
             {
                 long chunk_idx = Interlocked.Add(ref globalChunkIdx, kChunkSize) - kChunkSize;
                 long chunk_end = chunk_idx + kChunkSize;
+                bContext.CompletePending(false);
                 for (long idx = chunk_idx; idx < chunk_end; ++idx)
                 {
-                    if (idx % 512 == 0)
-                        bContext.CompletePending(false);
-
                     // ===== Key generation (one of three paths, hoisted bools select the right one) =====
                     if (useZipf)
                     {
