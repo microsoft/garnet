@@ -58,7 +58,39 @@ Debug builds are fine for correctness checks but not for measurement.
 
 ## Worked examples
 
-### 1. In-memory throughput ceiling (100 % read)
+### Cookbook (copy-paste matrix: distribution × dataset size × log size)
+
+All examples assume the binary path is in `$KV` (set with
+`KV=libs/storage/Tsavorite/cs/benchmark/KV.benchmark/bin/Release/net10.0/KV.benchmark.dll`)
+and use 32-byte aligned NUMA pinning. Pick the row matching your scenario:
+
+| Dataset | Log fit | Distribution | Command |
+| --- | --- | --- | --- |
+| small (4.6 M × 100 B ≈ 580 MB) | **fits in mutable log** (auto-sized) | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device null --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3` |
+| small (4.6 M × 100 B) | fits | **zipf θ=0.99** | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device null --rumd 100,0,0,0 -d zipf --zipf-theta 0.99 --runsec 15 --warmup-sec 5 -i 3` |
+| small (4.6 M × 100 B) | **smaller than dataset** (256 MB → ~45 % in mutable, rest on disk) | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device randomaccess --log-memory 256m --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| small (4.6 M × 100 B) | smaller than dataset (256 MB) | zipf θ=0.99 | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device randomaccess --log-memory 256m --rumd 100,0,0,0 -d zipf --zipf-theta 0.99 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| **large (100 M × 100 B ≈ 12 GB)** | fits (auto → 16 GB) | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device null --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3` |
+| large (100 M × 100 B) | fits (16 GB) | zipf θ=0.99 | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device null --rumd 100,0,0,0 -d zipf --zipf-theta 0.99 --runsec 15 --warmup-sec 5 -i 3` |
+| large (100 M × 100 B) | **constrained** (2 GB → ~13 % in mutable, rest on NVMe) | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device randomaccess --log-memory 2g --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| large (100 M × 100 B) | constrained (2 GB) | zipf θ=0.99 | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device randomaccess --log-memory 2g --rumd 100,0,0,0 -d zipf --zipf-theta 0.99 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| 4.6 M | fits | 50/40/5/5 RUMD | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device null --rumd 50,40,5,5 --runsec 15 --warmup-sec 5 -i 3` |
+| 100 M | fits | thread sweep (1→32) | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device null --rumd 100,0,0,0 --load-threads 32 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 -i 3` |
+
+**Knobs that affect the in-memory vs out-of-memory mix**:
+- `--log-memory` (default: auto-sized to fit dataset at 90 % mutable). Set
+  smaller to force records to spill below `ReadOnlyAddress` and be re-read
+  from disk on lookup. Use units: `512m`, `1g`, `16g`.
+- `--device`: `null` skips all I/O (pure engine ceiling), `randomaccess`
+  uses `RandomAccessLocalStorageDevice` (Linux default), `native` uses
+  `NativeStorageDevice` (libaio on Linux), `filestream` is the slowest
+  managed device.
+- `--max-inline-value-size` (default 16 KB): values larger than this overflow
+  to a heap-allocated buffer (slower path).
+
+### Detailed examples
+
+#### 1. In-memory throughput ceiling (100 % read)
 
 `--device null` + log auto-sized to fit the dataset in the mutable region.
 
@@ -77,7 +109,7 @@ Sample result on a 2 × 80-core / 2-NUMA host:
 [aggregate] iterations=3 mean=113,449,209 ops/sec stdev=50,425.7 (0.0%) min=113,386,218 max=113,509,656 trimmed=113,451,754
 ```
 
-### 2. In-memory throughput with skewed reads (zipf)
+#### 2. In-memory throughput with skewed reads (zipf)
 
 ```bash
 numactl --membind=0 --cpunodebind=0 \
@@ -90,7 +122,7 @@ numactl --membind=0 --cpunodebind=0 \
 Zipf reads concentrate on the same hot keys, so cache-line reuse goes up;
 typically 1.5–2× higher than uniform.
 
-### 3. Mixed RUMD throughput
+#### 3. Mixed RUMD throughput
 
 ```bash
 numactl --membind=0 --cpunodebind=0 \
@@ -104,7 +136,7 @@ same key** (counted as a separate op). This keeps the dataset stable across
 the run; otherwise a delete-heavy workload would silently degrade into a
 read-miss workload.
 
-### 4. NVMe write throughput (load only is write-bound)
+#### 4. NVMe write throughput (load only is write-bound)
 
 ```bash
 numactl --membind=0 --cpunodebind=0 \
@@ -117,7 +149,7 @@ numactl --membind=0 --cpunodebind=0 \
 Load throughput is reported by the `[load]` line. The run phase here is
 short — we just want the load number.
 
-### 5. NVMe read-only after warm load (in-memory reads, large log)
+#### 5. NVMe read-only after warm load (in-memory reads, large log)
 
 ```bash
 numactl --membind=0 --cpunodebind=0 \
@@ -131,7 +163,7 @@ With `--log-memory` auto-sized to fit the dataset, reads stay in memory and
 the NVMe device is mostly idle. Sample result: `115.83 M ops/sec trimmed
 mean, 0.1 % stdev`.
 
-### 6. Multi-iteration stability run
+#### 6. Multi-iteration stability run
 
 ```bash
 dotnet KV.benchmark.dll -t 64 -n 50000000 -v 100 \
@@ -143,7 +175,7 @@ The final `[aggregate]` line shows `mean`, `stdev`, `stdev%`, `min`, `max`,
 and (when `-i ≥ 3`) a `trimmed` mean that drops the single highest and
 lowest samples. Use `trimmed` for stability-focused reports.
 
-### 7. Data integrity check after load
+#### 7. Data integrity check after load
 
 ```bash
 dotnet KV.benchmark.dll -t 4 -n 1000000 -v 100 \
@@ -155,7 +187,7 @@ dotnet KV.benchmark.dll -t 4 -n 1000000 -v 100 \
 every key and asserting the value bytes match what was written. Exits with
 code `2` on mismatch.
 
-### 8. Device backend sweep
+#### 8. Device backend sweep
 
 ```bash
 for dev in null randomaccess filestream; do
@@ -170,7 +202,7 @@ done
 column -t -s , /tmp/kv-sweep.csv | head
 ```
 
-### 9. Run-thread scalability sweep (single load → multiple thread counts)
+#### 9. Run-thread scalability sweep (single load → multiple thread counts)
 
 ```bash
 numactl --membind=0 --cpunodebind=0 \
