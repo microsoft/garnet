@@ -35,7 +35,7 @@ Expected output (excerpt):
 === KV.benchmark config ===
   threads          : 1  (pinned: 0)
   keys             : 1,000,000
-  value-size       : 100 bytes (reader copies first 64 B)
+  value-size       : 100 bytes (reader copies first 32 B)
   rumd%            : 100,0,0,0  (deletes auto-reinsert: n/a)
   ...
 ===========================
@@ -51,9 +51,10 @@ dotnet build libs/storage/Tsavorite/cs/benchmark/KV.benchmark/KV.benchmark.cspro
 ```
 
 Performance numbers should always be taken from a **Release** build on
-**net10.0**. The project enables Server GC (`<ServerGarbageCollection>true</…>`)
-and concurrent GC for steady-state behaviour. Debug builds are fine for
-correctness checks but not for measurement.
+**net10.0**. The project uses Workstation GC by default (the .NET runtime
+default). Set `DOTNET_gcServer=1` in the environment when running with high
+thread counts to switch to Server GC, which scales better past ~8 threads.
+Debug builds are fine for correctness checks but not for measurement.
 
 ## Worked examples
 

@@ -80,7 +80,7 @@ namespace Tsavorite.kvbench
         readonly IDevice device;
         readonly TsavoriteKV<KvStoreFunctions, KvAllocator> store;
 
-        const long kChunkSize = 512;             // power-of-two so (n & (kChunkSize-1)) is a correct mask
+        const long kChunkSize = 1024;             // power-of-two so (n & (kChunkSize-1)) is a correct mask
 
         public KvBenchmark(Options opts)
         {
@@ -149,7 +149,7 @@ namespace Tsavorite.kvbench
         PhaseResult RunWorkers(string phase, bool isLoad, int durationSec, int iteration, int threadCount)
         {
             // Reset shared state for this phase.
-            doneBox[0].Value = false;
+            Volatile.Write(ref doneBox[0].Value, false);
             Volatile.Write(ref globalChunkIdx, 0);
             for (int i = 0; i < scoreboard.Length; i++)
                 Volatile.Write(ref scoreboard[i].Value, 0);
@@ -199,8 +199,7 @@ namespace Tsavorite.kvbench
             else if (durationSec <= 0)
             {
                 // Degenerate zero-second run: signal done immediately.
-                Thread.MemoryBarrier();
-                doneBox[0].Value = true;
+                Volatile.Write(ref doneBox[0].Value, true);
                 doneTicks = Stopwatch.GetTimestamp();
                 totalForThroughput = SumScoreboard(threadCount);
                 foreach (var t in threads) t.Join();
@@ -208,7 +207,7 @@ namespace Tsavorite.kvbench
             else
             {
                 Thread.Sleep(TimeSpan.FromSeconds(durationSec));
-                doneBox[0].Value = true;
+                Volatile.Write(ref doneBox[0].Value, true);
                 doneTicks = Stopwatch.GetTimestamp();
                 totalForThroughput = SumScoreboard(threadCount);
                 foreach (var t in threads) t.Join();

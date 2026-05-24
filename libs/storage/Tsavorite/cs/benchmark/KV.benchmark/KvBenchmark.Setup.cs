@@ -72,7 +72,7 @@ namespace Tsavorite.kvbench
         }
 
         /// <summary>
-        /// Builds the IDevice for the requested backend. Native + io_uring on Linux,
+        /// Builds the IDevice for the requested backend. Native (libaio) on Linux,
         /// the platform-default managed device elsewhere, or a no-op Null device when
         /// the entire dataset fits in the mutable log window.
         /// </summary>

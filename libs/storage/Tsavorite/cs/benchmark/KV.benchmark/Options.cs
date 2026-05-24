@@ -32,7 +32,7 @@ namespace Tsavorite.kvbench
         public long Keys { get; set; }
 
         [Option('v', "value-size", Required = false, Default = 100,
-            HelpText = "Value length in bytes. Range: 8..4096 (inline-value path only).")]
+            HelpText = "Value length in bytes. Range: 32..1048576 (must also be <= --max-inline-value-size).")]
         public int ValueSize { get; set; }
 
         [Option("rumd", Separator = ',', Required = false, Default = new[] { 100, 0, 0, 0 },
@@ -211,6 +211,13 @@ namespace Tsavorite.kvbench
             if (dist != "uniform" && dist != "zipf") return "--distribution must be 'uniform' or 'zipf'";
             Distribution = dist;
             UseZipf = dist == "zipf";
+            if (UseZipf)
+            {
+                // ZipfConstants computes Alpha = 1/(1-theta); theta in [0,1) gives valid alpha.
+                // theta == 1 divides by zero; theta < 0 or > 1 produces NaN / negative samples.
+                if (!(ZipfTheta >= 0 && ZipfTheta < 1))
+                    return $"--zipf-theta must be in [0, 1); got {ZipfTheta}";
+            }
 
             var rumd = Rumd?.ToArray() ?? [100, 0, 0, 0];
             if (rumd.Length != 4) return "--rumd must be 4 numbers";
@@ -222,7 +229,11 @@ namespace Tsavorite.kvbench
             RmwPctCumulative = UpsertPctCumulative + rumd[2];
 
             ResolvedDeviceType = ParseDeviceType(Device);
+            if (ResolvedDeviceType == Tsavorite.core.DeviceType.Default && !IsKnownDeviceName(Device))
+                return $"--device must be one of: native, randomaccess, filestream, null, default (got: {Device})";
             ResolvedIoBackend = ParseIoBackend(DeviceIoBackend);
+            if (ResolvedIoBackend == Tsavorite.core.NativeStorageDevice.IoBackend.Default && !IsKnownIoBackendName(DeviceIoBackend))
+                return $"--device-io-backend must be one of: libaio, default (got: {DeviceIoBackend})";
 
             ResolvedPageSizeBytes = KvSize.ParseSize(PageSize);
             if (ResolvedPageSizeBytes <= 0) return $"--page-size invalid: {PageSize}";
@@ -334,6 +345,18 @@ namespace Tsavorite.kvbench
                 "libaio" => Tsavorite.core.NativeStorageDevice.IoBackend.Libaio,
                 _ => Tsavorite.core.NativeStorageDevice.IoBackend.Default,
             };
+        }
+
+        static bool IsKnownDeviceName(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return true;
+            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default";
+        }
+
+        static bool IsKnownIoBackendName(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return true;
+            return s.ToLowerInvariant() is "default" or "libaio";
         }
     }
 }
