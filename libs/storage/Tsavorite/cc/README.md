@@ -17,6 +17,37 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 > otherwise consumers will not see your changes. See "Updating the shipped
 > prebuilt binaries" below.
 
+## Runtime dependencies (end users)
+
+The shipped Linux prebuilt `libnative_device.so` is linked against both
+**libaio** and **liburing**, so both shared libraries must be available
+on the host at load time regardless of which backend you actually select
+via `--device-io-backend`. On most Linux distributions:
+
+```sh
+# Debian / Ubuntu (24.04+):
+sudo apt-get install -y libaio1t64 liburing2
+
+# Debian / Ubuntu (older releases):
+sudo apt-get install -y libaio1 liburing2
+
+# Fedora / RHEL / AzureLinux:
+sudo dnf install -y libaio liburing
+
+# Alpine:
+sudo apk add libaio liburing
+```
+
+If `ldd libnative_device.so` reports `liburing.so.2 => not found` (or
+similar), install the package above. If your environment cannot install
+liburing, rebuild the native lib yourself with `-DUSE_URING=OFF` (see
+"Disabling io_uring" below) — the result links only libaio and the
+`uring` backend is rejected at construction with a clear exception.
+
+Windows users do not need any of this; the shipped `native_device.dll`
+uses the Windows ThreadPool API and has no native runtime dependencies
+beyond the standard CRT.
+
 ### Building on Windows
 
 The native device builds with MSVC (Visual Studio 2022, Visual Studio 2026

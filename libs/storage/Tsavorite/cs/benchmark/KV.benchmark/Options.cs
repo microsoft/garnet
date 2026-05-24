@@ -102,7 +102,7 @@ namespace Tsavorite.kvbench
         public int DeviceThrottle { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
-            HelpText = "Linux native backend: libaio, default (=libaio).")]
+            HelpText = "Linux native backend: libaio, uring, default (=libaio).")]
         public string DeviceIoBackend { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
@@ -233,7 +233,7 @@ namespace Tsavorite.kvbench
                 return $"--device must be one of: native, randomaccess, filestream, null, default (got: {Device})";
             ResolvedIoBackend = ParseIoBackend(DeviceIoBackend);
             if (ResolvedIoBackend == Tsavorite.core.NativeStorageDevice.IoBackend.Default && !IsKnownIoBackendName(DeviceIoBackend))
-                return $"--device-io-backend must be one of: libaio, default (got: {DeviceIoBackend})";
+                return $"--device-io-backend must be one of: libaio, uring, default (got: {DeviceIoBackend})";
 
             ResolvedPageSizeBytes = KvSize.ParseSize(PageSize);
             if (ResolvedPageSizeBytes <= 0) return $"--page-size invalid: {PageSize}";
@@ -343,6 +343,7 @@ namespace Tsavorite.kvbench
             {
                 "default" => Tsavorite.core.NativeStorageDevice.IoBackend.Default,
                 "libaio" => Tsavorite.core.NativeStorageDevice.IoBackend.Libaio,
+                "uring" or "io_uring" or "iouring" => Tsavorite.core.NativeStorageDevice.IoBackend.Uring,
                 _ => Tsavorite.core.NativeStorageDevice.IoBackend.Default,
             };
         }
@@ -356,7 +357,7 @@ namespace Tsavorite.kvbench
         static bool IsKnownIoBackendName(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return true;
-            return s.ToLowerInvariant() is "default" or "libaio";
+            return s.ToLowerInvariant() is "default" or "libaio" or "uring" or "io_uring" or "iouring";
         }
     }
 }
