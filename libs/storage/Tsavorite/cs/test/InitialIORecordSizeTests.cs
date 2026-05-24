@@ -67,7 +67,7 @@ namespace Tsavorite.test
         public void DefaultDeviceSectorSizeConstantTest()
         {
             // Verify the device sector size constant
-            ClassicAssert.AreEqual(4096, IDevice.DefaultDeviceSectorSize);
+            ClassicAssert.AreEqual(4096, IDevice.MinDeviceSectorSize);
         }
 
         [Test]
@@ -127,7 +127,7 @@ namespace Tsavorite.test
         {
             // NullDevice should use the DefaultDeviceSectorSize
             using var device = new NullDevice();
-            ClassicAssert.AreEqual((uint)IDevice.DefaultDeviceSectorSize, device.SectorSize);
+            ClassicAssert.AreEqual((uint)IDevice.MinDeviceSectorSize, device.SectorSize);
         }
 
         [Test]

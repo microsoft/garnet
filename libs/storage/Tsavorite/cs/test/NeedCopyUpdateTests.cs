@@ -35,7 +35,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10
+                PageSize = IDevice.MinDeviceSectorSize
             }, StoreFunctions.Create(IntKeyComparer.Instance, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

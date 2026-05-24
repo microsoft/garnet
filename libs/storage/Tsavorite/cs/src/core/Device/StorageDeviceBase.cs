@@ -12,7 +12,6 @@ namespace Tsavorite.core
     /// </summary>
     public abstract class StorageDeviceBase : IDevice
     {
-
         /// <summary>
         /// 
         /// </summary>

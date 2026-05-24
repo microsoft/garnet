@@ -22,8 +22,8 @@ namespace Tsavorite.test.Objects
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
-        const long LogMemorySize = 1L << 15;
-        const long PageSize = 1L << 10;
+        const long LogMemorySize = 1L << (LogSettings.kMinPageSizeBits + 5);
+        const long PageSize = 1L << LogSettings.kMinPageSizeBits;
 
         [SetUp]
         public void Setup()
@@ -135,7 +135,9 @@ namespace Tsavorite.test.Objects
             using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            for (int i = 0; i < 2000; i++)
+            const int NumTotalRecords = 5000;
+            const int NumRecordsForRMW = 100;
+            for (int i = 0; i < NumTotalRecords; i++)
             {
                 var key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
@@ -166,7 +168,7 @@ namespace Tsavorite.test.Objects
             ClassicAssert.IsFalse(status.Found);
 
             // Update last 100 using RMW in memory
-            for (int i = 1900; i < 2000; i++)
+            for (int i = NumTotalRecords - NumRecordsForRMW; i < NumTotalRecords; i++)
             {
                 var key = new TestObjectKey { key = i };
                 input = new TestObjectInput { value = 1 };
@@ -176,7 +178,7 @@ namespace Tsavorite.test.Objects
 
             // Update first 100 using RMW from storage
             var numPendingUpdates = 0;
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < NumRecordsForRMW; i++)
             {
                 var key = new TestObjectKey { key = i };
                 input = new TestObjectInput { value = 1 };
@@ -187,10 +189,10 @@ namespace Tsavorite.test.Objects
                     _ = bContext.CompletePending(true);
                 }
             }
-            Assert.That(numPendingUpdates, Is.EqualTo(100));
+            Assert.That(numPendingUpdates, Is.EqualTo(NumRecordsForRMW));
 
             var numPendingReads = 0;
-            for (int i = 0; i < 2000; i++)
+            for (int i = 0; i < NumTotalRecords; i++)
             {
                 var output = new TestObjectOutput();
                 var key = new TestObjectKey { key = i };
@@ -203,7 +205,7 @@ namespace Tsavorite.test.Objects
                     (status, output) = bContext.GetSinglePendingResult();
                 }
 
-                if (i is < 100 or >= 1900)
+                if (i is < NumRecordsForRMW or >= NumTotalRecords - NumRecordsForRMW)
                     ClassicAssert.AreEqual(value.value + 1, output.value.value);
                 else
                     ClassicAssert.AreEqual(value.value, output.value.value);
@@ -273,13 +275,13 @@ namespace Tsavorite.test.Objects
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
             // Ensure our size calculations are correct by validating the test parameters are what we expect
-            Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
-            Assert.That(PageSize, Is.EqualTo(1L << 10));
+            Assert.That(LogMemorySize, Is.EqualTo(1L << (LogSettings.kMinPageSizeBits + 5)));
+            Assert.That(PageSize, Is.EqualTo(1L << LogSettings.kMinPageSizeBits));
             Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
             Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
-            const int RecordLength = 32;                                // LogRecord allocated size
+            const int RecordLength = 32;                                // LogRecord allocated size (note: record has an ObjectId in the value position)
             const int ObjectsPerPage = (int)((PageSize - PageHeader.Size) / RecordLength);
-            Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
+            Assert.That(ObjectsPerPage, Is.EqualTo(126));               // Make debugging easier by verifying the length we'll see in the IDE (note: sizes changed when we moved from 512 to 4k sector sizes)
 
             var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
@@ -375,13 +377,13 @@ namespace Tsavorite.test.Objects
         public async Task LargeObjectLinearizeFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
             // Ensure our size calculations are correct by validating the test parameters are what we expect
-            Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
-            Assert.That(PageSize, Is.EqualTo(1L << 10));
+            Assert.That(LogMemorySize, Is.EqualTo(1L << (LogSettings.kMinPageSizeBits + 5)));
+            Assert.That(PageSize, Is.EqualTo(1L << LogSettings.kMinPageSizeBits));
             Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
             Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
-            const int RecordLength = 32;                                // LogRecord allocated size
+            const int RecordLength = 32;                                // LogRecord allocated size (note: record has an ObjectId in the value position)
             const int ObjectsPerPage = (int)((PageSize - PageHeader.Size) / RecordLength);
-            Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
+            Assert.That(ObjectsPerPage, Is.EqualTo(126));               // Make debugging easier by verifying the length we'll see in the IDE (note: sizes changed when we moved from 512 to 4k sector sizes)
 
             var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);

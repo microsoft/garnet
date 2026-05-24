@@ -628,7 +628,7 @@ namespace Tsavorite.core
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = RoundUp(PageSize, Math.Max(sectorSize, IStreamBuffer.MinIORecordRequestSize));
+            AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
 
             if (BufferSize > 0)
             {
@@ -1654,19 +1654,13 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
-            // Clamp the read to page boundary; PageSize is a power of 2 that is greater than sectorSize.
+            // Clamp the read to page boundary; PageSize is a power of 2 that is at least sectorSize.
             {
                 var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedFileOffset & PageSizeMask));
+                Debug.Assert(maxReadLength >= sectorSize, $"Max read length {maxReadLength} must be at least sectorSize {sectorSize}");
                 if (alignedReadLength > maxReadLength)
                     alignedReadLength = maxReadLength;
-                Debug.Assert(maxReadLength >= IStreamBuffer.MinIORecordRequestSize, $"Max read length {maxReadLength} must be at least minimum IO record request size {IStreamBuffer.MinIORecordRequestSize}");
             }
-
-            // Always read at least an optimal block size, and let the record know it has this much data available (depending on what is actually retrieved).
-            // Thus, with DefaultInitialIORecordSize currently set to 32, we will likely still get the full record. We've aligned PageSize to this so there
-            // will be room on the page for this read.
-            if (alignedReadLength < IStreamBuffer.MinIORecordRequestSize)
-                alignedReadLength = IStreamBuffer.MinIORecordRequestSize;
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
@@ -2109,6 +2103,7 @@ namespace Tsavorite.core
                             storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
+                    prevLengthToRead = recordLength;
                 }
             }
 
@@ -2129,11 +2124,12 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
-                // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
-                // DefaultInitialIORecordSize request can be fulfilled. Adjust for valid_offset as in the original read-length calculations.
+                Debug.Assert(numBytes <= ctx.record.available_bytes + ctx.record.valid_offset,
+                    $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
                 ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
 
-                Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}");
+                Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid,
+                    $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {*(RecordInfo*)ctx.record.GetValidPointer()}");
 
                 if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {

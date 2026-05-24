@@ -104,7 +104,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                 LogDevice = log,
                 LogMemorySize = 1L << 22,
                 SegmentSize = 1L << 22,
-                PageSize = 1L << 10
+                PageSize = IDevice.MinDeviceSectorSize
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

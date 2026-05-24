@@ -83,7 +83,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = IDevice.MinDeviceSectorSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -104,7 +104,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = IDevice.MinDeviceSectorSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -249,7 +249,7 @@ namespace Tsavorite.test
             var sw = Stopwatch.StartNew();
 
             var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType, latencyMs: latencyMs);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType, latencyMs: latencyMs);
 
             for (var c = 0; c < NumRecs; c++)
             {
@@ -325,7 +325,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -389,7 +389,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -411,7 +411,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -435,7 +435,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadWithoutInput([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             OutputStruct output = default;
 
@@ -459,7 +459,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadBareMinParams([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -603,7 +603,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void UpsertDefaultsTest([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = IDevice.MinDeviceSectorSize }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;

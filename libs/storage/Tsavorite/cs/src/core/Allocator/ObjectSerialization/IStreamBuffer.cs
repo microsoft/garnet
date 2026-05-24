@@ -26,9 +26,6 @@ namespace Tsavorite.core
         /// <summary>Maximum allowed initial IO record size.</summary>
         internal const int MaxInitialIORecordSize = 1 << 22; // 4 MB
 
-        /// <summary>This is the minimum size we will use when issuing a record read. It is the optimal input block size.</summary>
-        internal const int MinIORecordRequestSize = 1 << 12; // 4 KB
-
         /// <summary>
         /// We use these buffers for only read or only write operations, never both at the same time.
         /// </summary>

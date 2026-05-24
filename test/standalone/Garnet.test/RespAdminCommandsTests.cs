@@ -10,6 +10,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 using NotImplementedException = System.NotImplementedException;
 
 namespace Garnet.test
@@ -328,10 +329,10 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(63, 15, 1)]
-        [TestCase(63, 4, 1)]
-        [TestCase(16, 16, 1)]
-        [TestCase(5, 64, 1)]
+        [TestCase(63, 15, IDevice.MinDeviceSectorSize)]
+        [TestCase(63, IDevice.MinDeviceSectorSize * 2, IDevice.MinDeviceSectorSize)]
+        [TestCase(16, 16, IDevice.MinDeviceSectorSize)]
+        [TestCase(IDevice.MinDeviceSectorSize * 4, 64, IDevice.MinDeviceSectorSize)]
         //[Repeat(3000)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
@@ -378,19 +379,19 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("63k", "15k")]
+        [TestCase("63k", "16k")]
         [TestCase("63k", "3k")]
         [TestCase("63k", "2k")]
-        [TestCase("8k", "5k")]
+        [TestCase("18k", "15k")]
         [TestCase("16k", "16k")]
-        [TestCase("5k", "8k")]
-        [TestCase("5k", "64k")]
+        [TestCase("25k", "18k")]
+        [TestCase("25k", "64k")]
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
             bool disableObj = true;
 
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: $"{IDevice.MinDeviceSectorSize}", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -425,7 +426,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: $"{IDevice.MinDeviceSectorSize}", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

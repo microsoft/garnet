@@ -33,9 +33,23 @@ namespace Tsavorite.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Recover"), deleteOnClose: true);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            log = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                MemorySizeBits = LogSettings.kMinMemorySizeBits,
+                PageSizeBits = LogSettings.kMinPageSizeBits,
+                MutableFraction = 0.5,
+                SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
+            });
             deviceReadOnly = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "RecoverReadOnly"));
-            logReadOnly = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
+            logReadOnly = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = deviceReadOnly,
+                ReadOnlyMode = true,
+                MemorySizeBits = LogSettings.kMinMemorySizeBits,
+                PageSizeBits = LogSettings.kMinPageSizeBits,
+                SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
+            });
         }
 
         [TearDown]

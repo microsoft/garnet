@@ -27,7 +27,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 9
+                PageSize = IDevice.MinDeviceSectorSize
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

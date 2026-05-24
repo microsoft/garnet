@@ -99,7 +99,12 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(long keyHash) => this.keyHash = keyHash;
+            internal PendingContext(long keyHash)
+            {
+                this.keyHash = keyHash;
+                operationFlags = kNoOpFlags;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
@@ -114,6 +119,7 @@ namespace Tsavorite.core
             {
                 operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

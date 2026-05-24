@@ -11,7 +11,7 @@ namespace Tsavorite.core
     internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
-        public const int kMinPageSizeBits = 6;  // 64B
+        public const int kMinPageSizeBits = IDevice.MinDeviceSectorSizeBits;
         /// <summary>Maximum number of bits for a page size</summary>
         public const int kMaxPageSizeBits = 30; // 1TB
 
@@ -26,7 +26,7 @@ namespace Tsavorite.core
         public const int kMaxSegmentSizeBits = 62;
 
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
-        public const int kMinMemorySizeBits = kMinPageSizeBits;
+        public const int kMinMemorySizeBits = kMinPageSizeBits + 1;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
@@ -50,7 +50,7 @@ namespace Tsavorite.core
         public const int kDefaultMaxInlineValueSizeBits = kMinPageSizeBits + 6;         // 4KB
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
-        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;                   // 64B
+        public const int kLowestMaxInlineSizeBits = 6;                                  // 64B
 
         /// <summary>
         /// Device used for main hybrid log

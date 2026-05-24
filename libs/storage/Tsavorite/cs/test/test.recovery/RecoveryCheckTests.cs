@@ -100,7 +100,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -220,7 +220,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -331,7 +331,7 @@ namespace Tsavorite.test.recovery
         public void RecoveryCheck2Repeated([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             Guid token = default;
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
 
             // Local variables in an async function can be moved, so we must use an array for the key
             var keyArray = new byte[sizeof(long)];
@@ -397,15 +397,15 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void RecoveryRollback([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = pageSize,
-                LogMemorySize = 1L << 11,
-                SegmentSize = 1L << 11,
+                LogMemorySize = 1L << 13,
+                SegmentSize = IDevice.MinDeviceSectorSize,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -517,7 +517,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -639,7 +639,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -763,7 +763,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = IDevice.MinDeviceSectorSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -959,7 +959,7 @@ namespace Tsavorite.test.recovery
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = IDevice.MinDeviceSectorSize,
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
@@ -1038,7 +1038,7 @@ namespace Tsavorite.test.recovery
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = IDevice.MinDeviceSectorSize,
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir

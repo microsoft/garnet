@@ -38,18 +38,18 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        /// <param name="sz_segment">The size of each segment</param>
+        /// <param name="segmentSize">The size of each segment</param>
         /// <param name="parallelism">Number of IO processing threads</param>
         /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
-        /// <param name="sector_size">Sector size for device (default 64)</param>
+        /// <param name="sectorSize">Sector size for device (default 64)</param>
         /// <param name="fileName">Virtual path for the device</param>
-        public unsafe LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage")
-            : base(fileName, sector_size, capacity)
+        public unsafe LocalMemoryDevice(long capacity, long segmentSize, int parallelism, int latencyMs = 0, uint sectorSize = IDevice.MinDeviceSectorSize, string fileName = "/userspace/ram/storage")
+            : base(fileName, sectorSize, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Debug.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
-            num_segments = (int)(capacity / sz_segment);
-            this.sz_segment = sz_segment;
+            num_segments = (int)(capacity / segmentSize);
+            this.sz_segment = segmentSize;
             latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
 
             ram_segment_ptrs = new byte*[num_segments];
@@ -58,7 +58,7 @@ namespace Tsavorite.core
 
             for (int i = 0; i < num_segments; i++)
             {
-                orig_ram_segments[i] = GC.AllocateArray<byte>((int)sz_segment, true);
+                orig_ram_segments[i] = GC.AllocateArray<byte>((int)segmentSize, true);
                 ram_segment_ptrs[i] = (byte*)Unsafe.AsPointer(ref orig_ram_segments[i][0]);
             }
             terminated = false;
@@ -73,7 +73,7 @@ namespace Tsavorite.core
                 ioProcessors[i].Start();
             }
 
-            Debug.WriteLine("LocalMemoryDevice: " + ram_segment_ptrs.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
+            Debug.WriteLine("LocalMemoryDevice: " + ram_segment_ptrs.Length + " pinned in-memory segments created, each with " + segmentSize + " bytes");
         }
 
         private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)

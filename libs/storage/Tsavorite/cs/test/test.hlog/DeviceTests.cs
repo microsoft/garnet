@@ -16,7 +16,7 @@ namespace Tsavorite.test
     [TestFixture]
     public class DeviceTests : TestBase
     {
-        const int entryLength = 1024;
+        const int entryLength = IDevice.MinDeviceSectorSize * 2;
         SectorAlignedBufferPool bufferPool;
         readonly byte[] entry = new byte[entryLength];
         SemaphoreSlim semaphore;
@@ -31,7 +31,7 @@ namespace Tsavorite.test
             for (int i = 0; i < entry.Length; i++)
                 entry[i] = (byte)i;
 
-            bufferPool = new SectorAlignedBufferPool(1, 512);
+            bufferPool = new SectorAlignedBufferPool(1, IDevice.MinDeviceSectorSize);
             semaphore = new SemaphoreSlim(0);
         }
 
@@ -61,7 +61,7 @@ namespace Tsavorite.test
         public unsafe void NativeDeviceTest2()
         {
             int size = 1 << 16;
-            int sector_size = 512;
+            int sector_size = IDevice.MinDeviceSectorSize;
 
             var rbuffer = GC.AllocateArray<byte>(size + sector_size, true);
             new Span<byte>(rbuffer).Clear();

@@ -30,8 +30,8 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << 14,
-                PageSize = 1L << 9
+                LogMemorySize = 1L << (LogSettings.kMinPageSizeBits + 5),
+                PageSize = 1L << LogSettings.kMinPageSizeBits
             };
 
             // For this class, compactionType is the first (and currently only) parameter. Using this to illustrate the approach; NUnit doesn't provide metadata for arguments,

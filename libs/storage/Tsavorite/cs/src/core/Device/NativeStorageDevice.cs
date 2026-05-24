@@ -24,7 +24,7 @@ namespace Tsavorite.core
     public unsafe class NativeStorageDevice : StorageDeviceBase
     {
         const int MaxResults = 1 << 12;
-        const uint sectorSize = IDevice.DefaultDeviceSectorSize;
+        const uint sectorSize = IDevice.MinDeviceSectorSize;
 
         readonly ConcurrentQueue<int> freeResults = new();
         readonly ILogger logger;

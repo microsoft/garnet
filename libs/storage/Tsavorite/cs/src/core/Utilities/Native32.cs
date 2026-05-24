@@ -213,7 +213,7 @@ namespace Tsavorite.core
         /// Gets the device sector size for the volume containing <paramref name="filename"/> by opening the parent directory
         /// and querying <see cref="FILE_STORAGE_INFO"/> via <c>GetFileInformationByHandleEx</c>.
         /// Returns the max of <c>LogicalBytesPerSector</c> and <c>PhysicalBytesPerSectorForAtomicity</c>,
-        /// or <see cref="IDevice.DefaultDeviceSectorSize"/> if the query fails.
+        /// or <see cref="IDevice.MinDeviceSectorSize"/> if the query fails.
         /// </summary>
         /// <param name="filename">Any file path on the target volume; the file need not exist.</param>
         /// <returns>The sector size in bytes.</returns>
@@ -223,7 +223,7 @@ namespace Tsavorite.core
         internal static uint GetDeviceSectorSize(string filename)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return IDevice.DefaultDeviceSectorSize;
+                return IDevice.MinDeviceSectorSize;
 
             try
             {
@@ -236,8 +236,8 @@ namespace Tsavorite.core
 
                 if (string.IsNullOrEmpty(dirPath))
                 {
-                    Debug.WriteLine($"Unable to find an existing directory for '{filename}' — assuming {IDevice.DefaultDeviceSectorSize} bytes.");
-                    return IDevice.DefaultDeviceSectorSize;
+                    Debug.WriteLine($"Unable to find an existing directory for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
+                    return IDevice.MinDeviceSectorSize;
                 }
 
                 // Open the directory with FILE_FLAG_BACKUP_SEMANTICS (required for directories) and read-only access.
@@ -252,8 +252,8 @@ namespace Tsavorite.core
 
                 if (handle.IsInvalid)
                 {
-                    Debug.WriteLine($"Unable to open directory '{dirPath}' for sector size query — assuming {IDevice.DefaultDeviceSectorSize} bytes.");
-                    return IDevice.DefaultDeviceSectorSize;
+                    Debug.WriteLine($"Unable to open directory '{dirPath}' for sector size query — assuming {IDevice.MinDeviceSectorSize} bytes.");
+                    return IDevice.MinDeviceSectorSize;
                 }
 
                 try
@@ -262,7 +262,7 @@ namespace Tsavorite.core
                     {
                         var result = Math.Max(info.LogicalBytesPerSector, info.PhysicalBytesPerSectorForAtomicity);
                         if (result > 0)
-                            return result;
+                            return Math.Max(result, IDevice.MinDeviceSectorSize);
                     }
                 }
                 finally
@@ -275,8 +275,8 @@ namespace Tsavorite.core
                 // Fall through to default
             }
 
-            Debug.WriteLine($"Unable to retrieve sector size for '{filename}' — assuming {IDevice.DefaultDeviceSectorSize} bytes.");
-            return IDevice.DefaultDeviceSectorSize;
+            Debug.WriteLine($"Unable to retrieve sector size for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
+            return IDevice.MinDeviceSectorSize;
         }
 
 

@@ -164,31 +164,32 @@ namespace Tsavorite.test.spanbyte
                     IndexSize = 1L << 13,
                     LogDevice = log,
                     LogMemorySize = 1L << 17,
-                    PageSize = 1L << 10    // 1KB page
+                    PageSize = IDevice.MinDeviceSectorSize
                 }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
-            const int PageSize = 1024;
-            Span<byte> valueSpan = stackalloc byte[PageSize];
+            const int PageSize = 4096;
+            const int valueSize = 3800;
+            Span<byte> valueSpan = stackalloc byte[valueSize];
 
-            Set(1L, valueSpan, 800, 1);                // Inserted on page#0 and leaves empty space
-            Set(2L, valueSpan, 800, 2);                // Inserted on page#1 because there is not enough space in page#0, and leaves empty space
+            Set(1L, valueSpan, valueSize, 1);           // Inserted on page#0 and leaves empty space
+            Set(2L, valueSpan, valueSize, 2);           // Inserted on page#1 because there is not enough space in page#0, and leaves empty space
 
-            // Add a second record on page#1 to fill it exactly. Page#1 starts at offset 0 on the page (unlike page#0, which starts at 24 or 64,
-            // depending on data). Subtract the RecordInfo and key space for both the first record and the second record we're about to insert,
-            // the value space for the first record, and the length header for the second record. This is the space available for the second record's value.
+            // Add a second record on page#1 to fill it exactly. Pages start at offset 64 on the page. Subtract the RecordInfo and key space for both
+            // the first record and the second record we're about to insert, the value space for the first record, and the length header for the second
+            // record. This is the space available for the second record's value.
             var availableSpaceForRecord3 = PageSize * 2 - store.Log.TailAddress;
             var p2value2len = (int)availableSpaceForRecord3
                                 - RecordInfo.Size
-                                - RecordDataHeader.MinHeaderBytes
-                                - sizeof(long);    // key size
-            Set(3L, valueSpan, p2value2len, 3);        // Inserted on page#1
+                                - RecordDataHeader.MinHeaderBytes   // The third record will be small.
+                                - sizeof(long);         // key size
+            Set(3L, valueSpan, p2value2len, 3);         // Inserted on page#1
             ClassicAssert.AreEqual(PageSize * 2, store.Log.TailAddress, "TailAddress should be at the end of page#2");
 
-            Set(4L, valueSpan, 64, 4);                 // Inserted on page#2
+            Set(4L, valueSpan, 64, 4);                  // Inserted on page#2
 
             var data = new List<(long, int, int)>();
             using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
@@ -204,8 +205,8 @@ namespace Tsavorite.test.spanbyte
 
             ClassicAssert.AreEqual(4, data.Count);
 
-            ClassicAssert.AreEqual((1L, 800, 1), data[0]);
-            ClassicAssert.AreEqual((2L, 800, 2), data[1]);
+            ClassicAssert.AreEqual((1L, valueSize, 1), data[0]);
+            ClassicAssert.AreEqual((2L, valueSize, 2), data[1]);
             ClassicAssert.AreEqual((3L, p2value2len, 3), data[2]);
             ClassicAssert.AreEqual((4L, 64, 4), data[3]);
 

@@ -43,8 +43,8 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << (largeMemory ? 25 : 14),
-                PageSize = 1L << (largeMemory ? 20 : 9)
+                LogMemorySize = 1L << (largeMemory ? 25 : (LogSettings.kMinPageSizeBits + 5)),
+                PageSize = 1L << (largeMemory ? 20 : LogSettings.kMinPageSizeBits)
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -321,7 +321,7 @@ namespace Tsavorite.test
         }
 
         private const int Count = 249;  // In the Issue this is 253, but in V2 the presence of PageHeader uses some space and that causes 253 to require another page.
-        private const long PageSize = 1L << 12;
+        private const long PageSize = 1L << LogSettings.kMinPageSizeBits;
         private const long SegmentSize = PageSize;
 
         private static void RunTest(IDevice LogDevice)
@@ -390,7 +390,7 @@ namespace Tsavorite.test
         [Category(SmokeTestCategory)]
         public void InsDelIns_LocalMemory()
         {
-            using var LogDevice = new LocalMemoryDevice(capacity: SegmentSize, sz_segment: SegmentSize, parallelism: 1, sector_size: 64U, latencyMs: 0, fileName: Path.Combine(MethodTestDir, "test.log"));
+            using var LogDevice = new LocalMemoryDevice(capacity: SegmentSize, segmentSize: SegmentSize, parallelism: 1, latencyMs: 0, fileName: Path.Combine(MethodTestDir, "test.log"));
             RunTest(LogDevice);
         }
 

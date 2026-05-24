@@ -27,9 +27,9 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
-                ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = 1L << 10,
+                PageSize = IDevice.MinDeviceSectorSize,
+                ReadCacheMemorySize = 1L << 17,
+                ReadCachePageSize = IDevice.MinDeviceSectorSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(new KeyStruct.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -87,9 +87,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(key1, ref input, ref output, Empty.Default);
-                ClassicAssert.IsTrue(status.Found);
-                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
-                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found, $"i == {i}");
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1, $"i == {i}");
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2, $"i == {i}");
             }
 
             // Evict the read cache entirely

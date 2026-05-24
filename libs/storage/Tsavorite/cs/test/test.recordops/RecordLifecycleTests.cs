@@ -201,7 +201,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
+                PageSize = IDevice.MinDeviceSectorSize
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -607,9 +607,9 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
+                PageSize = IDevice.MinDeviceSectorSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = 1L << 10,
+                ReadCachePageSize = IDevice.MinDeviceSectorSize,
                 ReadCacheEnabled = true,
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))

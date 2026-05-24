@@ -13,7 +13,7 @@ namespace Tsavorite.core
         /// <summary>
         /// 
         /// </summary>
-        public NullDevice() : base("null", IDevice.DefaultDeviceSectorSize, Devices.CAPACITY_UNSPECIFIED)
+        public NullDevice() : base("null", IDevice.MinDeviceSectorSize, Devices.CAPACITY_UNSPECIFIED)
         {
         }
 
