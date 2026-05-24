@@ -240,24 +240,32 @@ class FileSystemSegmentBundle {
   bool owner_;
 };
 
-template <class H, uint64_t S>
+template <class H>
 class FileSystemSegmentedFile {
  public:
   typedef H handler_t;
   typedef FileSystemFile<H> file_t;
   typedef FileSystemSegmentBundle<handler_t> bundle_t;
 
-  static constexpr uint64_t kSegmentSize = S;
-  static_assert(core::Utility::IsPowerOfTwo(S), "template parameter S is not a power of two!");
+  /// Runtime segment size. Set once at construction and never mutated thereafter.
+  uint64_t segment_size() const { return segment_size_; }
 
   FileSystemSegmentedFile(const std::string& filename,
-                          const environment::FileOptions& file_options, core::LightEpoch* epoch)
+                          const environment::FileOptions& file_options,
+                          core::LightEpoch* epoch,
+                          uint64_t segment_size)
     : begin_segment_{ 0 }
     , files_{ nullptr }
     , handler_{ nullptr }
     , filename_{ filename }
     , file_options_{ file_options }
-    , epoch_{ epoch } {
+    , epoch_{ epoch }
+    , segment_size_{ segment_size }
+    , segment_mask_{ segment_size - 1 }
+    , segment_shift_{ ValidatedShift(segment_size) } {
+    // ValidatedShift threw if segment_size is non-positive or non-power-of-2 BEFORE the
+    // mask/shift constants were observable. Once we get here, the constants are sane and
+    // the hot-path uses `>> segment_shift_` / `& segment_mask_` (single register loads).
   }
 
   ~FileSystemSegmentedFile() {
@@ -287,32 +295,43 @@ class FileSystemSegmentedFile {
       TruncateSegments(segment + 1, truncate_callback);
   }
   void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
-    uint64_t new_begin_segment = new_begin_offset / kSegmentSize;
+    uint64_t new_begin_segment = new_begin_offset >> segment_shift_;
     begin_segment_ = new_begin_segment;
     TruncateSegments(new_begin_segment, callback);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
                    core::IAsyncContext& context) const {
-    uint64_t segment = source / kSegmentSize;
-    assert(source % kSegmentSize + length <= kSegmentSize);
+    // Hot path. The shift+mask resolves to two register-loads from this object (`segment_shift_`
+    // and `segment_mask_` are const-after-construction and on the same cache line as other
+    // members touched in this call) plus a `shr` + `and`. Equivalent codegen to the previous
+    // `/ S` / `% S` because compile-time-constant S was already strength-reduced; the only
+    // difference is the load of the runtime constants from `this` instead of an immediate.
+    uint64_t segment = source >> segment_shift_;
+    if ((source & segment_mask_) + length > segment_size_) {
+      // Spans segment boundary — caller bug. Promoted from debug assert because hitting this in
+      // production would silently mis-route the IO. Cold branch; predicted-not-taken.
+      return core::Status::IOError;
+    }
 
     bundle_t* files = files_.load();
 
     if(!files || !files->exists(segment)) {
-      core::Status result = const_cast<FileSystemSegmentedFile<H, S>*>(this)->OpenSegment(segment);
+      core::Status result = const_cast<FileSystemSegmentedFile<H>*>(this)->OpenSegment(segment);
       if(result != core::Status::Ok) {
         return result;
       }
       files = files_.load();
     }
-    return files->file(segment).ReadAsync(source % kSegmentSize, dest, length, callback, context);
+    return files->file(segment).ReadAsync(source & segment_mask_, dest, length, callback, context);
   }
 
   core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
                     core::AsyncIOCallback callback, core::IAsyncContext& context) {
-    uint64_t segment = dest / kSegmentSize;
-    assert(dest % kSegmentSize + length <= kSegmentSize);
+    uint64_t segment = dest >> segment_shift_;
+    if ((dest & segment_mask_) + length > segment_size_) {
+      return core::Status::IOError;
+    }
 
     bundle_t* files = files_.load();
 
@@ -323,7 +342,7 @@ class FileSystemSegmentedFile {
       }
       files = files_.load();
     }
-    return files->file(segment).WriteAsync(source, dest % kSegmentSize, length, callback, context);
+    return files->file(segment).WriteAsync(source, dest & segment_mask_, length, callback, context);
   }
 
   size_t alignment() const {
@@ -414,16 +433,19 @@ class FileSystemSegmentedFile {
     class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
-              core::GcState::truncate_callback_t caller_callback_)
+              core::GcState::truncate_callback_t caller_callback_,
+              uint64_t segment_size_bytes_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
-        , caller_callback{ caller_callback_ } {
+        , caller_callback{ caller_callback_ }
+        , segment_size_bytes{ segment_size_bytes_ } {
       }
       /// The deep-copy constructor.
       Context(const Context& other)
         : files{ other.files }
         , new_begin_segment{ other.new_begin_segment }
-        , caller_callback{ other.caller_callback } {
+        , caller_callback{ other.caller_callback }
+        , segment_size_bytes{ other.segment_size_bytes } {
       }
      protected:
       core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
@@ -433,6 +455,9 @@ class FileSystemSegmentedFile {
       bundle_t* files;
       uint64_t new_begin_segment;
       core::GcState::truncate_callback_t caller_callback;
+      // Captured at TruncateSegments() entry so the deferred drain-list callback (which fires
+      // on an arbitrary thread after BumpCurrentEpoch) doesn't need to dereference `this`.
+      uint64_t segment_size_bytes;
     };
 
     auto callback = [](core::IAsyncContext* ctxt) {
@@ -444,7 +469,7 @@ class FileSystemSegmentedFile {
       }
       std::free(context->files);
       if(context->caller_callback) {
-        context->caller_callback(context->new_begin_segment * kSegmentSize);
+        context->caller_callback(context->new_begin_segment * context->segment_size_bytes);
       }
     };
 
@@ -455,7 +480,7 @@ class FileSystemSegmentedFile {
     if(files->begin_segment >= new_begin_segment) {
       // Segments have already been truncated.
       if(caller_callback) {
-        caller_callback(files->begin_segment * kSegmentSize);
+        caller_callback(files->begin_segment * segment_size_);
       }
       return;
     }
@@ -466,7 +491,7 @@ class FileSystemSegmentedFile {
         *files };
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
-    Context context{ files, new_begin_segment, caller_callback };
+    Context context{ files, new_begin_segment, caller_callback, segment_size_ };
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);
@@ -534,6 +559,29 @@ class FileSystemSegmentedFile {
   environment::FileOptions file_options_;
   core::LightEpoch* epoch_;
   std::mutex mutex_;
+
+  /// Runtime segment-size geometry. All three are set in the constructor and never mutated
+  /// thereafter — declared const so the optimizer can keep them in registers across the hot
+  /// path. segment_mask_ = segment_size_ - 1 and segment_shift_ = ctzll(segment_size_) so that
+  /// `addr % segment_size == addr & segment_mask_` and `addr / segment_size == addr >> segment_shift_`.
+  /// ValidatedShift below ensures segment_size_ is a positive power of 2 before computing
+  /// segment_shift_ (`__builtin_ctzll(0)` is UB).
+  const uint64_t segment_size_;
+  const uint64_t segment_mask_;
+  const uint32_t segment_shift_;
+
+  /// Validates that segment_size is a non-zero power of 2 and returns its ctzll. Throws
+  /// std::invalid_argument otherwise — Release-mode active (the previous `static_assert` is
+  /// gone because S is no longer a compile-time constant). Called from the member-initializer
+  /// list; if it throws, the partially-constructed FileSystemSegmentedFile is never seen by
+  /// the caller, which is the desired fail-fast behavior.
+  static uint32_t ValidatedShift(uint64_t segment_size) {
+    if (!core::Utility::IsPowerOfTwo(segment_size)) {
+      throw std::invalid_argument(
+        "FileSystemSegmentedFile: segment_size must be a positive power of two");
+    }
+    return core::Utility::CountTrailingZeros64(segment_size);
+  }
 };
 
 template <class H, uint64_t S>
@@ -541,7 +589,7 @@ class FileSystemDisk {
  public:
   typedef H handler_t;
   typedef FileSystemFile<handler_t> file_t;
-  typedef FileSystemSegmentedFile<handler_t, S> log_file_t;
+  typedef FileSystemSegmentedFile<handler_t> log_file_t;
 
  private:
   static std::string NormalizePath(std::string root_path) {
@@ -559,7 +607,9 @@ class FileSystemDisk {
     : root_path_{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
-    , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
+    // S is preserved as a class-template arg so legacy compile sites pin a compile-time
+    // segment-size value; the FileSystemSegmentedFile itself now stores it as a runtime const.
+    , log_{ root_path_ + "log.log", default_file_options_, &epoch, S } {
     core::Status result = log_.Open(&handler_);
     assert(result == core::Status::Ok);
   }

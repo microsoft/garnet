@@ -41,17 +41,20 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
-# --- Lua and libaio builder stage ---
+# --- Lua, libaio, and liburing builder stage ---
 FROM ubuntu:24.04 AS libs-builder
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends liblua5.4-0 libaio1t64 \
+    && apt-get install -y --no-install-recommends liblua5.4-0 libaio1t64 liburing2 \
     && ARCH="$(uname -m)" \
     && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
-    && mkdir -p /staging/lua /staging/libaio \
+    && mkdir -p /staging/lua /staging/libaio /staging/liburing \
     && cp "/usr/lib/${MULTIARCH}/liblua5.4.so.0" /staging/lua/ \
     && ln -sf "liblua5.4.so.0" /staging/lua/liblua54.so \
     && cp "/usr/lib/${MULTIARCH}/libaio.so.1t64" /staging/libaio/ \
     && ln -sf "libaio.so.1t64" /staging/libaio/libaio.so.1 \
+    && URING_FILE=$(readlink -f "/usr/lib/${MULTIARCH}/liburing.so.2") \
+    && cp "$URING_FILE" "/staging/liburing/$(basename "$URING_FILE")" \
+    && ln -sf "$(basename "$URING_FILE")" /staging/liburing/liburing.so.2 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- .NET build and layout prep ---
@@ -72,6 +75,8 @@ COPY --from=prep-runtime /usr/share/dotnet/shared /usr/share/dotnet/shared
 # Copy libaio for native device support (copy the real file, then symlink in the chiseled image via prep-runtime)
 COPY --from=libs-builder /staging/libaio/libaio.so.1t64 /usr/lib/libaio.so.1t64
 COPY --from=libs-builder /staging/libaio/libaio.so.1 /usr/lib/libaio.so.1
+# Copy liburing for io_uring backend support
+COPY --from=libs-builder /staging/liburing/ /usr/lib/
 COPY --from=build /app .
 
 VOLUME /data

@@ -481,6 +481,13 @@ namespace Garnet
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). The shipped native library is built with -DUSE_URING=ON and requires liburing.so.2 at load time for all backends; a -DUSE_URING=OFF rebuild only needs libaio.")]
+        public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
+        public int? DeviceCompletionThreads { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -561,9 +568,7 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
-        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes. Note that we do not have a KeyOverflowThreshold
-        // because it would complicate the minimum pagesize check that uses ValueOverflowThreshold check at startup; keys are usually small so calculating a
-        // minimum page size using a large(ish) Key threshold would have spurious errors. We'll defer that rare case to runtime checks.
+        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
         [MemorySizeValidation(isRequired: false)]
         [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
         public string ValueOverflowThreshold { get; set; }
@@ -891,7 +896,11 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(
+                        deviceType: deviceType,
+                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -907,6 +916,8 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
+                DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

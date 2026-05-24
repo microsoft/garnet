@@ -1220,12 +1220,33 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
+            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
+            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
+            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
+            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
+            int spins = 0;
+            var localFlushEvent = flushEvent;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
                 // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
-                _ = Thread.Yield();
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    _ = Thread.Yield();
+                    continue;
+                }
+                try
+                {
+                    epoch.Suspend();
+                    _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
+                localFlushEvent = flushEvent;
+                spins = 0;
             }
 
             // 0: RETRY_LATER
@@ -1650,9 +1671,19 @@ namespace Tsavorite.core
         private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+
+            // Start: round down to sector boundary. Length: caller's IO size rounded up to sector
+            // (do NOT pad with leading slop — that adds an extra trailing sector on misaligned reads,
+            // costing ~12.5% extra IO bandwidth). The slop is accounted for in valid_offset/available_bytes.
             alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
-            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
+            alignedReadLength = (uint)RoundUp(numBytes, sectorSize);
+
+            // Records never span page boundaries (HandlePageOverflow guarantees this), so the IO must
+            // not cross page-end — otherwise on page-aligned segments the native O_DIRECT device fails.
+            // pageEnd is sector-aligned, so the clamped length stays sector-aligned.
+            var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
+            if (alignedFileOffset + alignedReadLength > pageEndInFile)
+                alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);

@@ -341,9 +341,22 @@ namespace Tsavorite.core
             if (!osReadBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logReadHandle = new FileStream(
-                GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, 512, fo);
+            // On Linux, FileOptions cannot express O_DIRECT, so .NET will open the file through the page cache even
+            // when FILE_FLAG_NO_BUFFERING is asked for (it is a Windows-only bit and is silently dropped). Use libc
+            // open() to obtain a true O_DIRECT FD, then wrap in a FileStream so the existing handle pool / FileStream
+            // semantics stay unchanged. Falls back to the standard FileStream path on non-Linux or if O_DIRECT is
+            // unsupported by the underlying filesystem.
+            FileStream logReadHandle;
+            if (TryOpenDirectFileStream(segmentId, FileAccess.Read, createIfMissing: true, out logReadHandle))
+            {
+                // logReadHandle obtained
+            }
+            else
+            {
+                logReadHandle = new FileStream(
+                    GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                    FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, 512, fo);
+            }
 
             return new StorageAccessContext { handle = logReadHandle, memoryManager = new UnmanagedMemoryManager<byte>() };
         }
@@ -359,14 +372,60 @@ namespace Tsavorite.core
             if (disableFileBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logWriteHandle = new FileStream(
-                GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Write, FileShare.ReadWrite, 512, fo);
+            FileStream logWriteHandle;
+            if (TryOpenDirectFileStream(segmentId, FileAccess.Write, createIfMissing: true, out logWriteHandle))
+            {
+                // logWriteHandle obtained via O_DIRECT path
+            }
+            else
+            {
+                logWriteHandle = new FileStream(
+                    GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                    FileAccess.Write, FileShare.ReadWrite, 512, fo);
+            }
 
             if (preallocateFile && segmentSize != -1)
                 SetFileSize(logWriteHandle, segmentSize);
 
             return new StorageAccessContext { handle = logWriteHandle, memoryManager = new UnmanagedMemoryManager<byte>() };
+        }
+
+        // Cached probe result so we only test O_DIRECT capability once per device instance.
+        private int directIOSupportedCached = -1; // -1 unknown, 0 no, 1 yes
+
+        private bool TryOpenDirectFileStream(int segmentId, FileAccess access, bool createIfMissing, out FileStream stream)
+        {
+            stream = null;
+            if (disableFileBuffering == false && access == FileAccess.Write)
+                return false;
+            if (access == FileAccess.Read && osReadBuffering)
+                return false;
+            if (!OperatingSystem.IsLinux())
+                return false;
+
+            var directory = Path.GetDirectoryName(FileName);
+            if (Volatile.Read(ref directIOSupportedCached) == -1)
+            {
+                var supported = LinuxFileExtensions.IsDirectIOSupported(directory) ? 1 : 0;
+                _ = Interlocked.CompareExchange(ref directIOSupportedCached, supported, -1);
+            }
+            if (Volatile.Read(ref directIOSupportedCached) == 0)
+                return false;
+
+            try
+            {
+                var safeHandle = LinuxFileExtensions.OpenDirect(GetSegmentName(segmentId), access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, createIfMissing);
+                LinuxFileExtensions.MarkHandleAsAsync(safeHandle);
+                // bufferSize=1 disables FileStream's user-mode buffer (avoid double-buffering above O_DIRECT).
+                stream = new FileStream(safeHandle, access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, bufferSize: 1, isAsync: true);
+                return true;
+            }
+            catch (IOException ex)
+            {
+                logger?.LogInformation(ex, "O_DIRECT open failed for segment {segmentId}; falling back to page-cached FileStream", segmentId);
+                _ = Interlocked.Exchange(ref directIOSupportedCached, 0);
+                return false;
+            }
         }
 
         private (AsyncPool<StorageAccessContext>, AsyncPool<StorageAccessContext>) AddHandle(int _segmentId)
