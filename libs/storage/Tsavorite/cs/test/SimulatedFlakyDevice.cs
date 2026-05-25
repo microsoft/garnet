@@ -34,6 +34,15 @@ namespace Tsavorite.test
             random = new ThreadLocal<Random>(() => new Random());
         }
 
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            // Initialize our own state via the base, then forward to the wrapped device so that
+            // its EnsureInitialized() guard passes when our IO methods delegate to it.
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             underlying.RemoveSegmentAsync(segment, callback, result);

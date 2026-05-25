@@ -357,6 +357,7 @@ namespace Tsavorite.devices
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
+            EnsureInitialized();
             long id = Interlocked.Increment(ref sequenceNumber);
 
             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpCalled AzureStorageDevice.RemoveSegmentAsync id={id} segment={segment}");
@@ -432,6 +433,7 @@ namespace Tsavorite.devices
         /// </summary>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             long id = Interlocked.Increment(ref sequenceNumber);
 
             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpCalled AzureStorageDevice.ReadAsync id={id} segmentId={segmentId} sourceAddress={sourceAddress} readLength={readLength}");
@@ -505,6 +507,7 @@ namespace Tsavorite.devices
         /// </summary>
         public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             long id = Interlocked.Increment(ref sequenceNumber);
 
             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpCalled AzureStorageDevice.WriteAsync id={id} segmentId={segmentId} destinationAddress={destinationAddress} numBytesToWrite={numBytesToWrite}");

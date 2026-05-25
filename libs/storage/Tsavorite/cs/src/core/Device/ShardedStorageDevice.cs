@@ -180,6 +180,7 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
+            EnsureInitialized();
             var countdown = new CountdownEvent(partitions.Devices.Count);
             foreach (IDevice shard in partitions.Devices)
             {
@@ -205,6 +206,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
             long currentWriteStart = (long)destinationAddress;
@@ -258,6 +260,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
             long currentReadStart = (long)sourceAddress;

@@ -70,6 +70,11 @@ namespace Tsavorite.core
             {
                 device.ThrottleLimit = throttleLimit.Value;
             }
+            // Checkpoint/commit metadata devices are used as a single growing segment file
+            // ("<base>.0" only); initialize them in unbounded single-segment mode so the
+            // IDevice "must Initialize before IO" contract is satisfied without forcing every
+            // consumer of the factory to remember to do so.
+            device.Initialize(segmentSize: -1L);
             return device;
         }
 
@@ -82,11 +87,15 @@ namespace Tsavorite.core
             {
                 foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.LastWriteTime))
                 {
+                    // Skip hidden / dotfile directories (e.g. transient probe files left behind
+                    // by IsDirectIOSupported on Linux when File.Delete races with the dir scan).
+                    if (folder.Name.StartsWith('.')) continue;
                     yield return new FileDescriptor(folder.Name, "");
                 }
 
                 foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.LastWriteTime))
                 {
+                    if (file.Name.StartsWith('.')) continue;
                     yield return new FileDescriptor("", file.Name);
                 }
             }

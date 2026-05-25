@@ -21,6 +21,7 @@ namespace Tsavorite.test.recovery
             seed = 123;
             var rand1 = new Random(seed);
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MallocFixedPageSizeRecoveryTest.dat"), deleteOnClose: true);
+            device.Initialize(segmentSize: -1L);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
@@ -102,7 +103,9 @@ namespace Tsavorite.test.recovery
             size = 1 << 16;
             numAdds = 1L << 18;
             ht_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryht.dat"), deleteOnClose: true);
+            ht_device.Initialize(segmentSize: -1L);
             ofb_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryofb.dat"), deleteOnClose: true);
+            ofb_device.Initialize(segmentSize: -1L);
             hash_table1 = new TsavoriteBase();
             hash_table1.Initialize(size, 512);
 

@@ -474,6 +474,102 @@ namespace Tsavorite.test
             GC.KeepAlive(roots); GC.KeepAlive(rbuf);
         }
 
+        // ----- IDevice contract: Initialize is mandatory before any IO -----------------------
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_ReadAsyncBeforeInitialize_Throws(DeviceKind kind)
+        {
+            // Uniform IDevice contract: every device must be Initialize()d before any IO. The
+            // guard raised by EnsureInitialized() (or NativeStorageDevice's null-handle check)
+            // turns a latent NPE / undefined behaviour into a managed InvalidOperationException
+            // with a clear message naming the device by FileName.
+            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
+            {
+                Assert.Ignore("NativeStorageDevice is Linux-only");
+                return;
+            }
+            var path = Path.Join(TestUtils.MethodTestDir, $"initreq_read_{kind}.log");
+            IDevice device = kind switch
+            {
+                DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: true),
+                DeviceKind.RandomAccess => new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                DeviceKind.ManagedLocal => new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            using (device)
+            {
+                var (buf, ptr) = AllocateAlignedBuffer(4096, _ => 0);
+                Assert.Throws<InvalidOperationException>(() => device.ReadAsync(0, 0, ptr, 4096, IOCallback, null));
+                GC.KeepAlive(buf);
+            }
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_WriteAsyncBeforeInitialize_Throws(DeviceKind kind)
+        {
+            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
+            {
+                Assert.Ignore("NativeStorageDevice is Linux-only");
+                return;
+            }
+            var path = Path.Join(TestUtils.MethodTestDir, $"initreq_write_{kind}.log");
+            IDevice device = kind switch
+            {
+                DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: true),
+                DeviceKind.RandomAccess => new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                DeviceKind.ManagedLocal => new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            using (device)
+            {
+                var (buf, ptr) = AllocateAlignedBuffer(4096, i => (byte)i);
+                Assert.Throws<InvalidOperationException>(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
+                GC.KeepAlive(buf);
+            }
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_Initialize_SegmentSizeMinusOne_UnboundedSingleSegment(DeviceKind kind)
+        {
+            // Contract: Initialize(-1) selects unbounded single-segment mode. Every IO routes
+            // through segment 0 (no per-segment file rotation). Validates with a write at a
+            // high offset followed by readback, which would have crossed a segment boundary
+            // under any positive segmentSize but here lives in the single growing segment file.
+            const uint kBlock = 4096;
+            // Pick a "would-have-crossed-segment-N" offset that is sector-aligned and modest
+            // enough to not blow up tmp disk usage in CI. 1 MiB is far past any real segment
+            // we use elsewhere in this fixture (64 MiB is our usual segment), but importantly
+            // it exercises the (alignedAddress >> segmentSizeBits) math which must produce
+            // segment 0 in -1 mode (since segmentSizeBits == 64 / segmentSizeMask == ~0).
+            const ulong kHighOffset = 1UL << 20;
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, $"unbounded_{kind}.log"), segmentSize: -1L);
+            var (wbuf, wptr) = AllocateAlignedBuffer((int)kBlock, i => (byte)((i * 11 + 3) & 0xFF));
+            var (rbuf, rptr) = AllocateAlignedBuffer((int)kBlock, _ => 0);
+
+            var write = new System.Threading.SemaphoreSlim(0, 1);
+            device.WriteAsync(wptr, 0, kHighOffset, kBlock, (e, n, c) => write.Release(), null);
+            write.Wait();
+
+            var read = new System.Threading.SemaphoreSlim(0, 1);
+            device.ReadAsync(0, kHighOffset, rptr, kBlock, (e, n, c) => read.Release(), null);
+            read.Wait();
+
+            AssertBufferContents(rptr, (int)kBlock, i => (byte)((i * 11 + 3) & 0xFF), $"{kind} unbounded round-trip");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
         // ----- NativeStorageDevice-specific tests (lifecycle, recovery, validation) -----------------------------------------------------
 
         // ----- Lifecycle (5 tests) ---------------------------------------------------------
@@ -516,30 +612,17 @@ namespace Tsavorite.test
 
         [Test]
         [Category("NativeStorageDevice")]
-        public void NativeStorageDevice_ReadAsyncBeforeInitialize_Throws()
+        public void NativeStorageDevice_Initialize_OmitSegmentIdFromFilename_Throws()
         {
-            // Crossing the P/Invoke boundary with a null native handle would dereference null
-            // in C++. The InvalidOperationException guard added in Phase 6 turns that latent
-            // segfault into a managed exception with an actionable message.
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            var (buf, ptr) = AllocateAlignedBuffer(4096, _ => 0);
-            Assert.Throws<InvalidOperationException>(() => device.ReadAsync(0, 0, ptr, 4096, IOCallback, null));
-            GC.KeepAlive(buf);
+            // The C++ native shim always names segments as "<basename>.<segmentId>" — there is
+            // no omit-suffix code path. Reject the flag at the managed boundary with a clear
+            // message rather than silently producing wrong file names. Applies in both -1
+            // (unbounded) and explicit-size modes.
+            using (var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "omit_neg1.log"), deleteOnClose: true))
+                Assert.Throws<TsavoriteException>(() => device.Initialize(segmentSize: -1L, omitSegmentIdFromFilename: true));
+            using (var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "omit_64m.log"), deleteOnClose: true))
+                Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib, omitSegmentIdFromFilename: true));
         }
-
-        [Test]
-        [Category("NativeStorageDevice")]
-        public void NativeStorageDevice_WriteAsyncBeforeInitialize_Throws()
-        {
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            var (buf, ptr) = AllocateAlignedBuffer(4096, i => (byte)i);
-            Assert.Throws<InvalidOperationException>(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
-            GC.KeepAlive(buf);
-        }
-
-        // ----- Parallel reads / writes (3 tests) -------------------------------------------
-        // (Basic-write parallel + bursty + cross-segment-boundary covered by IDevice_* above.)
-        // ----- Error injection on invalid segment sizes (3 tests) --------------------------
 
         [Test]
         [Category("NativeStorageDevice")]

@@ -109,6 +109,7 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
+            EnsureInitialized();
             var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
@@ -138,6 +139,7 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            EnsureInitialized();
             Debug.Assert(destinationAddress + numBytesToWrite <= (ulong)sz_segment, "Out of space in segment - LocalMemoryDevice does not support variable-sized segments needed for the object log");
 
             // We ensure capability of writing to next segment, because there is no
@@ -163,6 +165,7 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
+            EnsureInitialized();
         }
 
         /// <summary>
@@ -173,6 +176,7 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
+            EnsureInitialized();
             RemoveSegment(segment);
             callback(result);
         }

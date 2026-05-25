@@ -78,6 +78,35 @@ namespace Tsavorite.core
         protected bool OmitSegmentIdFromFileName;
 
         /// <summary>
+        /// True after <see cref="Initialize"/> has been called at least once. Concrete IO entry
+        /// points use <see cref="EnsureInitialized"/> to fail fast if a caller forgot to call
+        /// <see cref="Initialize"/> before issuing IO. The ctor leaves this <c>false</c> while
+        /// still setting safe fallback defaults for <see cref="segmentSize"/> /
+        /// <see cref="segmentSizeBits"/> / <see cref="segmentSizeMask"/>, so that any cold
+        /// maintenance path that touches them before the guard can't compute outright nonsense.
+        /// </summary>
+        private volatile bool initialized;
+
+        /// <summary>
+        /// Throws <see cref="InvalidOperationException"/> if <see cref="Initialize"/> was never
+        /// called. Concrete devices invoke this at the top of every IO entry point so that
+        /// callers that forget to initialize the device get a clear, actionable error instead
+        /// of operating on uninitialized segment geometry.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        protected void EnsureInitialized()
+        {
+            if (!initialized) ThrowNotInitialized();
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void ThrowNotInitialized() =>
+            throw new InvalidOperationException(
+                $"IDevice '{FileName}' was used before Initialize() was called. Every IDevice " +
+                "must be initialized exactly once (with the desired segment size, or -1 for " +
+                "an unbounded single segment) before any IO entry point is invoked.");
+
+        /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
@@ -89,6 +118,9 @@ namespace Tsavorite.core
             FileName = filename;
             SectorSize = sectorSize;
 
+            // Fallback defaults — replaced by Initialize() before any IO is permitted. These
+            // exist only so cold paths can't trip on zero/garbage if a maintenance code path
+            // reads them before the EnsureInitialized() guard at the top of IO methods fires.
             segmentSize = -1;
             segmentSizeBits = 64;
             segmentSizeMask = ~0UL;
@@ -97,11 +129,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initialize device
+        /// Initialize device. Must be called before any IO entry point. Passing
+        /// <c>segmentSize = -1</c> selects unbounded single-segment mode (every IO routes to
+        /// segment 0); any other value must be a positive power of two.
         /// </summary>
-        /// <param name="segmentSize"></param>
+        /// <param name="segmentSize">Segment size in bytes, or -1 for unbounded single segment.</param>
         /// <param name="epoch"></param>
-        /// <param name="omitSegmentIdFromFilename"></param>
+        /// <param name="omitSegmentIdFromFilename">When true, the segment index is not appended
+        /// to the filename. Only permitted with <c>segmentSize = -1</c>.</param>
         public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
             if (segmentSize != -1)
@@ -126,6 +161,7 @@ namespace Tsavorite.core
                 segmentSizeBits = Utility.GetLogBase2((ulong)segmentSize);
                 segmentSizeMask = (ulong)segmentSize - 1;
             }
+            initialized = true;
         }
 
         /// <summary>
@@ -155,6 +191,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             WriteAsync(
                 alignedSourceAddress,
                 (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0),
@@ -172,6 +209,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, object context)
         {
+            EnsureInitialized();
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
             ReadAsync(
@@ -292,6 +330,7 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
+            EnsureInitialized();
             if ((int)(toAddress >> segmentSizeBits) <= startSegment)
             {
                 callback(result);
@@ -307,6 +346,7 @@ namespace Tsavorite.core
         /// <param name="toAddress"></param>
         public virtual void TruncateUntilAddress(long toAddress)
         {
+            EnsureInitialized();
             if ((int)(toAddress >> segmentSizeBits) <= startSegment)
                 return;
 

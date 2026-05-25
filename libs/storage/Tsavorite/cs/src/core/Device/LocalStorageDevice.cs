@@ -227,6 +227,7 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
+            EnsureInitialized();
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();
@@ -294,6 +295,7 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            EnsureInitialized();
             HandleCapacity(segmentId);
 
             if (!results.TryDequeue(out SimpleAsyncResult result))
@@ -353,6 +355,7 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
+            EnsureInitialized();
             if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
                 logHandle.Dispose();
             Native32.DeleteFileW(GetSegmentName(segment));
@@ -366,6 +369,7 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
+            EnsureInitialized();
             RemoveSegment(segment);
             callback(result);
         }

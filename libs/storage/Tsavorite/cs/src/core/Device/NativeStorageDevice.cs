@@ -57,11 +57,25 @@ namespace Tsavorite.core
         readonly IoBackend ioBackendConfig;
 
         /// <summary>
-        /// Runtime segment size in bytes — set by <see cref="Initialize"/> once the upstream log
-        /// layer tells us what segment size to use. Used only for diagnostics/assertions on the
-        /// C# side; the authoritative value lives inside the native device.
+        /// Runtime segment size in bytes that we asked the native shim to use. Set by
+        /// <see cref="Initialize"/>. When the user requested <c>segmentSize = -1</c> (unbounded
+        /// single segment) this is <see cref="UnboundedNativeSegmentSizeBytes"/>, large enough
+        /// that any non-negative <c>long</c> upper-layer address routes to segment 0 under the
+        /// native shim's <c>shift = log2(segment_size_bytes)</c> math. Used only for
+        /// diagnostics/assertions on the C# side; the authoritative value lives inside the
+        /// native device.
         /// </summary>
-        long configuredSegmentSizeBytes;
+        ulong nativeSegmentSizeBytes;
+
+        /// <summary>
+        /// Native-side segment size used to represent unbounded single-segment mode
+        /// (corresponds to <c>Initialize(segmentSize: -1)</c>). 1&lt;&lt;63 = 9.2 EiB; any
+        /// non-negative <c>long</c> address is below this and so shifts to segment 0 inside the
+        /// native <c>FileSystemSegmentedFile</c>. The C# managed side still uses
+        /// <c>segmentSizeBits = 64</c> / <c>segmentSizeMask = ~0</c> for its own address math,
+        /// so segment IDs are always 0 in this mode on both sides.
+        /// </summary>
+        const ulong UnboundedNativeSegmentSizeBytes = 1UL << 63;
 
         /// <summary>
         /// Atomic flag (0 = alive, 1 = disposed) set once <see cref="Dispose"/> has freed
@@ -513,20 +527,49 @@ namespace Tsavorite.core
         /// error message close to the caller. The native device's actual segment size is read
         /// back via <see cref="NativeDevice_GetSegmentSize"/> as a defense against ABI mismatches
         /// between the .so and the C# wrapper.
+        /// <para>
+        /// Passing <c>segmentSize = -1</c> selects unbounded single-segment mode: native is
+        /// asked to use <see cref="UnboundedNativeSegmentSizeBytes"/> (1&lt;&lt;63) so every
+        /// non-negative upper-layer address routes to segment 0 in both the C++ and managed
+        /// bit-shift math, and the on-disk layout is a single segment file
+        /// (<c>&lt;basename&gt;.0</c>) that grows on demand. <c>omitSegmentIdFromFilename</c>
+        /// is NOT supported by the native shim and is rejected even in this mode.
+        /// </para>
         /// </remarks>
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
-            if (segmentSize <= 0 || (segmentSize & (segmentSize - 1)) != 0)
-                throw new TsavoriteException($"Native device segment size must be a positive power of two; got {segmentSize}.");
-            if (segmentSize < SectorSize)
-                throw new TsavoriteException($"Segment size {segmentSize} must be at least the device sector size {SectorSize}.");
+            // The C++ native shim always appends ".<segmentId>" to the filename — it has no
+            // omit-suffix code path. Reject the request here rather than silently ignoring the
+            // flag on disk.
+            if (omitSegmentIdFromFilename)
+                throw new TsavoriteException(
+                    "NativeStorageDevice does not support omitSegmentIdFromFilename — the C++ shim " +
+                    "always names segments as '<basename>.<segmentId>'. Use ManagedLocalStorageDevice " +
+                    "or RandomAccessLocalStorageDevice if a bare filename is required.");
+
+            ulong sizeForNative;
+            if (segmentSize == -1)
+            {
+                // Unbounded single-segment mode: ask native for 1<<63 so the C++ shift math
+                // collapses every non-negative upper-layer address into segment 0 (the same
+                // address space the managed side covers with segmentSizeBits=64/mask=~0).
+                sizeForNative = UnboundedNativeSegmentSizeBytes;
+            }
+            else
+            {
+                if (segmentSize <= 0 || (segmentSize & (segmentSize - 1)) != 0)
+                    throw new TsavoriteException($"Native device segment size must be a positive power of two (or -1 for unbounded); got {segmentSize}.");
+                if (segmentSize < SectorSize)
+                    throw new TsavoriteException($"Segment size {segmentSize} must be at least the device sector size {SectorSize}.");
+                sizeForNative = (ulong)segmentSize;
+            }
             if (nativeDevice != IntPtr.Zero)
                 throw new TsavoriteException("NativeStorageDevice.Initialize called more than once.");
 
-            configuredSegmentSizeBytes = segmentSize;
+            nativeSegmentSizeBytes = sizeForNative;
 
             // Create the native device with the requested segment size.
-            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, (ulong)segmentSize);
+            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative);
             if (nativeDevice == IntPtr.Zero)
             {
                 // Pull the actionable error message from the native thread-local before doing any
@@ -548,12 +591,12 @@ namespace Tsavorite.core
             // assert it matches what we asked for. Catches stale .so binaries that don't include
             // Phase 6's ABI change.
             ulong actualSegmentSize = NativeDevice_GetSegmentSize(nativeDevice);
-            if (actualSegmentSize != (ulong)segmentSize)
+            if (actualSegmentSize != sizeForNative)
             {
                 NativeDevice_Destroy(nativeDevice);
                 nativeDevice = IntPtr.Zero;
                 throw new TsavoriteException(
-                    $"Native device segment size mismatch: requested {segmentSize}, native returned {actualSegmentSize}. " +
+                    $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
                     "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
                     "Ensure libnative_device.so matches the current build.");
             }

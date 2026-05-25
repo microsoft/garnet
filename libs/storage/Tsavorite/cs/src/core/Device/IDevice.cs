@@ -59,17 +59,23 @@ namespace Tsavorite.core
         int ThrottleLimit { get; set; }
 
         /// <summary>
-        /// Initialize device. This function is used to pass optional information that may only be known after
-        /// Tsavorite initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
-        /// information if it does not need the supplied information.
-        /// 
-        /// This is a bit of a hack. 
+        /// Initialize device. Must be called exactly once after construction and before any IO
+        /// entry point (<see cref="ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, object)"/>,
+        /// <see cref="WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>,
+        /// <see cref="RemoveSegmentAsync"/>). Calling an IO method on an uninitialized device
+        /// throws <see cref="InvalidOperationException"/>.
+        ///
+        /// Passing <paramref name="segmentSize"/> = -1 selects unbounded single-segment mode:
+        /// the device keeps a single growing segment file and every IO routes to segment 0.
+        /// Any other value must be a positive power of two and at least the device sector size.
         /// </summary>
-        /// <param name="segmentSize"></param>
-        /// <param name="epoch">
-        /// <param name="omitSegmentIdFromFilename"></param>
-        /// The instance of the epoch protection framework to use, if needed
-        /// </param>
+        /// <param name="segmentSize">Segment size in bytes (power of two), or -1 for an
+        /// unbounded single segment.</param>
+        /// <param name="epoch">The instance of the epoch protection framework to use, if
+        /// needed.</param>
+        /// <param name="omitSegmentIdFromFilename">When true, the segment index is not appended
+        /// to the filename. Only permitted when <paramref name="segmentSize"/> = -1, and only
+        /// supported by managed devices — <c>NativeStorageDevice</c> rejects this flag.</param>
         void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false);
 
         /// <summary>
