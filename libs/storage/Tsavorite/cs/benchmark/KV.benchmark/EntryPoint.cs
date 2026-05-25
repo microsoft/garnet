@@ -36,7 +36,12 @@ namespace Tsavorite.kvbench
             if (!opts.NoThreadPoolTune)
             {
                 ThreadPool.GetMinThreads(out oldMinW, out oldMinIO);
-                int target = Math.Max(opts.Threads * 2, 256);
+                // Size to the peak thread count actually used by this invocation (the sweep max
+                // when --run-threads-sweep is set, otherwise --threads). Previously this used
+                // opts.Threads, which is the default (often 1) when the sweep is in use, leaving
+                // the pool undersized for the high-thread sweep cells. Floor at 256 to keep
+                // small-N runs comfortably above the OS-default min (~CoreCount).
+                int target = Math.Max(opts.ResolvedMaxThreads * 2, 256);
                 ThreadPool.SetMinThreads(Math.Max(oldMinW, target), Math.Max(oldMinIO, target));
                 tunedThreadPool = true;
             }
