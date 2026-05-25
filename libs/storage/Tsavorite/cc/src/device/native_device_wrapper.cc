@@ -45,11 +45,11 @@ inline INativeDevice* FinalizeOrSurfaceError(DeviceT* device) {
 /// positive power of two; catch it here so the C ABI never propagates a C++ exception. Other
 /// exceptions (bad_alloc, etc.) are converted similarly.
 template <typename DeviceT>
-inline INativeDevice* TryConstructDevice(const char* file, uint64_t segment_size,
+inline INativeDevice* TryConstructDevice(const char* file, uint64_t segment_size, bool omit_segment_id,
                                          bool enablePrivileges, bool unbuffered, bool delete_on_close) {
     try {
         return FinalizeOrSurfaceError(
-            new DeviceT(std::string(file), segment_size, enablePrivileges, unbuffered, delete_on_close));
+            new DeviceT(std::string(file), segment_size, omit_segment_id, enablePrivileges, unbuffered, delete_on_close));
     } catch (const std::invalid_argument& e) {
         native_device::set_last_error("Invalid argument: %s", e.what());
         return nullptr;
@@ -83,7 +83,13 @@ extern "C" {
 	///
 	/// segment_size_bytes MUST be a positive power of two and >= the device sector size; the
 	/// native side enforces the power-of-two check (returns nullptr + last_error on violation).
-	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes) {
+	///
+	/// When `omit_segment_id` is true, segment files are named just `<file>` (no `.<idx>`
+	/// suffix). Only meaningful in unbounded single-segment mode (caller passes a
+	/// segment_size_bytes large enough that only segment 0 is ever addressed, e.g.
+	/// 1<<63 from the managed wrapper's `segmentSize = -1` translation). Multiple segments
+	/// under omit mode would all resolve to the same path and clobber each other.
+	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id) {
 		native_device::clear_last_error();
 		if (file == nullptr) {
 			native_device::set_last_error("NativeDevice_CreateWithBackend: 'file' argument is null.");
@@ -91,13 +97,13 @@ extern "C" {
 		}
 		switch (backend) {
 			case NativeDeviceBackend_Default:
-				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
 #if !defined(_WIN32) && !defined(_WIN64)
 			case NativeDeviceBackend_Libaio:
-				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
 #ifdef FASTER_URING
 			case NativeDeviceBackend_Uring:
-				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
 #endif
 #endif
 			default:

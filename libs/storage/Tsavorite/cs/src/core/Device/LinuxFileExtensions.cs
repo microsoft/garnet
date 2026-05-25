@@ -38,11 +38,20 @@ namespace Tsavorite.core
         private const int O_DIRECT = 0x4000;
         private const int O_DSYNC = 0x1000;
         private const int O_CLOEXEC = 0x80000;
+        // O_TMPFILE = __O_TMPFILE | O_DIRECTORY (Linux >= 3.11). Creating a file with this
+        // bit set returns an anonymous inode in the *given directory's* filesystem that has
+        // NO directory entry — invisible to readdir/getdents and so cannot be observed by
+        // any concurrent listing. The inode is freed on the last close. Used by
+        // <see cref="IsDirectIOSupported"/> to test O_DIRECT support without leaving
+        // visible artifacts even if the test races with a directory enumeration.
+        private const int O_TMPFILE = 0x410000;
         // 0644
         private const int DefaultMode = 0x1A4;
 
         private const int EINVAL = 22;
         private const int EACCES = 13;
+        private const int EOPNOTSUPP = 95;
+        private const int EISDIR = 21;
 
         [DllImport("libc", SetLastError = true, EntryPoint = "open")]
         private static extern int LibcOpen(IntPtr pathname, int flags, int mode);
@@ -94,16 +103,22 @@ namespace Tsavorite.core
                 if (!Directory.Exists(directoryPath))
                     return false;
 
-                var probePath = Path.Combine(directoryPath, $".tsavorite-odirect-probe-{Environment.ProcessId}-{Guid.NewGuid():N}");
-                try
-                {
-                    using var handle = OpenWithFlagsOrNull(probePath, O_RDWR | O_CREAT | O_DIRECT | O_CLOEXEC, DefaultMode);
-                    return handle != null && !handle.IsInvalid;
-                }
-                finally
-                {
-                    try { File.Delete(probePath); } catch { /* ignore */ }
-                }
+                // Race-free probe: O_TMPFILE asks the kernel to create an anonymous inode
+                // in the directory's filesystem with NO directory entry. The inode never
+                // appears in readdir/getdents output, so no concurrent ListContents can ever
+                // observe a probe file regardless of timing. The inode is freed on close.
+                // O_TMPFILE | O_RDWR | O_DIRECT in one open(2) tells us atomically whether
+                // the filesystem supports both anonymous-inode creation AND O_DIRECT-style
+                // unbuffered IO on this mount.
+                //
+                // If O_TMPFILE itself is not supported (kernel < 3.11 or filesystem doesn't
+                // implement it — open returns EOPNOTSUPP/EISDIR), we conservatively report
+                // "no O_DIRECT" so the device falls back to the page-cache path. We
+                // deliberately do NOT fall back to a named-file probe: a named-file probe
+                // can leak its file into the directory on a race, which is exactly the bug
+                // we're avoiding.
+                using var handle = OpenWithFlagsOrNull(directoryPath, O_TMPFILE | O_RDWR | O_DIRECT | O_CLOEXEC, DefaultMode);
+                return handle != null && !handle.IsInvalid;
             }
             catch
             {

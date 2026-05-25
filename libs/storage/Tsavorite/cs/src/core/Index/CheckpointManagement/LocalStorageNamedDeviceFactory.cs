@@ -87,15 +87,11 @@ namespace Tsavorite.core
             {
                 foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.LastWriteTime))
                 {
-                    // Skip hidden / dotfile directories (e.g. transient probe files left behind
-                    // by IsDirectIOSupported on Linux when File.Delete races with the dir scan).
-                    if (folder.Name.StartsWith('.')) continue;
                     yield return new FileDescriptor(folder.Name, "");
                 }
 
                 foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.LastWriteTime))
                 {
-                    if (file.Name.StartsWith('.')) continue;
                     yield return new FileDescriptor("", file.Name);
                 }
             }

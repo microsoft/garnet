@@ -570,6 +570,77 @@ namespace Tsavorite.test
             GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
         }
 
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_Initialize_OmitSegmentIdFromFilename_BareFileName(DeviceKind kind)
+        {
+            // Contract: Initialize(-1, omitSegmentIdFromFilename: true) makes the device write
+            // to the bare basename (no `.0` suffix). All three managed and native device kinds
+            // support this; combined with -1 it lets external tooling open the data file by a
+            // fixed, predictable name (e.g. log commit-metadata files named just `commit.42`).
+            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
+            {
+                Assert.Ignore("NativeStorageDevice is Linux-only");
+                return;
+            }
+            const uint kBlock = 4096;
+            var basePath = Path.Join(TestUtils.MethodTestDir, $"omit_{kind}.log");
+            IDevice device = kind switch
+            {
+                DeviceKind.Native => new NativeStorageDevice(basePath, deleteOnClose: false),
+                DeviceKind.RandomAccess => new RandomAccessLocalStorageDevice(basePath, preallocateFile: false, deleteOnClose: false),
+                DeviceKind.ManagedLocal => new ManagedLocalStorageDevice(basePath, preallocateFile: false, deleteOnClose: false),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            using (device)
+            {
+                device.Initialize(segmentSize: -1L, omitSegmentIdFromFilename: true);
+
+                var (wbuf, wptr) = AllocateAlignedBuffer((int)kBlock, i => (byte)((i * 7 + 1) & 0xFF));
+                var write = new System.Threading.SemaphoreSlim(0, 1);
+                device.WriteAsync(wptr, 0, 0, kBlock, (e, n, c) => write.Release(), null);
+                write.Wait();
+
+                // The on-disk file must be the bare basename (no `.0` suffix).
+                Assert.That(File.Exists(basePath), Is.True, $"{kind}: expected bare-named file '{basePath}'");
+                Assert.That(File.Exists(basePath + ".0"), Is.False, $"{kind}: unexpected segment-suffixed file '{basePath}.0'");
+                GC.KeepAlive(wbuf);
+            }
+            // Clean up — deleteOnClose=false because the bare-named file isn't tracked by the
+            // segment-aware Dispose; remove it explicitly.
+            try { File.Delete(basePath); } catch { }
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public void IDevice_Initialize_OmitSegmentIdFromFilename_WithoutMinusOne_Throws(DeviceKind kind)
+        {
+            // omitSegmentIdFromFilename is only meaningful in unbounded single-segment mode.
+            // Combining it with a positive segment size would let segment 1, 2, ... all collapse
+            // onto the same on-disk file and clobber each other; reject it at Initialize.
+            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
+            {
+                Assert.Ignore("NativeStorageDevice is Linux-only");
+                return;
+            }
+            var path = Path.Join(TestUtils.MethodTestDir, $"omit_pos_{kind}.log");
+            IDevice device = kind switch
+            {
+                DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: true),
+                DeviceKind.RandomAccess => new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                DeviceKind.ManagedLocal => new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            using (device)
+                Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib, omitSegmentIdFromFilename: true));
+        }
+
         // ----- NativeStorageDevice-specific tests (lifecycle, recovery, validation) -----------------------------------------------------
 
         // ----- Lifecycle (5 tests) ---------------------------------------------------------
@@ -610,19 +681,7 @@ namespace Tsavorite.test
             Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib));
         }
 
-        [Test]
-        [Category("NativeStorageDevice")]
-        public void NativeStorageDevice_Initialize_OmitSegmentIdFromFilename_Throws()
-        {
-            // The C++ native shim always names segments as "<basename>.<segmentId>" — there is
-            // no omit-suffix code path. Reject the flag at the managed boundary with a clear
-            // message rather than silently producing wrong file names. Applies in both -1
-            // (unbounded) and explicit-size modes.
-            using (var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "omit_neg1.log"), deleteOnClose: true))
-                Assert.Throws<TsavoriteException>(() => device.Initialize(segmentSize: -1L, omitSegmentIdFromFilename: true));
-            using (var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "omit_64m.log"), deleteOnClose: true))
-                Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib, omitSegmentIdFromFilename: true));
-        }
+        // ----- Recovery (3 tests) ----------------------------------------------------------
 
         [Test]
         [Category("NativeStorageDevice")]

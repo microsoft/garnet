@@ -134,14 +134,16 @@ class FileSystemSegmentBundle {
 
   FileSystemSegmentBundle(const std::string& filename,
                           const environment::FileOptions& file_options, handler_t* handler,
-                          uint64_t begin_segment_, uint64_t end_segment_)
+                          uint64_t begin_segment_, uint64_t end_segment_,
+                          bool omit_segment_id)
     : filename_{ filename }
     , file_options_{ file_options }
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
+    , omit_segment_id_{ omit_segment_id }
     , owner_{ true } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
@@ -154,6 +156,7 @@ class FileSystemSegmentBundle {
     , file_options_{ other.file_options_ }
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
+    , omit_segment_id_{ other.omit_segment_id_ }
     , owner_{ true } {
     assert(end_segment >= other.end_segment);
 
@@ -163,7 +166,7 @@ class FileSystemSegmentBundle {
     uint64_t end_new = end_segment;
 
     for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
@@ -173,7 +176,7 @@ class FileSystemSegmentBundle {
       new(files() + (idx - begin_segment)) file_t{ std::move(other.file(idx)) };
     }
     for(uint64_t idx = end_copy; idx < end_new; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
@@ -231,12 +234,21 @@ class FileSystemSegmentBundle {
     return sizeof(bundle_t) + num_segments * sizeof(file_t);
   }
 
+  /// Build the on-disk filename for `segment`. With `omit_segment_id_` false (the default),
+  /// segments are named `<base>.<segmentId>` so multiple segments live side-by-side. With
+  /// `omit_segment_id_` true, all writes go to the bare `<base>` filename — only meaningful
+  /// in single-segment / unbounded mode (the upstream wrapper enforces that constraint).
+  std::string segment_path(uint64_t idx) const {
+    return omit_segment_id_ ? filename_ : (filename_ + "." + std::to_string(idx));
+  }
+
  public:
   const uint64_t begin_segment;
   const uint64_t end_segment;
  private:
   std::string filename_;
   environment::FileOptions file_options_;
+  bool omit_segment_id_;
   bool owner_;
 };
 
@@ -253,7 +265,8 @@ class FileSystemSegmentedFile {
   FileSystemSegmentedFile(const std::string& filename,
                           const environment::FileOptions& file_options,
                           core::LightEpoch* epoch,
-                          uint64_t segment_size)
+                          uint64_t segment_size,
+                          bool omit_segment_id)
     : begin_segment_{ 0 }
     , files_{ nullptr }
     , handler_{ nullptr }
@@ -262,7 +275,8 @@ class FileSystemSegmentedFile {
     , epoch_{ epoch }
     , segment_size_{ segment_size }
     , segment_mask_{ segment_size - 1 }
-    , segment_shift_{ ValidatedShift(segment_size) } {
+    , segment_shift_{ ValidatedShift(segment_size) }
+    , omit_segment_id_{ omit_segment_id } {
     // ValidatedShift threw if segment_size is non-positive or non-power-of-2 BEFORE the
     // mask/shift constants were observable. Once we get here, the constants are sane and
     // the hot-path uses `>> segment_shift_` / `& segment_mask_` (single register loads).
@@ -403,7 +417,7 @@ class FileSystemSegmentedFile {
       // First segment opened.
       void* buffer = std::malloc(bundle_t::size(1));
       bundle_t* new_files = new(buffer) bundle_t{ filename_, file_options_, handler_,
-          segment, segment + 1 };
+          segment, segment + 1, omit_segment_id_ };
       files_.store(new_files);
       return core::Status::Ok;
     }
@@ -569,6 +583,12 @@ class FileSystemSegmentedFile {
   const uint64_t segment_size_;
   const uint64_t segment_mask_;
   const uint32_t segment_shift_;
+
+  /// When true, segment files are named just `<filename_>` with no `.<segmentId>` suffix.
+  /// Only meaningful when there is a single segment in play (the upstream wrapper requires
+  /// unbounded segment-size mode for this to be safe — otherwise multiple segments would all
+  /// resolve to the same path and clobber each other).
+  const bool omit_segment_id_;
 
   /// Validates that segment_size is a non-zero power of 2 and returns its ctzll. Throws
   /// std::invalid_argument otherwise — Release-mode active (the previous `static_assert` is

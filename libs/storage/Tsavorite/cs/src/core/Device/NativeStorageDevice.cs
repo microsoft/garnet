@@ -344,7 +344,7 @@ namespace Tsavorite.core
         }
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -532,20 +532,16 @@ namespace Tsavorite.core
         /// asked to use <see cref="UnboundedNativeSegmentSizeBytes"/> (1&lt;&lt;63) so every
         /// non-negative upper-layer address routes to segment 0 in both the C++ and managed
         /// bit-shift math, and the on-disk layout is a single segment file
-        /// (<c>&lt;basename&gt;.0</c>) that grows on demand. <c>omitSegmentIdFromFilename</c>
-        /// is NOT supported by the native shim and is rejected even in this mode.
+        /// (<c>&lt;basename&gt;.0</c>) that grows on demand. When combined with
+        /// <paramref name="omitSegmentIdFromFilename"/> = true, the file is named
+        /// just <c>&lt;basename&gt;</c> (no segment suffix) — only allowed with
+        /// <paramref name="segmentSize"/> = -1, matching the managed devices' behaviour.
         /// </para>
         /// </remarks>
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
-            // The C++ native shim always appends ".<segmentId>" to the filename — it has no
-            // omit-suffix code path. Reject the request here rather than silently ignoring the
-            // flag on disk.
-            if (omitSegmentIdFromFilename)
-                throw new TsavoriteException(
-                    "NativeStorageDevice does not support omitSegmentIdFromFilename — the C++ shim " +
-                    "always names segments as '<basename>.<segmentId>'. Use ManagedLocalStorageDevice " +
-                    "or RandomAccessLocalStorageDevice if a bare filename is required.");
+            if (omitSegmentIdFromFilename && segmentSize != -1)
+                throw new TsavoriteException("omitSegmentIdFromFilename requires segmentSize = -1 (single unbounded segment); multiple segments would all map to the same on-disk path and clobber each other.");
 
             ulong sizeForNative;
             if (segmentSize == -1)
@@ -569,7 +565,7 @@ namespace Tsavorite.core
             nativeSegmentSizeBytes = sizeForNative;
 
             // Create the native device with the requested segment size.
-            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative);
+            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, omitSegmentIdFromFilename);
             if (nativeDevice == IntPtr.Zero)
             {
                 // Pull the actionable error message from the native thread-local before doing any

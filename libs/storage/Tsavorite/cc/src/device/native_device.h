@@ -70,6 +70,7 @@ private:
 public:
     NativeDeviceImpl(const std::string& file,
         uint64_t segment_size,
+        bool omit_segment_id,
         bool enablePrivileges = false,
         bool unbuffered = true,
         bool delete_on_close = false)
@@ -80,8 +81,9 @@ public:
         // of two) and throws std::invalid_argument otherwise. The C ABI wrapper wraps `new
         // NativeDeviceImpl(...)` in try/catch and converts the exception into a populated
         // last_error + nullptr return.
-        , log_{ file, default_file_options_, &epoch_, segment_size }
+        , log_{ file, default_file_options_, &epoch_, segment_size, omit_segment_id }
         , segment_size_{ segment_size }
+        , omit_segment_id_{ omit_segment_id }
         , init_status_{ FASTER::core::Status::Ok } {
         // First gate: handler init (io_setup / io_uring_queue_init) succeeded?
         if (handler_.init_errno() != 0) {
@@ -135,7 +137,13 @@ private:
     /// `<basename>.<id>` and verifies each one is at most `segment_size_` bytes. If any file
     /// is larger, populates last_error with an actionable message and returns false.
     /// Cold path — runs once at construction, never on the IO hot path.
+    ///
+    /// In `omit_segment_id_` mode there is only a single bare-named file, so the per-segment
+    /// recovery check is meaningless: a stale file from an earlier run is simply reopened as
+    /// the single segment and any size mismatch is irrelevant (we're in unbounded mode and
+    /// segment_size_ is 1<<63). Skip the check entirely.
     bool ValidateRecoveredSegments(const std::string& file) {
+        if (omit_segment_id_) return true;
         namespace fs = std::experimental::filesystem;
         std::error_code ec;
         fs::path target{ file };
@@ -322,6 +330,12 @@ private:
     /// NativeDevice_GetSegmentSize so the managed side can validate that the native device was
     /// created with the segment size it asked for (defense in depth against ABI mismatches).
     const uint64_t segment_size_;
+
+    /// When true, segment files are named just `<basename>` instead of `<basename>.<id>`.
+    /// Only meaningful in unbounded single-segment mode (the managed wrapper passes
+    /// `segment_size = 1<<63` together with this flag) — the bare filename can be opened by
+    /// external readers that don't know about segment-id naming.
+    const bool omit_segment_id_;
 
     /// Result of construction. Status::Ok = ready; anything else = initialization failed and
     /// the caller (typically the C ABI wrapper) must delete the instance and surface the
