@@ -166,33 +166,29 @@ for details.
 Garnet provides support for ETags on raw strings. By using the ETag-related commands outlined below, you can associate any **string based key-value pair** inserted into Garnet with an automatically updated ETag.
 
 Compatibility with non-ETag commands and the behavior of data inserted with ETags are detailed at the end of this document.
-To initialize a key value pair with an ETag you can use either the SET command with the newly added "WITHETAG" optional flag, or you can take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). Read more about Etag use cases and patterns [here](../../blog/etags-when-and-how)
+To initialize a key value pair with an ETag, use the `SETWITHETAG` command. You can also take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). Read more about Etag use cases and patterns [here](../../blog/etags-when-and-how)
 
 
 ---
 
-### **SET (WITHETAG)**
+### **SETWITHETAG**
 
 #### **Syntax**
 
-```bash
-    SET key value [NX | XX] [EX seconds | PX milliseconds] [KEEPTTL] WITHETAG
+```
+SETWITHETAG key value [EX seconds | PX milliseconds]
 ```
 
-Set **key** to hold the string value along with an ETag. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
+Set **key** to hold the string value along with an ETag. If the key already holds a value, it is overwritten. If the key had an existing ETag, the ETag is incremented; otherwise, a new ETag of 1 is assigned.
 
 **Options:**
 
 * EX seconds -- Set the specified expire time, in seconds (a positive integer).
 * PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
-* NX -- Only set the key if it does not already exist.
-* XX -- Only set the key if it already exists.
-* KEEPTTL -- Retain the time to live associated with the key.
-* WITHETAG -- **Adding this sets the Key Value pair with an initial ETag**, if called on an existing key value pair with an ETag, this command will update the ETag transparently.
 
 #### Resp Reply
 
-* Integer reply: WITHETAG given: The ETag associated with the value.
+* Integer reply: The ETag associated with the value.
 
 
 ---
@@ -296,17 +292,33 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 
 ETags are currently not supported for servers running in Cluster mode. This will be supported soon.
 
-Below is the expected behavior of ETag-associated key-value pairs when non-ETag commands are used.
+:::warning Important: Key Partitioning Required
+All non-ETag commands (SET, GET, APPEND, INCR, MSET, BITOP, RENAME, etc.) are completely **ETag-blind**. They do not read, check, update, or preserve ETags.
 
-- **MSET, BITOP**: These commands will replace an existing ETag-associated key-value pair with a non-ETag key-value pair, effectively removing the ETag.
+**Users MUST partition their keys**: use ONLY ETag commands (`SETWITHETAG`, `GETWITHETAG`, `SETIFMATCH`, `SETIFGREATER`, `GETIFNOTMATCH`, `DELIFGREATER`) on ETag-managed keys.
 
-- **SET**: Only if used with additional option "WITHETAG" will calling SET update the etag while inserting the new key-value pair over the existing key-value pair.
+Mixing ETag and non-ETag commands on the same key (e.g., using `SET` on a key created with `SETWITHETAG`) will result in **undefined ETag behavior** — the ETag may be lost, stale, or corrupted. This is by design for maximum performance: non-ETag commands pay zero overhead for ETag functionality.
+:::
 
-- **RENAME**: RENAME takes an option for WITHETAG. When called WITHETAG it will rename the key with an etag if the key being renamed to did not exist, else it will increment the existing etag of the key being renamed to.
+**Correct usage:**
+```bash
+# ETag keys — use only ETag commands
+SETWITHETAG etag:user:1 "data"      # Initialize with ETag
+GETWITHETAG etag:user:1              # Read with ETag
+SETIFMATCH etag:user:1 "new" 1      # Conditional update
 
-- **Custom Commands**: While etag based key value pairs **can be used blindly inside of custom transactions and custom procedures**, ETag set key value pairs are **not supported to be used from inside of Custom Raw String Functions.**
+# Non-ETag keys — use normal commands
+SET user:2 "data"
+GET user:2
+APPEND user:2 " more"
+```
 
-All other commands will update the etag internally if they modify the underlying data, and any responses from them will not expose the etag to the client. To the users the etag and it's updates remain hidden in non-etag commands.
+**Incorrect usage (undefined behavior):**
+```bash
+SETWITHETAG mykey "data"   # Sets ETag
+SET mykey "other"          # ETag behavior is UNDEFINED
+GETWITHETAG mykey          # May return stale/missing ETag
+```
 
 ---
 

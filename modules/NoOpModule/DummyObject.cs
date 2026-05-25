@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.server;
+using Tsavorite.core;
 
 namespace NoOpModule
 {
@@ -26,7 +27,7 @@ namespace NoOpModule
     {
         /// <inheritdoc />
         public DummyObject(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
         }
 

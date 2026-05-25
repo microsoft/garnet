@@ -8,15 +8,12 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET_WithPending<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus GET_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(ref key, ref input, ref output, ctx);
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -38,8 +35,8 @@ namespace Garnet.server
             }
         }
 
-        public bool GET_CompletePending<TContext>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool GET_CompletePending<TStringContext>((GarnetStatus, StringOutput)[] outputArr, bool wait, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Debug.Assert(outputArr != null);
 
@@ -62,8 +59,8 @@ namespace Garnet.server
             return ret;
         }
 
-        public bool GET_CompletePending<TContext>(out CompletedOutputIterator<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool GET_CompletePending<TStringContext>(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
             var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
@@ -71,10 +68,10 @@ namespace Garnet.server
             return ret;
         }
 
-        public GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus RMW_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(ref key, ref input, ref output);
+            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
@@ -85,36 +82,61 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_MainStore<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus Read_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(ref key, ref input, ref output);
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
             if (status.Found)
-            {
                 return GarnetStatus.OK;
-            }
-            else if (status.IsCanceled)
-            {
-                // Vector Sets signal WRONGTYPE via cancellation - everything else will fall into NOTFOUND
+            else if (status.IsWrongType)
                 return GarnetStatus.WRONGTYPE;
-            }
             else
-            {
                 return GarnetStatus.NOTFOUND;
-            }
         }
 
+        /// <summary>
+        /// Specialized Read for RangeIndex stubs. Suppresses Tsavorite's automatic
+        /// <c>CopyReadsToTail</c> / <c>CopyReadsToReadCache</c> for this single Read by passing
+        /// <see cref="ReadCopyOptions.None"/>, then calls into the standard Read pipeline.
+        ///
+        /// <para>Why a separate API: RangeIndex performs its own controlled promotion via
+        /// <c>RIPROMOTE</c> RMW (which propagates RecordType, manages TreeHandle ownership in
+        /// <c>PostCopyUpdater</c>, and pre-stages <c>data.bftree</c> with proper locking).
+        /// Allowing Tsavorite's CTT to race with that path would (a) leave the destination
+        /// record without <c>RecordType=RangeIndexRecordType</c> (CTT does not propagate
+        /// RecordType), and (b) trigger <c>PostCopyToTail</c>-cold which takes the per-key
+        /// X-lock, self-deadlocking against the reader's S-lock when CopyReadsToTail is
+        /// enabled at the session/KV level. Keeping this on a dedicated API ensures every
+        /// RangeIndex stub Read goes through the suppression and other Read callers (Bitmap,
+        /// HLL, etc.) incur zero overhead.</para>
+        /// </summary>
+        public GarnetStatus Read_RangeIndex<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions);
+
+            if (status.IsPending)
+                CompletePendingForSession(ref status, ref output, ref context);
+
+            if (status.Found)
+                return GarnetStatus.OK;
+            else if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
+            else
+                return GarnetStatus.NOTFOUND;
+        }
 
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
-            where TBatch : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+            where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         => context.ReadWithPrefetch(ref batch, userContext);
     }
 }

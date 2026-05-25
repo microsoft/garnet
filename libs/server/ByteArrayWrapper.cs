@@ -3,6 +3,7 @@
 
 using System;
 using System.Numerics;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -12,18 +13,16 @@ namespace Garnet.server
     public readonly struct ByteArrayWrapper
     {
         readonly byte[] arrBytes;
-        readonly ArgSlice arrSlice;
+        readonly PinnedSpanByte arrSlice;
 
         internal ByteArrayWrapper(byte[] arrBytes, bool isPinned = false)
         {
             this.arrBytes = arrBytes;
             if (isPinned)
-            {
-                this.arrSlice = ArgSlice.FromPinnedSpan(arrBytes);
-            }
+                this.arrSlice = PinnedSpanByte.FromPinnedSpan(arrBytes);
         }
 
-        internal ByteArrayWrapper(ArgSlice arrSlice)
+        internal ByteArrayWrapper(PinnedSpanByte arrSlice)
         {
             this.arrSlice = arrSlice;
         }
@@ -36,22 +35,16 @@ namespace Garnet.server
         }
 
         public unsafe ReadOnlySpan<byte> ReadOnlySpan
-            => arrSlice.ptr == null ? new ReadOnlySpan<byte>(arrBytes) : arrSlice.ReadOnlySpan;
+            => arrSlice.IsValid ? arrSlice.ReadOnlySpan : new ReadOnlySpan<byte>(arrBytes);
 
         /// <inheritdoc />
         public override unsafe int GetHashCode()
         {
-            if (arrSlice.ptr == null)
-            {
-                fixed (byte* k = arrBytes)
-                {
-                    return (int)HashBytes(k, arrBytes.Length);
-                }
-            }
-            else
-            {
-                return (int)HashBytes(arrSlice.ptr, arrSlice.length);
-            }
+            if (arrSlice.IsValid)
+                return (int)HashBytes(arrSlice.ToPointer(), arrSlice.Length);
+
+            fixed (byte* k = arrBytes)
+                return (int)HashBytes(k, arrBytes.Length);
         }
 
         static unsafe long HashBytes(byte* pbString, int len)

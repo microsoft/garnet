@@ -62,7 +62,7 @@ namespace Garnet.server
                     RunContinuationsAsynchronously = true
                 };
                 var _storageApi = storageApi;
-                _ = Task.Run(async () => await AsyncGetProcessorAsync(_storageApi));
+                _ = AsyncGetProcessorAsync(_storageApi);
             }
             else
             {
@@ -79,6 +79,9 @@ namespace Garnet.server
         async Task AsyncGetProcessorAsync<TGarnetApi>(TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Force async
+            await Task.Yield();
+
             while (!asyncWaiterCancel.Token.IsCancellationRequested)
             {
                 while (asyncCompleted < asyncStarted)
@@ -112,9 +115,9 @@ namespace Garnet.server
                                     SendAndReset();
                                 if (completedOutputs.Current.Status.Found)
                                 {
-                                    Debug.Assert(!o.IsSpanByte);
+                                    Debug.Assert(!o.SpanByteAndMemory.IsSpanByte);
                                     sessionMetrics?.incr_total_found();
-                                    SendAndReset(o.Memory, o.Length);
+                                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
                                 }
                                 else
                                 {
@@ -138,7 +141,7 @@ namespace Garnet.server
 
                 // Wait for next async operation
                 // We do not need to cancel the wait - it should get garbage collected when the session ends
-                await asyncWaiter.WaitAsync();
+                await asyncWaiter.WaitAsync().ConfigureAwait(false);
             }
         }
     }

@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Garnet.server;
 using GarnetJSON.JSONPath;
+using Tsavorite.core;
 
 namespace GarnetJSON
 {
@@ -41,10 +42,10 @@ namespace GarnetJSON
     public class GarnetJsonObject : CustomObjectBase
     {
         private static readonly JsonSerializerOptions DefaultJsonSerializerOptions =
-            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
         private static readonly JsonSerializerOptions IndentedJsonSerializerOptions =
-            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
 
         private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
         private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
@@ -61,7 +62,7 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="type">The type of the object.</param>
         public GarnetJsonObject(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
         }
 
@@ -101,8 +102,8 @@ namespace GarnetJSON
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
         {
-            if (rootNode == null) return;
-
+            if (rootNode == null)
+                return;
             writer.Write(rootNode.ToJsonString());
         }
 
@@ -128,22 +129,18 @@ namespace GarnetJSON
         /// <param name="newLine">The string to use for new lines.</param>
         /// <param name="space">The string to use for spaces.</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
-        public bool TryGet(ReadOnlySpan<ArgSlice> paths, List<byte[]> output, out ReadOnlySpan<byte> errorMessage,
+        public bool TryGet(ReadOnlySpan<PinnedSpanByte> paths, List<byte[]> output, out ReadOnlySpan<byte> errorMessage,
             string? indent = null, string? newLine = null, string? space = null)
         {
             if (paths.Length == 1)
-            {
                 return TryGet(paths[0].ReadOnlySpan, output, out errorMessage, indent, newLine, space);
-            }
 
             output.Add(OpenCurlyBracket);
             var isFirst = true;
             foreach (var item in paths)
             {
                 if (!isFirst)
-                {
                     output.Add(Comma);
-                }
 
                 isFirst = false;
 
@@ -152,11 +149,8 @@ namespace GarnetJSON
                 output.Add(DoubleQuotesColon);
 
                 if (!TryGet(item.ReadOnlySpan, output, out errorMessage, indent, newLine, space))
-                {
                     return false;
-                }
             }
-
             output.Add(CloseCurlyBracket);
 
             errorMessage = default;
@@ -181,9 +175,7 @@ namespace GarnetJSON
             {
                 errorMessage = default;
                 if (rootNode is null)
-                {
                     return true;
-                }
 
                 if (path.Length == 0)
                 {
@@ -202,9 +194,7 @@ namespace GarnetJSON
                 foreach (var item in result)
                 {
                     if (!isFirst)
-                    {
                         output.Add(Comma);
-                    }
 
                     isFirst = false;
 
@@ -234,8 +224,8 @@ namespace GarnetJSON
         /// <param name="errorMessage">The error message if the operation fails.</param>
         /// <returns>The result of the set operation.</returns>
         /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
-        public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions,
-            out ReadOnlySpan<byte> errorMessage)
+        /// <remarks>TODO: This currently does not update <see cref="IHeapObject.HeapMemorySize"/>.</remarks>
+        public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
@@ -255,15 +245,13 @@ namespace GarnetJSON
                 }
 
                 // Need ToArray to avoid modifying collection while iterating
-                JsonPath jsonPath = new JsonPath(pathStr);
+                var jsonPath = new JsonPath(pathStr);
                 var result = jsonPath.Evaluate(rootNode, rootNode, null).ToArray();
 
                 if (result.Length == 0)
                 {
                     if (existOptions == ExistOptions.XX)
-                    {
                         return SetResult.ConditionNotMet;
-                    }
 
                     if (!jsonPath.IsStaticPath())
                     {
@@ -275,33 +263,23 @@ namespace GarnetJSON
                     var parentNode = rootNode.SelectNodes(GetParentPath(pathStr, out var pathParentOffset))
                         .FirstOrDefault();
                     if (parentNode is null)
-                    {
                         return SetResult.ConditionNotMet;
-                    }
 
                     var childNode = JsonNode.Parse(value);
                     var itemPropName = GetPropertyName(pathStr, pathParentOffset);
 
                     if (parentNode is JsonObject matchObject)
-                    {
                         matchObject.Add(itemPropName.ToString(), childNode);
-                    }
                     else if (parentNode is JsonArray matchArray && int.TryParse(itemPropName, out var index))
-                    {
                         matchArray.Insert(index, childNode);
-                    }
                     else
-                    {
                         return SetResult.ConditionNotMet;
-                    }
 
                     return SetResult.Success;
                 }
 
                 if (existOptions == ExistOptions.NX)
-                {
                     return SetResult.ConditionNotMet;
-                }
 
                 foreach (var match in result.ToList())
                 {
@@ -332,14 +310,10 @@ namespace GarnetJSON
             pathOffset = pathSpan[..^1].LastIndexOfAny('.', ']');
 
             if (pathOffset == -1)
-            {
                 return "$";
-            }
 
             if (pathSpan[pathOffset] == ']')
-            {
                 pathOffset++;
-            }
 
             return path.Substring(0, pathOffset);
         }
@@ -348,20 +322,14 @@ namespace GarnetJSON
         {
             var pathSpan = path.AsSpan();
             if (pathSpan[pathOffset] is '.')
-            {
                 pathOffset++;
-            }
 
             var propertSpan = pathSpan[pathOffset..];
             if (propertSpan[0] is '[')
-            {
                 propertSpan = propertSpan[1..^1];
-            }
 
             if (propertSpan[0] is '"' or '\'')
-            {
                 propertSpan = propertSpan[1..^1];
-            }
 
             return propertSpan;
         }

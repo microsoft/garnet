@@ -79,6 +79,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Set client name on the server for easier identification in monitoring and debugging.
+        /// </summary>
+        readonly string clientName = null;
+
+        /// <summary>
         /// Indicating whether this instance is using its own network pool or one that was provided
         /// </summary>
         readonly bool usingManagedNetworkPool = false;
@@ -100,9 +105,11 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="rawResult">Flag if raw result from response will be processed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -111,6 +118,7 @@ namespace Garnet.client
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
             ILogger logger = null)
@@ -119,7 +127,7 @@ namespace Garnet.client
 
             this.usingManagedNetworkPool = networkPool != null;
             this.networkBufferSettings = networkBufferSettings;
-            this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool();
+            this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.GarnetClientSession, logger: logger);
             this.bufferSizeDigits = NumUtils.CountDigits(this.networkBufferSettings.sendBufferSize);
 
             this.logger = logger;
@@ -128,6 +136,7 @@ namespace Garnet.client
             this.disposed = 0;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.clientName = clientName;
             this.RawResult = rawResult;
         }
 
@@ -170,6 +179,20 @@ namespace Garnet.client
                 logger?.LogError(e, "AUTH returned error");
                 throw;
             }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    Execute("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession");
+                    Execute("CLIENT", "SETNAME", clientName);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
         }
 
         /// <inheritdoc cref="Connect"/>
@@ -209,6 +232,20 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false);
+                    _ = await ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }
@@ -264,7 +301,7 @@ namespace Garnet.client
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -274,7 +311,7 @@ namespace Garnet.client
                 if (EndPoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 
@@ -321,12 +358,12 @@ namespace Garnet.client
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                     var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
-                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)).ConfigureAwait(false) == connectTask)
                     {
                         // Task completed within timeout.
                         // Consider that the task may have faulted or been canceled.
                         // We re-await the task so that any exceptions/cancellation is rethrown.
-                        await connectTask;
+                        await connectTask.ConfigureAwait(false);
                     }
                     else
                     {
@@ -424,12 +461,21 @@ namespace Garnet.client
         /// <summary>
         /// ClusterAppendLog
         /// </summary>
-        public unsafe void ExecuteClusterAppendLog(string nodeId, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAppendLog"/>
+        /// <param name="nodeId"></param>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        /// <param name="payloadPtr"></param>
+        /// <param name="payloadLength"></param>
+        /// <exception cref="Exception"></exception>
+        public unsafe void ExecuteClusterAppendLog(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
         {
             Debug.Assert(nodeId != null);
 
             var curr = offset;
-            var arraySize = 7;
+            var arraySize = 8;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -438,6 +484,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 1
             while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
@@ -445,6 +492,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 2
             while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
                 Flush();
@@ -452,6 +500,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 3
             while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
@@ -459,6 +508,15 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 4
+            while (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
             while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
                 Flush();
@@ -466,6 +524,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 6
             while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
                 Flush();
@@ -473,6 +532,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 7
             while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
@@ -483,6 +543,7 @@ namespace Garnet.client
             if (payloadLength > networkBufferSettings.sendBufferSize)
                 throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
+            // 8
             while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
                 Flush();
@@ -652,10 +713,15 @@ namespace Garnet.client
                     Dispose();
                     throw;
                 }
-                networkSender.GetResponseObject();
-                offset = networkSender.GetResponseObjectHead();
-                end = networkSender.GetResponseObjectTail();
+                ResetOffset();
             }
+        }
+
+        private unsafe void ResetOffset()
+        {
+            networkSender.GetResponseObject();
+            offset = networkSender.GetResponseObjectHead();
+            end = networkSender.GetResponseObjectTail();
         }
 
         /// <inheritdoc />

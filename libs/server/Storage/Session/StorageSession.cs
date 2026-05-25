@@ -4,17 +4,12 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Storage Session - the internal layer that Garnet uses to perform storage operations
     /// </summary>
@@ -26,8 +21,10 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
-        public LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        public StringBasicContext stringBasicContext;
+        public StringTransactionalContext stringTransactionalContext;
+        public ConsistentReadStringBasicContext consistentReadContext;
+        public ConsistentReadStringTransactionalContext transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -39,35 +36,61 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
-        public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
-        public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+        public ObjectBasicContext objectBasicContext;
+        public ObjectTransactionalContext objectTransactionalContext;
+        public ConsistentReadObjectBasicContext objectStoreConsistentReadContext;
+        public ConsistentReadObjectTransactionalContext objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
-        /// Session Contexts for vector ops against the main store
+        /// Session Contexts for vector store
         /// </summary>
-        public BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorContext;
-        public LockableContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorLockableContext;
+        public VectorBasicContext vectorBasicContext;
+        public VectorTransactionalContext vectorTransactionalContext;
 
-        public readonly ScratchBufferBuilder scratchBufferBuilder;
+        /// <summary>
+        /// Session Contexts for unified store
+        /// </summary>
+        public UnifiedBasicContext unifiedBasicContext;
+        public UnifiedTransactionalContext unifiedTransactionalContext;
+        public ConsistentReadUnifiedBasicContext unifiedStoreConsistentReadContext;
+        public ConsistentReadUnifiedTransactionalContext unifiedStoreTransactionalConsistentReadContext;
+
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
-        public int SessionID => basicContext.Session.ID;
-        public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
+        public int SessionID => stringBasicContext.Session.ID;
+        public int ObjectStoreSessionID => objectBasicContext.Session.ID;
 
         public readonly int ObjectScanCountLimit;
 
+        /// <summary>
+        /// Flag indicating if this is storage session that uses consistent read context
+        /// </summary>
+        readonly bool IsConsistentReadSession;
+
+        /// <summary>
+        /// Read session state use to enforce prefix consistency with sharded-log
+        /// </summary>
+        readonly ReadSessionState readSessionState;
+
+        /// <summary>
+        /// Vector manage instance
+        /// </summary>
         public readonly VectorManager vectorManager;
 
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
+            ScratchBufferAllocator scratchBufferAllocator,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            ReadSessionState readSessionState,
             VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
@@ -75,36 +98,52 @@ namespace Garnet.server
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferBuilder = scratchBufferBuilder;
+            this.scratchBufferAllocator = scratchBufferAllocator;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-            this.vectorManager = vectorManager;
+            this.IsConsistentReadSession = readSessionState != null;
+            this.readSessionState = readSessionState;
             parseState.Initialize();
+            this.vectorManager = vectorManager;
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
-            var functions = new MainSessionFunctions(functionsState);
+            var functions = new MainSessionFunctions(functionsState, readSessionState);
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var session = db.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, IsConsistentReadSession);
 
-            var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
-
-            var vectorFunctions = new VectorSessionFunctions(functionsState);
-            var vectorSession = db.MainStore.NewSession<VectorInput, SpanByte, long, VectorSessionFunctions>(vectorFunctions);
-
-            basicContext = session.BasicContext;
-            lockableContext = session.LockableContext;
-            if (objectStoreSession != null)
+            if (!storeWrapper.serverOptions.DisableObjects)
             {
-                objectStoreBasicContext = objectStoreSession.BasicContext;
-                objectStoreLockableContext = objectStoreSession.LockableContext;
+                var objectStoreFunctions = new ObjectSessionFunctions(functionsState, readSessionState);
+                var objectStoreSession = db.Store.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession);
+                objectBasicContext = objectStoreSession.BasicContext;
+                objectTransactionalContext = objectStoreSession.TransactionalContext;
+                objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
+                objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
             }
-            vectorContext = vectorSession.BasicContext;
-            vectorLockableContext = vectorSession.LockableContext;
+
+            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState, readSessionState);
+            var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession);
+
+            var vectorFunctions = new VectorSessionFunctions(functionsState, readSessionState);
+            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions);
+
+            stringBasicContext = session.BasicContext;
+            stringTransactionalContext = session.TransactionalContext;
+            consistentReadContext = session.ConsistentReadContext;
+            transactionalConsistentReadContext = session.TransactionalConsistentReadContext;
+
+            unifiedBasicContext = unifiedStoreSession.BasicContext;
+            unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+            unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
+            unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
+
+            vectorBasicContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
 
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
@@ -123,8 +162,10 @@ namespace Garnet.server
                 _ = Thread.Yield();
 
             sectorAlignedMemoryBitmap?.Dispose();
-            basicContext.Session.Dispose();
-            objectStoreBasicContext.Session?.Dispose();
+            stringBasicContext.Session.Dispose();
+            objectBasicContext.Session?.Dispose();
+            unifiedBasicContext.Session?.Dispose();
+            vectorBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

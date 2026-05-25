@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -27,16 +28,15 @@ namespace Garnet.cluster
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
-        /// <param name="waitForStableSlot"></param>
         /// <returns></returns>
-        public bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot)
+        public bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot)
         {
             ClusterSlotVerificationResult verifyResult;
 
             // If it is the first verification initialize the result cache
             if (!initialized)
             {
-                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking, waitForStableSlot);
+                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot);
                 cachedVerificationResult = verifyResult;
                 initialized = true;
                 return verifyResult.state == SlotVerifiedState.OK;
@@ -46,7 +46,7 @@ namespace Garnet.cluster
             if (cachedVerificationResult.state != SlotVerifiedState.OK)
                 return false;
 
-            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking, waitForStableSlot);
+            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot);
 
             // Check if slot changes between keys
             if (verifyResult.slot != cachedVerificationResult.slot)

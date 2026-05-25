@@ -24,9 +24,5 @@ namespace Garnet.server
         /// Wrong type
         /// </summary>
         WRONGTYPE,
-        /// <summary>
-        /// Bad state
-        /// </summary>
-        BADSTATE,
     }
 }

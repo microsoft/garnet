@@ -22,7 +22,7 @@ namespace Garnet
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
             dict = new(ByteArrayComparer.Instance);
         }
@@ -32,8 +32,8 @@ namespace Garnet
         {
             dict = new(ByteArrayComparer.Instance);
 
-            int count = reader.ReadInt32();
-            for (int i = 0; i < count; i++)
+            var count = reader.ReadInt32();
+            for (var i = 0; i < count; i++)
             {
                 var key = reader.ReadBytes(reader.ReadInt32());
                 var value = reader.ReadBytes(reader.ReadInt32());
@@ -69,18 +69,12 @@ namespace Garnet
         /// Returns the items from this object using a cursor to indicate the start of the scan,
         /// a pattern to filter out the items to return, and a count to indicate the number of items to return.
         /// </summary>
-        /// <param name="start"></param>
-        /// <param name="items"></param>
-        /// <param name="cursor"></param>
-        /// <param name="count"></param>
-        /// <param name="pattern"></param>
-        /// <param name="patternLength"></param>
         /// <returns></returns>
         public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = null, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
-            items = new();
-            int index = 0;
+            items = [];
+            var index = 0;
 
             if (dict.Count < start)
             {
@@ -96,7 +90,7 @@ namespace Garnet
                     continue;
                 }
 
-                bool addToList = false;
+                var addToList = false;
                 if (patternLength == 0)
                 {
                     items.Add(item.Key);
@@ -132,9 +126,7 @@ namespace Garnet
         public bool Set(byte[] key, byte[] value)
         {
             if (dict.TryGetValue(key, out var oldValue))
-            {
                 UpdateSize(key, oldValue, false);
-            }
 
             dict[key] = value;
             UpdateSize(key, value);
@@ -143,15 +135,19 @@ namespace Garnet
 
         private void UpdateSize(byte[] key, byte[] value, bool add = true)
         {
-            var size = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
+            var memorySize = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
                 + (2 * MemoryUtils.ByteArrayOverhead) + MemoryUtils.DictionaryEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
+
+            if (add)
+                HeapMemorySize += memorySize;
+            else
+            {
+                HeapMemorySize -= memorySize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+            }
         }
 
         public bool TryGetValue(byte[] key, [MaybeNullWhen(false)] out byte[] value)
-        {
-            return dict.TryGetValue(key, out value);
-        }
+            => dict.TryGetValue(key, out value);
     }
 }

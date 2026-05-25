@@ -51,6 +51,7 @@ namespace Garnet.server
             }
 
             var valueType = VectorValueType.Invalid;
+            int vectorDims = 0;
             byte[] rentedValues = null;
             Span<byte> values = stackalloc byte[64 * sizeof(float)];
 
@@ -70,6 +71,12 @@ namespace Garnet.server
                         return AbortWithErrorMessage("ERR invalid vector specification");
                     }
 
+                    vectorDims = asBytes.Length / sizeof(float);
+                    if (vectorDims > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
                     curIx++;
                     valueType = VectorValueType.FP32;
                     values = asBytes;
@@ -82,27 +89,33 @@ namespace Garnet.server
                         return AbortWithWrongNumberOfArguments("VADD");
                     }
 
-                    if (!parseState.TryGetInt(curIx, out var valueCount) || valueCount <= 0)
+                    if (!parseState.TryGetInt(curIx, out vectorDims) || vectorDims <= 0)
                     {
                         return AbortWithErrorMessage("ERR invalid vector specification");
                     }
+
                     curIx++;
 
-                    if (valueCount * sizeof(float) > values.Length)
+                    if (vectorDims > VectorManager.MaxVectorDimensions)
                     {
-                        values = rentedValues = ArrayPool<byte>.Shared.Rent(valueCount * sizeof(float));
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
                     }
-                    values = values[..(valueCount * sizeof(float))];
 
-                    if (curIx + valueCount > parseState.Count)
+                    if (curIx + vectorDims > parseState.Count)
                     {
                         return AbortWithWrongNumberOfArguments("VADD");
                     }
 
+                    if (vectorDims * sizeof(float) > values.Length)
+                    {
+                        values = rentedValues = ArrayPool<byte>.Shared.Rent(vectorDims * sizeof(float));
+                    }
+                    values = values[..(vectorDims * sizeof(float))];
+
                     valueType = VectorValueType.FP32;
                     var floatValues = MemoryMarshal.Cast<byte, float>(values);
 
-                    for (var valueIx = 0; valueIx < valueCount; valueIx++)
+                    for (var valueIx = 0; valueIx < vectorDims; valueIx++)
                     {
                         if (!parseState.TryGetFloat(curIx, out floatValues[valueIx]))
                         {
@@ -121,10 +134,25 @@ namespace Garnet.server
                     }
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
-                    curIx++;
 
+                    vectorDims = asBytes.Length;
+                    if (vectorDims > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
+                    curIx++;
                     valueType = VectorValueType.XB8;
                     values = asBytes;
+                }
+                else
+                {
+                    return AbortWithErrorMessage("ERR invalid vector specification");
+                }
+
+                if (reduceDim > vectorDims)
+                {
+                    return AbortWithErrorMessage("ERR REDUCE dimension must be <= vector dimensions");
                 }
 
                 if (curIx >= parseState.Count)
@@ -139,7 +167,7 @@ namespace Garnet.server
                 var cas = false;
                 VectorQuantType? quantType = null;
                 int? buildExplorationFactor = null;
-                ArgSlice? attributes = null;
+                PinnedSpanByte? attributes = null;
                 int? numLinks = null;
                 VectorDistanceMetricType? distanceMetric = null;
 
@@ -231,9 +259,9 @@ namespace Garnet.server
                             return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var buildExplorationFactorNonNull) || buildExplorationFactorNonNull <= 0)
+                        if (!parseState.TryGetInt(curIx, out var buildExplorationFactorNonNull) || buildExplorationFactorNonNull <= 0 || buildExplorationFactorNonNull > VectorManager.MaxExplorationFactor)
                         {
-                            return AbortWithErrorMessage("ERR invalid EF");
+                            return AbortWithErrorMessage($"ERR EF must be an integer between 1 and {VectorManager.MaxExplorationFactor}");
                         }
 
                         buildExplorationFactor = buildExplorationFactorNonNull;
@@ -279,7 +307,7 @@ namespace Garnet.server
 
                         if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull < MinM || numLinksNonNull > MaxM)
                         {
-                            return AbortWithErrorMessage("ERR invalid M");
+                            return AbortWithErrorMessage($"ERR M must be an integer between {MinM} and {MaxM}");
                         }
 
                         numLinks = numLinksNonNull;
@@ -346,21 +374,6 @@ namespace Garnet.server
                 numLinks ??= 16;
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
-                // Validate that DiskANN is expected to succeed given data sizes
-                //
-                // Note that this goes away in store v2
-                if (values.Length > maximumVectorSetValueBytes)
-                {
-                    WriteError("ERR Vector exceed configured page size"u8);
-                    return true;
-                }
-
-                if (attributes.Value.Length > maximumVectorSetValueBytes)
-                {
-                    WriteError("ERR Attribute exceed configured page size"u8);
-                    return true;
-                }
-
                 if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
                 {
                     WriteError("ERR Unsupported quantization type"u8);
@@ -379,7 +392,18 @@ namespace Garnet.server
                 }
                 else
                 {
-                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
+                    if (rentedValues != null)
+                    {
+                        // For large enough values we have to pay for a pin
+                        fixed (byte* valuesPtr = rentedValues)
+                        {
+                            res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
+                        }
+                    }
+                    else
+                    {
+                        res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
+                    }
                 }
 
                 if (res == GarnetStatus.OK)
@@ -424,10 +448,6 @@ namespace Garnet.server
                 {
                     return AbortVectorSetWrongType();
                 }
-                else if (res == GarnetStatus.BADSTATE)
-                {
-                    return AbortVectorSetPartiallyDeleted(ref key);
-                }
                 else
                 {
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
@@ -470,7 +490,7 @@ namespace Garnet.server
 
             var curIx = 2;
 
-            ArgSlice? element;
+            PinnedSpanByte? element;
 
             VectorValueType valueType = VectorValueType.Invalid;
             byte[] rentedValues = null;
@@ -499,6 +519,11 @@ namespace Garnet.server
                             return AbortWithErrorMessage("FP32 values must be multiple of 4-bytes in size");
                         }
 
+                        if (asBytes.Length / sizeof(float) > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
+
                         valueType = VectorValueType.FP32;
                         values = asBytes;
                         curIx++;
@@ -511,6 +536,11 @@ namespace Garnet.server
                         }
 
                         var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+
+                        if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
 
                         valueType = VectorValueType.XB8;
                         values = asBytes;
@@ -527,6 +557,12 @@ namespace Garnet.server
                         {
                             return AbortWithErrorMessage("VALUES count must > 0");
                         }
+
+                        if (valueCount > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
+
                         curIx++;
 
                         if (valueCount * sizeof(float) > values.Length)
@@ -564,7 +600,7 @@ namespace Garnet.server
                 int? count = null;
                 float? delta = null;
                 int? searchExplorationFactor = null;
-                ArgSlice? filter = null;
+                PinnedSpanByte? filter = null;
                 int? maxFilteringEffort = null;
                 var truth = false;
                 var noThread = false;
@@ -611,9 +647,9 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var countNonNull) || countNonNull < 0)
+                        if (!parseState.TryGetInt(curIx, out var countNonNull) || countNonNull < 0 || countNonNull > VectorManager.MaxRetrieveCount)
                         {
-                            return AbortWithErrorMessage("COUNT must be integer >= 0");
+                            return AbortWithErrorMessage($"ERR COUNT must be an integer between 0 and {VectorManager.MaxRetrieveCount}");
                         }
 
                         count = countNonNull;
@@ -659,9 +695,9 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var searchExplorationFactorNonNull) || searchExplorationFactorNonNull < 0)
+                        if (!parseState.TryGetInt(curIx, out var searchExplorationFactorNonNull) || searchExplorationFactorNonNull <= 0 || searchExplorationFactorNonNull > VectorManager.MaxExplorationFactor)
                         {
-                            return AbortWithErrorMessage("EF must be >= 0");
+                            return AbortWithErrorMessage($"ERR EF must be an integer between 1 and {VectorManager.MaxExplorationFactor}");
                         }
 
                         searchExplorationFactor = searchExplorationFactorNonNull;
@@ -705,9 +741,9 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var maxFilteringEffortNonNull) || maxFilteringEffortNonNull < 0)
+                        if (!parseState.TryGetInt(curIx, out var maxFilteringEffortNonNull) || maxFilteringEffortNonNull < 0 || maxFilteringEffortNonNull > VectorManager.MaxRetrieveCount)
                         {
-                            return AbortWithErrorMessage("FILTER-EF must be >= 0");
+                            return AbortWithErrorMessage($"ERR FILTER-EF must be an integer between 0 and {VectorManager.MaxRetrieveCount}");
                         }
 
                         maxFilteringEffort = maxFilteringEffortNonNull;
@@ -754,7 +790,7 @@ namespace Garnet.server
                 delta ??= 2f;
                 searchExplorationFactor ??= 100;
                 filter ??= default;
-                maxFilteringEffort ??= count.Value * 200;
+                maxFilteringEffort ??= (int)Math.Min((long)count.Value * 200, VectorManager.MaxRetrieveCount);
 
                 // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
@@ -777,7 +813,18 @@ namespace Garnet.server
                     VectorIdFormat idFormat;
                     if (!element.HasValue)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                        if (rentedValues != null)
+                        {
+                            // For large enough values we have to pay for a pin
+                            fixed (byte* valuesPtr = rentedValues)
+                            {
+                                res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                            }
+                        }
+                        else
+                        {
+                            res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                        }
                     }
                     else
                     {
@@ -807,11 +854,11 @@ namespace Garnet.server
                             }
                             else
                             {
-                                var remainingIds = idResult.AsReadOnlySpan();
-                                var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
+                                var remainingIds = idResult.ReadOnlySpan;
+                                var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
                                 var hasFilter = filterBitmapResult.Length > 0;
-                                var filterBitmap = hasFilter ? filterBitmapResult.AsReadOnlySpan() : default;
-                                var remaininingAttributes = (withAttributes.Value || hasFilter) ? attributeResult.AsReadOnlySpan() : default;
+                                var filterBitmap = hasFilter ? filterBitmapResult.ReadOnlySpan : default;
+                                var remaininingAttributes = (withAttributes.Value || hasFilter) ? attributeResult.ReadOnlySpan : default;
 
                                 var totalFound = distancesSpan.Length;
 
@@ -849,14 +896,14 @@ namespace Garnet.server
                                     {
                                         if (remainingIds.Length < sizeof(int))
                                         {
-                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
                                         }
 
                                         var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
 
                                         if (remainingIds.Length < sizeof(int) + elementLen)
                                         {
-                                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
                                         }
 
                                         elementData = remainingIds.Slice(sizeof(int), elementLen);
@@ -866,7 +913,7 @@ namespace Garnet.server
                                     {
                                         if (remainingIds.Length < sizeof(int))
                                         {
-                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
                                         }
 
                                         elementData = remainingIds[..sizeof(int)];
@@ -904,7 +951,7 @@ namespace Garnet.server
                                     {
                                         if (remaininingAttributes.Length < sizeof(int))
                                         {
-                                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.AsReadOnlySpan())}");
+                                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.ReadOnlySpan)}");
                                         }
 
                                         var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
@@ -931,10 +978,6 @@ namespace Garnet.server
                     else if (res == GarnetStatus.WRONGTYPE)
                     {
                         return AbortVectorSetWrongType();
-                    }
-                    else if (res == GarnetStatus.BADSTATE)
-                    {
-                        return AbortVectorSetPartiallyDeleted(ref key);
                     }
                     else
                     {
@@ -1007,7 +1050,7 @@ namespace Garnet.server
 
                 if (res == GarnetStatus.OK)
                 {
-                    var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
+                    var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
 
                     while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
                         SendAndReset();
@@ -1021,10 +1064,6 @@ namespace Garnet.server
                 else if (res == GarnetStatus.WRONGTYPE)
                 {
                     return AbortVectorSetWrongType();
-                }
-                else if (res == GarnetStatus.BADSTATE)
-                {
-                    return AbortVectorSetPartiallyDeleted(ref key);
                 }
                 else
                 {
@@ -1083,10 +1122,6 @@ namespace Garnet.server
             {
                 return AbortVectorSetWrongType();
             }
-            else if (res == GarnetStatus.BADSTATE)
-            {
-                return AbortVectorSetPartiallyDeleted(ref key);
-            }
             else
             {
                 while (!RespWriteUtils.TryWriteInt32(dimensions, ref dcurr, dend))
@@ -1132,15 +1167,11 @@ namespace Garnet.server
                     {
                         return AbortVectorSetWrongType();
                     }
-                    else if (res == GarnetStatus.BADSTATE)
-                    {
-                        return AbortVectorSetPartiallyDeleted(ref key);
-                    }
 
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteSimpleString(attributesOutput.AsReadOnlySpan());
+                WriteSimpleString(attributesOutput.ReadOnlySpan);
                 return true;
             }
             finally
@@ -1174,10 +1205,6 @@ namespace Garnet.server
                 else if (res == GarnetStatus.WRONGTYPE)
                 {
                     return AbortVectorSetWrongType();
-                }
-                else if (res == GarnetStatus.BADSTATE)
-                {
-                    return AbortVectorSetPartiallyDeleted(ref key);
                 }
 
                 return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
@@ -1283,11 +1310,7 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetRemove(key, elem);
 
-            if (res == GarnetStatus.BADSTATE)
-            {
-                return AbortVectorSetPartiallyDeleted(ref key);
-            }
-            else if (res == GarnetStatus.WRONGTYPE)
+            if (res == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();
             }
@@ -1313,17 +1336,6 @@ namespace Garnet.server
             // TODO: implement!
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
-        private bool AbortVectorSetPartiallyDeleted(ref ArgSlice key)
-        {
-            // TODO: We could _finish_ the delete here... though if we do that we should do it for ALL commands, not just Vector Set commands
-            //       That's more intrusive, and is more of a V2 thing... so lets just give a workaround for now
-
-            while (!RespWriteUtils.TryWriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8, ref dcurr, dend))
                 SendAndReset();
 
             return true;

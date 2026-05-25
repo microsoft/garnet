@@ -9,26 +9,9 @@ using Garnet.server;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicContext = BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-        SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
-        BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
-            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
-
-    using VectorContext = BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>, SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
     internal sealed partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;
@@ -67,20 +50,10 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public IGarnetServer Server { get; set; }
 
-        private VectorContext vectorContext;
-        private BasicContext basicContext;
+        private StringBasicContext stringBasicContext;
+        private VectorBasicContext vectorBasicContext;
 
-        public ClusterSession(
-            ClusterProvider clusterProvider,
-            TransactionManager txnManager,
-            IGarnetAuthenticator authenticator,
-            UserHandle userHandle,
-            GarnetSessionMetrics sessionMetrics,
-            BasicGarnetApi basicGarnetApi,
-            BasicContext basicContext,
-            VectorContext vectorContext,
-            INetworkSender networkSender,
-            ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -88,8 +61,8 @@ namespace Garnet.cluster
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
-            this.basicContext = basicContext;
-            this.vectorContext = vectorContext;
+            this.stringBasicContext = stringBasicContext;
+            this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
         }
@@ -103,13 +76,13 @@ namespace Garnet.cluster
 
             try
             {
-                RespCommandsInfo commandInfo = null;
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo) && commandInfo.KeySpecifications != null)
+                    if (RespCommandsInfo.TryGetSimpleRespCommandInfo(command, out var cmdInfo) && cmdInfo.KeySpecs?.Length > 0)
                     {
-                        csvi.keyNumOffset = -1;
-                        clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
+                        csvi.keySpecs = cmdInfo.KeySpecs;
+                        csvi.isSubCommand = cmdInfo.IsSubCommand;
+                        csvi.readOnly = command.IsReadOnly();
                         if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
                             return;
                     }
@@ -129,7 +102,7 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var cmdName = commandInfo?.Name ?? RespCommandsInfo.GetRespCommandName(command);
+                    var cmdName = RespCommandsInfo.GetRespCommandName(command);
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName.ToLowerInvariant());
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
@@ -178,7 +151,8 @@ namespace Garnet.cluster
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile.WaitForCommit();
+                    var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
+                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
@@ -205,6 +179,27 @@ namespace Garnet.cluster
             ReleaseCurrentEpoch();
             _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
+        }
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        public void UnsafeSetConfig(string replicaOf = null)
+        {
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            config = config.MakeReplicaOf(replicaOf);
+            clusterProvider.clusterManager.UnsafeSetConfig(config);
+
+            if (replicaOf != null)
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+        }
+
+        public void Dispose()
+        {
+            // Call dispose on ref of this session if this session is a replication task
+            if (IsReplicating)
+                replicaReplayDriverStore?.Dispose();
         }
     }
 }

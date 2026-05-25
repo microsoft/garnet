@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -18,8 +19,7 @@ namespace Garnet.cluster
         {
             public readonly Sketch sketch;
             public readonly List<byte[]> keysToDelete;
-            public MainStoreScan mss;
-            public ObjectStoreScan oss;
+            public StoreScan storeScan;
 
             private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
 
@@ -35,8 +35,14 @@ namespace Garnet.cluster
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
-            public bool ContainsNamespace(ulong ns) => session._namespaces?.Contains(ns) ?? false;
+            public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
+            {
+                Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces note supported");
 
+                var ns = (ulong)namespaceBytes[0];
+
+                return session._namespaces?.Contains(ns) ?? false;
+            }
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
@@ -46,8 +52,7 @@ namespace Garnet.cluster
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
-                mss = new MainStoreScan(this);
-                oss = new ObjectStoreScan(this);
+                storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
@@ -56,7 +61,6 @@ namespace Garnet.cluster
             {
                 if (!await session.CheckConnectionAsync(gcs).ConfigureAwait(false))
                     return false;
-
                 gcs.InitializeIterationBuffer(session.clusterProvider.storeWrapper.loggingFrequency);
                 return true;
             }
@@ -70,56 +74,42 @@ namespace Garnet.cluster
             /// <summary>
             /// Perform scan to gather keys and build sketch
             /// </summary>
-            /// <param name="storeType"></param>
             /// <param name="currentAddress"></param>
             /// <param name="endAddress"></param>
-            public void Scan(StoreType storeType, ref long currentAddress, long endAddress)
-            {
-                if (storeType == StoreType.Main)
-                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
-                else if (storeType == StoreType.Object)
-                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref oss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
-            }
+            public void Scan(ref long currentAddress, long endAddress)
+                => localServerSession.BasicGarnetApi.IterateStore(ref storeScan, ref currentAddress, endAddress, endAddress,
+                    includeTombstones: true);
 
             /// <summary>
             /// Transmit gathered keys
             /// </summary>
-            /// <param name="storeType"></param>
             /// <returns></returns>
-            public async Task<bool> TransmitSlotsAsync(StoreType storeType)
+            public async Task<bool> TransmitSlotsAsync()
             {
-                var bufferSize = 1 << 10;
-                SectorAlignedMemory buffer = new(bufferSize, 1);
-                IntPtr bufPtr, bufPtrEnd;
-                SpanByteAndMemory o;
-                unsafe
-                {
-                    bufPtr = (IntPtr)buffer.GetValidPointer();
-                    bufPtrEnd = bufPtr + bufferSize;
-                    o = new SpanByteAndMemory((byte*)bufPtr, (int)(bufPtrEnd - bufPtr));
-                }
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+                var output = new UnifiedOutput();       // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var vectorOutput = new VectorOutput();  // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
-                    if (storeType == StoreType.Main)
-                    {
-                        foreach (var key in sketch.argSliceVector)
-                        {
-                            var spanByte = key;
-                            if (!await session.WriteOrSendMainStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, ref input, ref o, out _).ConfigureAwait(false))
-                                return false;
+                    var input = new UnifiedInput(RespCommand.MIGRATE);
+                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
 
-                            // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                            o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
-                        }
-                    }
-                    else
+                    VectorInput vectorInput = new();
+                    vectorInput.AlignmentExpected = true; // We're moving DiskANN sourced data, so alignment is expected
+                    vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
+
+                    foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {
-                        foreach (var key in sketch.argSliceVector)
+                        if (hasNs)
                         {
-                            var argSlice = key;
-                            if (!await session.WriteOrSendObjectStoreKeyValuePairAsync(gcs, localServerSession, ref argSlice, out _).ConfigureAwait(false))
+                            // Migrating Vector Set element data
+                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, ns, key, ref vectorInput, ref vectorOutput, out _).ConfigureAwait(false))
+                                return false;
+                        }
+                        else
+                        {
+                            // Migrating everything else
+                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, key, ref input, ref output, out _).ConfigureAwait(false))
                                 return false;
                         }
                     }
@@ -130,90 +120,60 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    buffer.Dispose();
+                    output.SpanByteAndMemory.Dispose();
+                    vectorOutput.SpanByteAndMemory.Dispose();
                 }
 
                 return true;
             }
 
-            /// <summary>
-            /// Move keys in sketch out of the given store, UNLESS they are also in <paramref name="vectorSetKeysToIgnore"/>.
-            /// </summary>
-            public async Task<bool> TransmitKeysAsync(StoreType storeType, Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
+            public async Task<bool> TransmitKeysAsync(Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
             {
-                var bufferSize = 1 << 10;
-                SectorAlignedMemory buffer = new(bufferSize, 1);
-                IntPtr bufPtr, bufPtrEnd;
-                SpanByteAndMemory o;
-                unsafe
-                {
-                    bufPtr = (IntPtr)buffer.GetValidPointer();
-                    bufPtrEnd = bufPtr + bufferSize;
-                    o = new SpanByteAndMemory((byte*)bufPtr, (int)(bufPtrEnd - bufPtr));
-                }
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+                // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
+                // so we can reuse the SpanByteAndMemory.Memory across iterations.
+                // TODO: initialize 'output' based on gcs curr and end; make sure it has the initial part of the "send" set, and call gcs.IncrementRecordDirect().
+                //       This will still allow SBAM.Memory to be reused.
+                var output = new UnifiedOutput();
+
+#if NET9_0_OR_GREATER
+                var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
                 try
                 {
                     var keys = sketch.Keys;
-                    if (storeType == StoreType.Main)
+
+                    var input = new UnifiedInput(RespCommand.MIGRATE)
                     {
+                        arg1 = session.NetworkBufferSettings.sendBufferSize - 1024   // Reserve some space for overhead
+                    };
+                    for (var i = 0; i < keys.Count; i++)
+                    {
+                        if (keys[i].Item2)
+                            continue;
+
+                        var spanByte = keys[i].Item1;
+
+                        // Don't transmit if a Vector Set
+                        var isVectorSet =
+                            vectorSetKeysToIgnore.Count > 0 &&
 #if NET9_0_OR_GREATER
-                        var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
-
-                        for (var i = 0; i < keys.Count; i++)
-                        {
-                            if (keys[i].Item2)
-                                continue;
-
-                            var spanByte = keys[i].Item1.SpanByte;
-
-                            // Don't transmit if a Vector Set
-                            var isVectorSet =
-                                vectorSetKeysToIgnore.Count > 0 &&
-#if NET9_0_OR_GREATER
-                                ignoreLookup.ContainsKey(spanByte.AsReadOnlySpan());
+                            ignoreLookup.ContainsKey(spanByte.ReadOnlySpan);
 #else
-                                vectorSetKeysToIgnore.ContainsKey(spanByte.ToByteArray());
+                                vectorSetKeysToIgnore.ContainsKey(spanByte.ToArray());
 #endif
-                            if (isVectorSet)
-                            {
-                                continue;
-                            }
 
-                            if (!await session.WriteOrSendMainStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, ref input, ref o, out var status).ConfigureAwait(false))
-                                return false;
-
-                            // Skip if key NOTFOUND
-                            if (status == GarnetStatus.NOTFOUND)
-                                continue;
-
-                            // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                            o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
-
-                            // Mark for deletion
-                            keys[i] = (keys[i].Item1, true);
-                        }
-                    }
-                    else
-                    {
-                        for (var i = 0; i < keys.Count; i++)
+                        if (isVectorSet)
                         {
-                            if (keys[i].Item2)
-                                continue;
-
-                            var spanByte = keys[i].Item1.SpanByte;
-                            if (!await session.WriteOrSendObjectStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, out var status).ConfigureAwait(false))
-                                return false;
-
-                            // Skip if key NOTFOUND
-                            if (status == GarnetStatus.NOTFOUND)
-                                continue;
-
-                            // Mark for deletion
-                            keys[i] = (keys[i].Item1, true);
+                            continue;
                         }
+
+                        if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status).ConfigureAwait(false))
+                            return false;
+
+                        // If key was FOUND, mark it for deletion
+                        if (status != GarnetStatus.NOTFOUND)
+                            keys[i] = (keys[i].Item1, true);
                     }
 
                     // Flush final data in client buffer
@@ -222,7 +182,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    buffer.Dispose();
+                    output.SpanByteAndMemory.Dispose();
                 }
                 return true;
             }
@@ -249,7 +209,7 @@ namespace Garnet.cluster
                     var current = cursor;
                     // Build Sketch
                     migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(StoreType.Main, ref current, workerEndAddress);
+                    migrateOperation.Scan(ref current, workerEndAddress);
 
                     // Stop if no keys have been found
                     if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
@@ -261,7 +221,7 @@ namespace Garnet.cluster
                     await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered
-                    if (!await migrateOperation.TransmitSlotsAsync(StoreType.Main).ConfigureAwait(false))
+                    if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
                     {
                         logger?.LogWarning("TransmitSlots failed for {cursor} to {current} (with {count} keys)", cursor, current, migrateOperation.sketch.argSliceVector.Count);
                         return false;
@@ -288,16 +248,17 @@ namespace Garnet.cluster
                     return;
                 if (session.transferOption == TransferOption.SLOTS)
                 {
-                    foreach (var key in sketch.argSliceVector)
+                    foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {
-                        if (key.MetadataSize == 1)
+                        if (hasNs)
                         {
-                            // Namespace'd keys are not deleted here, but when migration finishes
+                            // Namespace'd keys are deleted as part after migration completes
                             continue;
                         }
-
-                        var spanByte = key;
-                        _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
+                        else
+                        {
+                            _ = localServerSession.BasicGarnetApi.DELETE(key);
+                        }
                     }
                 }
                 else
@@ -305,10 +266,9 @@ namespace Garnet.cluster
                     var keys = sketch.Keys;
                     for (var i = 0; i < keys.Count; i++)
                     {
-                        // Skip if key is not marked for deletion because it has not been transmitted to the target node
-                        if (!keys[i].Item2) continue;
-                        var spanByte = keys[i].Item1.SpanByte;
-                        _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
+                        // Do not delete the key if it is not marked for deletion because it has not been transmitted to the target node
+                        if (keys[i].Item2)
+                            _ = localServerSession.BasicGarnetApi.DELETE(keys[i].Item1);
                     }
                 }
             }
@@ -316,14 +276,14 @@ namespace Garnet.cluster
             /// <summary>
             /// Delete a Vector Set after migration if _copyOption is not set.
             /// </summary>
-            public void DeleteVectorSet(ref SpanByte key)
+            public void DeleteVectorSet(PinnedSpanByte key)
             {
                 if (session._copyOption)
                     return;
 
-                var delRes = localServerSession.BasicGarnetApi.DELETE(ref key);
+                var delRes = localServerSession.BasicGarnetApi.DELETE(key);
 
-                session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key.AsReadOnlySpan()), delRes);
+                session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
             }
         }
     }

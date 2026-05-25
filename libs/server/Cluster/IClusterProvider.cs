@@ -9,37 +9,18 @@ using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicContext = BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
-        BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
-            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
-
-    using VectorContext = BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>, SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-
     /// <summary>
     /// Cluster provider
     /// </summary>
     public interface IClusterProvider : IDisposable
     {
-        // TODO: I really hate having to pass Vector and Basic contexts here... cleanup
-
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, BasicContext basicContext, VectorContext vectorContext, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext basicContext, VectorBasicContext vectorContext, INetworkSender networkSender, ILogger logger = null);
 
 
         /// <summary>
@@ -72,7 +53,7 @@ namespace Garnet.server
         /// Get info on primary from replica perspective.
         /// </summary>
         /// <returns></returns>
-        (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
+        (AofAddress replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
 
         /// <summary>
         /// Get info on replicas from primary perspective.
@@ -85,14 +66,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="managerType"></param>
         void PurgeBufferPool(ManagerType managerType);
-
-        /// <summary>
-        /// Extract key specs
-        /// </summary>
-        /// <param name="commandInfo"></param>
-        /// <param name="cmd"></param>
-        /// <param name="csvi"></param>
-        void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi);
 
         /// <summary>
         /// Issue a cluster publish message to remote nodes
@@ -123,7 +96,7 @@ namespace Garnet.server
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
-        void OnCheckpointInitiated(out long CheckpointCoveredAofAddress);
+        void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress);
 
         /// <summary>
         /// Recover the cluster
@@ -138,13 +111,13 @@ namespace Garnet.server
         /// <summary>
         /// Safe truncate AOF
         /// </summary>
-        void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
+        void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
 
         /// <summary>
         /// Safe truncate AOF until address
         /// </summary>
         /// <param name="truncateUntil"></param>
-        void SafeTruncateAOF(long truncateUntil);
+        void SafeTruncateAOF(in AofAddress truncateUntil);
 
         /// <summary>
         /// Start cluster operations

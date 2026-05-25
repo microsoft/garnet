@@ -95,7 +95,7 @@ namespace Tsavorite.core
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
             if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
 
@@ -171,7 +171,7 @@ namespace Tsavorite.core
         public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
-        public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
+        public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             var device = NextIndexCheckpointDevice(indexToken);
 
@@ -186,7 +186,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CleanupIndexCheckpoint(Guid indexToken)
+        public virtual bool PerformAutomaticCleanup => true;
+
+        /// <inheritdoc />
+        public void CleanupIndexCheckpoint(Guid indexToken)
         {
             if (removeOutdated)
             {
@@ -222,7 +225,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
+        public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -237,7 +240,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CleanupLogCheckpoint(Guid logToken)
+        public void CleanupLogCheckpoint(Guid logToken)
         {
             if (removeOutdated)
             {
@@ -250,78 +253,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog)
-        {
-            deltaLog.Allocate(out var length, out var physicalAddress);
-            if (length < commitMetadata.Length)
-            {
-                deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
-                deltaLog.Allocate(out length, out physicalAddress);
-                if (length < commitMetadata.Length)
-                {
-                    deltaLog.Seal(0);
-                    throw new Exception($"Metadata of size {commitMetadata.Length} does not fit in delta log space of size {length}");
-                }
-            }
-            fixed (byte* ptr = commitMetadata)
-            {
-                Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
-            }
-            deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
-            deltaLog.FlushAsync().Wait();
-        }
-
-        /// <inheritdoc />
-        public virtual unsafe void CleanupLogIncrementalCheckpoint(Guid logToken)
-        {
-        }
-
-        /// <inheritdoc />
         public IEnumerable<Guid> GetLogCheckpointTokens()
         {
             return deviceFactory.ListContents(checkpointNamingScheme.LogCheckpointBasePath).Select(checkpointNamingScheme.Token);
         }
 
         /// <inheritdoc />
-        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken)
         {
-            byte[] metadata = null;
-            if (deltaLog != null && scanDelta)
-            {
-                // Try to get latest valid metadata from delta-log
-                deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out var type))
-                {
-                    switch (type)
-                    {
-                        case DeltaLogEntryType.DELTA:
-                            // consider only metadata records
-                            continue;
-                        case DeltaLogEntryType.CHECKPOINT_METADATA:
-                            metadata = new byte[entryLength];
-                            unsafe
-                            {
-                                fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
-                            }
-
-                            var hlri = new HybridLogRecoveryInfo();
-                            using (StreamReader s = new(new MemoryStream(metadata)))
-                            {
-                                hlri.Initialize(s);
-                                // Finish recovery if only specific versions are requested
-                                if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo) goto LoopEnd;
-                            }
-                            continue;
-                        default:
-                            throw new TsavoriteException("Unexpected entry type");
-                    }
-                LoopEnd:
-                    break;
-                }
-                if (metadata != null) return metadata;
-            }
-
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
@@ -353,12 +292,6 @@ namespace Tsavorite.core
         public IDevice GetSnapshotObjectLogDevice(Guid token)
         {
             return deviceFactory.Get(checkpointNamingScheme.ObjectLogSnapshot(token));
-        }
-
-        /// <inheritdoc />
-        public IDevice GetDeltaLogDevice(Guid token)
-        {
-            return deviceFactory.Get(checkpointNamingScheme.DeltaLog(token));
         }
 
         /// <inheritdoc />

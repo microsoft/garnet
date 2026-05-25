@@ -7,50 +7,57 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using static LogAddress;
+    using static Utility;
+
     [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     internal struct FreeRecord
     {
-        internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;
-        const int kSizeShiftInWord = RecordInfo.kPreviousAddressBits;
+#pragma warning disable IDE1006 // Naming Styles
+        internal const int kSizeBits = 64 - kAddressBits;        // 16 currently
+        const int kSizeShiftInWord = kAddressBits;
 
         const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
+#pragma warning restore IDE1006 // Naming Styles
 
         // This is the empty word we replace the current word with on Reads.
-        private const long emptyWord = 0;
+        private const long EmptyWord = 0;
 
-        // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
+        // 'word' contains the reclaimable logicalAddress and the size of the recordPtr at that address.
         [FieldOffset(0)]
         private long word;
 
         internal const int StructSize = sizeof(long);
 
+        /// <summary>LogicalAddress of the recordPtr.</summary>
         public long Address
         {
-            readonly get => word & RecordInfo.kPreviousAddressMaskInWord;
-            set => word = (word & ~RecordInfo.kPreviousAddressMaskInWord) | (value & RecordInfo.kPreviousAddressMaskInWord);
+            readonly get => word & kAddressBitMask;
+            set => word = (word & ~kAddressBitMask) | (value & kAddressBitMask);
         }
 
+        /// <summary>Inline size of the recordPtr. May contain overflow allocations.</summary>
         public readonly int Size => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"address {Address}, size {Size}";
 
-        internal readonly bool IsSet => word != emptyWord;
+        internal readonly bool IsSet => word != EmptyWord;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool Set(long address, long recordSize, long minAddress)
         {
-            // If the record is empty or the address is below minAddress, set the new address into it.
+            // If the recordPtr is empty or the address is below minAddress, set the new address into it.
             var oldRecord = this;
             if (oldRecord.IsSet && oldRecord.Address >= minAddress)
                 return false;
 
-            long newWord = (recordSize << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
+            var newWord = (recordSize << kSizeShiftInWord) | (address & kAddressBitMask);
             return Interlocked.CompareExchange(ref word, newWord, oldRecord.word) == oldRecord.word;
         }
 
@@ -58,15 +65,15 @@ namespace Tsavorite.core
         void SetEmptyAtomic(long oldWord)
         {
             // Ignore the result; this is just to clear an obsolete value, so if another thread already updated it, that's by design.
-            Interlocked.CompareExchange(ref word, emptyWord, oldWord);
+            _ = Interlocked.CompareExchange(ref word, EmptyWord, oldWord);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryPeek<TKey, TValue, TStoreFunctions, TAllocator>(long recordSize, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, long minAddress, out int thisRecordSize)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal bool TryPeek<TStoreFunctions, TAllocator>(long recordSize, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, long minAddress, out int thisRecordSize)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            FreeRecord oldRecord = this;
+            var oldRecord = this;
             thisRecordSize = 0;
             if (!oldRecord.IsSet)
                 return false;
@@ -75,6 +82,7 @@ namespace Tsavorite.core
                 SetEmptyAtomic(oldRecord.word);
                 return false;
             }
+
             var thisSize = oversize ? GetRecordSize(store, oldRecord.Address) : oldRecord.Size;
             if (thisSize < recordSize)
                 return false;
@@ -107,11 +115,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTake(int recordSize, long minAddress, out long address, ref TakeResult takeResult)
+        internal bool TryTake(int actualInlineRecordSize, long minAddress, out long address, ref TakeResult takeResult)
         {
             address = 0;
 
-            FreeRecord oldRecord = this;
+            var oldRecord = this;
             while (true)
             {
                 if (!oldRecord.IsSet)
@@ -119,45 +127,43 @@ namespace Tsavorite.core
                 takeResult.isEmpty = false;
                 if (oldRecord.Address < minAddress)
                     return false;
-                else
-                    takeResult.addressOk = true;
-                if (oldRecord.Size < recordSize)
-                    return false;
-                else
-                    takeResult.recordSizeOk = true;
 
-                // If we're here, the record was set and size and address were adequate.
-                if (Interlocked.CompareExchange(ref word, emptyWord, oldRecord.word) == oldRecord.word)
+                takeResult.addressOk = true;
+                if (oldRecord.Size < actualInlineRecordSize)
+                    return false;
+                takeResult.recordSizeOk = true;
+
+                // If we're here, the recordPtr was set and size and address were adequate.
+                if (Interlocked.CompareExchange(ref word, EmptyWord, oldRecord.word) == oldRecord.word)
                 {
                     address = oldRecord.Address;
                     return true;
                 }
 
-                // Failed to CAS. Loop again to see if someone else put in a different, but still good, record.
+                // Failed to CAS. Loop again to see if someone else put in a different, but still good, recordPtr.
                 oldRecord = this;
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int GetRecordSize<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long logicalAddress)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        private static int GetRecordSize<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long logicalAddress)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
-            long physicalAddress = store.hlog.GetPhysicalAddress(logicalAddress);
-            return store.GetFreeRecordSize(physicalAddress, ref store.hlog.GetInfo(physicalAddress));
+            // This is called for oversize, so we need hlog to get the length out of the recordPtr (it won't fit in FreeRecord.kSizeBits)
+            return LogRecord.GetAllocatedSize(store.hlogBase.GetPhysicalAddress(logicalAddress));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe bool TryTakeOversize<TKey, TValue, TStoreFunctions, TAllocator>(long recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal bool TryTakeOversize<TStoreFunctions, TAllocator>(int actualInlineRecordSize, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             address = 0;
 
             // The difference in this oversize version is that we delay checking size until after the CAS, because we have
             // go go the slow route of getting the physical address.
-            FreeRecord oldRecord = this;
+            var oldRecord = this;
             while (true)
             {
                 if (!oldRecord.IsSet)
@@ -165,26 +171,22 @@ namespace Tsavorite.core
                 takeResult.isEmpty = false;
                 if (oldRecord.Address < minAddress)
                     return false;
-                else
-                    takeResult.addressOk = true;
+                takeResult.addressOk = true;
 
-                // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
-                long physicalAddress = store.hlog.GetPhysicalAddress(oldRecord.Address);
-                long thisSize = store.GetFreeRecordSize(physicalAddress, ref store.hlog.GetInfo(physicalAddress));
-
-                if (thisSize < recordSize)
+                // Because this is oversize, we need hlog to get the length out of the recordPtr's value (it won't fit in FreeRecord.kSizeBits)
+                long thisSize = GetRecordSize(store, oldRecord.Address);
+                if (thisSize < actualInlineRecordSize)
                     return false;
-                else
-                    takeResult.recordSizeOk = true;
+                takeResult.recordSizeOk = true;
 
-                // If we're here, the record was set and size and address were adequate.
-                if (Interlocked.CompareExchange(ref word, emptyWord, oldRecord.word) == oldRecord.word)
+                // If we're here, the recordPtr was set and size and address were adequate.
+                if (Interlocked.CompareExchange(ref word, EmptyWord, oldRecord.word) == oldRecord.word)
                 {
                     address = oldRecord.Address;
                     return true;
                 }
 
-                // Failed to CAS. Loop again to see if someone else put in a different, but still good, record.
+                // Failed to CAS. Loop again to see if someone else put in a different, but still good, recordPtr.
                 oldRecord = this;
             }
         }
@@ -210,7 +212,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
-            string scanStr = bestFitScanLimit switch
+            var scanStr = bestFitScanLimit switch
             {
                 RevivificationBin.BestFitScanAll => "ScanAll",
                 RevivificationBin.UseFirstFit => "FirstFit",
@@ -219,28 +221,28 @@ namespace Tsavorite.core
             return $"isEmpty {isEmpty}, recSizes {minRecordSize}..{maxRecordSize}, recSizeInc {segmentRecordSizeIncrement}, #recs {recordCount}; segments: segSize {segmentSize}, #segs {segmentCount}; scanLimit {scanStr}";
         }
 
-        internal FreeRecordBin(ref RevivificationBin binDef, int prevBinRecordSize, bool isFixedLength)
+        internal FreeRecordBin(ref RevivificationBin binDef, int prevBinRecordSize)
         {
-            // If the record size range is too much for the number of records in the bin, we must allow multiple record sizes per segment.
-            // prevBinRecordSize is already verified to be a multiple of 8.
-            var bindefRecordSize = RoundUp(binDef.RecordSize, 8);
-            if (isFixedLength || bindefRecordSize == prevBinRecordSize + 8)
+            // If the recordPtr size range is too much for the number of records in the bin, we must allow multiple recordPtr sizes per segment.
+            // prevBinRecordSize is already verified to be a multiple of Constants.kRecordAlignment.
+            var bindefRecordSize = RoundUp(binDef.RecordSize, Constants.kRecordAlignment);
+            if (bindefRecordSize == prevBinRecordSize + Constants.kRecordAlignment)
             {
                 bestFitScanLimit = RevivificationBin.UseFirstFit;
 
                 segmentSize = RoundUp(binDef.NumberOfRecords, MinSegmentSize);
                 segmentCount = 1;
                 segmentRecordSizeIncrement = 1;  // For the division and multiplication in GetSegmentStart
-                minRecordSize = maxRecordSize = isFixedLength ? prevBinRecordSize : bindefRecordSize;
+                minRecordSize = maxRecordSize = bindefRecordSize;
             }
             else
             {
                 bestFitScanLimit = binDef.BestFitScanLimit;
 
-                // minRecordSize is already verified to be a multiple of 8.
+                // minRecordSize is already verified to be a multiple of Constants.kRecordAlignment.
                 var sizeRange = bindefRecordSize - prevBinRecordSize;
 
-                segmentCount = sizeRange / 8;
+                segmentCount = sizeRange / Constants.kRecordAlignment;
                 segmentSize = (int)Math.Ceiling(binDef.NumberOfRecords / (double)segmentCount);
 
                 if (segmentSize >= MinSegmentSize)
@@ -251,15 +253,15 @@ namespace Tsavorite.core
                     segmentCount = (int)Math.Ceiling(binDef.NumberOfRecords / (double)segmentSize);
                 }
 
-                segmentRecordSizeIncrement = RoundUp(sizeRange / segmentCount, 8);
-                maxRecordSize = prevBinRecordSize + segmentRecordSizeIncrement * segmentCount;
+                segmentRecordSizeIncrement = RoundUp(sizeRange / segmentCount, Constants.kRecordAlignment);
+                maxRecordSize = prevBinRecordSize + (segmentRecordSizeIncrement * segmentCount);
                 minRecordSize = prevBinRecordSize + segmentRecordSizeIncrement;
             }
             recordCount = segmentSize * segmentCount;
 
             // Overallocate the GCHandle by one cache line so we have room to offset the returned pointer to make it cache-aligned.
-            recordsArray = GC.AllocateArray<FreeRecord>(recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize, pinned: true);
-            long p = (long)Unsafe.AsPointer(ref recordsArray[0]);
+            recordsArray = GC.AllocateArray<FreeRecord>(recordCount + (Constants.kCacheLineBytes / FreeRecord.StructSize), pinned: true);
+            var p = (long)Unsafe.AsPointer(ref recordsArray[0]);
 
             // Force the pointer to align to cache boundary.
             records = (FreeRecord*)RoundUp(p, Constants.kCacheLineBytes);
@@ -270,8 +272,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetSegmentStart(int recordSize)
         {
-            // recordSize and segmentSizeIncrement are rounded up to 8, unless IsFixedLength in which case segmentSizeIncrement is 1.
-            // sizeOffset will be negative if we are searching the next-highest bin.
+            // recordSize and segmentSizeIncrement are rounded up to Constants.kRecordAlignment. sizeOffset will be negative if we are searching the next-highest bin.
             var sizeOffset = recordSize - minRecordSize;
             if (sizeOffset < 0)
                 sizeOffset = 0;
@@ -284,16 +285,16 @@ namespace Tsavorite.core
         private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? recordIndex - recordCount : recordIndex);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd<TKey, TValue, TStoreFunctions, TAllocator>(long address, int recordSize, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        public bool TryAdd<TStoreFunctions, TAllocator>(long logicalAddress, int recordSize, TsavoriteKV<TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var segmentStart = GetSegmentStart(recordSize);
 
-            for (var ii = 0; ii < recordCount; ++ii)
+            for (var ii = 0; ii < recordCount; ii++)
             {
-                FreeRecord* record = GetRecord(segmentStart + ii);
-                if (record->Set(address, recordSize, minAddress))
+                var recordPtr = GetRecord(segmentStart + ii);
+                if (recordPtr->Set(logicalAddress, recordSize, minAddress))
                 {
                     ++revivStats.successfulAdds;
                     isEmpty = false;
@@ -305,41 +306,46 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-            => TryTake(recordSize, minAddress, store, oversize: false, out address, ref revivStats);
+        public bool TryTake<TStoreFunctions, TAllocator>(int actualInlineRecordSize, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
+            => TryTake(actualInlineRecordSize, minAddress, store, oversize: false, out address, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        public bool TryTake<TStoreFunctions, TAllocator>(int actualInlineRecordSize, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             if (isEmpty)
             {
                 address = 0;
                 return false;
             }
-            return (bestFitScanLimit == RevivificationBin.UseFirstFit)
-                        ? TryTakeFirstFit(recordSize, minAddress, store, oversize, out address, ref revivStats)
-                        : TryTakeBestFit(recordSize, minAddress, store, oversize, out address, ref revivStats);
+            var result = (bestFitScanLimit == RevivificationBin.UseFirstFit)
+                        ? TryTakeFirstFit(actualInlineRecordSize, minAddress, store, oversize, out address, ref revivStats)
+                        : TryTakeBestFit(actualInlineRecordSize, minAddress, store, oversize, out address, ref revivStats);
+            if (result)
+                ++revivStats.successfulTakes;
+            else
+                ++revivStats.failedTakes;
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeFirstFit<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        public bool TryTakeFirstFit<TStoreFunctions, TAllocator>(int actualInlineRecordSize, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            var segmentStart = GetSegmentStart(recordSize);
+            var segmentStart = GetSegmentStart(actualInlineRecordSize);
 
-            int retryCount = recordCount;
+            var retryCount = recordCount;
             FreeRecord.TakeResult takeResult = new();
             while (true)
             {
-                for (var ii = 0; ii < recordCount; ++ii)
+                for (var ii = 0; ii < recordCount; ii++)
                 {
-                    FreeRecord* record = GetRecord(segmentStart + ii);
-                    if (oversize ? record->TryTakeOversize(recordSize, minAddress, store, out address, ref takeResult) : record->TryTake(recordSize, minAddress, out address, ref takeResult))
+                    var recordPtr = GetRecord(segmentStart + ii);
+                    if (oversize ? recordPtr->TryTakeOversize(actualInlineRecordSize, minAddress, store, out address, ref takeResult) : recordPtr->TryTake(actualInlineRecordSize, minAddress, out address, ref takeResult))
                     {
                         takeResult.MergeTo(ref revivStats);
                         return true;
@@ -355,27 +361,27 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeBestFit<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        public bool TryTakeBestFit<TStoreFunctions, TAllocator>(int actualInlineRecordSize, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             // Retry as long as we find a candidate, but reduce the best fit scan limit each retry.
-            int localBestFitScanLimit = bestFitScanLimit;
-            var segmentStart = GetSegmentStart(recordSize);
+            var localBestFitScanLimit = bestFitScanLimit;
+            var segmentStart = GetSegmentStart(actualInlineRecordSize);
 
             FreeRecord.TakeResult takeResult = new();
             while (true)
             {
-                int bestFitSize = int.MaxValue;         // Comparison is "if record.Size < bestFitSize", hence initialized to int.MaxValue
-                int bestFitIndex = -1;                  // Will be compared to >= 0 on exit from the best-fit scan loop
-                int firstFitIndex = int.MaxValue;       // Subtracted from loop control var and tested for >= bestFitScanLimit; int.MaxValue produces a negative result
+                var bestFitSize = int.MaxValue;         // Comparison is "if recordPtr.Size < bestFitSize", hence initialized to int.MaxValue
+                var bestFitIndex = -1;                  // Will be compared to >= 0 on exit from the best-fit scan loop
+                var firstFitIndex = int.MaxValue;       // Subtracted from loop control var and tested for >= bestFitScanLimit; int.MaxValue produces a negative result
 
                 FreeRecord* record;
-                for (var ii = 0; ii < recordCount; ++ii)
+                for (var ii = 0; ii < recordCount; ii++)
                 {
                     // For best-fit we must peek first without taking.
                     record = GetRecord(segmentStart + ii);
-                    if (record->TryPeek(recordSize, store, oversize, minAddress, out var thisRecordSize))
+                    if (record->TryPeek(actualInlineRecordSize, store, oversize, minAddress, out var thisRecordSize))
                     {
                         bestFitIndex = ii;      // Found exact match
                         break;
@@ -400,7 +406,7 @@ namespace Tsavorite.core
                 }
 
                 record = GetRecord(segmentStart + bestFitIndex);
-                if (oversize ? record->TryTakeOversize(recordSize, minAddress, store, out address, ref takeResult) : record->TryTake(recordSize, minAddress, out address, ref takeResult))
+                if (oversize ? record->TryTakeOversize(actualInlineRecordSize, minAddress, store, out address, ref takeResult) : record->TryTake(actualInlineRecordSize, minAddress, out address, ref takeResult))
                 {
                     takeResult.MergeTo(ref revivStats);
                     return true;
@@ -409,22 +415,22 @@ namespace Tsavorite.core
                 // We found a candidate but CAS failed. Reduce the best fit scan length and continue.
                 localBestFitScanLimit /= 2;
                 if (localBestFitScanLimit <= 1)
-                    return TryTakeFirstFit(recordSize, minAddress, store, oversize, out address, ref revivStats);
+                    return TryTakeFirstFit(actualInlineRecordSize, minAddress, store, oversize, out address, ref revivStats);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ScanForEmpty<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> recordPool, CancellationToken cancellationToken)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal void ScanForEmpty<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> recordPool, CancellationToken cancellationToken)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             // Add() always sets isEmpty to false and we do not clear isEmpty on Take() because that could lead to more lost "isEmpty = false".
             // So this routine is called only if the bin is marked not-empty.
-            for (var ii = 0; ii < recordCount; ++ii)
+            for (var ii = 0; ii < recordCount; ii++)
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
-                FreeRecord record = *(records + ii);
+                var record = *(records + ii);
                 if (record.IsSet)
                 {
                     // Still not empty; only the CheckEmptyWorker thread should set this.isEmpty, so the value should not have changed.
@@ -437,60 +443,52 @@ namespace Tsavorite.core
         }
     }
 
-    internal unsafe class FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal unsafe class FreeRecordPool<TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        internal readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         internal readonly FreeRecordBin[] bins;
 
         internal int numberOfBinsToSearch;
-        internal bool IsFixedLength;
 
         internal readonly int[] sizeIndexArray;
         private readonly int* sizeIndex;
         private readonly int numBins;
 
-        internal readonly CheckEmptyWorker<TKey, TValue, TStoreFunctions, TAllocator> checkEmptyWorker;
+        internal readonly CheckEmptyWorker<TStoreFunctions, TAllocator> checkEmptyWorker;
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"isFixedLen {IsFixedLength}, numBins {numBins}, searchNextBin {numberOfBinsToSearch}, checkEmptyWorker: {checkEmptyWorker}";
+            => $"numBins {numBins}, searchNextBin {numberOfBinsToSearch}, checkEmptyWorker: {checkEmptyWorker}";
 
-        internal FreeRecordPool(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, RevivificationSettings settings, int fixedRecordLength)
+        internal FreeRecordPool(TsavoriteKV<TStoreFunctions, TAllocator> store, RevivificationSettings settings)
         {
             this.store = store;
-            IsFixedLength = fixedRecordLength > 0;
 
             checkEmptyWorker = new(this);
 
-            if (IsFixedLength)
-            {
-                numBins = 1;
-                bins = [new FreeRecordBin(ref settings.FreeRecordBins[0], fixedRecordLength, isFixedLength: true)];
-                return;
-            }
-
             // First create the "size index": a cache-aligned vector of int bin sizes. This way searching for the bin
-            // for a record size will stay in a single cache line (unless there are more than 16 bins).
+            // for a recordPtr size will stay in a single cache line (unless there are more than 16 bins).
             var sizeIndexCount = RoundUp(settings.FreeRecordBins.Length * sizeof(int), Constants.kCacheLineBytes) / sizeof(int);
 
             // Overallocate the GCHandle by one cache line so we have room to offset the returned pointer to make it cache-aligned.
-            sizeIndexArray = GC.AllocateArray<int>(sizeIndexCount + Constants.kCacheLineBytes / sizeof(int), pinned: true);
-            long p = (long)Unsafe.AsPointer(ref sizeIndexArray[0]);
+            sizeIndexArray = GC.AllocateArray<int>(sizeIndexCount + (Constants.kCacheLineBytes / sizeof(int)), pinned: true);
+            var p = (long)Unsafe.AsPointer(ref sizeIndexArray[0]);
 
             // Force the pointer to align to cache boundary.
-            long p2 = RoundUp(p, Constants.kCacheLineBytes);
+            var p2 = RoundUp(p, Constants.kCacheLineBytes);
             sizeIndex = (int*)p2;
 
-            // Create the bins.
-            List<FreeRecordBin> binList = new();
-            int prevBinRecordSize = RevivificationBin.MinRecordSize - 8;      // The minimum record size increment is 8, so the first bin will set this to MinRecordSize or more
-            for (var ii = 0; ii < settings.FreeRecordBins.Length; ++ii)
+            // Create the bins. The minimum recordPtr size increment is Constants.kRecordAlignment, so set prevBinRecordSize to
+            // MinRecordSize - Constants.kRecordAlignment and the first bin will set its minimum recordsize to MinRecordSize or more.
+            List<FreeRecordBin> binList = [];
+            var prevBinRecordSize = RevivificationBin.MinRecordSize - Constants.kRecordAlignment;
+            for (var ii = 0; ii < settings.FreeRecordBins.Length; ii++)
             {
                 if (prevBinRecordSize >= settings.FreeRecordBins[ii].RecordSize)
                     continue;
-                FreeRecordBin bin = new(ref settings.FreeRecordBins[ii], prevBinRecordSize, isFixedLength: false);
+                FreeRecordBin bin = new(ref settings.FreeRecordBins[ii], prevBinRecordSize);
                 sizeIndex[binList.Count] = bin.maxRecordSize;
                 binList.Add(bin);
                 prevBinRecordSize = bin.maxRecordSize;
@@ -503,10 +501,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool GetBinIndex(int size, out int binIndex)
         {
-            Debug.Assert(!IsFixedLength, "Should only search bins if !IsFixedLength");
-
             // Sequential search in the sizeIndex for the requested size.
-            for (var ii = 0; ii < numBins; ++ii)
+            for (var ii = 0; ii < numBins; ii++)
             {
                 if (sizeIndex[ii] >= size)
                 {
@@ -519,22 +515,22 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd(long logicalAddress, int size, ref RevivificationStats revivStats)
+        private bool TryAddToBin(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
         {
             var minAddress = store.GetMinRevivifiableAddress();
-            int binIndex = 0;
-            if (logicalAddress < minAddress || (!IsFixedLength && !GetBinIndex(size, out binIndex)))
+            var recordSize = logRecord.AllocatedSize;
+            if (logicalAddress < minAddress || (!GetBinIndex(recordSize, out var binIndex)))
                 return false;
-            if (!bins[binIndex].TryAdd(logicalAddress, size, store, minAddress, ref revivStats))
+            if (!bins[binIndex].TryAdd(logicalAddress, recordSize, store, minAddress, ref revivStats))
                 return false;
 
-            // We've added a record, so now start the worker thread that periodically checks to see if Take() has emptied the bins.
+            // We've added a recordPtr, so now start the worker thread that periodically checks to see if Take() has emptied the bins.
             checkEmptyWorker.Start();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd(long logicalAddress, long physicalAddress, int allocatedSize, ref RevivificationStats revivStats)
+        public bool TryAdd(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
         {
             var minAddress = store.GetMinRevivifiableAddress();
             if (logicalAddress < minAddress)
@@ -542,37 +538,24 @@ namespace Tsavorite.core
                 ++revivStats.failedAdds;
                 return false;
             }
-            var recordInfo = store.hlog.GetInfo(physicalAddress);
-            recordInfo.TrySeal(invalidate: true);
-            store.SetFreeRecordSize(physicalAddress, ref recordInfo, allocatedSize);
-            bool result = TryAdd(logicalAddress, allocatedSize, ref revivStats);
-
-            if (result)
-                ++revivStats.successfulAdds;
-            else
-                ++revivStats.failedAdds;
-            return result;
+            _ = logRecord.InfoRef.TrySeal(invalidate: true);
+            return TryAddToBin(logicalAddress, ref logRecord, ref revivStats);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake(int recordSize, long minAddress, out long address, ref RevivificationStats revivStats)
+        public bool TryTake(int actualInlineRecordSize, long minAddress, out long address, ref RevivificationStats revivStats)
         {
             address = 0;
-            bool result = false;
-            if (IsFixedLength)
-                result = bins[0].TryTake(recordSize, minAddress, store, out address, ref revivStats);
-            else if (GetBinIndex(recordSize, out int index))
+            var result = false;
+
+            var allocatedInlineRecordSize = RoundUp(actualInlineRecordSize, Constants.kRecordAlignment);
+            if (GetBinIndex(allocatedInlineRecordSize, out var index))
             {
                 // Try to Take from the initial bin and if unsuccessful, try the next-highest bin if requested.
-                result = bins[index].TryTake(recordSize, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
-                for (int ii = 0; !result && ii < numberOfBinsToSearch && index < numBins - 1; ++ii)
-                    result = bins[++index].TryTake(recordSize, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
+                result = bins[index].TryTake(allocatedInlineRecordSize, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
+                for (var ii = 0; !result && ii < numberOfBinsToSearch && index < numBins - 1; ii++)
+                    result = bins[++index].TryTake(allocatedInlineRecordSize, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
             }
-
-            if (result)
-                ++revivStats.successfulTakes;
-            else
-                ++revivStats.failedTakes;
             return result;
         }
 

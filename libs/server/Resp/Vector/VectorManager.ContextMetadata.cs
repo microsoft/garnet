@@ -11,13 +11,9 @@ using System.Text;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     /// <summary>
     /// Methods for managing <see cref="VectorManager.ContextMetadata"/>, which tracks process wide 
     /// information about different contexts.
@@ -81,6 +77,18 @@ namespace Garnet.server
                 return (migrating & mask) != 0;
             }
 
+            public readonly bool IsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                return (cleaningUp & mask) == mask;
+            }
+
             public readonly HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
             {
                 HashSet<ulong> ret = null;
@@ -120,9 +128,15 @@ namespace Garnet.server
 
             public readonly ulong NextNotInUse()
             {
-                var ignoringZero = inUse | 1;
+                var ignoringUnusuable = inUse;
 
-                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringZero & (ulong)-(long)(~ignoringZero));
+                ignoringUnusuable |= 1; // Context 0 is reserved
+
+                // We cannot use namespaces > 127
+                // TODO: Once Variable length namespaces work, remove this constraint
+                ignoringUnusuable |= ~((1UL << 15) - 1);
+
+                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)(~ignoringUnusuable));
 
                 if (bit == 64)
                 {
@@ -233,6 +247,22 @@ namespace Garnet.server
                 Version++;
             }
 
+            public void ClearIsCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "Should be in use if was marked for cleanup");
+                Debug.Assert((cleaningUp & mask) != 0, "About to clear cleanup when not marked for cleanup");
+                cleaningUp &= ~mask;
+
+                Version++;
+            }
+
             public void FinishedCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
@@ -328,6 +358,45 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Used to prevent new contexts from being issued during a FLUSHDB / FLUSHALL, as well as any new Vector Set operations from starting.
+        /// 
+        /// Also updates and clears cached <see cref="ContextMetadata"/> upon disposal.
+        /// </summary>
+        internal readonly struct FlushGuard : IDisposable
+        {
+            private readonly VectorManager manager;
+
+            internal FlushGuard(VectorManager manager)
+            {
+                this.manager = manager;
+
+                // Stop other Vector Set operations
+                this.manager.vectorSetLocks.AcquireAllExclusiveLock();
+
+                // Acquire a lock that will block all other attempts to issue a new context
+                Monitor.Enter(this.manager);
+            }
+
+            /// <inheritdoc/>
+            public readonly void Dispose()
+            {
+                if (manager == null)
+                {
+                    // This is the default instance, ignore disposal
+                    return;
+                }
+
+                manager.contextMetadata = default;
+
+                // Allow Vector Set operations again
+                manager.vectorSetLocks.ReleaseAllExclusiveLock();
+
+                // Allow new contexts to be issued
+                Monitor.Exit(manager);
+            }
+        }
+
         private ContextMetadata contextMetadata;
 
         /// <summary>
@@ -381,12 +450,29 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// During a FLUSHDB (or FLUSHALL) we need to prevent new contexts and other updates to context metadata.
+        /// 
+        /// This method is called at the start of a flush and returns a guard instance which will block such
+        /// new creations until it is disposed.
+        /// 
+        /// This is pretty expensive, but flush should be rare and is @slow anyway.
+        /// </summary>
+        internal FlushGuard BeginFlush()
+        {
+            if (!IsEnabled)
+            {
+                return default;
+            }
+
+            return new FlushGuard(this);
+        }
+
+        /// <summary>
         /// Obtain some number of contexts for migrating Vector Sets.
         /// 
         /// The return contexts are unavailable for other use, but are not yet "live" for visibility purposes.
         /// </summary>
-        public bool TryReserveContextsForMigration<TContext>(ref TContext ctx, int count, out List<ulong> contexts)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool TryReserveContextsForMigration(ref VectorBasicContext ctx, int count, out List<ulong> contexts)
         {
             lock (this)
             {
@@ -405,10 +491,8 @@ namespace Garnet.server
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
-        private void UpdateContextMetadata<TContext>(ref TContext ctx)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        private void UpdateContextMetadata(ref VectorBasicContext ctx)
         {
-            Span<byte> keySpan = stackalloc byte[1];
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
             lock (this)
@@ -416,10 +500,8 @@ namespace Garnet.server
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
             }
 
-            var key = SpanByte.FromPinnedSpan(keySpan);
-
-            key.MarkNamespace();
-            key.SetNamespaceInPayload(0);
+            // empty is context metadata
+            VectorElementKey key = new(MetadataNamespace, []);
 
             VectorInput input = default;
             input.Callback = 0;
@@ -429,11 +511,11 @@ namespace Garnet.server
                 input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
             }
 
-            var status = ctx.RMW(ref key, ref input);
+            var status = ctx.RMW(key, ref input);
 
             if (status.IsPending)
             {
-                SpanByte ignored = default;
+                VectorOutput ignored = new();
                 CompletePending(ref status, ref ignored, ref ctx);
             }
         }

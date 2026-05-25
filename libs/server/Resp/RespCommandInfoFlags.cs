@@ -115,6 +115,6 @@ namespace Garnet.server
         [Description("vector")]
         Vector = 1 << 23,
         [Description("all")]
-        All = (Custom << 1) - 1,
+        All = (Vector << 1) - 1,
     }
 }

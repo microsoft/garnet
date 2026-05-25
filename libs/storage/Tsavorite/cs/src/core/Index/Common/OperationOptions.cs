@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Identifies which log regions records will be copied from to <see cref="ReadCopyTo"/>. This specification is
     /// evaluated in hierarchical order, from that on the TsavoriteKV ctor, which may be overridden by those in 
-    /// <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/>.NewSession(), which may be overridden
+    /// <see cref="ClientSession{TKey, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator}"/>.NewSession(), which may be overridden
     /// by those at the individual Read() level.
     /// </summary>
     public enum ReadCopyFrom : byte
@@ -86,12 +86,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Options for automatically copying immutable records on Read().
         /// </summary>
-        public ReadCopyOptions CopyOptions { get; internal set; }
+        public ReadCopyOptions CopyOptions { get; set; }
 
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}";
@@ -105,7 +105,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
@@ -119,7 +119,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";

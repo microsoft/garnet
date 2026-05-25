@@ -7,9 +7,10 @@ namespace Tsavorite.benchmark
 {
     enum BenchmarkType : byte
     {
-        Ycsb = 0,
+        FixedLen = 0,
         SpanByte,
-        ConcurrentDictionaryYcsb
+        Object,
+        ConcurrentDictionary
     };
 
     enum AddressLineNum : int
@@ -58,7 +59,6 @@ namespace Tsavorite.benchmark
         internal const string OpsPerSec = "ops/sec";
 
         internal const CheckpointType kPeriodicCheckpointType = CheckpointType.FoldOver;
-        internal const bool kPeriodicCheckpointTryIncremental = false;
 
         internal const double SyntheticZipfTheta = 0.99;
 

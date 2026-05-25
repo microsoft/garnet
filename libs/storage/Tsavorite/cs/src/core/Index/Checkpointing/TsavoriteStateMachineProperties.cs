@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         internal long lastVersion;
 
@@ -24,11 +24,6 @@ namespace Tsavorite.core
         /// Version number of the last checkpointed state
         /// </summary>
         public long LastCheckpointedVersion => lastVersion;
-
-        /// <summary>
-        /// Size (tail address) of current incremental snapshot delta log
-        /// </summary>
-        public long IncrementalSnapshotTailAddress => _lastSnapshotCheckpoint.deltaLog?.TailAddress ?? 0;
 
         /// <summary>
         /// Current version number of the store

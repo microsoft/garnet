@@ -203,7 +203,7 @@ namespace Tsavorite.devices
 
             try
             {
-                await blob.DeleteAsync();
+                await blob.DeleteAsync().ConfigureAwait(false);
                 return true;
             }
             catch (Azure.RequestFailedException e) when (BlobDoesNotExist(e))
@@ -215,7 +215,7 @@ namespace Tsavorite.devices
                 try
                 {
                     var leaseClient = new BlobLeaseClient(blob);
-                    await leaseClient.BreakAsync(TimeSpan.Zero);
+                    await leaseClient.BreakAsync(TimeSpan.Zero).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -225,7 +225,7 @@ namespace Tsavorite.devices
                 // retry the delete
                 try
                 {
-                    await blob.DeleteAsync();
+                    await blob.DeleteAsync().ConfigureAwait(false);
                     return true;
                 }
                 catch (Azure.RequestFailedException ex) when (BlobDoesNotExist(ex))

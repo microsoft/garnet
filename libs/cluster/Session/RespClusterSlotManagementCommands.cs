@@ -288,9 +288,7 @@ namespace Garnet.cluster
             }
 
             var slots = new HashSet<int> { slot };
-            ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
-            if (!clusterProvider.serverOptions.DisableObjects)
-                ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+            ClusterManager.DeleteKeysInSlots(basicGarnetApi, slots);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -325,9 +323,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
-            if (!clusterProvider.serverOptions.DisableObjects)
-                ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+            ClusterManager.DeleteKeysInSlots(basicGarnetApi, slots);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -408,7 +404,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var sbKey = parseState.GetArgSliceByRef(0);
             var keyPtr = sbKey.ToPointer();
             var keySize = sbKey.Length;
 

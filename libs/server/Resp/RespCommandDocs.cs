@@ -331,7 +331,7 @@ namespace Garnet.server
         [Description("transactions")]
         Transactions,
         [Description("vector")]
-        Vector
+        Vector,
     }
 
     /// <summary>
