@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -77,34 +76,6 @@ namespace Tsavorite.core
                 flags |= O_DSYNC;
 
             return OpenWithFlags(path, flags, DefaultMode);
-        }
-
-        // .NET's FileStream(SafeFileHandle, isAsync: true) rejects a handle whose SafeFileHandle.IsAsync flag is false,
-        // and SafeFileHandle.IsAsync's setter is non-public in .NET 8/10. P/Invoke open() returns a handle with IsAsync
-        // unset (its private constructor sets _isAsync = false). Reflection lets us flip the flag so the FileStream
-        // wrapper accepts the handle without throwing "Handle does not support asynchronous operations".
-        private static readonly PropertyInfo IsAsyncProperty =
-            typeof(SafeFileHandle).GetProperty("IsAsync", BindingFlags.Public | BindingFlags.Instance);
-
-        /// <summary>
-        /// Marks <paramref name="handle"/> as async so that wrapping it in <c>new FileStream(handle, ..., isAsync: true)</c>
-        /// is accepted. .NET 10 makes this property's setter non-public, so we set it via reflection.
-        /// </summary>
-        public static void MarkHandleAsAsync(SafeFileHandle handle)
-        {
-            if (handle is null || handle.IsInvalid || handle.IsClosed)
-                return;
-            if (IsAsyncProperty is null)
-                return;
-            try
-            {
-                IsAsyncProperty.SetMethod?.Invoke(handle, [true]);
-            }
-            catch
-            {
-                // If reflection fails (future .NET hides the setter entirely), the device will fall back to
-                // RandomAccess.* APIs which take a SafeFileHandle directly and don't need IsAsync set.
-            }
         }
 
         /// <summary>

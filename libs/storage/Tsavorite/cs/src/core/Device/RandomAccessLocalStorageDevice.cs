@@ -10,12 +10,13 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32.SafeHandles;
 
 namespace Tsavorite.core
 {
     struct StorageAccessContext : IDisposable
     {
-        public FileStream handle;
+        public SafeFileHandle handle;
         public UnmanagedMemoryManager<byte> memoryManager;
 
         public void Dispose()
@@ -172,7 +173,7 @@ namespace Tsavorite.core
                 {
                     storageAccessContext.memoryManager.SetDestination((byte*)destinationAddress, (int)readLength);
                 }
-                numBytes = (uint)await RandomAccess.ReadAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)sourceAddress).ConfigureAwait(false);
+                numBytes = (uint)await RandomAccess.ReadAsync(storageAccessContext.handle, storageAccessContext.memoryManager.Memory, (long)sourceAddress).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -231,7 +232,7 @@ namespace Tsavorite.core
                 {
                     storageAccessContext.memoryManager.SetDestination((byte*)sourceAddress, (int)numBytesToWrite);
                 }
-                await RandomAccess.WriteAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)destinationAddress).ConfigureAwait(false);
+                await RandomAccess.WriteAsync(storageAccessContext.handle, storageAccessContext.memoryManager.Memory, (long)destinationAddress).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -292,7 +293,7 @@ namespace Tsavorite.core
             if (!pool.Item1.TryGet(out var stream))
                 stream = pool.Item1.Get();
 
-            long size = stream.handle.Length;
+            long size = RandomAccess.GetLength(stream.handle);
             pool.Item1.Return(stream);
             return size;
         }
@@ -341,21 +342,17 @@ namespace Tsavorite.core
             if (!osReadBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            // On Linux, FileOptions cannot express O_DIRECT, so .NET will open the file through the page cache even
-            // when FILE_FLAG_NO_BUFFERING is asked for (it is a Windows-only bit and is silently dropped). Use libc
-            // open() to obtain a true O_DIRECT FD, then wrap in a FileStream so the existing handle pool / FileStream
-            // semantics stay unchanged. Falls back to the standard FileStream path on non-Linux or if O_DIRECT is
-            // unsupported by the underlying filesystem.
-            FileStream logReadHandle;
-            if (TryOpenDirectFileStream(segmentId, FileAccess.Read, createIfMissing: true, out logReadHandle))
+            // On Linux, FileOptions cannot express O_DIRECT, so File.OpenHandle would open the file through
+            // the page cache even when FILE_FLAG_NO_BUFFERING is asked for (it is a Windows-only bit and is
+            // silently dropped). Use libc open() to obtain a true O_DIRECT FD wrapped in a SafeFileHandle.
+            // Falls back to File.OpenHandle on non-Linux or if O_DIRECT is unsupported by the underlying
+            // filesystem. Both paths return a SafeFileHandle consumed by RandomAccess.{Read,Write}Async.
+            SafeFileHandle logReadHandle;
+            if (!TryOpenDirectHandle(segmentId, FileAccess.Read, createIfMissing: true, out logReadHandle))
             {
-                // logReadHandle obtained
-            }
-            else
-            {
-                logReadHandle = new FileStream(
+                logReadHandle = File.OpenHandle(
                     GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                    FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, 512, fo);
+                    FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, fo);
             }
 
             return new StorageAccessContext { handle = logReadHandle, memoryManager = new UnmanagedMemoryManager<byte>() };
@@ -372,16 +369,12 @@ namespace Tsavorite.core
             if (disableFileBuffering)
                 fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            FileStream logWriteHandle;
-            if (TryOpenDirectFileStream(segmentId, FileAccess.Write, createIfMissing: true, out logWriteHandle))
+            SafeFileHandle logWriteHandle;
+            if (!TryOpenDirectHandle(segmentId, FileAccess.Write, createIfMissing: true, out logWriteHandle))
             {
-                // logWriteHandle obtained via O_DIRECT path
-            }
-            else
-            {
-                logWriteHandle = new FileStream(
+                logWriteHandle = File.OpenHandle(
                     GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                    FileAccess.Write, FileShare.ReadWrite, 512, fo);
+                    FileAccess.Write, FileShare.ReadWrite, fo);
             }
 
             if (preallocateFile && segmentSize != -1)
@@ -393,9 +386,9 @@ namespace Tsavorite.core
         // Cached probe result so we only test O_DIRECT capability once per device instance.
         private int directIOSupportedCached = -1; // -1 unknown, 0 no, 1 yes
 
-        private bool TryOpenDirectFileStream(int segmentId, FileAccess access, bool createIfMissing, out FileStream stream)
+        private bool TryOpenDirectHandle(int segmentId, FileAccess access, bool createIfMissing, out SafeFileHandle handle)
         {
-            stream = null;
+            handle = null;
             if (disableFileBuffering == false && access == FileAccess.Write)
                 return false;
             if (access == FileAccess.Read && osReadBuffering)
@@ -414,15 +407,12 @@ namespace Tsavorite.core
 
             try
             {
-                var safeHandle = LinuxFileExtensions.OpenDirect(GetSegmentName(segmentId), access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, createIfMissing);
-                LinuxFileExtensions.MarkHandleAsAsync(safeHandle);
-                // bufferSize=1 disables FileStream's user-mode buffer (avoid double-buffering above O_DIRECT).
-                stream = new FileStream(safeHandle, access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, bufferSize: 1, isAsync: true);
+                handle = LinuxFileExtensions.OpenDirect(GetSegmentName(segmentId), access == FileAccess.Read ? FileAccess.Read : FileAccess.ReadWrite, createIfMissing);
                 return true;
             }
             catch (IOException ex)
             {
-                logger?.LogInformation(ex, "O_DIRECT open failed for segment {segmentId}; falling back to page-cached FileStream", segmentId);
+                logger?.LogInformation(ex, "O_DIRECT open failed for segment {segmentId}; falling back to page-cached File.OpenHandle", segmentId);
                 _ = Interlocked.Exchange(ref directIOSupportedCached, 0);
                 return false;
             }
@@ -456,15 +446,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sets file size to the specified value.
-        /// Does not reset file seek pointer to original location.
+        /// Sets file size on a SafeFileHandle. Uses RandomAccess.SetLength which works without
+        /// wrapping the handle in a Stream.
         /// </summary>
-        /// <param name="logHandle"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        private static bool SetFileSize(Stream logHandle, long size)
+        private static bool SetFileSize(SafeFileHandle logHandle, long size)
         {
-            logHandle.SetLength(size);
+            RandomAccess.SetLength(logHandle, size);
             return true;
         }
     }
