@@ -178,6 +178,158 @@ namespace Tsavorite.test
             }
         }
 
+        // ----- Cross-device test fixtures --------------------------------------------------
+
+        /// <summary>
+        /// Device kinds parametrized by the cross-device round-trip and parallel tests below.
+        /// Native is Linux-only (the C++ shim links against libaio/liburing). RandomAccess and
+        /// ManagedLocal work on both Linux (managed RandomAccess / FileStream over P/Invoke
+        /// O_DIRECT or page-cache) and Windows (IOCP-bound OVERLAPPED I/O).
+        /// </summary>
+        public enum DeviceKind { Native, RandomAccess, ManagedLocal }
+
+        /// <summary>
+        /// Construct + Initialize a fresh device of the requested kind backed by
+        /// <paramref name="path"/>. Skips the test via <see cref="Assert.Ignore(string)"/> when
+        /// the kind is unsupported on the current OS (Native on Windows).
+        /// </summary>
+        static IDevice CreateDeviceForTest(DeviceKind kind, string path, long segmentSize, bool deleteOnClose = true)
+        {
+            switch (kind)
+            {
+                case DeviceKind.Native:
+                    if (!OperatingSystem.IsLinux())
+                    {
+                        Assert.Ignore("NativeStorageDevice is Linux-only");
+                        return null;
+                    }
+                    var nd = new NativeStorageDevice(path, deleteOnClose: deleteOnClose);
+                    nd.Initialize(segmentSize);
+                    return nd;
+                case DeviceKind.RandomAccess:
+                    var ra = new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: deleteOnClose);
+                    ra.Initialize(segmentSize);
+                    return ra;
+                case DeviceKind.ManagedLocal:
+                    var ml = new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: deleteOnClose);
+                    ml.Initialize(segmentSize);
+                    return ml;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        // ----- Cross-device round-trip / parallel tests ------------------------------------
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("Hardening")]
+        public unsafe void Hardening_AllDevices_RoundTrip_BasicReadWrite(DeviceKind kind)
+        {
+            const long segmentSize = 64 * Mib;
+            const int size = 64 * 1024;
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, i => (byte)((i * 7) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            device.ReadAsync(0, 0, rptr, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            AssertBufferContents(rptr, size, i => (byte)((i * 7) & 0xFF), $"{kind} basic round-trip");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("Hardening")]
+        public unsafe void Hardening_AllDevices_RoundTrip_AcrossSegmentBoundary(DeviceKind kind)
+        {
+            const long segmentSize = 64 * Mib;
+            const int size = 64 * 1024;
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, i => (byte)((i * 11) & 0xFF));
+            device.WriteAsync(wptr, segmentId: 1, destinationAddress: 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            device.ReadAsync(segmentId: 1, sourceAddress: 0, rptr, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            AssertBufferContents(rptr, size, i => (byte)((i * 11) & 0xFF), $"{kind} cross-segment");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("Hardening")]
+        public unsafe void Hardening_AllDevices_Parallel_32ConcurrentWrites(DeviceKind kind)
+        {
+            const long segmentSize = 64 * Mib;
+            const int N = 32;
+            const int size = 8 * 1024;
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            var roots = new byte[N][];
+            for (int i = 0; i < N; i++)
+            {
+                int id = i;
+                var (buf, ptr) = AllocateAlignedBuffer(size, j => (byte)((j ^ (id * 17)) & 0xFF));
+                roots[i] = buf;
+                device.WriteAsync(ptr, 0, (ulong)(id * size), (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            for (int i = 0; i < N; i++)
+            {
+                device.ReadAsync(0, (ulong)(i * size), rptr, (uint)size, IOCallback, null);
+                semaphore.Wait();
+                int id = i;
+                AssertBufferContents(rptr, size, j => (byte)((j ^ (id * 17)) & 0xFF), $"{kind} block {id}");
+            }
+            GC.KeepAlive(roots); GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("Hardening")]
+        public unsafe void Hardening_AllDevices_Parallel_BurstyTraffic(DeviceKind kind)
+        {
+            const long segmentSize = 64 * Mib;
+            const int Bursts = 10;
+            const int Per = 10;
+            const int size = 4 * 1024;
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            for (int b = 0; b < Bursts; b++)
+            {
+                var roots = new byte[Per][];
+                for (int i = 0; i < Per; i++)
+                {
+                    int globalIdx = b * Per + i;
+                    var (buf, ptr) = AllocateAlignedBuffer(size, j => (byte)((j + globalIdx) & 0xFF));
+                    roots[i] = buf;
+                    device.WriteAsync(ptr, 0, (ulong)(globalIdx * size), (uint)size, IOCallback, null);
+                }
+                for (int i = 0; i < Per; i++) semaphore.Wait();
+                GC.KeepAlive(roots);
+            }
+        }
+
+        // ----- Native-only suite below -----------------------------------------------------
+
         // ----- Lifecycle (5 tests) ---------------------------------------------------------
 
         [Test]
