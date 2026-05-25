@@ -18,18 +18,18 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// <list type="bullet">
-        /// <item>Upsert ConcurrentWriter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
+        /// <item>Upsert InPlaceWriter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
         /// <item>RMW InPlaceUpdater: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
         /// <item>RMW CopyUpdater: <see cref="Found"/> | <see cref="CopyUpdatedRecord"/></item>
         /// <list type="bullet">
         ///   <item>If NeedCopyUpdate returns false: <see cref="Found"/></item>
         /// </list>
-        /// <item>Delete ConcurrentDeleter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
-        /// <item>Read ConcurrentReader: <see cref="Found"/></item>
+        /// <item>Delete InPlaceDeleter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
+        /// <item>Read Reader: <see cref="Found"/></item>
         /// <list type="bullet">
         ///   <item>If in immutable region and copying to tail: <see cref="Found"/> | <see cref="CopiedRecord"/></item>
         /// </list>
-        /// <item>Read Pending to SingleReader: <see cref="Found"/></item>
+        /// <item>Read Pending to Reader: <see cref="Found"/></item>
         /// <list type="bullet">
         ///   <item>If copying to tail: <see cref="Found"/> | <see cref="CopiedRecord"/></item>
         ///   <item>If copying to readCache: <see cref="Found"/> | <see cref="CopiedRecordToReadCache"/></item>
@@ -44,12 +44,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// <list type="bullet">
-        /// <item>Upsert SingleWriter (not found in mutable region): <see cref="NotFound"/> | <see cref="CreatedRecord"/></item>
+        /// <item>Upsert InitialWriter (not found in mutable region): <see cref="NotFound"/> | <see cref="CreatedRecord"/></item>
         /// <item>RMW InitialUpdater (not found in mutable, immutable, or on-disk regions): <see cref="NotFound"/> | <see cref="CreatedRecord"/></item>
         /// <list type="bullet">
         ///   <item>If NeedInitialUpdate returns false: <see cref="NotFound"/></item>
         /// </list>
-        /// <item>Delete SingleDeleter (not found in mutable region): <see cref="NotFound"/> | <see cref="CreatedRecord"/></item>
+        /// <item>Delete InitialDeleter (not found in mutable region): <see cref="NotFound"/> | <see cref="CreatedRecord"/></item>
         /// </list>
         /// </remarks>
         NotFound = 0x01,
@@ -119,7 +119,14 @@ namespace Tsavorite.core
         /// </remarks>
         CopiedRecordToReadCache = 0x50,
 
-        // unused 0x60,
+        /// <summary>
+        /// Indicates that an existing record was found but was of the wrong type for the requested operation.
+        /// </summary>
+        /// <remarks>
+        /// See basic codes for details of usage.
+        /// </remarks>
+        WrongType = 0x60,
+
         // unused 0x70,
 
         /// <summary>

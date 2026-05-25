@@ -1,10 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
-
 namespace Tsavorite.core
 {
     /// <summary>
@@ -18,13 +14,18 @@ namespace Tsavorite.core
         Default,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct UpsertInfo
     {
@@ -49,24 +50,6 @@ namespace Tsavorite.core
         public int SessionID { get; internal set; }
 
         /// <summary>
-        /// The header of the record.
-        /// </summary>
-        public RecordInfo RecordInfo { get; private set; }
-
-        internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
-
-        /// <summary>
-        /// The length of data in the value that is in use. Incoming, it is set by Tsavorite.
-        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
-        /// </summary>
-        public int UsedValueLength { get; set; }
-
-        /// <summary>
-        /// The allocated length of the record value.
-        /// </summary>
-        public int FullValueLength { get; internal set; }
-
-        /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public UpsertAction Action { get; set; }
@@ -86,65 +69,6 @@ namespace Tsavorite.core
             Address = rmwInfo.Address;
             KeyHash = rmwInfo.KeyHash;
             Action = UpsertAction.Default;
-        }
-
-        /// <summary>
-        /// Retrieve the extra value length from the record, if present, and then clear it to ensure consistent log scan during in-place update.
-        /// </summary>
-        /// <param name="recordValue">Reference to the record value</param>
-        /// <param name="usedValueLength">The currently-used length of the record value</param>
-        /// <param name="recordInfo">The record header</param>
-        /// <typeparam name="TValue">The type of the value</typeparam>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void ClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
-        {
-            Debug.Assert(usedValueLength == UsedValueLength, $"UpsertInfo: usedValueLength ({usedValueLength}) != this.UsedValueLength ({UsedValueLength})");
-            StaticClearExtraValueLength(ref recordInfo, ref recordValue, usedValueLength);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void StaticClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
-        {
-            if (!recordInfo.HasFiller)
-                return;
-
-            var valueAddress = (long)Unsafe.AsPointer(ref recordValue);
-            int* extraLengthPtr = (int*)(valueAddress + RoundUp(usedValueLength, sizeof(int)));
-
-            *extraLengthPtr = 0;
-            recordInfo.ClearHasFiller();
-        }
-
-        /// <summary>
-        /// Set the extra value length, if any, into the record past the used value length.
-        /// </summary>
-        /// <param name="recordInfo">The record header</param>
-        /// <param name="recordValue">Reference to the record value</param>
-        /// <param name="usedValueLength">The currently-used length of the record value</param>
-        /// <typeparam name="TValue">The type of the value</typeparam>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SetUsedValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
-        {
-            StaticSetUsedValueLength(ref recordInfo, ref recordValue, usedValueLength, FullValueLength);
-            UsedValueLength = usedValueLength;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void StaticSetUsedValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength, int fullValueLength)
-        {
-            // Note: This is only called for variable-length types, and for those we have ensured the location of recordValue is pinned.
-            long valueAddress = (long)Unsafe.AsPointer(ref recordValue);
-            Debug.Assert(!recordInfo.HasFiller, "Filler should have been cleared by ClearExtraValueLength()");
-
-            usedValueLength = RoundUp(usedValueLength, sizeof(int));
-            int extraValueLength = fullValueLength - usedValueLength;
-            if (extraValueLength >= sizeof(int))
-            {
-                int* extraValueLengthPtr = (int*)(valueAddress + usedValueLength);
-                Debug.Assert(*extraValueLengthPtr == 0 || *extraValueLengthPtr == extraValueLength, "existing ExtraValueLength should be 0 or the same value");
-                *extraValueLengthPtr = extraValueLength;
-                recordInfo.SetHasFiller();
-            }
         }
     }
 
@@ -169,13 +93,18 @@ namespace Tsavorite.core
         ExpireAndStop,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct RMWInfo
     {
@@ -185,10 +114,23 @@ namespace Tsavorite.core
         public long Version { get; internal set; }
 
         /// <summary>
-        /// The logical address of the record being operated on. For CopyUpdater, this is the source address,
-        /// or <see cref="Constants.kInvalidAddress"/> if the source is the read cache.
+        /// The logical address of the record being operated on. For CopyUpdater, this is the source address
+        /// when <see cref="ISessionFunctions{TInput, TOutput, TContext}.NeedCopyUpdate"/> runs, then becomes
+        /// the destination address by the time <see cref="ISessionFunctions{TInput, TOutput, TContext}.CopyUpdater"/>
+        /// and <see cref="ISessionFunctions{TInput, TOutput, TContext}.PostCopyUpdater"/> are called. Use
+        /// <see cref="SourceAddress"/> to access the source address from PostCopyUpdater.
+        /// Set to <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache.
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// For CopyUpdater (and the post-CAS PostCopyUpdater hook): the logical address of the source record
+        /// that was copied from. Populated alongside <see cref="Address"/> at the start of the RMW so it remains
+        /// available even after <see cref="Address"/> is reassigned to the destination.
+        /// Equals <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache or there is no source
+        /// (initial update path).
+        /// </summary>
+        public long SourceAddress { get; internal set; }
 
         /// <summary>
         /// Hash code of key being operated on
@@ -201,35 +143,14 @@ namespace Tsavorite.core
         public int SessionID { get; internal set; }
 
         /// <summary>
-        /// The header of the record.
-        /// </summary>
-        public RecordInfo RecordInfo { get; private set; }
-
-        internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
-        internal void ClearRecordInfo() => RecordInfo = default;
-
-        /// <summary>
-        /// The length of data in the value that is in use. Incoming, it is set by Tsavorite.
-        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
-        /// </summary>
-        public int UsedValueLength { get; set; }
-
-        /// <summary>
-        /// The allocated length of the record value.
-        /// </summary>
-        public int FullValueLength { get; internal set; }
-
-        public int FullRecordLength { get; internal set; }
-
-        /// <summary>
         /// If set true by CopyUpdater, the source record for the RCU will not be elided from the tag chain even if this is otherwise possible.
         /// </summary>
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
-        /// Whether the call is from sync or async (pending) path
+        /// If set true by RMW and there is a source ValueObject it will be cleared immediately (to manage object size tracking most effectively).
         /// </summary>
-        public bool IsFromPending { get; internal set; }
+        public bool ClearSourceValueObject { get; set; }
 
         /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
@@ -240,34 +161,6 @@ namespace Tsavorite.core
         /// User-defined byte of data associated with the operation
         /// </summary>
         public byte UserData { get; set; }
-
-        /// <summary>
-        /// Retrieve the extra value length from the record, if present, and then clear it to ensure consistent log scan during in-place update.
-        /// </summary>
-        /// <param name="recordInfo">Reference to the record header</param>
-        /// <param name="recordValue">Reference to the record value</param>
-        /// <param name="usedValueLength">The currently-used length of the record value</param>
-        /// <typeparam name="TValue">The type of the value</typeparam>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
-        {
-            Debug.Assert(usedValueLength == UsedValueLength, $"RMWInfo: usedValueLength ({usedValueLength}) != this.UsedValueLength ({UsedValueLength})");
-            UpsertInfo.StaticClearExtraValueLength(ref recordInfo, ref recordValue, usedValueLength);
-        }
-
-        /// <summary>
-        /// Set the extra value length, if any, into the record past the used value length.
-        /// </summary>
-        /// <param name="recordInfo">Reference to the record header</param>
-        /// <param name="recordValue">Reference to the record value</param>
-        /// <param name="usedValueLength">The currently-used length of the record value</param>
-        /// <typeparam name="TValue">The type of the value</typeparam>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SetUsedValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
-        {
-            UpsertInfo.StaticSetUsedValueLength(ref recordInfo, ref recordValue, usedValueLength, FullValueLength);
-            UsedValueLength = usedValueLength;
-        }
     }
 
     /// <summary>
@@ -286,7 +179,7 @@ namespace Tsavorite.core
         CancelOperation
     }
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct DeleteInfo
     {
@@ -311,24 +204,6 @@ namespace Tsavorite.core
         public int SessionID { get; internal set; }
 
         /// <summary>
-        /// The header of the record.
-        /// </summary>
-        public RecordInfo RecordInfo { get; private set; }
-
-        internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
-
-        /// <summary>
-        /// The length of data in the value that is in use. Incoming, it is set by Tsavorite to the result.
-        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
-        /// </summary>
-        public int UsedValueLength { get; set; }
-
-        /// <summary>
-        /// The allocated length of the record value.
-        /// </summary>
-        public int FullValueLength { get; internal set; }
-
-        /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
@@ -342,7 +217,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum ReadAction
+    public enum ReadAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -355,13 +230,18 @@ namespace Tsavorite.core
         Expire,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> record-read callbacks. 
     /// </summary>
     public struct ReadInfo
     {
@@ -374,13 +254,6 @@ namespace Tsavorite.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
-
-        /// <summary>
-        /// The header of the record.
-        /// </summary>
-        public RecordInfo RecordInfo { get; private set; }
-
-        internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
 
         /// <summary>
         /// Whether the call is from sync or async (pending) path

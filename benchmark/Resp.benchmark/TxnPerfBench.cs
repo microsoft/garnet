@@ -1,11 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
-using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using HdrHistogram;
@@ -132,7 +129,7 @@ namespace Resp.benchmark
                     redis = Program.redis;
                 }
             }
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (int idx = 0; idx < NumThreads; idx++)
             {
                 int x = idx;
 

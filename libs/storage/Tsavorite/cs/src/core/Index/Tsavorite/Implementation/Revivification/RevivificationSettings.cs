@@ -19,12 +19,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Indicates whether deleted record space should be reused.
         /// <list type="bullet">
-        /// <li>If this is true, then tombstoned records in the hashtable chain are revivified if possible, and a FreeList is maintained if 
+        /// <item>If this is true, then tombstoned records in the hashtable chain are revivified if possible, and a FreeList is maintained if 
         ///     <see cref="FreeRecordBins"/> is non-null and non-empty.
-        /// </li>
-        /// <li>If this is false, then tombstoned records in the hashtable chain will not be revivified, and no FreeList is used (regardless 
+        /// </item>
+        /// <item>If this is false, then tombstoned records in the hashtable chain will not be revivified, and no FreeList is used (regardless 
         ///     of the setting of <see cref="FreeRecordBins"/>).
-        /// </li>
+        /// </item>
         /// </list>
         /// </summary>
         public bool EnableRevivification = true;
@@ -40,11 +40,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Bin definitions for the free list (in addition to any in the hash chains). These must be ordered by <see cref="RevivificationBin.RecordSize"/>.
         /// </summary>
-        /// <remarks>
-        /// If the Key and Value are both fixed-length datatypes (either blittable or object), this must contain a single bin whose
-        /// <see cref="RevivificationBin.RecordSize"/> is ignored. Otherwise, one or both of the Key and Value are variable-length,
-        /// and this usually contains multiple bins.
-        /// </remarks>
         public RevivificationBin[] FreeRecordBins;
 
         /// <summary>
@@ -74,21 +69,6 @@ namespace Tsavorite.core
         public static PowerOf2BinsRevivificationSettings PowerOf2Bins { get; } = new();
 
         /// <summary>
-        /// Default bin for fixed-length.
-        /// </summary>
-        public static RevivificationSettings DefaultFixedLength { get; } = new()
-        {
-            FreeRecordBins =
-            [
-                new RevivificationBin()
-                {
-                    RecordSize = RevivificationBin.MaxRecordSize,
-                    BestFitScanLimit = RevivificationBin.UseFirstFit
-                }
-            ]
-        };
-
-        /// <summary>
         /// Enable only in-tag-chain revivification; do not use FreeList
         /// </summary>
         public static RevivificationSettings InChainOnly { get; } = new();
@@ -98,12 +78,10 @@ namespace Tsavorite.core
         /// </summary>
         public static RevivificationSettings None { get; } = new() { EnableRevivification = false };
 
-        internal void Verify(bool isFixedRecordLength, double mutableFraction)
+        internal void Verify(double mutableFraction)
         {
             if (!EnableRevivification || FreeRecordBins?.Length == 0)
                 return;
-            if (isFixedRecordLength && FreeRecordBins?.Length > 1)
-                throw new TsavoriteException($"Only 1 bin may be specified with fixed-length datatypes (blittable or object)");
             if (RevivifiableFraction != DefaultRevivifiableFraction)
             {
                 if (RevivifiableFraction <= 0)
@@ -114,7 +92,7 @@ namespace Tsavorite.core
             if (FreeRecordBins is not null)
             {
                 foreach (var bin in FreeRecordBins)
-                    bin.Verify(isFixedRecordLength);
+                    bin.Verify();
             }
         }
 
@@ -188,21 +166,17 @@ namespace Tsavorite.core
         public const int DefaultRecordsPerBin = 256;
 
         /// <summary>
-        /// The maximum size of records in this partition. This should be partitioned for your app. Ignored if this is the single bin
-        /// for fixed-length records.
+        /// The maximum size of records in this partition. This should be partitioned for your app.
         /// </summary>
         public int RecordSize;
 
         /// <summary>
         /// The number of records for each partition. This count will be adjusted upward so the partition is cache-line aligned.
         /// </summary>
-        /// <remarks>
-        /// The first record is not available; its space is used to store the circular buffer read and write pointers
-        /// </remarks>
         public int NumberOfRecords = DefaultRecordsPerBin;
 
         /// <summary>
-        /// The maximum number of entries to scan for best fit after finding first fit. Ignored for fixed-length datatypes. 
+        /// The maximum number of entries to scan for best fit after finding first fit.
         /// </summary>
         public int BestFitScanLimit = UseFirstFit;
 
@@ -213,10 +187,8 @@ namespace Tsavorite.core
         {
         }
 
-        internal void Verify(bool isFixedLength)
+        internal void Verify()
         {
-            if (!isFixedLength && (RecordSize < MinRecordSize || RecordSize > MaxRecordSize))
-                throw new TsavoriteException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and <= {MaxRecordSize}");
             if (NumberOfRecords < MinRecordsPerBin)
                 throw new TsavoriteException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {MinRecordsPerBin}");
             if (BestFitScanLimit < 0)

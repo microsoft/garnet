@@ -178,7 +178,7 @@ namespace Garnet.server
             }
             finally
             {
-                scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
+                scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
             }
         }
 

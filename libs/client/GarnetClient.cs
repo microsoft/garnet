@@ -42,6 +42,8 @@ namespace Garnet.client
         static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
         static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
+        static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
+        static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
         readonly int sendPageSize;
@@ -91,6 +93,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Client name to send to server for identification.
+        /// </summary>
+        readonly Memory<byte>[] clientName = null;
+
+        /// <summary>
         /// Exception to throw to ongoing tasks when disposed
         /// </summary>
         static readonly Exception disposeException = new GarnetClientDisposedException();
@@ -122,19 +129,23 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="sendPageSize">Size of pages where requests are written to be sent, determines max request size (rounds down to previous power of 2)</param>
+        /// <param name="bufferSize">Network writer buffer size</param>
         /// <param name="maxOutstandingTasks">Maximum outstanding tasks before client throttles new requests (rounds down to previous power of 2), default 32K</param>
         /// <param name="timeoutMilliseconds">Timeout (in milliseconds) after which client disposes itself and throws exception on all active tasks</param>
         /// <param name="memoryPool">Pool for Memory based response buffers</param>
         /// <param name="recordLatency">Record latency using client internal histogram</param>
         /// <param name="useTimeoutChecker"></param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
             EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int sendPageSize = 1 << 21,
             int bufferSize = 1 << 17,
             int maxOutstandingTasks = 1 << 19,
@@ -151,6 +162,7 @@ namespace Garnet.client
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
             if (maxOutstandingTasks > PageOffset.kTaskMask + 1)
             {
@@ -198,7 +210,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -228,6 +240,20 @@ namespace Garnet.client
                 logger?.LogError(e, "AUTH returned error");
                 throw;
             }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
+                    _ = ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
         }
 
         /// <summary>
@@ -236,7 +262,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -257,7 +283,35 @@ namespace Garnet.client
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "AUTH returned error");
+                logger?.LogError(e, "AUTH returned error!");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
+                    _ = await ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
+                    _ = await ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }
@@ -314,7 +368,7 @@ namespace Garnet.client
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -324,7 +378,7 @@ namespace Garnet.client
                 if (EndPoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 
@@ -370,12 +424,12 @@ namespace Garnet.client
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                     var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
-                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)).ConfigureAwait(false) == connectTask)
                     {
                         // Task completed within timeout.
                         // Consider that the task may have faulted or been canceled.
                         // We re-await the task so that any exceptions/cancellation is rethrown.
-                        await connectTask;
+                        await connectTask.ConfigureAwait(false);
                     }
                     else
                     {
@@ -413,7 +467,7 @@ namespace Garnet.client
                     var _tcsOffset = tcsOffset;
                     var _tailAddress = networkWriter.GetTailAddress();
 
-                    await Task.Delay(timeoutMilliseconds, token);
+                    await Task.Delay(timeoutMilliseconds, token).ConfigureAwait(false);
                     // Check if no new tasks added + no new results processed
                     var _newTcsOffset = tcsOffset;
                     var _newNextTaskId = networkWriter.GetNextTaskId();
@@ -451,7 +505,7 @@ namespace Garnet.client
                 networkWriter?.Dispose();
             }
             catch { }
-            await ConnectAsync(token);
+            await ConnectAsync(token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -479,7 +533,7 @@ namespace Garnet.client
 
         void CheckLength(int totalLen, TcsWrapper tcs)
         {
-            if (totalLen > networkWriter.PageSize)
+            if (networkWriter is not null && totalLen > networkWriter.PageSize)
             {
                 var e = new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor.");
                 switch (tcs.taskType)
@@ -529,7 +583,7 @@ namespace Garnet.client
             {
                 if (PipelineLength() < maxOutstandingTasks)
                     break;
-                await Task.Delay(delayMs, token);
+                await Task.Delay(delayMs, token).ConfigureAwait(false);
                 if (delayMs == 0) delayMs = 1;
                 else delayMs *= 2;
                 if (delayMs > 4096) delayMs = 4096;
@@ -602,7 +656,7 @@ namespace Garnet.client
 
             totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
-            await InputGateAsync(token);
+            await InputGateAsync(token).ConfigureAwait(false);
 
             try
             {
@@ -664,7 +718,7 @@ namespace Garnet.client
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                        await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false); // does not take token, as task is not cancelable at this point
                     }
                     finally
                     {
@@ -715,7 +769,7 @@ namespace Garnet.client
 
             totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
-            await InputGateAsync(token);
+            await InputGateAsync(token).ConfigureAwait(false);
 
             try
             {
@@ -777,7 +831,7 @@ namespace Garnet.client
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                        await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false); // does not take token, as task is not cancelable at this point
                     }
                     finally
                     {
@@ -918,7 +972,7 @@ namespace Garnet.client
             }
 
             CheckLength(totalLen, tcs);
-            await InputGateAsync(token);
+            await InputGateAsync(token).ConfigureAwait(false);
 
             try
             {
@@ -981,7 +1035,7 @@ namespace Garnet.client
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                        await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false); // does not take token, as task is not cancelable at this point
                     }
                     finally
                     {
@@ -1035,7 +1089,7 @@ namespace Garnet.client
             }
 
             CheckLength(totalLen, tcs);
-            await InputGateAsync(token);
+            await InputGateAsync(token).ConfigureAwait(false);
 
             try
             {
@@ -1096,7 +1150,7 @@ namespace Garnet.client
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                        await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false); // does not take token, as task is not cancelable at this point
                     }
                     finally
                     {

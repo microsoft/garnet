@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -16,9 +17,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     /// <summary>
     /// Methods for managing the replication of Vector Sets from primaries to other replicas.
     /// 
@@ -61,13 +59,9 @@ namespace Garnet.server
 
                 replicationReplayCancellation = cancellationToken;
 
-                using var cts = new CancellationTokenSource();
-
-                _ = cancellationToken.Register(() => cts.Cancel());
-
                 try
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token).ConfigureAwait(false);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
                 }
                 catch { }
 
@@ -89,21 +83,14 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetAddReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetAdd<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        internal void ReplicateVectorSetAdd(ReadOnlySpan<byte> key, ref StringInput input, ref StringBasicContext context)
         {
             Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
 
-            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload(0);
-            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
-
-            var res = context.RMW(ref keyWithNamespace, ref inputCopy);
+            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
             if (res.IsPending)
             {
@@ -126,23 +113,16 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetRemoveReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetRemove<TContext>(ref SpanByte key, ref SpanByte element, ref RawStringInput input, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        internal void ReplicateVectorSetRemove(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, ref StringBasicContext context)
         {
             Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VREMAppendLogArg;
 
-            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload(0);
-            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
+            inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
 
-            inputCopy.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(element.AsReadOnlySpan()));
-
-            var res = context.RMW(ref keyWithNamespace, ref inputCopy);
+            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
             if (res.IsPending)
             {
@@ -157,35 +137,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// After an index is dropped, called to cleanup state injected by <see cref="ReplicateVectorSetAdd"/>
-        /// 
-        /// Amounts to delete a synthetic key in namespace 0.
-        /// </summary>
-        internal bool TryDropVectorSetReplicationKey<TContext>(SpanByte key, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        {
-            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload(0);
-            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
-
-            var res = context.Delete(ref keyWithNamespace);
-
-            if (res.IsPending)
-            {
-                CompletePending(ref res, ref context);
-            }
-
-            return res.IsCompletedSuccessfully;
-        }
-
-        /// <summary>
         /// Vector Set adds are phrased as reads (once the index is created), so they require special handling.
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
         /// </summary>
-        internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
+        internal void HandleVectorSetAddReplication(
+            StorageSession currentSession,
+            Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
             if (input.arg1 == MigrateElementKeyLogArg)
             {
@@ -193,14 +151,19 @@ namespace Garnet.server
                 // These get replayed on REPLICAs typically, though role changes might still cause these
                 // to get replayed on now-primary nodes
 
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte;
-                var value = input.parseState.GetArgSliceByRef(1).SpanByte;
+                // Serialized len + ns + len + key in ReplicateMigratedElementKey
+                var elementNamespaceAndKey = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                // TODO: Namespace is present, but not actually transmitted
-                //       This presumably becomes unnecessary in Store v2
-                key.MarkNamespace();
+                var elementNsLen = BinaryPrimitives.ReadInt32LittleEndian(elementNamespaceAndKey);
+                var elementNsBytes = elementNamespaceAndKey.Slice(sizeof(int), elementNsLen);
+                var elementKeyLen = BinaryPrimitives.ReadInt32LittleEndian(elementNamespaceAndKey[(sizeof(int) + elementNsLen)..]);
+                var elementKeyBytes = elementNamespaceAndKey.Slice(sizeof(int) + elementNsLen + sizeof(int), elementKeyLen);
 
-                var ns = key.GetNamespaceInPayload();
+                var value = input.parseState.GetArgSliceByRef(1);
+
+                Debug.Assert(elementNsBytes.Length == 1, "Longer length namespaces not supported");
+
+                var ns = (ulong)elementNsBytes[0];
 
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
                 var ctx = ns & ~(ContextStep - 1);
@@ -221,19 +184,19 @@ namespace Garnet.server
 
                     if (needsUpdate)
                     {
-                        UpdateContextMetadata(ref currentSession.vectorContext);
+                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
                     }
                 }
 
-                HandleMigratedElementKey(ref currentSession.basicContext, ref currentSession.vectorContext, ref key, ref value);
+                HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, elementNsBytes, elementKeyBytes, value);
                 return;
             }
             else if (input.arg1 == MigrateIndexKeyLogArg)
             {
                 // These also injected by a PRIMARY applying migration operations
 
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte;
-                var value = input.parseState.GetArgSliceByRef(1).SpanByte;
+                var indexKey = input.parseState.GetArgSliceByRef(0);
+                var value = input.parseState.GetArgSliceByRef(1);
                 var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
 
                 // Most of the time a replica will have seen an element moving before now
@@ -257,14 +220,14 @@ namespace Garnet.server
 
                     if (needsUpdate)
                     {
-                        UpdateContextMetadata(ref currentSession.vectorContext);
+                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
                     }
                 }
 
                 ActiveThreadSession = currentSession;
                 try
                 {
-                    HandleMigratedIndexKey(null, null, ref key, ref value);
+                    HandleMigratedIndexKey(null, null, indexKey, value);
                 }
                 finally
                 {
@@ -278,10 +241,12 @@ namespace Garnet.server
             // Undo mangling that got replication going
             var inputCopy = input;
             inputCopy.arg1 = default;
-            var keyBytesArr = ArrayPool<byte>.Shared.Rent(keyWithNamespace.Length - 1);
-            var keyBytes = keyBytesArr.AsMemory()[..(keyWithNamespace.Length - 1)];
 
-            keyWithNamespace.AsReadOnlySpan().CopyTo(keyBytes.Span);
+            // Copy key onto 
+            var keyBytesArr = ArrayPool<byte>.Shared.Rent(key.Length);
+            var keyBytes = keyBytesArr.AsMemory()[..key.Length];
+
+            key.CopyTo(keyBytes.Span);
 
             var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
             var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
@@ -423,30 +388,30 @@ namespace Garnet.server
 
                         var indexBytes = stackalloc byte[IndexSizeBytes];
 
-                        var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
-                        var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-                        var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
-                        var valuesArg = ArgSlice.FromPinnedSpan(values.AsReadOnlySpan());
-                        var elementArg = ArgSlice.FromPinnedSpan(element.AsReadOnlySpan());
-                        var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
-                        var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
-                        var attributesArg = ArgSlice.FromPinnedSpan(attributes.AsReadOnlySpan());
-                        var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
-                        var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
+                        var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+                        var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+                        var valueTypeArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
+                        var valuesArg = PinnedSpanByte.FromPinnedSpan(values);
+                        var elementArg = PinnedSpanByte.FromPinnedSpan(element);
+                        var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+                        var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+                        var attributesArg = PinnedSpanByte.FromPinnedSpan(attributes);
+                        var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+                        var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
                         reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
-                        var input = new RawStringInput(RespCommand.VADD, ref reusableParseState);
+                        StringInput input = new(RespCommand.VADD, ref reusableParseState);
 
                         // Equivalent to VectorStoreOps.VectorSetAdd
                         //
                         // We still need locking here because the replays may proceed in parallel
 
-                        using (self.ReadOrCreateVectorIndex(storageSession, ref key, ref input, indexSpan, out var status))
+                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
                         {
                             Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
 
-                            var addRes = self.TryAdd(indexSpan, element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
+                            var addRes = self.TryAdd(indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
                             if (addRes != VectorManagerResult.OK)
                             {
@@ -523,20 +488,15 @@ namespace Garnet.server
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetRemove"/> running on the Primary get diverted here on a Replica.
         /// </summary>
-        internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ref SpanByte key, ref RawStringInput input)
+        internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
 
-            // Replication adds a (0) namespace - remove it
-            Span<byte> keyWithoutNamespaceSpan = stackalloc byte[key.Length - 1];
-            key.AsReadOnlySpan().CopyTo(keyWithoutNamespaceSpan);
-            var keyWithoutNamespace = SpanByte.FromPinnedSpan(keyWithoutNamespaceSpan);
-
             var inputCopy = input;
             inputCopy.arg1 = default;
 
-            using (ReadVectorIndex(storageSession, ref keyWithoutNamespace, ref inputCopy, indexSpan, out var status))
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
 
@@ -556,7 +516,7 @@ namespace Garnet.server
         {
             try
             {
-                replicationBlockEvent.Wait();
+                _ = replicationBlockEvent.Wait();
             }
             catch (ObjectDisposedException)
             {
@@ -566,8 +526,7 @@ namespace Garnet.server
             }
         }
         // Helper to complete read/writes during vector set synthetic op goes async
-        private static void CompletePending<TContext>(ref Status status, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        private static void CompletePending<TContext>(ref Status status, ref VectorBasicContext context)
         {
             _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();

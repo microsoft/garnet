@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+#if DEBUG
+using System.Collections.Concurrent;
+#endif
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -27,6 +30,11 @@ namespace Garnet.common
         readonly ILogger logger;
 
         /// <summary>
+        /// Pool owner type, packed into byte 1 of each <see cref="PoolEntry.source"/>.
+        /// </summary>
+        readonly int ownerByte;
+
+        /// <summary>
         /// Min allocation size
         /// </summary>
         public int MinAllocationSize => minAllocationSize;
@@ -41,16 +49,29 @@ namespace Garnet.common
         /// </summary>
         int totalOutOfBoundAllocations;
 
+#if DEBUG
+        /// <summary>
+        /// Tracks all outstanding (checked-out) pool entries for leak diagnosis.
+        /// </summary>
+        readonly ConcurrentDictionary<PoolEntry, byte> outstandingEntries = new();
+
+        /// <summary>
+        /// Timeout in milliseconds for Dispose to wait before logging outstanding entries.
+        /// </summary>
+        const int DisposeWaitDiagnosticMs = 5_000;
+#endif
+
         /// <summary>
         /// Constructor
         /// </summary>
-        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, ILogger logger = null)
+        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
         {
             this.minAllocationSize = minAllocationSize;
             this.maxAllocationSize = minAllocationSize << (numLevels - 1);
             this.maxEntriesPerLevel = maxEntriesPerLevel;
             this.numLevels = numLevels;
             this.logger = logger;
+            this.ownerByte = (int)ownerType << 8;
             pool = new PoolLevel[numLevels];
         }
 
@@ -85,6 +106,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return(PoolEntry buffer)
         {
+#if DEBUG
+            outstandingEntries.TryRemove(buffer, out _);
+#endif
             var level = Position(buffer.entry.Length);
             if (level >= 0)
             {
@@ -107,9 +131,10 @@ namespace Garnet.common
         /// Get buffer
         /// </summary>
         /// <param name="size"></param>
+        /// <param name="bufferType">Identifies the caller for leak diagnosis.</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe PoolEntry Get(int size)
+        public unsafe PoolEntry Get(int size, PoolEntryBufferType bufferType = PoolEntryBufferType.Unknown)
         {
             if (Interlocked.Increment(ref totalReferences) < 0)
             {
@@ -117,6 +142,8 @@ namespace Garnet.common
                 logger?.LogError("Invalid Get on disposed pool");
                 return null;
             }
+
+            var source = ownerByte | (int)bufferType;
 
             var level = Position(size);
             if (level == -1) Interlocked.Increment(ref totalOutOfBoundAllocations);
@@ -132,10 +159,19 @@ namespace Garnet.common
                 {
                     Interlocked.Decrement(ref pool[level].size);
                     page.Reuse();
+                    page.source = source;
+#if DEBUG
+                    outstandingEntries[page] = 0;
+#endif
                     return page;
                 }
             }
-            return new PoolEntry(size, this);
+            var entry = new PoolEntry(size, this);
+            entry.source = source;
+#if DEBUG
+            outstandingEntries[entry] = 0;
+#endif
+            return entry;
         }
 
         /// <summary>
@@ -157,23 +193,37 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Dipose pool entries from all levels
+        /// Dispose pool entries from all levels
         /// NOTE:
         ///     This is used to destroy the instance and reclaim all allocated buffer pool entries.
         ///     As a consequence it spin waits until totalReferences goes back down to 0 and blocks any future allocations.
+        ///     In DEBUG builds, logs outstanding unreturned entries after a timeout for leak diagnosis.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose()
         {
-#if HANGDETECT
-            int count = 0;
+#if DEBUG
+            var sw = Stopwatch.StartNew();
+            var diagnosed = false;
 #endif
             while (totalReferences > int.MinValue &&
                 Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
             {
-#if HANGDETECT
-                    if (++count % 10000 == 0)
-                        logger?.LogTrace("Dispose iteration {count}, {activeHandlerCount}", count, activeHandlerCount);
+#if DEBUG
+                if (!diagnosed && sw.ElapsedMilliseconds > DisposeWaitDiagnosticMs)
+                {
+                    diagnosed = true;
+                    var remaining = totalReferences;
+                    var ownerType = (PoolOwnerType)(ownerByte >> 8);
+                    logger?.LogError("LimitedFixedBufferPool.Dispose blocked with {remaining} unreturned references (poolOwner={ownerType}). Outstanding entries:", remaining, ownerType);
+                    foreach (var kvp in outstandingEntries)
+                    {
+                        var entryBufferType = (PoolEntryBufferType)(kvp.Key.source & 0xFF);
+                        var entryOwnerType = (PoolOwnerType)((kvp.Key.source >> 8) & 0xFF);
+                        logger?.LogCritical("  Unreturned buffer: ownerType={ownerType}, bufferType={bufferType}, size={size}",
+                            entryOwnerType, entryBufferType, kvp.Key.entry.Length);
+                    }
+                }
 #endif
                 Thread.Yield();
             }

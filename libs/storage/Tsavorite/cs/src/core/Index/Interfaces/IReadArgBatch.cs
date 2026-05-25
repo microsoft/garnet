@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -10,11 +12,20 @@ namespace Tsavorite.core
     /// <typeparam name="TInput">Type of input</typeparam>
     /// <typeparam name="TOutput">Type of output</typeparam>
     public interface IReadArgBatch<TKey, TInput, TOutput>
+        where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
     {
         /// <summary>
         /// Count of keys/args/outputs.
         /// </summary>
         int Count { get; }
+
+        /// <summary>
+        /// Raw parameters for the batch.
+        /// </summary>
+        ReadOnlySpan<PinnedSpanByte> Parameters { get; }
 
         /// <summary>
         /// Get <paramref name="i"/>th key.

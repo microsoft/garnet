@@ -8,12 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Represents a logical database in Garnet
     /// </summary>
@@ -31,14 +25,9 @@ namespace Garnet.server
         public int Id { get; }
 
         /// <summary>
-        /// Main Store
+        /// Store
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore { get; }
-
-        /// <summary>
-        /// Object Store
-        /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore { get; }
+        public TsavoriteKV<StoreFunctions, StoreAllocator> Store { get; }
 
         /// <summary>
         /// Epoch instance used by server
@@ -51,19 +40,14 @@ namespace Garnet.server
         public StateMachineDriver StateMachineDriver { get; }
 
         /// <summary>
-        /// Size Tracker for Object Store
+        /// Size Tracker
         /// </summary>
-        public CacheSizeTracker ObjectStoreSizeTracker { get; }
-
-        /// <summary>
-        /// Device used for AOF logging
-        /// </summary>
-        public IDevice AofDevice { get; }
+        public CacheSizeTracker SizeTracker { get; }
 
         /// <summary>
         /// AOF log
         /// </summary>
-        public TsavoriteLog AppendOnlyFile { get; }
+        public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
         /// Version map
@@ -71,14 +55,9 @@ namespace Garnet.server
         public WatchVersionMap VersionMap { get; }
 
         /// <summary>
-        /// Tail address of main store log at last save
+        /// Tail address of store log at last save
         /// </summary>
         public long LastSaveStoreTailAddress;
-
-        /// <summary>
-        /// Tail address of object store log at last save
-        /// </summary>
-        public long LastSaveObjectStoreTailAddress;
 
         /// <summary>
         /// Last time checkpoint of database was taken
@@ -86,14 +65,9 @@ namespace Garnet.server
         public DateTimeOffset LastSaveTime;
 
         /// <summary>
-        /// True if database's main store index has maxed-out
+        /// True if database's store index has maxed-out
         /// </summary>
-        public bool MainStoreIndexMaxedOut;
-
-        /// <summary>
-        /// True if database's object store index has maxed-out
-        /// </summary>
-        public bool ObjectStoreIndexMaxedOut;
+        public bool StoreIndexMaxedOut;
 
         /// <summary>
         /// Reader-Writer lock for database checkpointing
@@ -109,71 +83,60 @@ namespace Garnet.server
         public readonly VectorManager VectorManager;
 
         /// <summary>
+        /// RangeIndex (BfTree) manager for this database.
+        /// Created early and passed to the store's GarnetRecordDisposer for eviction cleanup.
+        /// </summary>
+        public readonly RangeIndexManager RangeIndexManager;
+
+        /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
-        internal StorageSession ObjectStoreCollectionDbStorageSession;
+        internal StorageSession StoreCollectionDbStorageSession;
 
         /// <summary>
-        /// Storage session intended for main-store expired key deletion operations
+        /// Storage session intended for store expired key deletion operations
         /// </summary>
-        internal StorageSession MainStoreExpiredKeyDeletionDbStorageSession;
-
-        /// <summary>
-        /// Storage session intended for object-store expired key deletion operations
-        /// </summary>
-        internal StorageSession ObjectStoreExpiredKeyDeletionDbStorageSession;
-
+        internal StorageSession StoreExpiredKeyDeletionDbStorageSession;
 
         internal StorageSession HybridLogStatScanStorageSession;
 
-        readonly KVSettings<SpanByte, SpanByte> KvSettings;
-        readonly KVSettings<byte[], IGarnetObject> ObjKvSettings;
+        private KVSettings KvSettings;
 
         bool disposed = false;
 
-        public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
-            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            KVSettings<SpanByte, SpanByte> kvSettings, KVSettings<byte[], IGarnetObject> objKvSettings,
-            LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
-            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut, VectorManager vectorManager) : this()
+        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+                CacheSizeTracker sizeTracker, GarnetAppendOnlyFile appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager, RangeIndexManager rangeIndexManager)
+            : this()
         {
             Id = id;
-            MainStore = mainStore;
-            ObjectStore = objectStore;
+            Store = store;
             KvSettings = kvSettings;
-            ObjKvSettings = objKvSettings;
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
-            ObjectStoreSizeTracker = objectStoreSizeTracker;
-            AofDevice = aofDevice;
+            SizeTracker = sizeTracker;
             AppendOnlyFile = appendOnlyFile;
-            MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
-            ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
+            StoreIndexMaxedOut = storeIndexMaxedOut;
             VectorManager = vectorManager;
+            RangeIndexManager = rangeIndexManager;
         }
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
             Id = id;
-            MainStore = srcDb.MainStore;
-            ObjectStore = srcDb.ObjectStore;
+            Store = srcDb.Store;
             KvSettings = srcDb.KvSettings;
-            ObjKvSettings = srcDb.ObjKvSettings;
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
-            ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
-            AofDevice = enableAof ? srcDb.AofDevice : null;
+            SizeTracker = srcDb.SizeTracker;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
-            MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
-            ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
+            StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
             VectorManager = srcDb.VectorManager;
+            RangeIndexManager = srcDb.RangeIndexManager;
 
             if (copyLastSaveData)
             {
                 LastSaveTime = srcDb.LastSaveTime;
                 LastSaveStoreTailAddress = srcDb.LastSaveStoreTailAddress;
-                LastSaveObjectStoreTailAddress = srcDb.LastSaveObjectStoreTailAddress;
             }
         }
 
@@ -181,7 +144,6 @@ namespace Garnet.server
         {
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
             LastSaveStoreTailAddress = 0;
-            LastSaveObjectStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
         }
 
@@ -190,7 +152,9 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
+            disposed = true;
 
             // Shutdown vector replays and cleanup operations
             VectorManager?.Dispose();
@@ -199,32 +163,14 @@ namespace Garnet.server
             while (!CheckpointingLock.TryWriteLock())
                 _ = Thread.Yield();
 
-            MainStore?.Dispose();
-            ObjectStore?.Dispose();
-
+            Store?.Dispose();
             KvSettings?.LogDevice?.Dispose();
-            if (ObjKvSettings != null)
-            {
-                ObjKvSettings.LogDevice?.Dispose();
-                ObjKvSettings.ObjectLogDevice?.Dispose();
-            }
-
-            AofDevice?.Dispose();
+            KvSettings?.ObjectLogDevice?.Dispose();
             AppendOnlyFile?.Dispose();
-            ObjectStoreCollectionDbStorageSession?.Dispose();
-            MainStoreExpiredKeyDeletionDbStorageSession?.Dispose();
-            ObjectStoreExpiredKeyDeletionDbStorageSession?.Dispose();
+            StoreCollectionDbStorageSession?.Dispose();
+            StoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
-            if (ObjectStoreSizeTracker != null)
-            {
-                // If tracker has previously started, wait for it to stop
-                if (!ObjectStoreSizeTracker.TryPreventStart())
-                {
-                    while (!ObjectStoreSizeTracker.Stopped)
-                        Thread.Yield();
-                }
-            }
-            disposed = true;
+            SizeTracker?.Stop();
         }
     }
 }
