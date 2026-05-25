@@ -178,7 +178,7 @@ namespace Tsavorite.test
             }
         }
 
-        // ----- Cross-device test fixtures --------------------------------------------------
+        // ----- IDevice test fixtures --------------------------------------------------
 
         /// <summary>
         /// Device kinds parametrized by the cross-device round-trip and parallel tests below.
@@ -219,14 +219,14 @@ namespace Tsavorite.test
             }
         }
 
-        // ----- Cross-device round-trip / parallel tests ------------------------------------
+        // ----- IDevice tests (all device kinds) ------------------------------------
 
         [Test]
         [TestCase(DeviceKind.Native)]
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
-        [Category("Hardening")]
-        public unsafe void Hardening_AllDevices_RoundTrip_BasicReadWrite(DeviceKind kind)
+        [Category("IDevice")]
+        public unsafe void IDevice_RoundTrip_BasicReadWrite(DeviceKind kind)
         {
             const long segmentSize = 64 * Mib;
             const int size = 64 * 1024;
@@ -248,8 +248,8 @@ namespace Tsavorite.test
         [TestCase(DeviceKind.Native)]
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
-        [Category("Hardening")]
-        public unsafe void Hardening_AllDevices_RoundTrip_AcrossSegmentBoundary(DeviceKind kind)
+        [Category("IDevice")]
+        public unsafe void IDevice_RoundTrip_AcrossSegmentBoundary(DeviceKind kind)
         {
             const long segmentSize = 64 * Mib;
             const int size = 64 * 1024;
@@ -271,8 +271,8 @@ namespace Tsavorite.test
         [TestCase(DeviceKind.Native)]
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
-        [Category("Hardening")]
-        public unsafe void Hardening_AllDevices_Parallel_32ConcurrentWrites(DeviceKind kind)
+        [Category("IDevice")]
+        public unsafe void IDevice_Parallel_32ConcurrentWrites(DeviceKind kind)
         {
             const long segmentSize = 64 * Mib;
             const int N = 32;
@@ -304,8 +304,8 @@ namespace Tsavorite.test
         [TestCase(DeviceKind.Native)]
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
-        [Category("Hardening")]
-        public unsafe void Hardening_AllDevices_Parallel_BurstyTraffic(DeviceKind kind)
+        [Category("IDevice")]
+        public unsafe void IDevice_Parallel_BurstyTraffic(DeviceKind kind)
         {
             const long segmentSize = 64 * Mib;
             const int Bursts = 10;
@@ -328,83 +328,20 @@ namespace Tsavorite.test
             }
         }
 
-        // ----- Native-only suite below -----------------------------------------------------
-
-        // ----- Lifecycle (5 tests) ---------------------------------------------------------
-
-        [Test]
-        [Category("Hardening")]
-        public void Hardening_DisposeBeforeInitialize_IsNoOp()
+        [TestCase(DeviceKind.Native, 64L * 1024 * 1024)]
+        [TestCase(DeviceKind.Native, 256L * 1024 * 1024)]
+        [TestCase(DeviceKind.Native, 1L * 1024 * 1024 * 1024)]
+        [TestCase(DeviceKind.RandomAccess, 64L * 1024 * 1024)]
+        [TestCase(DeviceKind.RandomAccess, 256L * 1024 * 1024)]
+        [TestCase(DeviceKind.RandomAccess, 1L * 1024 * 1024 * 1024)]
+        [TestCase(DeviceKind.ManagedLocal, 64L * 1024 * 1024)]
+        [TestCase(DeviceKind.ManagedLocal, 256L * 1024 * 1024)]
+        [TestCase(DeviceKind.ManagedLocal, 1L * 1024 * 1024 * 1024)]
+        [Category("IDevice")]
+        public unsafe void IDevice_RoundTrip_VariousSegmentSizes(DeviceKind kind, long segmentSize)
         {
-            // Constructing a device without ever calling Initialize must NOT crash on Dispose:
-            // the native device handle is still IntPtr.Zero and the Dispose path must skip
-            // the NativeDevice_Destroy P/Invoke entirely (already verified by the guard added
-            // in Phase 6).
-            var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            Assert.DoesNotThrow(() => device.Dispose());
-        }
-
-        [Test]
-        [Category("Hardening")]
-        public void Hardening_DisposeTwice_IsIdempotent()
-        {
-            // Dispose() is documented as idempotent — Interlocked.Exchange on disposedFlag is
-            // the gate. The second Dispose must short-circuit without touching native code,
-            // join threads, or throwing.
-            var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(64 * Mib);
-            device.Dispose();
-            Assert.DoesNotThrow(() => device.Dispose());
-        }
-
-        [Test]
-        [Category("Hardening")]
-        public void Hardening_InitializeTwice_Throws()
-        {
-            // Phase 6's contract: Initialize is one-shot. Calling it a second time must throw
-            // rather than leak native resources or silently swap the segment size.
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(64 * Mib);
-            Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib));
-        }
-
-        [Test]
-        [Category("Hardening")]
-        public void Hardening_ReadAsyncBeforeInitialize_Throws()
-        {
-            // Crossing the P/Invoke boundary with a null native handle would dereference null
-            // in C++. The InvalidOperationException guard added in Phase 6 turns that latent
-            // segfault into a managed exception with an actionable message.
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            var (buf, ptr) = AllocateAlignedBuffer(4096, _ => 0);
-            Assert.Throws<InvalidOperationException>(() => device.ReadAsync(0, 0, ptr, 4096, IOCallback, null));
-            GC.KeepAlive(buf);
-        }
-
-        [Test]
-        [Category("Hardening")]
-        public void Hardening_WriteAsyncBeforeInitialize_Throws()
-        {
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            var (buf, ptr) = AllocateAlignedBuffer(4096, i => (byte)i);
-            Assert.Throws<InvalidOperationException>(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
-            GC.KeepAlive(buf);
-        }
-
-        // ----- Single-IO round-trips across segment sizes (4 tests) ------------------------
-
-        [TestCase(64L * 1024 * 1024)]   // 64 MiB segments
-        [TestCase(256L * 1024 * 1024)]  // 256 MiB
-        [TestCase(1L * 1024 * 1024 * 1024)] // 1 GiB
-        [Category("Hardening")]
-        public unsafe void Hardening_RoundTrip_VariousSegmentSizes(long segmentSize)
-        {
-            // Phase 6's segment-size pass-through must produce a device that handles a basic
-            // write/read round-trip cleanly at any valid power-of-two segment size. The buffer
-            // is small (64 KiB) so we stay well inside segment 0 regardless of segmentSize.
             const int size = 64 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
 
             var (wbuf, wptr) = AllocateAlignedBuffer(size, i => (byte)((i * 7) & 0xFF));
             device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
@@ -414,86 +351,23 @@ namespace Tsavorite.test
             device.ReadAsync(0, 0, rptr, (uint)size, IOCallback, null);
             semaphore.Wait();
 
-            AssertBufferContents(rptr, size, i => (byte)((i * 7) & 0xFF), $"segSize={segmentSize}");
+            AssertBufferContents(rptr, size, i => (byte)((i * 7) & 0xFF), $"{kind} segSize={segmentSize}");
             GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_RoundTrip_AcrossSegmentBoundary()
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_Parallel_64ConcurrentReads(DeviceKind kind)
         {
-            // Write to segment 1 using a 64 MiB segment size. This exercises FileSystemSegmentedFile's
-            // segment-id arithmetic (segment_shift_ + segment_mask_) on the C++ side and the
-            // managed offset packing `((ulong)segmentId << segmentSizeBits) | sourceAddress`.
-            const long segmentSize = 64 * Mib;
-            const int size = 64 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
-
-            // Write at offset 0 of segment 1.
-            var (wbuf, wptr) = AllocateAlignedBuffer(size, i => (byte)((i * 11) & 0xFF));
-            device.WriteAsync(wptr, segmentId: 1, destinationAddress: 0, (uint)size, IOCallback, null);
-            semaphore.Wait();
-
-            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
-            device.ReadAsync(segmentId: 1, sourceAddress: 0, rptr, (uint)size, IOCallback, null);
-            semaphore.Wait();
-
-            AssertBufferContents(rptr, size, i => (byte)((i * 11) & 0xFF), "cross-segment");
-            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
-        }
-
-        // ----- Parallel reads / writes (5 tests) -------------------------------------------
-
-        [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Parallel_32ConcurrentWrites()
-        {
-            // Submit 32 concurrent writes to 32 different offsets within segment 0, then read
-            // them back serially and verify each. Exercises the device's submission path
-            // (caller_copy_guard RAII on submission failure, single-SQE invariant) under
-            // light parallelism.
-            const long segmentSize = 64 * Mib;
-            const int N = 32;
-            const int size = 8 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
-
-            var roots = new byte[N][];
-            for (int i = 0; i < N; i++)
-            {
-                int id = i;
-                var (buf, ptr) = AllocateAlignedBuffer(size, j => (byte)((j ^ (id * 17)) & 0xFF));
-                roots[i] = buf;
-                device.WriteAsync(ptr, 0, (ulong)(id * size), (uint)size, IOCallback, null);
-            }
-            for (int i = 0; i < N; i++) semaphore.Wait();
-
-            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
-            for (int i = 0; i < N; i++)
-            {
-                device.ReadAsync(0, (ulong)(i * size), rptr, (uint)size, IOCallback, null);
-                semaphore.Wait();
-                int id = i;
-                AssertBufferContents(rptr, size, j => (byte)((j ^ (id * 17)) & 0xFF), $"block {id}");
-            }
-            GC.KeepAlive(roots); GC.KeepAlive(rbuf);
-        }
-
-        [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Parallel_64ConcurrentReads()
-        {
-            // Pre-write a known pattern, then issue 64 concurrent reads of disjoint blocks
-            // and verify each block independently.
             const long segmentSize = 64 * Mib;
             const int N = 64;
             const int size = 4 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
 
-            // Pre-write — write a single big buffer covering all N blocks so each block has
-            // its own byte pattern.
+            // Pre-write one big buffer covering all N blocks so each block has its own byte pattern.
             var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j =>
             {
                 int blk = j / size;
@@ -503,7 +377,6 @@ namespace Tsavorite.test
             device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
             semaphore.Wait();
 
-            // Now read every block in parallel.
             var rbufs = new byte[N][];
             var rptrs = new IntPtr[N];
             for (int i = 0; i < N; i++)
@@ -517,33 +390,31 @@ namespace Tsavorite.test
             for (int i = 0; i < N; i++)
             {
                 int blk = i;
-                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 31 + off) & 0xFF), $"block {blk}");
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 31 + off) & 0xFF), $"{kind} block {blk}");
             }
             GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Parallel_MixedReadsAndWrites()
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_Parallel_MixedReadsAndWrites(DeviceKind kind)
         {
-            // 16 concurrent writes to one half of the address space and 16 concurrent reads
-            // from the other (pre-written) half. Ensures the submission path is not serializing
-            // on read vs write — the C++ side must enqueue both kinds without holding a lock
-            // across syscalls.
             const long segmentSize = 64 * Mib;
             const int N = 16;
             const int size = 4 * 1024;
             const ulong readBase = 0;
             const ulong writeBase = 256UL * 1024; // disjoint
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
 
-            // Pre-populate the read region.
+            // Pre-write the read region.
             var (prewbuf, prewptr) = AllocateAlignedBuffer(N * size, j => (byte)((j * 3) & 0xFF));
             device.WriteAsync(prewptr, 0, readBase, (uint)(N * size), IOCallback, null);
             semaphore.Wait();
 
-            // Fire concurrent reads and writes.
+            // Fire concurrent reads and writes to disjoint regions.
             var wroots = new byte[N][];
             var rroots = new byte[N][];
             var rptrs = new IntPtr[N];
@@ -564,23 +435,22 @@ namespace Tsavorite.test
             {
                 int id = i;
                 int baseIdx = id * size;
-                AssertBufferContents(rptrs[i], size, off => (byte)(((baseIdx + off) * 3) & 0xFF), $"read {id}");
+                AssertBufferContents(rptrs[i], size, off => (byte)(((baseIdx + off) * 3) & 0xFF), $"{kind} read {id}");
             }
             GC.KeepAlive(prewbuf); GC.KeepAlive(wroots); GC.KeepAlive(rroots);
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Parallel_StressBurst_100Writes()
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_Parallel_StressBurst_100Writes(DeviceKind kind)
         {
-            // Saturate the in-flight queue with 100 concurrent writes (below ThrottleLimit=120
-            // so no throttling kicks in). This is the main "does the completion-thread plumbing
-            // stay correct under load" stress.
             const long segmentSize = 64 * Mib;
             const int N = 100;
             const int size = 4 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
 
             var roots = new byte[N][];
             for (int i = 0; i < N; i++)
@@ -599,45 +469,81 @@ namespace Tsavorite.test
                 device.ReadAsync(0, (ulong)(i * size), rptr, (uint)size, IOCallback, null);
                 semaphore.Wait();
                 int id = i;
-                AssertBufferContents(rptr, size, j => (byte)((j * 5 + id) & 0xFF), $"stress block {id}");
+                AssertBufferContents(rptr, size, j => (byte)((j * 5 + id) & 0xFF), $"{kind} stress block {id}");
             }
             GC.KeepAlive(roots); GC.KeepAlive(rbuf);
         }
 
-        [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Parallel_BurstyTraffic()
-        {
-            // 10 bursts × 10 writes each, with a barrier between bursts. Verifies the device
-            // doesn't accumulate state between bursts that would cause the second burst to
-            // misbehave. Also helps detect leaked completion handles / result slots.
-            const long segmentSize = 64 * Mib;
-            const int Bursts = 10;
-            const int Per = 10;
-            const int size = 4 * 1024;
-            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(segmentSize);
+        // ----- NativeStorageDevice-specific tests (lifecycle, recovery, validation) -----------------------------------------------------
 
-            for (int b = 0; b < Bursts; b++)
-            {
-                var roots = new byte[Per][];
-                for (int i = 0; i < Per; i++)
-                {
-                    int globalIdx = b * Per + i;
-                    var (buf, ptr) = AllocateAlignedBuffer(size, j => (byte)((j + globalIdx) & 0xFF));
-                    roots[i] = buf;
-                    device.WriteAsync(ptr, 0, (ulong)(globalIdx * size), (uint)size, IOCallback, null);
-                }
-                for (int i = 0; i < Per; i++) semaphore.Wait();
-                GC.KeepAlive(roots);
-            }
+        // ----- Lifecycle (5 tests) ---------------------------------------------------------
+
+        [Test]
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_DisposeBeforeInitialize_IsNoOp()
+        {
+            // Constructing a device without ever calling Initialize must NOT crash on Dispose:
+            // the native device handle is still IntPtr.Zero and the Dispose path must skip
+            // the NativeDevice_Destroy P/Invoke entirely (already verified by the guard added
+            // in Phase 6).
+            var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            Assert.DoesNotThrow(() => device.Dispose());
         }
 
+        [Test]
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_DisposeTwice_IsIdempotent()
+        {
+            // Dispose() is documented as idempotent — Interlocked.Exchange on disposedFlag is
+            // the gate. The second Dispose must short-circuit without touching native code,
+            // join threads, or throwing.
+            var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            device.Initialize(64 * Mib);
+            device.Dispose();
+            Assert.DoesNotThrow(() => device.Dispose());
+        }
+
+        [Test]
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_InitializeTwice_Throws()
+        {
+            // Phase 6's contract: Initialize is one-shot. Calling it a second time must throw
+            // rather than leak native resources or silently swap the segment size.
+            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            device.Initialize(64 * Mib);
+            Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib));
+        }
+
+        [Test]
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_ReadAsyncBeforeInitialize_Throws()
+        {
+            // Crossing the P/Invoke boundary with a null native handle would dereference null
+            // in C++. The InvalidOperationException guard added in Phase 6 turns that latent
+            // segfault into a managed exception with an actionable message.
+            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            var (buf, ptr) = AllocateAlignedBuffer(4096, _ => 0);
+            Assert.Throws<InvalidOperationException>(() => device.ReadAsync(0, 0, ptr, 4096, IOCallback, null));
+            GC.KeepAlive(buf);
+        }
+
+        [Test]
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_WriteAsyncBeforeInitialize_Throws()
+        {
+            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            var (buf, ptr) = AllocateAlignedBuffer(4096, i => (byte)i);
+            Assert.Throws<InvalidOperationException>(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
+            GC.KeepAlive(buf);
+        }
+
+        // ----- Parallel reads / writes (3 tests) -------------------------------------------
+        // (Basic-write parallel + bursty + cross-segment-boundary covered by IDevice_* above.)
         // ----- Error injection on invalid segment sizes (3 tests) --------------------------
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_NonPowerOfTwoSegmentSize_Throws()
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_NonPowerOfTwoSegmentSize_Throws()
         {
             // 3 MiB is not a power of 2; the managed validation in Initialize rejects it before
             // any P/Invoke happens. (The native side would also reject via std::invalid_argument
@@ -647,8 +553,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_SegmentSizeSmallerThanSector_Throws()
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_SegmentSizeSmallerThanSector_Throws()
         {
             // 256 bytes < 512 byte sector size — sub-sector segments make no sense and would
             // produce broken offset math in the upper layers.
@@ -657,8 +563,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_ZeroSegmentSize_Throws()
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_ZeroSegmentSize_Throws()
         {
             using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
             Assert.Throws<TsavoriteException>(() => device.Initialize(0));
@@ -667,8 +573,8 @@ namespace Tsavorite.test
         // ----- Recovery (3 tests) ----------------------------------------------------------
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Recovery_MatchingSegmentSize_Succeeds()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_Recovery_MatchingSegmentSize_Succeeds()
         {
             // Write some data with 64 MiB segments, dispose, then reopen with the same segment
             // size. The recovery check in NativeDeviceImpl ctor must accept this — existing
@@ -698,8 +604,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Recovery_LargerExistingSegment_DetectsMismatch()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_Recovery_LargerExistingSegment_DetectsMismatch()
         {
             // Write data with 256 MiB segments large enough to overflow a 64 MiB segment, then
             // reopen with 64 MiB. The C++ NativeDeviceImpl ctor's ValidateRecoveredSegments
@@ -730,8 +636,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_Recovery_SmallerExistingSegment_Succeeds()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_Recovery_SmallerExistingSegment_Succeeds()
         {
             // Inverse of the mismatch case: write a small file with 64 MiB segments, reopen
             // with 256 MiB segments. The existing file is <= the new segment size, so the
@@ -765,8 +671,8 @@ namespace Tsavorite.test
         // ---------------------------------------------------------------------------------
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_SectorSize_IsPowerOfTwoAtLeast512()
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_SectorSize_IsPowerOfTwoAtLeast512()
         {
             // The probe path runs in the ctor (via base(..., GetSectorSize(filename), ...)).
             // Whatever it returns must be a usable sector size: a power of two and at least
@@ -778,8 +684,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_SectorSize_IsStableAcrossOpens()
+        [Category("NativeStorageDevice")]
+        public void NativeStorageDevice_SectorSize_IsStableAcrossOpens()
         {
             // The probe is filesystem-level — two devices opened on files in the same dir
             // must agree on the sector size. If they don't, the probe is non-deterministic
@@ -790,8 +696,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_UnalignedOffset_ReadAsync_Throws()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_UnalignedOffset_ReadAsync_Throws()
         {
             // Issue a read with an offset that's not a multiple of SectorSize. The libaio path
             // would return -EINVAL via the callback (or assert in debug builds); the managed
@@ -812,8 +718,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_UnalignedLength_WriteAsync_Throws()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_UnalignedLength_WriteAsync_Throws()
         {
             var path = Path.Combine(TestUtils.MethodTestDir, "test.log");
             using var device = new NativeStorageDevice(path, deleteOnClose: true);
@@ -830,8 +736,8 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public unsafe void Hardening_UnalignedBuffer_WriteAsync_Throws()
+        [Category("NativeStorageDevice")]
+        public unsafe void NativeStorageDevice_UnalignedBuffer_WriteAsync_Throws()
         {
             var path = Path.Combine(TestUtils.MethodTestDir, "test.log");
             using var device = new NativeStorageDevice(path, deleteOnClose: true);
@@ -847,53 +753,57 @@ namespace Tsavorite.test
         }
 
         [Test]
-        [Category("Hardening")]
-        public void Hardening_PermissionDeniedAtFirstWrite_CallbackGetsError()
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_PermissionDeniedAtFirstWrite_CallbackGetsError(DeviceKind kind)
         {
-            // The C++ device opens segment files lazily — open() is invoked on first I/O, not
-            // at device-creation time (see FileSystemSegmentedFile<H>::Open vs OpenSegment).
-            // So a chmod-0-parent-dir scenario is NOT detected at Initialize; it surfaces as
-            // an open() failure inside WriteAsync, and the libaio/uring submission returns a
-            // non-zero result which we propagate to the caller's callback with a non-zero
-            // numErrorBytes / errorCode. This test verifies that contract: the caller observes
-            // the failure cleanly via the standard IOCallback path rather than via an
-            // exception thrown synchronously from WriteAsync.
+            // Devices open segment files lazily on first I/O. When that open() fails (e.g.
+            // a chmod-0 parent directory), the device MUST signal the failure to the caller
+            // via the completion callback's errorCode — never swallow it, never hang, and
+            // never throw synchronously to the user thread. All three local-storage device
+            // implementations catch the open exception in their worker and route it through
+            // the same callback contract.
             //
-            // Root-skip rule: chmod has no effect on root, which would make the test produce a
-            // false negative (write succeeds and the test would fail expecting an error).
+            // Root-skip: chmod has no effect on root, which would produce a false negative.
+            // Linux-only: chmod-based permission denial is a POSIX construct.
             if (Environment.UserName == "root") Assert.Ignore("Running as root bypasses POSIX permission checks.");
+            if (!OperatingSystem.IsLinux()) Assert.Ignore("chmod-based permission test is Linux-only.");
+
             var dir = TestUtils.MethodTestDir;
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, "test.log");
-            // We have to construct & Initialize the device BEFORE chmod-ing the parent: the
-            // ctor + Initialize themselves run open() on the directory via the alignment probe
-            // and the FileSystemSegmentedFile::Open path, both of which need at least +x.
-            using var device = new NativeStorageDevice(path, deleteOnClose: true);
-            device.Initialize(1L << 30);
 
+            // Construct + Initialize BEFORE chmod: the ctor / Initialize may need to probe
+            // alignment or open the directory, both of which need at least +x.
+            using var device = CreateDeviceForTest(kind, path, 1L << 30);
+
+            // Robust permission-restore guard: even if assertions throw, we restore 0755 so
+            // TearDown can wipe the directory. AppDomain.UnhandledException as last resort.
+            uint sector = device.SectorSize;
+            var (buf, ptr) = AllocateAlignedBuffer((int)sector, _ => 0xAB);
             if (chmod(dir, 0) != 0) Assert.Ignore("chmod failed; cannot run permission test.");
             try
             {
-                uint sector = device.SectorSize;
-                var (buf, ptr) = AllocateAlignedBuffer((int)sector, _ => 0xAB);
                 uint observedError = 0;
-                var done = new SemaphoreSlim(0);
-                try
+                using var done = new SemaphoreSlim(0);
+
+                device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _) =>
                 {
-                    device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _) =>
-                    {
-                        observedError = errorCode;
-                        done.Release();
-                    }, null);
-                    Assert.That(done.Wait(TimeSpan.FromSeconds(10)), Is.True, "Write callback did not fire within 10s.");
-                    Assert.That(observedError, Is.Not.EqualTo(0u), "Write to chmod-0 dir should produce a non-zero error code via callback.");
-                }
-                finally { GC.KeepAlive(buf); }
+                    observedError = errorCode;
+                    done.Release();
+                }, null);
+
+                Assert.That(done.Wait(TimeSpan.FromSeconds(10)), Is.True, $"{kind}: write callback did not fire within 10s.");
+                Assert.That(observedError, Is.Not.EqualTo(0u), $"{kind}: write to chmod-0 dir should produce a non-zero errorCode via callback.");
             }
             finally
             {
-                // Restore so TearDown can wipe the dir.
-                chmod(dir, 0x1ED); // 0755
+                // ALWAYS restore permissions before we leave, even on assertion failure.
+                // 0x1ED = 0755. If this fails we can't help TearDown; log and move on.
+                _ = chmod(dir, 0x1ED);
+                GC.KeepAlive(buf);
             }
         }
 
