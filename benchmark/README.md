@@ -32,6 +32,16 @@ See more command-line options at https://benchmarkdotnet.org/articles/guides/con
 
 Please see the [Microbenchmark Design Guidelines](https://github.com/dotnet/performance/blob/main/docs/microbenchmark-design-guidelines.md) for the best practices when writing microbenchmarks using BenchmarkDotNet.
 
+## Device.benchmark
+
+A low-overhead random-read IOPS benchmark for Tsavorite's `IDevice` implementations
+(Native libaio / io_uring on Linux, IOCP on Windows; FileStream; RandomAccess).
+Useful for sanity-checking that a backend reaches the raw NVMe ceiling and for
+isolating IO-layer performance from upper-layer KV overhead. See
+[`Device.benchmark/README.md`](Device.benchmark/README.md) for usage, a
+copy-paste recipe to saturate ~750K IOPS on a Dell P5600-class NVMe, and a full
+flag reference.
+
 ## Privacy
 
 [Microsoft Privacy Statement](https://go.microsoft.com/fwlink/?LinkId=521839)
