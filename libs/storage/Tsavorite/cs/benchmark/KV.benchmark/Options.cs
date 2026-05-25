@@ -106,7 +106,9 @@ namespace Tsavorite.kvbench
         public string DeviceIoBackend { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
-            HelpText = "Native completion thread count. 0 = Garnet default (1).")]
+            HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
+                       "completion queue. Today all drainers share the same kernel io_context / " +
+                       "io_uring, so values > 1 are rarely useful. 0 = Garnet default (1).")]
         public int DeviceCompletionThreads { get; set; }
 
         [Option("data-path", Required = false, Default = null,

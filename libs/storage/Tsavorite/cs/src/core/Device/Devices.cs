@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
-        /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of background IO completion drain threads (default 1). Ignored otherwise.</param>
+        /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of background IO completion drain threads (default 1). All drainer threads currently share the same kernel io_context (libaio) / io_uring (uring), so values &gt; 1 are rarely useful. Ignored otherwise.</param>
         /// <param name="logger"></param>
         /// <returns>Device instance</returns>
         public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, ILogger logger = null)
