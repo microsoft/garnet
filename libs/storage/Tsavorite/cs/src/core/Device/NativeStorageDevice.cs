@@ -344,7 +344,7 @@ namespace Tsavorite.core
         }
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -375,6 +375,12 @@ namespace Tsavorite.core
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRunFor", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_QueueRunFor(IntPtr device, int ctxIdx, int timeout_secs);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_NumIoContexts", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_NumIoContexts(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetFileSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetFileSize(IntPtr device, ulong segment);
@@ -486,7 +492,12 @@ namespace Tsavorite.core
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        /// <param name="numCompletionThreads">Number of IO completion threads</param>
+        /// <param name="numCompletionThreads">Number of IO completion threads. Each completion
+        /// thread is given its own kernel io_context (libaio) / io_uring (uring) and is bound
+        /// 1:1 to drain it. Values &gt; 1 shard submissions across N independent kernel contexts
+        /// to scale past the single-context submit-side cap (most impactful for io_uring;
+        /// libaio is typically flat past N=1 because the kernel-side per-context mutex is
+        /// already efficient). Ignored on Windows (IOCP). When &lt; 1, treated as 1.</param>
         /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
         public NativeStorageDevice(string filename,
@@ -507,7 +518,7 @@ namespace Tsavorite.core
             this.filename = filename;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
-            this.numCompletionThreadsConfig = numCompletionThreads;
+            this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
 
@@ -564,8 +575,10 @@ namespace Tsavorite.core
 
             nativeSegmentSizeBytes = sizeForNative;
 
-            // Create the native device with the requested segment size.
-            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, omitSegmentIdFromFilename);
+            // Create the native device with the requested segment size. numCompletionThreadsConfig
+            // is also the number of independent kernel io_contexts (libaio) / io_urings (uring)
+            // the native shim creates — completion threads are bound 1:1 to contexts below.
+            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, omitSegmentIdFromFilename, numCompletionThreadsConfig);
             if (nativeDevice == IntPtr.Zero)
             {
                 // Pull the actionable error message from the native thread-local before doing any
@@ -627,7 +640,17 @@ namespace Tsavorite.core
 
             results = new NativeResult[MaxResults];
 
-            // If Queue IO is enabled, we spin up completion threads.
+            // If Queue IO is enabled, we spin up completion threads. With sharding (N>1
+            // io_contexts/io_urings), thread `i` is bound 1:1 to context `i` via QueueRunFor,
+            // so each ring/io_context has a dedicated drainer and Dispose's drain loop makes
+            // guaranteed progress per-context.
+            //
+            // This branch also implicitly gates the stale-shim ABI probe to the platforms that
+            // actually use the new symbols: on Windows the ThreadPoolIoHandler IOCP path returns
+            // -1 from QueueRun by design (no kernel completion queue to drain), so the probe is
+            // skipped and a stale Windows DLL — which would never call the sharded exports
+            // anyway — keeps working unchanged. On Linux QueueRun returns >= 0 and the probe
+            // catches a stale .so immediately at Initialize() rather than hanging Dispose later.
             //
             // Each Thread handle is kept so Dispose() can Thread.Join() every worker — this is the
             // ONLY way to guarantee the worker has fully returned from its last
@@ -638,11 +661,47 @@ namespace Tsavorite.core
             // on the libaio/uring ring inside the still-blocked thread.
             if (NativeDevice_QueueRun(nativeDevice, 0) >= 0)
             {
-                completionThreadToken = new();
-                completionThreads = new Thread[numCompletionThreadsConfig];
-                for (int i = 0; i < numCompletionThreadsConfig; i++)
+                // Stale-shim ABI probe: try the new sharded exports synchronously. If a
+                // libnative_device.so loaded from the runtimes/ folder predates the multi-context
+                // ABI, EntryPointNotFoundException would otherwise fire asynchronously inside
+                // CompletionWorker, killing the drainer and stalling Dispose's drain loop forever
+                // (numPending would never reach 0). Convert that latent failure into an actionable
+                // startup error here. This probe is intentionally gated by the QueueRun branch so
+                // it runs only on backends that actually USE the new symbols at runtime (see the
+                // Windows-tolerance note above).
+                try
                 {
-                    completionThreads[i] = new Thread(CompletionWorker)
+                    _ = NativeDevice_NumIoContexts(nativeDevice);
+                    _ = NativeDevice_QueueRunFor(nativeDevice, 0, 0);
+                }
+                catch (EntryPointNotFoundException ex)
+                {
+                    NativeDevice_Destroy(nativeDevice);
+                    nativeDevice = IntPtr.Zero;
+                    throw new TsavoriteException(
+                        "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
+                        "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. The shared library " +
+                        "predates the multi-io-context change and must be rebuilt from this branch " +
+                        "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
+                        "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                }
+
+                completionThreadToken = new();
+                // Backends have different optimal context counts:
+                //   * libaio: always 1 io_context (kernel mutex efficient; single ctx hits
+                //     ~750K = hardware ceiling on NVMe). Sharding adds overhead with no gain.
+                //   * uring: N io_urings + N drainers (one drainer per ring). Sharding is the
+                //     only way to scale past the user-space SpinLock cap (~357K single-ring).
+                //     Adding multiple drainers to ONE ring regresses (cq_lock contention).
+                // The native shim decides the count (libaio ignores the hint, uring honours
+                // it); we query it back and spawn exactly that many drainers, 1:1 with rings.
+                int actualIoContexts = NativeDevice_NumIoContexts(nativeDevice);
+                if (actualIoContexts < 1) actualIoContexts = 1;
+                completionThreads = new Thread[actualIoContexts];
+                for (int i = 0; i < actualIoContexts; i++)
+                {
+                    int ctxIdx = i;
+                    completionThreads[i] = new Thread(() => CompletionWorker(ctxIdx))
                     {
                         IsBackground = true
                     };
@@ -1032,20 +1091,24 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Long-running drain loop for one completion thread. Each iteration blocks up to
-        /// <see cref="CompletionWorkerTimeoutSecs"/> seconds inside the native handler (waiting on
-        /// io_getevents / io_uring_wait_cqe_timeout) and then returns control here so we can observe
-        /// a cancellation request promptly. The short timeout ensures Dispose() does not stall: the
-        /// worst-case shutdown stall is one timeout window per blocked thread.
+        /// Long-running drain loop for one completion thread, bound to a specific io_context
+        /// shard. Each iteration blocks up to <see cref="CompletionWorkerTimeoutSecs"/> seconds
+        /// inside <c>NativeDevice_QueueRunFor</c> (which calls io_getevents / io_uring_wait_cqe_timeout
+        /// on its bound context) and then returns control here so we can observe a cancellation
+        /// request promptly. The short timeout ensures Dispose() does not stall: the worst-case
+        /// shutdown stall is one timeout window per blocked thread.
+        ///
+        /// Static binding (worker i ↔ ctx i) is safe because per-context submission count
+        /// equals per-context completion count (the kernel never moves iocbs between
+        /// contexts), so a context-local drain always observes its own pending count and
+        /// makes progress.
         /// </summary>
-        void CompletionWorker()
+        void CompletionWorker(int ctxIdx)
         {
-            // No `finally` shutdown signal needed: Dispose() now uses Thread.Join() on the worker
-            // handle, which fires strictly after this method returns.
             while (true)
             {
                 if (completionThreadToken.IsCancellationRequested) break;
-                NativeDevice_QueueRun(nativeDevice, CompletionWorkerTimeoutSecs);
+                NativeDevice_QueueRunFor(nativeDevice, ctxIdx, CompletionWorkerTimeoutSecs);
                 Thread.Yield();
             }
         }

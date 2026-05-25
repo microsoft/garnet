@@ -31,6 +31,11 @@ public:
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
     virtual void RemoveSegment(uint64_t segment) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
+    /// Per-context (shard) drain. ctx_idx in [0, num_io_contexts). Used by completion threads
+    /// bound 1:1 to a context. Returns -1 if ctx_idx is out of range.
+    virtual int QueueRunFor(int ctx_idx, int timeout_secs) = 0;
+    /// Number of submission/completion shards. >= 1.
+    virtual int num_io_contexts() const = 0;
 };
 
 /// Templated native device implementation. HandlerT selects the IO backend:
@@ -71,11 +76,12 @@ public:
     NativeDeviceImpl(const std::string& file,
         uint64_t segment_size,
         bool omit_segment_id,
+        int num_io_contexts = 1,
         bool enablePrivileges = false,
         bool unbuffered = true,
         bool delete_on_close = false)
         : epoch_ { }
-        , handler_{ 16 /*max threads*/ }
+        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts }
         , default_file_options_{ unbuffered, delete_on_close }
         // FileSystemSegmentedFile validates segment_size internally (must be a positive power
         // of two) and throws std::invalid_argument otherwise. The C ABI wrapper wraps `new
@@ -316,6 +322,14 @@ public:
 
     int QueueRun(int timeout_secs) override {
         return handler_.QueueRun(timeout_secs);
+    }
+
+    int QueueRunFor(int ctx_idx, int timeout_secs) override {
+        return handler_.QueueRunFor(ctx_idx, timeout_secs);
+    }
+
+    int num_io_contexts() const override {
+        return const_cast<handler_t&>(handler_).num_contexts();
     }
 
 private:

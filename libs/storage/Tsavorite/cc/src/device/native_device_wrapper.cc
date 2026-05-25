@@ -45,11 +45,11 @@ inline INativeDevice* FinalizeOrSurfaceError(DeviceT* device) {
 /// positive power of two; catch it here so the C ABI never propagates a C++ exception. Other
 /// exceptions (bad_alloc, etc.) are converted similarly.
 template <typename DeviceT>
-inline INativeDevice* TryConstructDevice(const char* file, uint64_t segment_size, bool omit_segment_id,
+inline INativeDevice* TryConstructDevice(const char* file, uint64_t segment_size, bool omit_segment_id, int num_io_contexts,
                                          bool enablePrivileges, bool unbuffered, bool delete_on_close) {
     try {
         return FinalizeOrSurfaceError(
-            new DeviceT(std::string(file), segment_size, omit_segment_id, enablePrivileges, unbuffered, delete_on_close));
+            new DeviceT(std::string(file), segment_size, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close));
     } catch (const std::invalid_argument& e) {
         native_device::set_last_error("Invalid argument: %s", e.what());
         return nullptr;
@@ -89,21 +89,31 @@ extern "C" {
 	/// segment_size_bytes large enough that only segment 0 is ever addressed, e.g.
 	/// 1<<63 from the managed wrapper's `segmentSize = -1` translation). Multiple segments
 	/// under omit mode would all resolve to the same path and clobber each other.
-	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id) {
+	///
+	/// `num_io_contexts` controls the number of independent libaio/io_uring contexts the
+	/// backend creates per device. Default (and value used by all callers prior to the
+	/// sharding rollout) is 1; values > 1 shard submissions across N kernel contexts to
+	/// scale past the single-context submit-side cap (~400-500K IOPS for libaio on this
+	/// hardware). When the caller passes N > 1 it MUST drive completion via
+	/// NativeDevice_QueueRunFor(device, ctx_idx, timeout) with one drainer thread per
+	/// context (0..N-1); the legacy NativeDevice_QueueRun scans all contexts and is kept
+	/// only for back-compat with single-thread drainers. Ignored on Windows (IOCP).
+	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts) {
 		native_device::clear_last_error();
 		if (file == nullptr) {
 			native_device::set_last_error("NativeDevice_CreateWithBackend: 'file' argument is null.");
 			return nullptr;
 		}
+		if (num_io_contexts < 1) num_io_contexts = 1;
 		switch (backend) {
 			case NativeDeviceBackend_Default:
-				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close);
 #if !defined(_WIN32) && !defined(_WIN64)
 			case NativeDeviceBackend_Libaio:
-				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close);
 #ifdef FASTER_URING
 			case NativeDeviceBackend_Uring:
-				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, omit_segment_id, enablePrivileges, unbuffered, delete_on_close);
+				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close);
 #endif
 #endif
 			default:
@@ -175,6 +185,19 @@ extern "C" {
 
 	EXPORTED_SYMBOL int NativeDevice_QueueRun(INativeDevice* device, int timeout_secs) {
 		return device->QueueRun(timeout_secs);
+	}
+
+	/// Per-context drain. ctx_idx must be in [0, NativeDevice_NumIoContexts(device)). Used
+	/// by completion threads bound 1:1 to a shard. Returns -1 if ctx_idx is out of range.
+	EXPORTED_SYMBOL int NativeDevice_QueueRunFor(INativeDevice* device, int ctx_idx, int timeout_secs) {
+		if (device == nullptr) return -1;
+		return device->QueueRunFor(ctx_idx, timeout_secs);
+	}
+
+	/// Number of submission/completion shards for `device`. >= 1.
+	EXPORTED_SYMBOL int NativeDevice_NumIoContexts(INativeDevice* device) {
+		if (device == nullptr) return 0;
+		return device->num_io_contexts();
 	}
 
 	EXPORTED_SYMBOL void NativeDevice_RemoveSegment(INativeDevice* device, uint64_t segment) {

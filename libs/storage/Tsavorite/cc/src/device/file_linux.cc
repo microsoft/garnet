@@ -337,66 +337,87 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
 } // anonymous namespace
 
 bool UringIoHandler::TryComplete() {
+  // Back-compat: scan all rings.
+  bool any = false;
+  for (int i = 0; i < num_contexts(); ++i) {
+    if (TryCompleteFor(i)) any = true;
+  }
+  return any;
+}
+
+bool UringIoHandler::TryCompleteFor(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
+  struct io_uring* ring = rings_[idx];
+  if (ring == nullptr) return false;
+  // Per-ring CQ lock: required because the legacy TryComplete() / QueueRun() back-compat
+  // paths scan all rings and can race with this dedicated drainer. Without the lock both
+  // sides peek the same CQE, both call io_uring_cqe_seen, both dispatch the callback →
+  // double-free.
+  SpinLock* cq_lock = cq_locks_[idx];
   struct io_uring_cqe* cqe = nullptr;
-  cq_lock_.Acquire();
-  int res = io_uring_peek_cqe(ring_, &cqe);
-  if(res == 0 && cqe) {
+  cq_lock->Acquire();
+  int res = io_uring_peek_cqe(ring, &cqe);
+  if (res == 0 && cqe) {
     int io_res = cqe->res;
-    auto *context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
-    io_uring_cqe_seen(ring_, cqe);
-    cq_lock_.Release();
+    auto* context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
+    io_uring_cqe_seen(ring, cqe);
+    cq_lock->Release();
     DispatchUringCqe(io_res, context);
     return true;
-  } else {
-    cq_lock_.Release();
-    return false;
   }
+  cq_lock->Release();
+  return false;
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
-    // Blocking drain of completed events, intended for a long-running completion
-    // thread. Mirrors libaio QueueIoHandler::QueueRun semantics: wait up to
-    // timeout_secs for at least one event, then drain everything currently
-    // available. Designed to be safe with N concurrent completion threads:
-    // the blocking wait is performed WITHOUT holding cq_lock_ (multiple threads
-    // may wait concurrently on the kernel side via io_uring_enter), and the
-    // user-space ring dequeue is serialized via cq_lock_ around peek+seen.
+  // Back-compat: drain all rings. Single-shard (N=1) callers see identical behaviour.
+  // First ring gets the full timeout; subsequent rings poll with timeout=0.
+  if (rings_.empty()) return 0;
+  int total = 0;
+  int first = QueueRunFor(0, timeout_secs);
+  if (first > 0) total += first;
+  for (int i = 1; i < static_cast<int>(rings_.size()); ++i) {
+    int n = QueueRunFor(i, 0);
+    if (n > 0) total += n;
+  }
+  return total > 0 ? total : first;
+}
+
+int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
+    // Blocking drain for one ring. The wait phase is held without locks (multiple threads
+    // can block in io_uring_wait_cqe_timeout concurrently — kernel-side they all wake on
+    // any CQE), and the peek+seen pair is serialised by cq_lock to prevent the
+    // double-dispatch race described above TryCompleteFor.
+    if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
+    struct io_uring* ring = rings_[idx];
+    if (ring == nullptr) return -1;
+    SpinLock* cq_lock = cq_locks_[idx];
+
     int ret = 0;
 
-    // Phase 1: block (without holding any lock) waiting for at least one CQE,
-    // or until the timeout expires. Don't consume (seen) the CQE here — let
-    // the peek path under cq_lock_ claim it. If multiple threads are blocked
-    // here, they all wake when an event arrives; the first one to acquire the
-    // lock claims the CQE, the others fall through with an empty peek and exit.
+    // Phase 1: block waiting for at least one CQE, or until timeout. Don't consume.
     if (timeout_secs > 0) {
         struct __kernel_timespec ts;
         ts.tv_sec = timeout_secs;
         ts.tv_nsec = 0;
         struct io_uring_cqe* wait_cqe = nullptr;
-        // Return value is intentionally discarded: -ETIME means no event arrived
-        // within the timeout, other errors (e.g. -EINTR) are equally handled by
-        // falling through to phase 2 which drains anything already present.
-        (void)io_uring_wait_cqe_timeout(ring_, &wait_cqe, &ts);
+        (void)io_uring_wait_cqe_timeout(ring, &wait_cqe, &ts);
     }
 
-    // Phase 2: drain everything currently available, serialized via cq_lock_.
-    // Each completion (success or failure) is reported to the caller via the
-    // user callback; we do NOT retry failures here — the io_uring CQE result
-    // already reflects the kernel's final outcome for that submission, and
-    // retrying permanent errors such as -EINVAL/-EBADF/-EIO would loop forever
-    // and leak the in-flight count tracked by the C# layer.
+    // Phase 2: drain everything currently available, serialised on cq_lock so legacy
+    // TryComplete / QueueRun back-compat scans don't race with us.
     for (;;) {
-        cq_lock_.Acquire();
+        cq_lock->Acquire();
         struct io_uring_cqe* cqe = nullptr;
-        int rc = io_uring_peek_cqe(ring_, &cqe);
+        int rc = io_uring_peek_cqe(ring, &cqe);
         if (rc != 0 || cqe == nullptr) {
-            cq_lock_.Release();
+            cq_lock->Release();
             break;
         }
         int io_res = cqe->res;
         auto* context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
-        io_uring_cqe_seen(ring_, cqe);
-        cq_lock_.Release();
+        io_uring_cqe_seen(ring, cqe);
+        cq_lock->Release();
 
         DispatchUringCqe(io_res, context);
         ++ret;
@@ -416,8 +437,7 @@ Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptio
     return Status::Ok;
   }
 
-  ring_ = handler->io_uring();
-  sq_lock_ = handler->sq_lock();
+  handler_ = handler;
   return Status::Ok;
 }
 
@@ -457,15 +477,21 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   bool is_read = operationType == FileOperationType::Read;
   new(io_context.get()) UringIoHandler::IoCallbackContext(is_read, fd_, buffer, length, offset, caller_context_copy, callback);
 
-  sq_lock_->Acquire();
-  struct io_uring_sqe *sqe = io_uring_get_sqe(ring_);
+  // Pick a (ring, sq_lock) pair for this submission. Under N=1, identical to the prior
+  // single-ring path. Under N>1, each ScheduleOperation may land on a different ring.
+  struct io_uring* ring = nullptr;
+  SpinLock* sq_lock = nullptr;
+  handler_->pick_ring(ring, sq_lock);
+
+  sq_lock->Acquire();
+  struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
   if (sqe == nullptr) {
     // SQ ring is full; io_uring_get_sqe returned nullptr without producing a CQE. The previous
     // code asserted here, which silently no-ops in Release and leaves the SQ ring untouched but
     // never invokes the user callback — desynchronizing the C# numPending counter and ultimately
     // hanging Dispose's drain loop. Fail the submission cleanly; the RAII guards above will
     // release io_context (LSS slot) and caller_context_copy (deep-copy + LSS slot).
-    sq_lock_->Release();
+    sq_lock->Release();
     return Status::IOError;
   }
 
@@ -478,7 +504,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  // INVARIANT (single-SQE submission): We hold sq_lock_ across io_uring_get_sqe + io_uring_submit
+  // INVARIANT (single-SQE submission): We hold sq_lock across io_uring_get_sqe + io_uring_submit
   // and prepare exactly ONE SQE per call. liburing's io_uring_submit returns the number of SQEs
   // it submitted to the kernel; with N_prepared = 1 the return value is either:
   //   res == 1  → kernel accepted the SQE; it will eventually produce exactly one CQE we own.
@@ -488,8 +514,8 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // Do NOT switch to batched submission (N_prepared > 1) without revisiting the ownership model:
   // partial submission would require per-SQE accounting to know which contexts the kernel kept
   // and which we must free.
-  int res = io_uring_submit(ring_);
-  sq_lock_->Release();
+  int res = io_uring_submit(ring);
+  sq_lock->Release();
   if (res != 1) {
     return Status::IOError;
   }

@@ -233,6 +233,13 @@ class ThreadPoolIoHandler {
     : threadpool_{ max_threads } {
   }
 
+  /// 2-arg overload accepted for cross-platform symmetry with QueueIoHandler/UringIoHandler.
+  /// Windows uses IOCP per-file; sharding makes no sense and num_contexts is silently
+  /// ignored (always 1 effective context).
+  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/)
+    : threadpool_{ max_threads } {
+  }
+
   /// Move constructor.
   ThreadPoolIoHandler(ThreadPoolIoHandler&& other)
     : threadpool_{ std::move(other.threadpool_) } {
@@ -272,9 +279,21 @@ class ThreadPoolIoHandler {
   inline static constexpr bool TryComplete() {
     return false;
   }
+
+  inline static constexpr bool TryCompleteFor(int /*idx*/) {
+    return false;
+  }
     
-  inline static constexpr int QueueRun(int timeout_secs) {
+  inline static constexpr int QueueRun(int /*timeout_secs*/) {
       return -1; // disable queue IO
+  }
+
+  inline static constexpr int QueueRunFor(int /*idx*/, int /*timeout_secs*/) {
+      return -1; // disable queue IO (sharding not applicable on Windows IOCP)
+  }
+
+  inline static constexpr int num_contexts() {
+      return 1; // single IOCP per-device; sharding not applicable
   }
 
  private:
