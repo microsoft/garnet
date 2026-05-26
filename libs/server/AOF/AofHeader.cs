@@ -7,18 +7,42 @@ using Garnet.common;
 
 namespace Garnet.server
 {
+    // AOF Header Hierarchy
+    //
+    // The header type determines the wire format of each AOF entry based on the log topology:
+    //
+    //   AofHeader (16B) — Base header for all entries. Used standalone with single-log mode.
+    //       │
+    //       ├── AofShardedHeader (24B) = AofHeader + sequenceNumber
+    //       │       Used for per-key entries in multi-physical-log (sharded) mode.
+    //       │       The sequence number enables cross-sublog ordering.
+    //       │
+    //       ├── AofSingleLogTransactionHeader (50B) = AofHeader + participantCount + replayTaskAccessVector
+    //       │       Used for coordinated/broadcast operations (transactions, checkpoints, flush)
+    //       │       in single-physical-log + multi-replay mode. Uses log addresses for ordering
+    //       │       instead of embedded sequence numbers, saving 8B per entry.
+    //       │
+    //       └── AofShardedLogTransactionHeader (58B) = AofShardedHeader + participantCount + replayTaskAccessVector
+    //               Used for coordinated/broadcast operations in multi-physical-log (sharded) mode.
+    //               Embeds a sequence number (via AofShardedHeader) for cross-sublog ordering.
+    //
+    // Selection logic:
+    //   Single log (1 physical, 1 replay task)  → BasicHeader
+    //   Single physical log, multi-replay       → BasicHeader (per-key), SingleLogTransactionHeader (broadcast)
+    //   Multi physical log, multi-replay        → ShardedHeader (per-key), ShardedLogTransactionHeader (broadcast)
     internal enum AofHeaderType : byte
     {
         BasicHeader = 0,
         ShardedHeader = 1,
-        TransactionHeader = 2
+        SingleLogTransactionHeader = 2,
+        ShardedLogTransactionHeader = 3,
     }
 
     /// <summary>
     /// Used for coordinated operations
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
-    unsafe struct AofTransactionHeader
+    unsafe struct AofShardedLogTransactionHeader
     {
         public const int TotalSize = AofShardedHeader.TotalSize + 2 + 32;
         // maximum 256 replay tasks per physical sublog, hence 32 bytes bitmap
@@ -42,6 +66,35 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize + 2)]
         public fixed byte replayTaskAccessVector[ReplayTaskAccessVectorBytes];
+    }
+
+    /// <summary>
+    /// Used for single-physical-log with multi-replay to carry transaction participant info
+    /// without embedding a sequence number (log addresses are used instead).
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
+    unsafe struct AofSingleLogTransactionHeader
+    {
+        public const int TotalSize = AofHeader.TotalSize + 2 + AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes;
+
+        /// <summary>
+        /// Basic AOF header
+        /// </summary>
+        [FieldOffset(0)]
+        public AofHeader basicHeader;
+
+        /// <summary>
+        /// Used for synchronizing virtual sublog replay
+        /// NOTE: This stores the total number of replay tasks that participate in a given transaction.
+        /// </summary>
+        [FieldOffset(AofHeader.TotalSize)]
+        public short participantCount;
+
+        /// <summary>
+        /// Used to track replay task participating in the txn
+        /// </summary>
+        [FieldOffset(AofHeader.TotalSize + 2)]
+        public fixed byte replayTaskAccessVector[AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes];
     }
 
     /// <summary>
@@ -79,7 +132,8 @@ namespace Garnet.server
             {
                 AofHeaderType.BasicHeader => entryPtr + TotalSize,
                 AofHeaderType.ShardedHeader => entryPtr + AofShardedHeader.TotalSize,
-                AofHeaderType.TransactionHeader => entryPtr + AofTransactionHeader.TotalSize,
+                AofHeaderType.ShardedLogTransactionHeader => entryPtr + AofShardedLogTransactionHeader.TotalSize,
+                AofHeaderType.SingleLogTransactionHeader => entryPtr + AofSingleLogTransactionHeader.TotalSize,
                 _ => throw new GarnetException($"Type not supported {headerType}"),
             };
         }

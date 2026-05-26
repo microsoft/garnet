@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -82,13 +83,18 @@ namespace Garnet.server
                     if (payloadLength > 0)
                     {
                         var entryPtr = ptr + entryLength;
-                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, out var entrySequenceNumber))
+                        var logAddressSequenceNumber = currentAddress + (ptr - record);
+                        Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
+                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, logAddressSequenceNumber, out var sequenceNumber))
                         {
-                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _);
+                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);
                         }
                         else
                         {
-                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}", entrySequenceNumber, untilSequenceNumber);
+                            // Sequence numbers are monotonically increasing — all subsequent entries will also exceed the threshold
+                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}, stopping", sequenceNumber, untilSequenceNumber);
+                            cts.Cancel();
+                            break;
                         }
                         entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
@@ -119,6 +125,13 @@ namespace Garnet.server
             }
             else
             {
+                // Wait for previous batch to complete before overwriting shared batch context
+                if (replayTasks != null)
+                {
+                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
+                    replayBatchContext.LeaderFollowerBarrier.Release();
+                }
+
                 CreateAndRunIntraPageParallelReplayTasks();
 
                 replayBatchContext.Record = record;
@@ -127,6 +140,14 @@ namespace Garnet.server
                 replayBatchContext.NextAddress = nextAddress;
                 replayBatchContext.IsProtected = isProtected;
                 replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+
+                // After the last batch, wait for workers and cancel to exit BulkConsumeAllAsync
+                if (nextAddress == untilAddress)
+                {
+                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
+                    replayBatchContext.LeaderFollowerBarrier.Release();
+                    cts.Cancel();
+                }
             }
         }
 
@@ -174,12 +195,18 @@ namespace Garnet.server
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
+                                var logAddressSequenceNumber = currentAddress + (ptr - record);
+                                Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
                                 // Check if entry is assigned for processing to this replay task and
-                                // the sequence number is bellow the threshold to ensure prefix consistency
-                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, out var sequenceNumber) &&
-                                    (untilSequenceNumber == -1 || sequenceNumber <= untilSequenceNumber))
+                                // the sequence number is below the threshold to ensure prefix consistency
+                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out var sequenceNumber))
                                 {
-                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                                    if (untilSequenceNumber != -1 && sequenceNumber > untilSequenceNumber)
+                                    {
+                                        // Sequence numbers are monotonically increasing — stop processing this batch
+                                        break;
+                                    }
+                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
                                     maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 }
                                 entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
@@ -213,8 +240,9 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    // Signal work completion after processing
-                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                    // Signal work completion after processing (skip if cancelled to avoid blocking on resetReady)
+                    if (!cts.Token.IsCancellationRequested)
+                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                 }
             }
         }

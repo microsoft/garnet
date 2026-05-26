@@ -132,7 +132,8 @@ namespace Garnet.cluster
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
 
             // Wait for replay to complete.
-            replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token);
+            if (!replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
+                ExceptionUtils.ThrowException(new GarnetException("Timed out waiting for parallel replay tasks to complete", LogLevel.Warning, clientResponse: false));
             // Release participants for next cycle
             replayBatchContext.LeaderFollowerBarrier.Release();
 
@@ -159,11 +160,13 @@ namespace Garnet.cluster
                 if (payloadLength > 0)
                 {
                     var entryPtr = ptr + entryLength;
+                    var logAddressSequenceNumber = currentAddress + (ptr - record);
                     var replayTaskIdx = replicationManager.AofProcessor.GetReplayTaskIdx(entryPtr);
                     replayTasks[replayTaskIdx].AddRecord(new ReplayRecord()
                     {
                         entryPtr = entryPtr,
-                        payloadLength = payloadLength
+                        payloadLength = payloadLength,
+                        logAddressSequenceNumber = logAddressSequenceNumber
                     });
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
@@ -229,7 +232,8 @@ namespace Garnet.cluster
                     var payloadLength = physicalSublog.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        var logAddressSequenceNumber = currentAddress + (ptr - record);
+                        replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker
                         if (isCheckpointStart)
