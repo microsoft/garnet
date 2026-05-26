@@ -60,7 +60,7 @@ namespace Garnet
                     catch (OperationCanceledException)
                     {
                         // Graceful shutdown: drain connections, commit AOF, take checkpoint
-                        await server.ShutdownAsync(TimeSpan.FromSeconds(server.ShutdownTimeoutSeconds), cts.Token).ConfigureAwait(false);
+                        await server.ShutdownAsync(TimeSpan.FromSeconds(server.ShutdownTimeoutSeconds), token: cts.Token).ConfigureAwait(false);
                     }
                 }
                 finally
