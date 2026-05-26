@@ -69,7 +69,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Create RI keys on primary, take checkpoint, attach replica via checkpoint-based sync.
+        /// Create RI keys on primary and allow them to flow to the replica through AOF.
         /// Verify RI.GET returns correct values on replica.
         /// </summary>
         [Test, Order(1)]
