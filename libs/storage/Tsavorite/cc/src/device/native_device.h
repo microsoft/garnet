@@ -268,13 +268,10 @@ public:
         return log_;
     }
 
-    /// Create (and optionally clear) a directory. Returns 0 on success, -1 on failure.
-    /// On failure, the thread-local last-error (NativeDevice_GetLastError) is populated.
-    ///
-    /// PRODUCTION-SAFETY: when delete_existing is false the call is non-destructive — if the
-    /// directory already exists with data inside, the call succeeds and leaves it alone. The
-    /// previous unconditional remove_all() default was a data-loss footgun for callers that
-    /// just wanted to "ensure the dir exists".
+    /// Create a directory. When `delete_existing` is true the directory and its contents
+    /// are removed first (recursive); otherwise existing contents are preserved. Returns 0
+    /// on success, -1 on failure (the thread-local last-error is populated via
+    /// NativeDevice_GetLastError).
     int CreateDir(const std::string& dir, bool delete_existing) override {
         std::error_code ec;
         std::experimental::filesystem::path path{ dir };
@@ -329,7 +326,7 @@ public:
     }
 
     int num_io_contexts() const override {
-        return const_cast<handler_t&>(handler_).num_contexts();
+        return handler_.num_contexts();
     }
 
 private:

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 #include <libaio.h>
@@ -150,17 +151,11 @@ class File {
 
 class QueueFile;
 
-/// The QueueIoHandler class encapsulates completions for async file I/O, where the completions
-/// are put on the AIO completion queue. Always uses a single libaio io_context — sharding
-/// across multiple contexts was tested empirically (Device.benchmark random-read sweep, 1GB
-/// file, 4K sectors, NVMe) and yielded no throughput improvement; in fact CT=4/CT=8 came in
-/// 3-4% lower than CT=1 (extra atomic counter + cache traffic on shared iocb pool outweighed
-/// any kernel-side benefit, because libaio's io_submit is already efficient per io_context).
-/// The sharded API surface (TryCompleteFor / QueueRunFor / num_contexts / 2-arg ctor) is
-/// preserved so the shared C ABI and templated NativeDeviceImpl don't need a separate code
-/// path for libaio vs uring; but for libaio they always operate on the single io_context.
-/// The C# wrapper queries NumIoContexts after init and spawns that many completion threads,
-/// so passing --device-completion-threads N with libaio is equivalent to --device-completion-threads 1.
+/// Handles libaio submission and completion via a single io_context. The sharded API
+/// surface (TryCompleteFor / QueueRunFor / num_contexts / 2-arg ctor) is preserved for
+/// symmetry with UringIoHandler so the shared C ABI and templated NativeDeviceImpl can
+/// treat both backends uniformly; on the libaio path those methods operate on the single
+/// io_context and num_contexts() always returns 1.
 class QueueIoHandler {
  public:
   typedef QueueFile async_file_t;
@@ -174,8 +169,7 @@ class QueueIoHandler {
     , init_errno_{ 0 } {
   }
   /// Construct + io_setup. On failure, io_object_ stays 0 and init_errno_ holds the positive
-  /// errno value (so the caller can format an actionable error message instead of crashing on
-  /// an assert that's stripped in Release builds).
+  /// errno value from io_setup so the caller can format an actionable error.
   QueueIoHandler(size_t /*max_threads*/)
     : io_object_{ 0 }
     , init_errno_{ 0 } {
@@ -185,9 +179,7 @@ class QueueIoHandler {
       io_object_ = 0;
     }
   }
-  /// 2-arg overload accepted for cross-backend symmetry with UringIoHandler. The
-  /// `num_contexts` argument is silently ignored (libaio always uses a single io_context;
-  /// see class doc).
+  /// Cross-backend 2-arg overload; `num_contexts` is ignored (libaio uses a single io_context).
   QueueIoHandler(size_t /*max_threads*/, int /*num_contexts*/)
     : io_object_{ 0 }
     , init_errno_{ 0 } {
@@ -315,13 +307,8 @@ class QueueFile : public File {
 
 #ifdef FASTER_URING
 
-// Architecture-independent CPU pause/yield hint used by SpinLock spin loops.
-// On x86_64 emits PAUSE (rep nop), on aarch64 emits YIELD; elsewhere acts as
-// a compiler barrier only. Centralised here so the spinlock and any other
-// uring-path spin waits stay portable across the architectures we ship for
-// (linux-x64 is the only RID we currently publish a prebuilt for, but the
-// source must build cleanly on aarch64 too — Tsavorite's CI matrix exercises
-// ARM64 build configs).
+// CPU pause/yield hint for SpinLock backoff. Emits PAUSE on x86, YIELD on aarch64,
+// and a compiler barrier on other architectures.
 inline void uring_cpu_relax() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
     __builtin_ia32_pause();
@@ -357,11 +344,12 @@ private:
 
 class UringFile;
 
-/// The UringIoHandler class encapsulates completions for async file I/O. Sharded across N
-/// independent io_uring instances (default N=1, identical to the unsharded build). Same
-/// architecture as QueueIoHandler — pick_ring() returns a (ring, sq_lock) pair via atomic
-/// round-robin so concurrent submitters distribute across rings; each completion thread
-/// drains exactly one ring via TryCompleteFor/QueueRunFor.
+/// Handles uring submission and completion across N independent io_uring instances.
+/// pick_ring() distributes submissions via atomic round-robin. Each ring has its own
+/// SQ spinlock (serializes get_sqe + prep + submit) and CQ spinlock (serializes
+/// peek + cqe_seen). With one drainer thread per ring (the documented usage), CQ
+/// contention is zero; the CQ lock guards against the legacy back-compat scanner
+/// (TryComplete / QueueRun) racing with the dedicated drainer.
 class UringIoHandler {
  public:
   typedef UringFile async_file_t;
@@ -380,12 +368,8 @@ class UringIoHandler {
     Init(1);
   }
 
-  /// Sharded ctor: set up `num_rings` independent io_urings. Empirical sweep (Device.benchmark,
-  /// 16GB random reads, NVMe) showed sharding rings is the only way to scale uring past the
-  /// per-ring user-space SpinLock cap (single-ring ≤ ~357K regardless of completion-thread
-  /// count; 4 rings + 4 drainers hit ~461K). Adding multiple completion drainers to a single
-  /// ring REGRESSES throughput due to cq_lock contention — so the model here is strict 1:1
-  /// (one drainer per ring, drainers bound exclusively via QueueRunFor(idx)).
+  /// Creates `num_rings` independent io_urings. With N>1 submissions are distributed across
+  /// rings via pick_ring(); each ring requires its own completion drainer (see QueueRunFor).
   UringIoHandler(size_t /*max_threads*/, int num_rings)
     : init_errno_{ 0 } {
     Init(num_rings < 1 ? 1 : num_rings);
@@ -402,6 +386,10 @@ class UringIoHandler {
     other.cq_locks_.clear();
     other.init_errno_ = 0;
   }
+
+  UringIoHandler(const UringIoHandler&) = delete;
+  UringIoHandler& operator=(const UringIoHandler&) = delete;
+  UringIoHandler& operator=(UringIoHandler&&) = delete;
 
   ~UringIoHandler() {
     for (auto* r : rings_) {
@@ -424,8 +412,7 @@ class UringIoHandler {
   /// Number of io_uring shards. >= 1 once initialized.
   int num_contexts() const { return static_cast<int>(rings_.size()); }
 
-  /// Pick a (ring, sq_lock) pair for the next submission via atomic round-robin. Returns the
-  /// only pair under N=1, identical to the unsharded build.
+  /// Pick a (ring, sq_lock) pair for the next submission via atomic round-robin.
   void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
     if (rings_.size() == 1) {
       ring_out = rings_[0];
@@ -459,42 +446,54 @@ class UringIoHandler {
     core::AsyncIOCallback callback;
   };
 
-  /// Try to execute the next IO completion on the FIRST ring. Back-compat; new code should
-  /// prefer TryCompleteFor(idx) which is per-ring.
+  /// Drain one completion from ring 0; sharded callers should use TryCompleteFor(idx).
   bool TryComplete();
+  /// Drain one completion from ring `idx`.
   bool TryCompleteFor(int idx);
-  /// Drain completions across all rings (back-compat for legacy single-thread drainers).
+  /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.
   int QueueRunFor(int idx, int timeout_secs);
 
 private:
   void Init(int num_rings) {
-    rings_.assign(static_cast<size_t>(num_rings), nullptr);
-    sq_locks_.assign(static_cast<size_t>(num_rings), nullptr);
-    cq_locks_.assign(static_cast<size_t>(num_rings), nullptr);
+    struct RingDeleter {
+      void operator()(struct io_uring* r) const noexcept {
+        if (r != nullptr) {
+          io_uring_queue_exit(r);
+          delete r;
+        }
+      }
+    };
+    using RingPtr = std::unique_ptr<struct io_uring, RingDeleter>;
+
+    std::vector<RingPtr> rings;
+    std::vector<std::unique_ptr<SpinLock>> sq_locks;
+    std::vector<std::unique_ptr<SpinLock>> cq_locks;
+    rings.reserve(num_rings);
+    sq_locks.reserve(num_rings);
+    cq_locks.reserve(num_rings);
+
     for (int i = 0; i < num_rings; ++i) {
-      rings_[i] = new struct io_uring();
-      int ret = io_uring_queue_init(kMaxEvents, rings_[i], 0);
+      auto raw_ring = new struct io_uring();
+      int ret = io_uring_queue_init(kMaxEvents, raw_ring, 0);
       if (ret != 0) {
         init_errno_ = -ret;
-        delete rings_[i];
-        rings_[i] = nullptr;
-        for (int j = 0; j < i; ++j) {
-          if (rings_[j] != nullptr) {
-            io_uring_queue_exit(rings_[j]);
-            delete rings_[j];
-            rings_[j] = nullptr;
-          }
-        }
-        for (auto* l : sq_locks_) delete l;
-        sq_locks_.clear();
-        for (auto* l : cq_locks_) delete l;
-        cq_locks_.clear();
+        delete raw_ring;
         return;
       }
-      sq_locks_[i] = new SpinLock();
-      cq_locks_[i] = new SpinLock();
+      rings.emplace_back(raw_ring);
+      sq_locks.emplace_back(std::make_unique<SpinLock>());
+      cq_locks.emplace_back(std::make_unique<SpinLock>());
+    }
+
+    rings_.reserve(num_rings);
+    sq_locks_.reserve(num_rings);
+    cq_locks_.reserve(num_rings);
+    for (int i = 0; i < num_rings; ++i) {
+      rings_.push_back(rings[i].release());
+      sq_locks_.push_back(sq_locks[i].release());
+      cq_locks_.push_back(cq_locks[i].release());
     }
   }
 
@@ -502,14 +501,9 @@ private:
   std::vector<struct io_uring*> rings_;
   /// Per-ring SQ spinlocks. Owned (delete in dtor).
   std::vector<SpinLock*> sq_locks_;
-  /// Per-ring CQ spinlocks. Required even though the typical caller pattern is
-  /// "one dedicated drainer per ring": the legacy NativeDevice_TryComplete /
-  /// NativeDevice_QueueRun path scans ALL rings and may run concurrently with the
-  /// dedicated drainer, racing on io_uring_peek_cqe + io_uring_cqe_seen. The race
-  /// double-dispatches the CQE to the user callback → double-free of the iocb context
-  /// → malloc heap corruption. The lock cost is one uncontended acquire per CQE when
-  /// each ring has exactly one drainer; when contention occurs (which is the bug case)
-  /// the lock serialises the peek+seen pair atomically and prevents the double-dispatch.
+  /// Per-ring CQ spinlock. Serialises io_uring_peek_cqe + io_uring_cqe_seen so the
+  /// dedicated drainer for ring `i` cannot race with the legacy all-rings scanner
+  /// (TryComplete / QueueRun) on the same ring.
   std::vector<SpinLock*> cq_locks_;
   /// Round-robin submit counter; only consulted when rings_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
@@ -517,10 +511,8 @@ private:
   int init_errno_;
 };
 
-/// The UringFile class encapsulates asynchronous reads and writes. Holds a UringIoHandler*
-/// and calls pick_ring() per ScheduleOperation, picking a (ring, sq_lock) pair via the
-/// handler's atomic round-robin. Under N=1 the layout/behaviour is identical to the
-/// pre-sharded version (only one ring + one lock to choose from).
+/// Encapsulates async reads and writes. Holds a UringIoHandler* and picks a (ring,
+/// sq_lock) pair per submission via the handler's atomic round-robin.
 class UringFile : public File {
  public:
   UringFile()

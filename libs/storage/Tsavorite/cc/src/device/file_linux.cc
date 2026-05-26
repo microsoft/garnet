@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <type_traits>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -20,16 +21,9 @@ namespace FASTER {
 namespace environment {
 
 namespace {
-/// Maximum number of bounded sched_yield() retries after a transient kernel back-pressure
-/// signal (libaio's `io_submit == 0` / io_uring's `io_uring_get_sqe == nullptr`) before we
-/// give up and surface Status::IOError to the caller. On a NVMe completing ~750K IOPS the
-/// kernel ring drains a slot every ~1.3 µs and sched_yield is typically a 1-10 µs window,
-/// so a handful of retries reliably absorbs the burst-overshoot from the upper layer's
-/// racy throttle gate (AllocatorBase.Throttle is non-atomic test-then-increment, so N
-/// concurrent submitters can momentarily push in-flight to ThrottleLimit + N which can
-/// exceed the 128-slot per-context/per-ring kernel ring depth). Permanent submission errors
-/// (libaio `io_submit < 0`: EINVAL/EBADF/EIO; uring `io_uring_submit < 0`) are NEVER retried
-/// — they surface immediately so a real failure isn't masked by a delay.
+/// Maximum sched_yield() retries on transient kernel back-pressure during submission
+/// (libaio io_submit == 0, uring io_uring_get_sqe == nullptr or io_uring_submit -EAGAIN/-EBUSY).
+/// Permanent submission errors are not retried.
 constexpr int kMaxSubmitRetries = 8;
 } // anonymous namespace
 
@@ -53,23 +47,16 @@ Status File::Open(int flags, FileCreateDisposition create_disposition, bool* exi
 
   int create_flags = GetCreateDisposition(create_disposition);
 
-  // Capture file-existed state BEFORE the open() call. Probing errno after a successful
-  // open() is undefined behavior (POSIX: errno is unspecified on success), and the prior
-  // implementation racing through `errno == EEXIST` after a SUCCESSFUL open with O_CREAT
-  // would routinely return stale values from earlier failed syscalls — falsely reporting
-  // "exists" when the file had just been created. We deliberately accept a tiny TOCTOU
-  // window between stat() and open(): if another process is concurrently creating this
-  // file the `exists` flag is informational only and the device handles either outcome.
+  // Probe file existence BEFORE open(); errno is unspecified after a successful open().
+  // TOCTOU between stat() and open() is acceptable here: `exists` is informational only.
   bool file_existed_before_open = false;
   if (exists != nullptr) {
     struct stat st;
     file_existed_before_open = (::stat(filename_.c_str(), &st) == 0);
   }
 
-  // OpenExisting on a missing file is a documented non-error: callers iterate the segment
-  // file list and expect "missing" to be reported via *exists=false + Status::Ok (matches the
-  // Windows path at file_windows.cc:45-49). Short-circuit to avoid an open() that would just
-  // fail with ENOENT.
+  // OpenExisting on a missing file is a non-error: report via *exists=false + Status::Ok
+  // (matches the Windows path).
   if (exists != nullptr && create_disposition == FileCreateDisposition::OpenExisting && !file_existed_before_open) {
     *exists = false;
     return Status::Ok;
@@ -126,33 +113,11 @@ Status File::Delete() {
 }
 
 Status File::GetDeviceAlignment() {
-  // Discovers the kernel's authoritative direct-I/O alignment requirement for this file and
-  // records it in device_alignment_. The upper layer (StorageDeviceBase.SectorSize) is told the
-  // SAME value at construction time by NativeStorageDevice via NativeDevice_ProbeAlignment, so
-  // every buffer / offset / length flowing into ReadAsync / WriteAsync is already pre-aligned
-  // by the time it gets here.
-  //
-  // Probe order:
-  //   (1) Linux 6.1+ : statx(STATX_DIOALIGN) — reports the file's actual required DIO offset
-  //       and memory alignment. Authoritative when non-zero.
-  //   (2) Default : 512 — historical Garnet assumption.
-  //
-  // On pre-6.1 kernels (or filesystems that don't yet fill statx_dio_*_align in), we assume 512
-  // and rely on the kernel to surface EINVAL via the completion callback if the actual disk
-  // requires more — the same behavior every other Garnet Linux device has had for years. We
-  // deliberately do NOT fall back to statvfs.f_frsize as a hint: f_frsize is the filesystem's
-  // allocation unit (often 4096 on ext4) which has no necessary relationship to the DIO
-  // alignment requirement (512 on a 512n disk regardless of f_frsize), and using it as a hint
-  // over-reports alignment and causes the cross-check in C# Initialize to throw spuriously on
-  // perfectly good 512n hardware.
-  //
-  // Hot-path cost: zero. This runs once per file open (cold path).
-  //
-  // If the upper-layer probe disagrees with what we discover here (e.g., upper layer said 512
-  // but the kernel demands 4096), the C# NativeStorageDevice.Initialize cross-checks and
-  // throws with a clear message. We never silently accept a mismatch — that would surface as
-  // cryptic per-IO EINVAL after the cluster is serving traffic, or worse, as silent
-  // corruption if the kernel coerced offsets.
+  // Probe the kernel's required direct-I/O alignment for this file and record it in
+  // device_alignment_. Uses statx(STATX_DIOALIGN) on Linux 6.1+ when available; falls back
+  // to 512 (also the default for pre-6.1 kernels and filesystems that do not populate the
+  // statx alignment fields). Mismatches with the upper layer's pre-computed sector size are
+  // caught by the C# Initialize cross-check.
   device_alignment_ = 512;
 
 #if defined(__linux__) && defined(STATX_DIOALIGN)
@@ -160,8 +125,7 @@ Status File::GetDeviceAlignment() {
   if (::statx(fd_, "", AT_EMPTY_PATH, STATX_DIOALIGN, &stx) == 0) {
     uint32_t required = std::max(stx.stx_dio_offset_align, stx.stx_dio_mem_align);
     if (required != 0) {
-      // Round up to a power of two — the upper layer's bit-mask arithmetic assumes pow2.
-      // In practice the kernel always reports a power of two, but be defensive.
+      // Round up to a power of two (the upper-layer bit-mask arithmetic assumes pow2).
       uint32_t pow2 = 512;
       while (pow2 < required) pow2 <<= 1;
       device_alignment_ = std::max<size_t>(device_alignment_, pow2);
@@ -292,11 +256,8 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   IAsyncContext* caller_context_copy;
   RETURN_NOT_OK(context.DeepCopy(caller_context_copy));
-  // RAII guard for the deep-copied caller context. Until ownership transfers to the iocb that
-  // the kernel has accepted (i.e., io_submit returns 1), we must free this LSS slot on every
-  // failure path or it leaks. Cold-path-friendly: stack-allocated, zero-size deleter (EBO),
-  // single conditional null-check at scope exit. The deleter invokes IAsyncContext's virtual
-  // dtor (correctly dispatching to the concrete derived type) before returning the LSS slot.
+  // Guards own io_context and caller_context_copy until io_submit returns 1; on every
+  // failure path the destructors release both.
   auto caller_copy_guard = core::make_context_unique_ptr<IAsyncContext>(caller_context_copy);
 
   new(io_context.get()) QueueIoHandler::IoCallbackContext(operationType, fd_, offset, length,
@@ -305,37 +266,23 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   struct iocb* iocbs[1];
   iocbs[0] = reinterpret_cast<struct iocb*>(io_context.get());
 
-  // INVARIANT: We prepare exactly ONE iocb per call. libaio's io_submit returns the number
-  // of iocbs successfully queued; for N_prepared = 1 the return is one of:
-  //   res == 1  → kernel accepted the iocb; we will get exactly one completion.
-  //   res == 0  → transient back-pressure (kernel ring full). The iocb has NOT been queued;
-  //               we still own it. Bounded-retry with sched_yield until either the kernel
-  //               drains a slot or kMaxSubmitRetries is exhausted.
-  //   res <  0  → permanent error (EINVAL/EBADF/EIO). Surface immediately.
-  // Do NOT batch multiple iocbs without revisiting ownership: partial submission with
-  // N_prepared > 1 creates a UAF window (some accepted, some not, but only the failing one
-  // needs cleanup).
+  // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
+  //   1  : kernel accepted; one completion will fire.
+  //   0  : transient kernel ring full; retry with sched_yield up to kMaxSubmitRetries.
+  //        The iocb is not queued; we still own it.
+  //   <0 : permanent error (EINVAL/EBADF/EIO); surface immediately.
+  // Batching is unsupported here; partial submission would require per-iocb ownership tracking.
   int retries = 0;
   int result;
   while (true) {
     result = ::io_submit(io_object_, 1, iocbs);
     if (result == 1) break;
-    if (result < 0) {
-      // Permanent submission error; RAII guards release io_context (LSS slot) and
-      // caller_context_copy (deep-copy + LSS slot). No leak.
-      return Status::IOError;
-    }
-    // result == 0 → transient EAGAIN. Yield to let the completion drainer run, then retry.
-    if (++retries > kMaxSubmitRetries) {
-      // Genuine sustained overload — application is submitting faster than the device can
-      // serve. Surface IOError so the caller can apply back-pressure.
-      return Status::IOError;
-    }
+    if (result < 0) return Status::IOError;
+    if (++retries > kMaxSubmitRetries) return Status::IOError;
     ::sched_yield();
   }
 
-  // Ownership transferred to the kernel; release both RAII guards so they don't double-free
-  // when the completion path destroys them.
+  // Ownership transferred to the kernel.
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;
@@ -345,13 +292,13 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
 namespace {
 
-// Report a completed CQE to the caller. Negative CQE results are surfaced as
-// IOError (matching the libaio path in QueueIoHandler::IoCompletionCallback);
-// non-negative results carry the bytes-transferred count. Permanent errors
-// (-EINVAL/-EBADF/-EIO/-ENOSPC) MUST NOT be retried here — the C# wrapper
-// tracks each submitted op via numPending and relies on every submission
-// producing exactly one callback to balance that counter.
+// Dispatches one completion CQE to the user callback. Negative `io_res` becomes
+// Status::IOError; non-negative carries the bytes-transferred count. Every submission
+// must produce exactly one callback to balance the C# numPending counter.
 inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* context) {
+    static_assert(std::is_trivially_destructible<UringIoHandler::IoCallbackContext>::value,
+                  "DispatchUringCqe relies on trivial destruction; route through "
+                  "make_context_unique_ptr if a non-trivial member is added.");
     core::Status return_status;
     size_t bytes_transferred;
     if (io_res < 0) {
@@ -368,7 +315,7 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
 } // anonymous namespace
 
 bool UringIoHandler::TryComplete() {
-  // Back-compat: scan all rings.
+  // Drain one CQE from any ring (compat: scans all rings).
   bool any = false;
   for (int i = 0; i < num_contexts(); ++i) {
     if (TryCompleteFor(i)) any = true;
@@ -380,10 +327,8 @@ bool UringIoHandler::TryCompleteFor(int idx) {
   if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
   struct io_uring* ring = rings_[idx];
   if (ring == nullptr) return false;
-  // Per-ring CQ lock: required because the legacy TryComplete() / QueueRun() back-compat
-  // paths scan all rings and can race with this dedicated drainer. Without the lock both
-  // sides peek the same CQE, both call io_uring_cqe_seen, both dispatch the callback →
-  // double-free.
+  // cq_lock serialises peek + cqe_seen against the all-rings compat scanner so the same
+  // CQE cannot be dispatched twice.
   SpinLock* cq_lock = cq_locks_[idx];
   struct io_uring_cqe* cqe = nullptr;
   cq_lock->Acquire();
@@ -401,8 +346,7 @@ bool UringIoHandler::TryCompleteFor(int idx) {
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
-  // Back-compat: drain all rings. Single-shard (N=1) callers see identical behaviour.
-  // First ring gets the full timeout; subsequent rings poll with timeout=0.
+  // Compat: drain across all rings. First ring uses the full timeout; subsequent rings poll.
   if (rings_.empty()) return 0;
   int total = 0;
   int first = QueueRunFor(0, timeout_secs);
@@ -415,10 +359,8 @@ int UringIoHandler::QueueRun(int timeout_secs) {
 }
 
 int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
-    // Blocking drain for one ring. The wait phase is held without locks (multiple threads
-    // can block in io_uring_wait_cqe_timeout concurrently — kernel-side they all wake on
-    // any CQE), and the peek+seen pair is serialised by cq_lock to prevent the
-    // double-dispatch race described above TryCompleteFor.
+    // Blocking drain for one ring. The wait phase is lock-free (kernel wakes every blocked
+    // thread on a CQE); peek+cqe_seen is serialised by cq_lock against the compat scanner.
     if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
     struct io_uring* ring = rings_[idx];
     if (ring == nullptr) return -1;
@@ -426,7 +368,7 @@ int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
 
     int ret = 0;
 
-    // Phase 1: block waiting for at least one CQE, or until timeout. Don't consume.
+    // Phase 1: wait up to `timeout_secs` for at least one CQE; do not consume.
     if (timeout_secs > 0) {
         struct __kernel_timespec ts;
         ts.tv_sec = timeout_secs;
@@ -435,8 +377,7 @@ int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
         (void)io_uring_wait_cqe_timeout(ring, &wait_cqe, &ts);
     }
 
-    // Phase 2: drain everything currently available, serialised on cq_lock so legacy
-    // TryComplete / QueueRun back-compat scans don't race with us.
+    // Phase 2: drain everything currently available.
     for (;;) {
         cq_lock->Acquire();
         struct io_uring_cqe* cqe = nullptr;
@@ -501,26 +442,20 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   IAsyncContext* caller_context_copy;
   RETURN_NOT_OK(context.DeepCopy(caller_context_copy));
-  // RAII guard: see equivalent comment in QueueFile::ScheduleOperation. Frees caller_context_copy
-  // on every failure path between here and a successful io_uring_submit().
+  // Guard owns caller_context_copy until io_uring_submit returns 1.
   auto caller_copy_guard = core::make_context_unique_ptr<IAsyncContext>(caller_context_copy);
 
   bool is_read = operationType == FileOperationType::Read;
   new(io_context.get()) UringIoHandler::IoCallbackContext(is_read, fd_, buffer, length, offset, caller_context_copy, callback);
 
-  // Pick a (ring, sq_lock) pair for this submission. Under N=1, identical to the prior
-  // single-ring path. Under N>1, each ScheduleOperation may land on a different ring.
+  // pick_ring distributes submissions across rings via atomic round-robin (single ring under N=1).
   struct io_uring* ring = nullptr;
   SpinLock* sq_lock = nullptr;
   handler_->pick_ring(ring, sq_lock);
 
-  // Bounded retry on transient SQ-full. io_uring_get_sqe returns nullptr iff the SQ ring
-  // is full (kMaxEvents = 128 slots per ring). With completion drainers running on a
-  // separate thread, a sched_yield typically lets enough CQEs drain to free a slot before
-  // the next attempt. Permanent submit failures (io_uring_submit < 0) are NEVER retried —
-  // they surface immediately so a real failure isn't masked by a delay. We must release
-  // sq_lock around sched_yield: holding a SpinLock across a syscall stalls every other
-  // submitter on this ring.
+  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; retry with
+  // sched_yield up to kMaxSubmitRetries. sq_lock is released around sched_yield so other
+  // submitters on this ring are not blocked across the syscall.
   struct io_uring_sqe* sqe = nullptr;
   int retries = 0;
   while (true) {
@@ -528,47 +463,40 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
     sq_lock->Release();
-    if (++retries > kMaxSubmitRetries) {
-      // Sustained SQ overload — RAII guards above release io_context and caller_context_copy.
-      return Status::IOError;
-    }
+    if (++retries > kMaxSubmitRetries) return Status::IOError;
     ::sched_yield();
   }
-  // sq_lock still held; sqe is non-null.
+  // sq_lock is held; sqe is non-null.
 
   if (is_read) {
     io_uring_prep_readv(sqe, fd_, &io_context->vec_, 1, offset);
-    //io_uring_prep_read(sqe, fd_, buffer, length, offset);
   } else {
     io_uring_prep_writev(sqe, fd_, &io_context->vec_, 1, offset);
-    //io_uring_prep_write(sqe, fd_, buffer, length, offset);
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  // INVARIANT (single-SQE submission): We hold sq_lock across io_uring_get_sqe + io_uring_submit
-  // and prepare exactly ONE SQE per call. liburing's io_uring_submit returns the number of SQEs
-  // it submitted to the kernel; with N_prepared = 1 the return value is either:
-  //   res == 1  → kernel accepted the SQE; it will eventually produce exactly one CQE we own.
-  //   res != 1  → kernel did NOT accept the SQE (or accepted it without queueing); no CQE will
-  //               be produced. We still own io_context and caller_context_copy; both RAII guards
-  //               will release them.
-  // We do NOT retry submit failures here. Once io_uring_get_sqe has returned a non-null SQE we
-  // have already "consumed" that slot in the ring's user-side bookkeeping; re-issuing the SQE
-  // through another get_sqe+prep on a retry would corrupt the ring (we'd hold two SQEs for one
-  // logical op). For our setup (SQPOLL disabled) submit returns 1 in steady state — a non-1
-  // here means an unrecoverable kernel-side error.
-  // Do NOT switch to batched submission (N_prepared > 1) without revisiting the ownership model:
-  // partial submission would require per-SQE accounting to know which contexts the kernel kept
-  // and which we must free.
-  int res = io_uring_submit(ring);
+  // Submit. Exactly one SQE was prepared and is committed to the user-side SQ ring; we MUST
+  // keep re-submitting on transient negatives (-EAGAIN/-EBUSY) or the slot leaks permanently.
+  // Other negatives are surfaced as IOError. A positive return other than 1 should not occur
+  // for a single prepared SQE on a non-SQPOLL ring; treated as IOError defensively.
+  // Batching multiple SQEs is unsupported by this caller.
+  int res;
+  int submit_retries = 0;
+  while (true) {
+    res = io_uring_submit(ring);
+    if (res == 1) break;
+    if (res != -EAGAIN && res != -EBUSY) break;
+    if (++submit_retries > kMaxSubmitRetries) break;
+    sq_lock->Release();
+    ::sched_yield();
+    sq_lock->Acquire();
+  }
   sq_lock->Release();
   if (res != 1) {
     return Status::IOError;
   }
 
-  // Kernel now owns both io_context and caller_context_copy; release the guards so completion
-  // path destroys them (via DispatchUringCqe → lss_allocator.Free, and the inner
-  // ~IoCallbackContext eventually).
+  // Ownership transferred to the kernel.
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;

@@ -627,9 +627,7 @@ class FileSystemDisk {
     : root_path_{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
-    // S is preserved as a class-template arg so legacy compile sites pin a compile-time
-    // segment-size value; the FileSystemSegmentedFile itself now stores it as a runtime const.
-    , log_{ root_path_ + "log.log", default_file_options_, &epoch, S } {
+    , log_{ root_path_ + "log.log", default_file_options_, &epoch, S, false } {
     core::Status result = log_.Open(&handler_);
     assert(result == core::Status::Ok);
   }

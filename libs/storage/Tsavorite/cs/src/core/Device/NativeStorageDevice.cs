@@ -26,11 +26,8 @@ namespace Tsavorite.core
         const int MaxResults = 1 << 12;
 
         /// <summary>
-        /// Floor sector size used when the alignment probe fails (e.g., parent directory
-        /// doesn't exist yet, or running on a kernel/filesystem combination where neither
-        /// statx STATX_DIOALIGN nor statvfs.f_frsize reports anything useful). Matches the
-        /// historical Garnet assumption that every other Linux device hardcodes; in the
-        /// 4K-native disk case the probe overrides this with 4096.
+        /// Floor sector size used when the alignment probe fails (parent directory missing,
+        /// or kernel/filesystem combinations that do not populate statx STATX_DIOALIGN).
         /// </summary>
         const uint MinSectorSize = 512;
 
@@ -116,11 +113,11 @@ namespace Tsavorite.core
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && ex.Message.Contains("libaio.so.1", StringComparison.Ordinal))
             {
-                // Debian 13 (trixie) / Ubuntu 24.04 (noble) renamed libaio1 to libaio1t64 as part of the
-                // 64-bit time_t ABI transition. The package now ships libaio.so.1t64 (SONAME "libaio.so.1t64"),
-                // which does NOT satisfy our DT_NEEDED of "libaio.so.1". Try to repair by dropping a
-                // libaio.so.1 -> libaio.so.1t64 symlink next to libnative_device.so; this works because the
-                // native library is built with RPATH=$ORIGIN.
+                // Compatibility shim for Debian 13 / Ubuntu 24.04+, where libaio1 was renamed to
+                // libaio1t64 and the library now exports SONAME "libaio.so.1t64" (the 64-bit
+                // time_t ABI transition). Drop a libaio.so.1 -> libaio.so.1t64 symlink next to
+                // libnative_device.so; the native library is built with RPATH=$ORIGIN so it picks
+                // the symlink up.
                 if (TryCreateLibaioCompatSymlink(resolvedPath, out var symlinkedPath))
                 {
                     try
@@ -323,13 +320,9 @@ namespace Tsavorite.core
         /// <c>libnative_device.so</c> / <c>native_device.dll</c> was built. Call
         /// <see cref="GetAvailableBackends"/> to probe at runtime.
         /// <para>
-        /// Note: the Linux prebuilt shipped in <c>runtimes/linux-x64/native/</c> is built with
-        /// <c>USE_URING=ON</c> and therefore records <c>liburing.so.2</c> as a NEEDED ELF entry.
-        /// The dynamic linker must resolve it at load time even when only the <see cref="Libaio"/>
-        /// backend is selected. Deployments without liburing must build the native library
-        /// themselves with <c>-DUSE_URING=OFF</c>; in that case the <see cref="Uring"/> backend is
-        /// rejected at <see cref="NativeStorageDevice"/> construction and <see cref="Libaio"/> /
-        /// <see cref="Default"/> remain available.
+        /// The Linux prebuilt shipped under <c>runtimes/linux-x64/native/</c> is built with
+        /// <c>USE_URING=ON</c>, so <c>liburing.so.2</c> is a NEEDED ELF entry that the dynamic
+        /// linker must resolve at load time even when only <see cref="Libaio"/> is selected.
         /// </para>
         /// Must stay in sync with <c>NativeDeviceBackend</c> in <c>native_device.h</c>.
         /// </remarks>
@@ -596,9 +589,9 @@ namespace Tsavorite.core
                         : "Verify the native library matches the requested backend."));
             }
 
-            // Defense in depth: read back the segment size the native side actually used and
-            // assert it matches what we asked for. Catches stale .so binaries that don't include
-            // Phase 6's ABI change.
+            // Validate that the native side accepted the requested segment size. A mismatch
+            // means the loaded native_device library uses a different segment-size ABI than
+            // the managed wrapper expects.
             ulong actualSegmentSize = NativeDevice_GetSegmentSize(nativeDevice);
             if (actualSegmentSize != sizeForNative)
             {
@@ -610,19 +603,10 @@ namespace Tsavorite.core
                     "Ensure libnative_device.so matches the current build.");
             }
 
-            // Cross-check the sector alignment: NativeStorageDevice.GetSectorSize probed the
-            // filesystem via NativeDevice_ProbeAlignment at construction time and used the
-            // result to seed base.SectorSize. Now that the file is actually open, the C++ side
-            // has its own authoritative answer from File::GetDeviceAlignment(). They MUST
-            // agree — if they don't, every I/O the upper layer issues will be misaligned for
-            // the kernel and either rejected with EINVAL or (worse) silently coerced. Throw
-            // at startup with a clear message rather than corrupt the log.
-            //
-            // The mismatch can happen in practice when:
-            //   (1) the file is on a different mount than what GetSectorSize probed (e.g.,
-            //       parent dir was probed before the file was created on a remote/bind mount);
-            //   (2) a stale .so is loaded whose ProbeAlignment is older than sector_size();
-            //   (3) probe returned 512 (fallback) but the kernel sees 4096 via statx after open.
+            // Cross-check sector alignment: the C# probe at construction used
+            // NativeDevice_ProbeAlignment to seed base.SectorSize; the native side computed its
+            // own value via File::GetDeviceAlignment after open. They must agree, otherwise every
+            // I/O the upper layer issues will be misaligned for the kernel.
             uint nativeSectorSize = NativeDevice_sector_size(nativeDevice);
             if (nativeSectorSize != SectorSize)
             {
@@ -640,35 +624,19 @@ namespace Tsavorite.core
 
             results = new NativeResult[MaxResults];
 
-            // If Queue IO is enabled, we spin up completion threads. With sharding (N>1
-            // io_contexts/io_urings), thread `i` is bound 1:1 to context `i` via QueueRunFor,
-            // so each ring/io_context has a dedicated drainer and Dispose's drain loop makes
-            // guaranteed progress per-context.
-            //
-            // This branch also implicitly gates the stale-shim ABI probe to the platforms that
-            // actually use the new symbols: on Windows the ThreadPoolIoHandler IOCP path returns
-            // -1 from QueueRun by design (no kernel completion queue to drain), so the probe is
-            // skipped and a stale Windows DLL — which would never call the sharded exports
-            // anyway — keeps working unchanged. On Linux QueueRun returns >= 0 and the probe
-            // catches a stale .so immediately at Initialize() rather than hanging Dispose later.
-            //
-            // Each Thread handle is kept so Dispose() can Thread.Join() every worker — this is the
-            // ONLY way to guarantee the worker has fully returned from its last
-            // NativeDevice_QueueRun (io_getevents / io_uring_wait_cqe_timeout) syscall before we
-            // call NativeDevice_Destroy. The previous semaphore-based pattern, where the last
-            // worker decremented a counter and released a single semaphore in its `finally` block,
-            // could fire BEFORE other workers had exited the kernel — leading to a use-after-free
-            // on the libaio/uring ring inside the still-blocked thread.
+            // Spawn one completion-drainer thread per native io_context / io_uring. The gate on
+            // NativeDevice_QueueRun(>= 0) skips this branch for backends with no kernel queue
+            // (Windows IOCP returns -1), which is also why the new sharded-ABI probe below is
+            // safe to skip on those backends — they never call the new symbols at runtime.
+            // Thread handles are retained so Dispose() can Thread.Join() every worker before
+            // NativeDevice_Destroy; only Join() guarantees a worker has returned from its last
+            // io_getevents / io_uring_wait_cqe_timeout syscall.
             if (NativeDevice_QueueRun(nativeDevice, 0) >= 0)
             {
-                // Stale-shim ABI probe: try the new sharded exports synchronously. If a
-                // libnative_device.so loaded from the runtimes/ folder predates the multi-context
-                // ABI, EntryPointNotFoundException would otherwise fire asynchronously inside
-                // CompletionWorker, killing the drainer and stalling Dispose's drain loop forever
-                // (numPending would never reach 0). Convert that latent failure into an actionable
-                // startup error here. This probe is intentionally gated by the QueueRun branch so
-                // it runs only on backends that actually USE the new symbols at runtime (see the
-                // Windows-tolerance note above).
+                // Synchronous probe of the sharded-ABI exports. Surfaces a stale .so/.dll as a
+                // clear TsavoriteException at Initialize rather than later as an
+                // EntryPointNotFoundException inside a completion thread (which would stall
+                // Dispose's drain loop because numPending would never reach 0).
                 try
                 {
                     _ = NativeDevice_NumIoContexts(nativeDevice);
@@ -687,14 +655,9 @@ namespace Tsavorite.core
                 }
 
                 completionThreadToken = new();
-                // Backends have different optimal context counts:
-                //   * libaio: always 1 io_context (kernel mutex efficient; single ctx hits
-                //     ~750K = hardware ceiling on NVMe). Sharding adds overhead with no gain.
-                //   * uring: N io_urings + N drainers (one drainer per ring). Sharding is the
-                //     only way to scale past the user-space SpinLock cap (~357K single-ring).
-                //     Adding multiple drainers to ONE ring regresses (cq_lock contention).
-                // The native shim decides the count (libaio ignores the hint, uring honours
-                // it); we query it back and spawn exactly that many drainers, 1:1 with rings.
+                // Spawn exactly one drainer per context the native shim actually created. The
+                // hint passed at construction is advisory; the native side may use fewer (e.g.,
+                // libaio uses 1 regardless).
                 int actualIoContexts = NativeDevice_NumIoContexts(nativeDevice);
                 if (actualIoContexts < 1) actualIoContexts = 1;
                 completionThreads = new Thread[actualIoContexts];
@@ -709,7 +672,28 @@ namespace Tsavorite.core
                 }
             }
 
-            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            try
+            {
+                base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            }
+            catch
+            {
+                // Roll back the native device and drainer threads so a base.Initialize failure
+                // does not leak them.
+                if (completionThreads != null)
+                {
+                    try { completionThreadToken.Cancel(); } catch { /* already disposed */ }
+                    foreach (var t in completionThreads)
+                    {
+                        try { t.Join(); } catch { /* unexpected; swallow to preserve original */ }
+                    }
+                    try { completionThreadToken.Dispose(); } catch { }
+                    completionThreads = null;
+                }
+                var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
+                if (dev != IntPtr.Zero) NativeDevice_Destroy(dev);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -726,15 +710,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Returns false (silent no-op) if the device has been disposed — late fires from epoch
-        /// drain paths are expected after Dispose() returns. Throws
-        /// <see cref="InvalidOperationException"/> if the device has not been initialized yet,
-        /// because that indicates a real ordering bug in the caller.
+        /// Returns false (silent no-op) if the device has been disposed. Throws
+        /// <see cref="InvalidOperationException"/> if the device has not been initialized yet.
         /// </summary>
         bool EnsureReadyOrSilent()
         {
-            if (nativeDevice != IntPtr.Zero) return true;
             if (Volatile.Read(ref disposedFlag) != 0) return false;
+            if (nativeDevice != IntPtr.Zero) return true;
             throw new InvalidOperationException(
                 "NativeStorageDevice must be Initialize()d (which creates the underlying native device) before any IO is issued.");
         }
@@ -743,16 +725,8 @@ namespace Tsavorite.core
         /// Asserts that an I/O request is properly aligned for the underlying O_DIRECT / aligned
         /// path. The libaio and io_uring submission paths require that the file offset, the
         /// transfer length, and the user buffer pointer all be multiples of the device's sector
-        /// size; misaligned requests fail with EINVAL at completion time. Catching them here
-        /// produces a clean, diagnosable error message instead of a cryptic kernel error code
-        /// arriving through the IO callback.
+        /// size; misaligned requests fail with EINVAL at completion time.
         /// </summary>
-        /// <remarks>
-        /// Cost on the hot path: three predicated AND-comparisons and a never-taken branch.
-        /// In well-behaved callers the branch predictor sees a steady-state "no throw" and the
-        /// guard amortizes to a couple of cycles — negligible against the cost of an actual
-        /// kernel I/O submission.
-        /// </remarks>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private void ThrowIfMisaligned(ulong offset, uint length, IntPtr buffer, string op)
         {
@@ -761,9 +735,7 @@ namespace Tsavorite.core
                 ThrowMisaligned(offset, length, buffer, op);
         }
 
-        // Cold-path throw is in its own NoInlining method so the AggressiveInlining guard stays
-        // small and inlinable. The IOException carries every input the caller needs to track
-        // down which upper-layer staging buffer is producing the misaligned request.
+        // Cold path; NoInlining keeps the AggressiveInlining guard small.
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private void ThrowMisaligned(ulong offset, uint length, IntPtr buffer, string op)
         {
@@ -962,12 +934,6 @@ namespace Tsavorite.core
         /// device, otherwise they can dereference a freed io_uring/libaio ring inside
         /// <see cref="NativeDevice_QueueRun"/>.
         /// </summary>
-        /// <summary>
-        /// Close device. Shutdown ordering matters: any in-flight IOs must complete first so the
-        /// numPending CAS terminates; the completion threads must exit BEFORE we destroy the native
-        /// device, otherwise they can dereference a freed io_uring/libaio ring inside
-        /// <see cref="NativeDevice_QueueRun"/>.
-        /// </summary>
         /// <remarks>
         /// <para>Idempotent — multiple calls are safe; only the first does work.</para>
         /// <para>
@@ -1001,29 +967,25 @@ namespace Tsavorite.core
                 }
             }
 
-            // Idempotent: a second call short-circuits without re-running the (non-idempotent)
-            // shutdown sequence. Setting the flag here also serves as the guard for all the
-            // late-fire P/Invoke entry points (TryComplete, GetFileSize, Reset, RemoveSegment).
+            // Idempotent: second and subsequent calls short-circuit. Setting the flag here also
+            // gates late P/Invoke entry points (TryComplete, GetFileSize, Reset, RemoveSegment)
+            // via EnsureReadyOrSilent.
             if (Interlocked.Exchange(ref disposedFlag, 1) != 0)
                 return;
 
-            // 1. Stop accepting new requests, then drain everything in flight.
-            //    The CAS races against WriteAsync / ReadAsync incrementing numPending; we spin until
-            //    a moment is observed where numPending == 0 and we successfully swap it to int.MinValue,
-            //    at which point no new submissions can succeed and all completions have fired
-            //    (since _callback decrements numPending in `finally` AFTER the user callback returns).
+            // Drain in-flight ops by poisoning numPending to int.MinValue once it hits 0. Submit
+            // paths fail their Interlocked.Increment(numPending) <= 0 check and route through the
+            // error callback; the _callback decrement in the success path runs in `finally` after
+            // the user callback, so by the time we observe numPending == 0 all completions are done.
             while (numPending >= 0)
             {
                 Interlocked.CompareExchange(ref numPending, int.MinValue, 0);
                 Thread.Yield();
             }
 
-            // 2. Tell the completion threads to stop, then Thread.Join EVERY worker.
-            //    Thread.Join returns strictly after the worker method returns, which is strictly
-            //    after its last NativeDevice_QueueRun syscall has returned. Unlike the previous
-            //    semaphore + Interlocked.Decrement(numCompletionThreads) pattern, there is no
-            //    race where one worker signals completion while another is still blocked inside
-            //    io_getevents / io_uring_wait_cqe_timeout.
+            // Cancel and Join every completion thread. Thread.Join returns strictly after the
+            // worker's last NativeDevice_QueueRun syscall has returned, which is required before
+            // NativeDevice_Destroy can run.
             if (completionThreads != null)
             {
                 completionThreadToken.Cancel();
@@ -1031,16 +993,11 @@ namespace Tsavorite.core
                 completionThreadToken.Dispose();
             }
 
-            // 3. No thread is inside native code anymore; destroy then poison the handle so
-            //    any guard-bypassed call fails cleanly instead of dereferencing freed memory.
-            //    Skip Destroy() entirely if Dispose was called pre-Initialize (no native device
-            //    was ever created). delete on a null pointer is well-defined in C++, but skipping
-            //    the P/Invoke avoids transitioning into native code unnecessarily.
-            if (nativeDevice != IntPtr.Zero)
-            {
-                NativeDevice_Destroy(nativeDevice);
-                nativeDevice = IntPtr.Zero;
-            }
+            // Atomically null and capture the handle so a guard-bypassed concurrent caller cannot
+            // observe a non-null handle that points to freed memory.
+            var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
+            if (dev != IntPtr.Zero)
+                NativeDevice_Destroy(dev);
         }
 
         /// <inheritdoc/>
@@ -1060,15 +1017,12 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Cold-path probe of the kernel's required direct-I/O alignment for the target file.
-        /// Called from the ctor (via base.ctor) BEFORE the native device is created, because
-        /// StorageDeviceBase.SectorSize is set in the base ctor and is immutable thereafter.
+        /// Called from the ctor (via base.ctor) before the native device is created;
+        /// StorageDeviceBase.SectorSize is set in the base ctor and immutable thereafter.
         /// </summary>
         /// <remarks>
-        /// The probe never throws: on any failure it falls back to <see cref="MinSectorSize"/>
-        /// (512). If the probe reports a stale or wrong value, the cross-check inside
-        /// <see cref="Initialize"/> (comparing the upper-layer <see cref="StorageDeviceBase.SectorSize"/>
-        /// against <see cref="NativeDevice_sector_size"/>) catches the mismatch at startup
-        /// rather than silently emitting misaligned I/Os.
+        /// Never throws: on any failure returns <see cref="MinSectorSize"/> (512). A stale or
+        /// wrong probe is caught by the <see cref="Initialize"/> cross-check.
         /// </remarks>
         private static uint GetSectorSize(string filename)
         {
@@ -1091,17 +1045,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Long-running drain loop for one completion thread, bound to a specific io_context
-        /// shard. Each iteration blocks up to <see cref="CompletionWorkerTimeoutSecs"/> seconds
-        /// inside <c>NativeDevice_QueueRunFor</c> (which calls io_getevents / io_uring_wait_cqe_timeout
-        /// on its bound context) and then returns control here so we can observe a cancellation
-        /// request promptly. The short timeout ensures Dispose() does not stall: the worst-case
+        /// Drain loop for one completion thread bound to io_context shard <paramref name="ctxIdx"/>.
+        /// Each iteration blocks up to <see cref="CompletionWorkerTimeoutSecs"/> seconds in
+        /// <c>NativeDevice_QueueRunFor</c> and then re-checks the cancellation token; worst-case
         /// shutdown stall is one timeout window per blocked thread.
-        ///
-        /// Static binding (worker i ↔ ctx i) is safe because per-context submission count
-        /// equals per-context completion count (the kernel never moves iocbs between
-        /// contexts), so a context-local drain always observes its own pending count and
-        /// makes progress.
         /// </summary>
         void CompletionWorker(int ctxIdx)
         {
@@ -1113,9 +1060,8 @@ namespace Tsavorite.core
             }
         }
 
-        // Per-iteration timeout passed to NativeDevice_QueueRun by completion workers. Kept short so
-        // a cancelled worker exits the native call within roughly this many seconds; the cost of a
-        // shorter value is one extra syscall round-trip per idle second (negligible at server scale).
+        // Per-iteration timeout for completion workers; shorter values reduce Dispose stall at
+        // the cost of one extra syscall per idle second.
         const int CompletionWorkerTimeoutSecs = 1;
     }
 }
