@@ -243,6 +243,11 @@ namespace Garnet.server
         public bool QuietMode = false;
 
         /// <summary>
+        /// Timeout (in seconds) for waiting on active connections to drain during graceful shutdown.
+        /// </summary>
+        public int ShutdownTimeoutSeconds = 5;
+
+        /// <summary>
         /// SAVE and BGSAVE: We will take a full (index + log) checkpoint when ReadOnlyAddress of log increases by this amount, from the last full checkpoint.
         /// </summary>
         public long FullCheckpointLogInterval = 1L << 30;

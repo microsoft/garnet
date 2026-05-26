@@ -48,9 +48,28 @@ namespace Garnet.server
         public void Start();
 
         /// <summary>
+        /// Stop accepting new connections (for graceful shutdown).
+        /// Existing connections remain active until they complete or are disposed.
+        /// </summary>
+        public void StopListening();
+
+        /// <summary>
         /// Stop listening for new connections. Frees the listening port
         /// without waiting for active connections to drain.
         /// </summary>
         public void Close();
+
+        /// <summary>
+        /// Signal all active sessions to reject incoming commands.
+        /// Sessions complete any in-flight command, respond with a LOADING error
+        /// on the next received message, then close the connection.
+        /// Must be called before <see cref="StopListening"/> for deterministic shutdown.
+        /// </summary>
+        public void BeginQuiesce();
+
+        /// <summary>
+        /// True after <see cref="BeginQuiesce"/> has been called.
+        /// </summary>
+        public bool IsQuiescing { get; }
     }
 }
