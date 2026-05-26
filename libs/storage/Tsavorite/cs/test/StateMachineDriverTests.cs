@@ -54,7 +54,7 @@ namespace Tsavorite.test.recovery
             {
                 IndexSize = indexSize,
                 LogDevice = log,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 LogMemorySize = 1L << 20,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance)
@@ -119,7 +119,7 @@ namespace Tsavorite.test.recovery
                     IndexSize = indexSize,
                     LogDevice = log,
                     MutableFraction = 1,
-                    PageSize = IDevice.MinDeviceSectorSize,
+                    PageSize = MinKvLogPageSize,
                     LogMemorySize = 1L << 20,
                     CheckpointDir = MethodTestDir
                 }, StoreFunctions.Create(LongKeyComparer.Instance)
@@ -166,7 +166,7 @@ namespace Tsavorite.test.recovery
             {
                 IndexSize = indexSize,
                 LogDevice = log,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 LogMemorySize = 1L << 20,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance)

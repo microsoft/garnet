@@ -329,8 +329,8 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(63, MinKvLogPageSizeInKB * 4, MinKvLogPageSizeInKB)]
-        [TestCase(16, 16, MinKvLogPageSizeInKB)]
+        [TestCase(MinKvLogPageSizeInKB * 16 - 1, MinKvLogPageSizeInKB * 4, MinKvLogPageSizeInKB)]
+        [TestCase(MinKvLogPageSizeInKB * 4, MinKvLogPageSizeInKB * 4, MinKvLogPageSizeInKB)]
         [TestCase(MinKvLogPageSizeInKB * 4, 64, MinKvLogPageSizeInKB)]
         //[Repeat(3000)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
@@ -340,12 +340,12 @@ namespace Garnet.test
             server.Dispose();
             var pageCount = recoveryMemorySize / pageSize;
             var totalMemorySize = recoveryMemorySize;
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
+            server = CreateGarnetServer(MethodTestDir, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
             var ldataArr = ldata.Select(x => x).Reverse().ToArray();
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 for (var i = 0; i < 3000; i++)
@@ -355,18 +355,18 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
-                var server = redis.GetServer(TestUtils.EndPoint);
+                var server = redis.GetServer(EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
                     Thread.Sleep(10);
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(totalMemorySize /* will add 'k' */), pageCount: pageCount, pageSize: sizeToString(pageSize));
+            server = CreateGarnetServer(MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
             ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.HighWaterAllocatedPageCount, pageCount);
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 for (var i = 3000; i < 3100; i++)

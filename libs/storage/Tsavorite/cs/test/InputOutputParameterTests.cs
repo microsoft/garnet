@@ -7,6 +7,7 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.InputOutputParameterTests
 {
@@ -104,7 +105,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                 LogDevice = log,
                 LogMemorySize = 1L << 22,
                 SegmentSize = 1L << 22,
-                PageSize = IDevice.MinDeviceSectorSize
+                PageSize = MinKvLogPageSize,
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

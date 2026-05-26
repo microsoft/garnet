@@ -9,7 +9,7 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-
+using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.spanbyte
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
@@ -23,11 +23,11 @@ namespace Tsavorite.test.spanbyte
         {
             Span<byte> output = stackalloc byte[20];
             PinnedSpanByte input = default;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
             try
             {
-                using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
+                using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                     new()
                     {
@@ -164,7 +164,7 @@ namespace Tsavorite.test.spanbyte
                     IndexSize = 1L << 13,
                     LogDevice = log,
                     LogMemorySize = 1L << 17,
-                    PageSize = IDevice.MinDeviceSectorSize
+                    PageSize = MinKvLogPageSize
                 }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -36,19 +36,19 @@ namespace Tsavorite.test
             log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
-                MemorySizeBits = LogSettings.kMinMemorySizeBits,
+                MemorySizeBits = TestUtils.MinKvLogMemorySizeBits,
                 PageSizeBits = TestUtils.MinKvLogPageSizeBits,
                 MutableFraction = 0.5,
-                SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
+                SegmentSizeBits = TestUtils.MinKvLogPageSizeBits + 1
             });
             deviceReadOnly = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "RecoverReadOnly"));
             logReadOnly = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = deviceReadOnly,
                 ReadOnlyMode = true,
-                MemorySizeBits = LogSettings.kMinMemorySizeBits,
+                MemorySizeBits = TestUtils.MinKvLogMemorySizeBits,
                 PageSizeBits = TestUtils.MinKvLogPageSizeBits,
-                SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
+                SegmentSizeBits = TestUtils.MinKvLogPageSizeBits + 1
             });
         }
 

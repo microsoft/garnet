@@ -64,13 +64,6 @@ namespace Tsavorite.test
         }
 
         [Test]
-        public void DefaultDeviceSectorSizeConstantTest()
-        {
-            // Verify the device sector size constant
-            ClassicAssert.AreEqual(4096, IDevice.MinDeviceSectorSize);
-        }
-
-        [Test]
         public void StoreLevel_InitialIORecordSizeTest()
         {
             // Store-level InitialIORecordSize should propagate to the TsavoriteKV instance

@@ -30,7 +30,7 @@ namespace Tsavorite.test.LowMemory
                 IndexSize = 1L << 16,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 LogMemorySize = 1L << 14,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir

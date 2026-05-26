@@ -1643,27 +1643,27 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
+            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedReadStart, out var alignedReadLength);
+            device.ReadAsync(alignedReadStart, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
-        private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength)
+        private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedReadStart, out uint alignedReadLength)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
-            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
+            var readStart = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+            alignedReadStart = (ulong)RoundDown((long)readStart, sectorSize);
+            var alignedReadEnd = (ulong)RoundUp((long)readStart + numBytes, sectorSize);
+            alignedReadLength = (uint)(alignedReadEnd - alignedReadStart);
 
             // Clamp the read to page boundary; PageSize is a power of 2 that is at least sectorSize.
             {
-                var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedFileOffset & PageSizeMask));
+                var maxReadLength = (uint)(AlignedPageSizeBytes - (int)((long)alignedReadStart & PageSizeMask));
                 Debug.Assert(maxReadLength >= sectorSize, $"Max read length {maxReadLength} must be at least sectorSize {sectorSize}");
                 if (alignedReadLength > maxReadLength)
                     alignedReadLength = maxReadLength;
             }
 
             var record = bufferPool.Get((int)alignedReadLength);
-            record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            record.valid_offset = (int)(readStart - alignedReadStart);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;
             return record;
@@ -2088,21 +2088,25 @@ namespace Tsavorite.core
                 if (currentLength >= offsetToKeyStart)
                 {
                     var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-                    var keyStartPtr = ptr + offsetToKeyStart;
 
-                    // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, dataHeader))
-                        return false;
-
-                    // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
-                    if (currentLength >= recordLength)
+                    if ((offsetToKeyStart + keyLength) <= currentLength)
                     {
-                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
-                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
-                        if (storeFunctions.CallOnDiskRead)
-                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
-                        return true;
+                        // If the key is inline we have it all. Check for a match if we had a requested key and if that fails return to fetch prevAddressToRead.
+                        if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, dataHeader))
+                            return false;
+
+                        // Keys match. If we have the full record, return success.
+                        if (currentLength >= recordLength)
+                        {
+                            ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                            ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                            if (storeFunctions.CallOnDiskRead)
+                                storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
+                            return true;
+                        }
                     }
+
+                    // We didn't have the full key so drop through to read the full record with the length we now know.
                     prevLengthToRead = recordLength;
                 }
             }

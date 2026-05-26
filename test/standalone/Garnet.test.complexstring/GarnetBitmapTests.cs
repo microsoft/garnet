@@ -10,7 +10,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Tsavorite.core;
+using static Garnet.test.TestUtils;
 
 namespace Garnet.test
 {
@@ -499,7 +499,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
                 pageCount: 2,  // Specify pageCount instead of memorySize to avoid LogSizeTracker.MinTargetPageCount requirement
-                pageSize: IDevice.MinDeviceSectorSize.ToString());
+                pageSize: MinKvLogPageSize.ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -710,8 +710,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                memorySize: (IDevice.MinDeviceSectorSize << 3).ToString(),  // Must be at least LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                pageSize: IDevice.MinDeviceSectorSize.ToString());
+                memorySize: (MinKvLogPageSize << 3).ToString(),  // Must be at least LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                pageSize: MinKvLogPageSize.ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1249,8 +1249,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                memorySize: (IDevice.MinDeviceSectorSize << 3).ToString(),  // Must be at least LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                pageSize: IDevice.MinDeviceSectorSize.ToString());
+                memorySize: (MinKvLogPageSize << 3).ToString(),  // Must be at least LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                pageSize: MinKvLogPageSize.ToString());
             //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();
@@ -1451,7 +1451,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
                 pageCount: 2,   // Specify pageCount instead of memorySize to avoid LogSizeTracker.MinTargetPageCount requirement
-                pageSize: IDevice.MinDeviceSectorSize.ToString());
+                pageSize: MinKvLogPageSize.ToString());
             //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();
@@ -1917,7 +1917,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
                 pageCount: 2,   // Specify pageCount instead of memorySize to avoid LogSizeTracker.MinTargetPageCount requirement
-                pageSize: IDevice.MinDeviceSectorSize.ToString());
+                pageSize: MinKvLogPageSize.ToString());
             //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();

@@ -94,7 +94,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 SegmentSize = 1L << 22
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -193,7 +193,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 SegmentSize = 1L << 22
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

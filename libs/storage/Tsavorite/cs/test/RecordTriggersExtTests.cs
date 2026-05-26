@@ -99,7 +99,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
                     new ExtRecordTriggers(events))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));

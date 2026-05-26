@@ -42,6 +42,8 @@ namespace Tsavorite.test
         // Use 4KB page size for tests, independent of device sector size
         public const int MinKvLogPageSizeBits = 12;
         public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+        public const int MinKvLogMemorySizeBits = MinKvLogPageSizeBits + 1;
+        public const int MinKvLogMemorySize = 1 << MinKvLogMemorySizeBits;
 
         public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 

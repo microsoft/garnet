@@ -7,6 +7,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
+using static Garnet.test.TestUtils;
 
 namespace Garnet.test
 {
@@ -19,7 +20,7 @@ namespace Garnet.test
 
         // The HLOG will always have at least two pages allocated.
         const int MinLogAllocatedPageCount = 2;
-        const int PageSize = IDevice.MinDeviceSectorSize;
+        const int PageSize = MinKvLogPageSize;
         const int PageCount = LogSizeTracker.MinTargetPageCount * 2;
         const int TargetSize = 70_000;
 

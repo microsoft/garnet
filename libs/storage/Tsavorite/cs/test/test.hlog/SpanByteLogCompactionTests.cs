@@ -75,7 +75,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
