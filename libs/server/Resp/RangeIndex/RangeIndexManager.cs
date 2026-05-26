@@ -254,7 +254,7 @@ namespace Garnet.server
 
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
         public string LogFlushPath(string hashPrefix, long logicalAddress)
-            => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
+            => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}{FlushSuffix}");
 
         /// <summary>{cprDir}/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</summary>
         public string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
@@ -906,7 +906,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
                 yield break;
 
-            foreach (var path in Directory.EnumerateFiles(riLogRoot, "*.flush.bftree"))
+            foreach (var path in Directory.EnumerateFiles(riLogRoot, $"*{FlushSuffix}"))
             {
                 var name = Path.GetFileName(path);
 
