@@ -72,6 +72,11 @@ namespace Garnet
         public StoreApi Store;
 
         /// <summary>
+        /// Configured shutdown drain timeout in seconds.
+        /// </summary>
+        public int ShutdownTimeoutSeconds => opts.ShutdownTimeoutSeconds > 0 ? opts.ShutdownTimeoutSeconds : 5;
+
+        /// <summary>
         /// Create Garnet Server instance using specified command line arguments; use Start to start the server.
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
@@ -627,7 +632,7 @@ namespace Garnet
             logger?.LogDebug("Taking checkpoint for tiered storage...");
             try
             {
-                var checkpointSuccess = await storeWrapper.TakeCheckpointAsync(background: false, token: token, logger: logger).ConfigureAwait(false);
+                var checkpointSuccess = await Store.TakeCheckpointAsync(background: false, token: token).ConfigureAwait(false);
                 if (checkpointSuccess)
                 {
                     logger?.LogDebug("Checkpoint completed successfully.");
