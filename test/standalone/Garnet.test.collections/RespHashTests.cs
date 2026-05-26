@@ -1126,8 +1126,8 @@ namespace Garnet.test
                 db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
             }
 
-            // Create LTM (larger than memory) DB by inserting 100 keys
-            for (int i = 4; i < 100; i++)
+            // Create LTM (larger than memory) DB by inserting 1000 keys
+            for (int i = 4; i < 1000; i++)
             {
                 var key = "user:user" + i;
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);

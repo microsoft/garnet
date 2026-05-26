@@ -37,7 +37,7 @@ namespace Tsavorite.test
             {
                 LogDevice = device,
                 MemorySizeBits = LogSettings.kMinMemorySizeBits,
-                PageSizeBits = LogSettings.kMinPageSizeBits,
+                PageSizeBits = TestUtils.MinKvLogPageSizeBits,
                 MutableFraction = 0.5,
                 SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
             });
@@ -47,7 +47,7 @@ namespace Tsavorite.test
                 LogDevice = deviceReadOnly,
                 ReadOnlyMode = true,
                 MemorySizeBits = LogSettings.kMinMemorySizeBits,
-                PageSizeBits = LogSettings.kMinPageSizeBits,
+                PageSizeBits = TestUtils.MinKvLogPageSizeBits,
                 SegmentSizeBits = LogSettings.kMinMainLogSegmentSizeBits
             });
         }

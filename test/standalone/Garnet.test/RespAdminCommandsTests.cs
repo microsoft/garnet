@@ -10,7 +10,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Tsavorite.core;
+using static Garnet.test.TestUtils;
 using NotImplementedException = System.NotImplementedException;
 
 namespace Garnet.test
@@ -329,10 +329,9 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(63, 15, IDevice.MinDeviceSectorSize)]
-        [TestCase(63, IDevice.MinDeviceSectorSize * 2, IDevice.MinDeviceSectorSize)]
-        [TestCase(16, 16, IDevice.MinDeviceSectorSize)]
-        [TestCase(IDevice.MinDeviceSectorSize * 4, 64, IDevice.MinDeviceSectorSize)]
+        [TestCase(63, MinKvLogPageSizeInKB * 4, MinKvLogPageSizeInKB)]
+        [TestCase(16, 16, MinKvLogPageSizeInKB)]
+        [TestCase(MinKvLogPageSizeInKB * 4, 64, MinKvLogPageSizeInKB)]
         //[Repeat(3000)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
@@ -340,7 +339,7 @@ namespace Garnet.test
 
             server.Dispose();
             var pageCount = recoveryMemorySize / pageSize;
-            var totalMemorySize = recoveryMemorySize + 64;  // Add in some for heap
+            var totalMemorySize = recoveryMemorySize;
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
@@ -380,18 +379,18 @@ namespace Garnet.test
 
         [Test]
         [TestCase("63k", "16k")]
-        [TestCase("63k", "3k")]
-        [TestCase("63k", "2k")]
-        [TestCase("18k", "15k")]
+        [TestCase("63k", "23k")]
+        [TestCase("63k", "42k")]
+        [TestCase("18k", "16k")]
         [TestCase("16k", "16k")]
         [TestCase("25k", "18k")]
         [TestCase("25k", "64k")]
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
-            bool disableObj = true;
+            var disableObj = true;
 
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: $"{IDevice.MinDeviceSectorSize}", enableAOF: true);
+            server = CreateGarnetServer(MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: $"{MinKvLogPageSize}", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -426,10 +425,10 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: $"{IDevice.MinDeviceSectorSize}", enableAOF: true);
+            server = CreateGarnetServer(MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: $"{MinKvLogPageSize}", enableAOF: true);
             server.Start();
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 for (int i = 0; i < 2000; i++)
@@ -444,10 +443,10 @@ namespace Garnet.test
         public void SeAofRecoverTest()
         {
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server = CreateGarnetServer(MethodTestDir, enableAOF: true);
             server.Start();
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofRecoverTestKey", "SeAofRecoverTestValue");
@@ -456,10 +455,10 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
+            server = CreateGarnetServer(MethodTestDir, enableAOF: true, tryRecover: true);
             server.Start();
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofRecoverTestKey");
@@ -470,8 +469,8 @@ namespace Garnet.test
         [Test]
         public void SeFlushDbAndFlushAllTest([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            IServer server = redis.GetServer(TestUtils.EndPoint);
+            using var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true));
+            IServer server = redis.GetServer(EndPoint);
 
             var db = redis.GetDatabase(0);
 
@@ -511,7 +510,7 @@ namespace Garnet.test
         [Test]
         public void SePingMessageTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(GetConfig());
             var db = redis.GetDatabase(0);
             var expectedResponse = "HELLO";
             var actualValue = db.Execute("PING", "HELLO").ToString();

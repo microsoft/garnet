@@ -22,8 +22,8 @@ namespace Tsavorite.test.Objects
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
-        const long LogMemorySize = 1L << (LogSettings.kMinPageSizeBits + 5);
-        const long PageSize = 1L << LogSettings.kMinPageSizeBits;
+        const long LogMemorySize = 1L << (MinKvLogPageSizeBits + 5);
+        const long PageSize = 1L << MinKvLogPageSizeBits;
 
         [SetUp]
         public void Setup()
@@ -275,8 +275,8 @@ namespace Tsavorite.test.Objects
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
             // Ensure our size calculations are correct by validating the test parameters are what we expect
-            Assert.That(LogMemorySize, Is.EqualTo(1L << (LogSettings.kMinPageSizeBits + 5)));
-            Assert.That(PageSize, Is.EqualTo(1L << LogSettings.kMinPageSizeBits));
+            Assert.That(LogMemorySize, Is.EqualTo(1L << (MinKvLogPageSizeBits + 5)));
+            Assert.That(PageSize, Is.EqualTo(1L << MinKvLogPageSizeBits));
             Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
             Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
             const int RecordLength = 32;                                // LogRecord allocated size (note: record has an ObjectId in the value position)
@@ -377,8 +377,8 @@ namespace Tsavorite.test.Objects
         public async Task LargeObjectLinearizeFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
             // Ensure our size calculations are correct by validating the test parameters are what we expect
-            Assert.That(LogMemorySize, Is.EqualTo(1L << (LogSettings.kMinPageSizeBits + 5)));
-            Assert.That(PageSize, Is.EqualTo(1L << LogSettings.kMinPageSizeBits));
+            Assert.That(LogMemorySize, Is.EqualTo(1L << (MinKvLogPageSizeBits + 5)));
+            Assert.That(PageSize, Is.EqualTo(1L << MinKvLogPageSizeBits));
             Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
             Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
             const int RecordLength = 32;                                // LogRecord allocated size (note: record has an ObjectId in the value position)

@@ -9,6 +9,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -573,13 +574,13 @@ namespace Garnet.test
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    memorySize: "2k",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                    pageSize: "512");
+                    memorySize: $"{IDevice.MinDeviceSectorSize * LogSizeTracker.MinTargetPageCount}",       // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                    pageSize: $"{IDevice.MinDeviceSectorSize}");
             else
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    memorySize: "64k",  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                    pageSize: "16k");
+                    memorySize: $"{IDevice.MinDeviceSectorSize * 4 * LogSizeTracker.MinTargetPageCount}",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                    pageSize: $"{IDevice.MinDeviceSectorSize * 4}");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -691,8 +692,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                memorySize: "2k",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                pageSize: "512");
+                memorySize: $"{IDevice.MinDeviceSectorSize * LogSizeTracker.MinTargetPageCount}",   // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                pageSize: $"{IDevice.MinDeviceSectorSize}");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

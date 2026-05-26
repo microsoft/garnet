@@ -39,6 +39,10 @@ namespace Tsavorite.test
         internal const string OverflowFieldCategory = "OverflowField";
         internal const string LogRecordCategory = "LogRecord";
 
+        // Use 4KB page size for tests, independent of device sector size
+        public const int MinKvLogPageSizeBits = 12;
+        public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+
         public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 
         /// <summary>

@@ -92,6 +92,11 @@ namespace Garnet.test
 
     internal static class TestUtils
     {
+        // Use 4KB page size for tests, independent of device sector size
+        public const int MinKvLogPageSizeBits = 12;
+        public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+        public const int MinKvLogPageSizeInKB = MinKvLogPageSize / 1024;
+
         public static int TestPort = (int)TestPortAssignment.GarnetTest;    // No OneTimeSetUp needed for "Garnet.test" to set this
 
         /// <summary>
@@ -422,8 +427,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
 
                 // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
                 // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
@@ -849,8 +854,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
             }
 
             return opts;

@@ -11,6 +11,7 @@ using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
+using static Garnet.test.TestUtils;
 
 namespace Garnet.test
 {
@@ -245,7 +246,7 @@ namespace Garnet.test
         GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "1m";
-        private readonly string pageSize = "1024";
+        private readonly string pageSize = $"{MinKvLogPageSize}";
         private readonly bool useReviv;
 
         public RespConfigUtilizationTests(RevivificationMode revivMode)
@@ -281,8 +282,8 @@ namespace Garnet.test
         [Test]
         [TestCase("1m", "4m")]
         [TestCase("1024k", "4000k")]
-        [TestCase("4k", "8k")]
-        [TestCase("8k", "64k")]
+        [TestCase("16k", "24k")]
+        [TestCase("32k", "64k")]
         public void ConfigSetInlineMemorySizeUtilizationTest(string smallerSize, string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -411,11 +412,11 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
                 // Insert records until head address moves. We want to fit two records per page; pages are 1024 bytes so after subtracting
-                // PageHeader.Size we have 960 / 2 = 480 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
+                // PageHeader.Size we have 4032 / 2 = 2016 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
                 // more than 255, we have no optionals (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
-                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 480, so valueLength = 480-22 = 458 bytes.
+                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 2016, so valueLength = 2016-22 = 1994 bytes.
                 // It's rounded up to kRecordAlignment (8) anyway.
-                var val = new RedisValue(new string('x', 458));
+                var val = new RedisValue(new string('x', 1994));
 
                 var i = 0;
                 var prevHead = info.HeadAddress;
@@ -521,11 +522,11 @@ namespace Garnet.test
                 while (c > 0 && db.KeyExists($"key{--c:00000}"))
                     continue;
 
-                // Verify the head/tail addresses are within range and that the number of existing keys matches the head/tail range. We should have two keys per page.
+                // Verify the head/tail addresses are within range and that the number of existing keys matches the head/tail range. We should have two records per page.
                 var addressRange = store.Log.TailAddress - store.Log.HeadAddress;
                 var addressRangePages = RoundUp(addressRange, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize;
                 Assert.That(addressRange, Is.LessThanOrEqualTo(highTargetRestore));
-                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(allocatedPagesRestore * 2));   // AllocatedPageCount includes the "allocate-ahead" page
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(allocatedPagesRestore * 2));   // Two records per page; AllocatedPageCount includes the "allocate-ahead" page
                 Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(addressRangePages * 2));
 
                 // Verify that all previous keys are not present in the database
@@ -545,7 +546,7 @@ namespace Garnet.test
         GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "512";
-        private readonly string pageSize = "1024";
+        private readonly string pageSize = $"{MinKvLogPageSize}";
         private readonly bool useReviv;
 
         public RespConfigIndexUtilizationTests(RevivificationMode revivMode)
@@ -651,7 +652,7 @@ namespace Garnet.test
         GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "512";
-        private readonly string pageSize = "1024";
+        private readonly string pageSize = $"{MinKvLogPageSize}";
         private readonly bool useReviv;
 
         public RespConfigHeapUtilizationTests(RevivificationMode revivMode)
@@ -684,8 +685,8 @@ namespace Garnet.test
         /// </summary>
         /// <param name="smallerSize">Memory size smaller than the current total log+heap usage</param>
         [Test]
-        [TestCase("8192")]
-        public void ConfigSetHeapMemorySizeUtilizationTest(string smallerSize)
+        [TestCase(MinKvLogPageSize * 16)]
+        public void ConfigSetHeapMemorySizeUtilizationTest(int smallerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
@@ -697,14 +698,11 @@ namespace Garnet.test
             // Verify initial state: no data yet, allocated page count at the minimum.
             ClassicAssert.AreEqual(RespConfigTests.MinLogAllocatedPageCount, store.Log.AllocatedPageCount);
 
-            using var trimCompleteEvent = new ManualResetEventSlim(false);
-            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
-
             // Insert enough list objects so that (a) the inline log grows beyond MinResizeTargetPageCount pages
             // (required before DetermineEvictionRange can evict anything), and (b) the tracked heap size is
             // well above the new target we're about to configure. Each list contributes ~4KB of heap
             // (16 items * 256 bytes), and each record adds a small inline entry to the log.
-            const int numKeys = 128;
+            const int numKeys = 1024;
             var values = new RedisValue[16];
             var valPayload = new string('x', 256);
             for (var i = 0; i < values.Length; i++)
@@ -719,13 +717,15 @@ namespace Garnet.test
                 "Test precondition: need more than MinResizeTargetPageCount pages for eviction to be possible.");
             Assert.That(heapBefore, Is.GreaterThan(0), "Test precondition: heap should be non-empty after inserts.");
 
+            using var trimCompleteEvent = new ManualResetEventSlim(false);
+            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
+
             // Shrink the memory target. The 'shrink' branch of LogSizeTracker.UpdateTargetSize signals the
             // resizer task; because TotalSize is now well above highTargetSize, the task calls
             // DetermineEvictionRange + ShiftAddresses and then invokes PostMemoryTrim.
             var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
-            var smallerTarget = ServerOptions.ParseSize(smallerSize, out _);
-            Assert.That(tracker.TargetSize, Is.EqualTo(smallerTarget));
+            Assert.That(tracker.TargetSize, Is.EqualTo(smallerSize));
 
             // Wait for the trim callback.
             Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker.ResizeTaskDelaySeconds)),

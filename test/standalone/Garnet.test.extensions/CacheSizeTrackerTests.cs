@@ -19,8 +19,9 @@ namespace Garnet.test
 
         // The HLOG will always have at least two pages allocated.
         const int MinLogAllocatedPageCount = 2;
-        const int PageSize = 512;
-        const int TargetSize = 9000;
+        const int PageSize = IDevice.MinDeviceSectorSize;
+        const int PageCount = LogSizeTracker.MinTargetPageCount * 2;
+        const int TargetSize = 70_000;
 
         [SetUp]
         public void Setup()
@@ -28,7 +29,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // memorySizeStr is 2k for inline pages (hence pageCount: 4) plus 7k for heap allocations so we end up in the middle of the third page (see individual test notes).
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: $"{TargetSize}", pageSize: $"{PageSize}", pageCount: 4, lowMemory: true, indexSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: $"{TargetSize}", pageSize: $"{PageSize}", pageCount: PageCount, lowMemory: true, indexSize: "1k");
             server.Start();
             store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
@@ -75,8 +76,8 @@ namespace Garnet.test
             const int RecordSize = 32;
 
             // Add one record to verify expected memory size.
-            db.HashSet("u00", [new HashEntry("Title", "Faster")]);
-            string r = db.HashGet("u00", "Title");
+            db.HashSet("u000", [new HashEntry("Title", "Faster")]);
+            string r = db.HashGet("u000", "Title");
             ClassicAssert.AreEqual("Faster", r);
 
             ClassicAssert.AreEqual(MemorySizePerObject, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
@@ -85,111 +86,145 @@ namespace Garnet.test
             // Inline size:
             //   K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataBytes, valueLength, keyLength, objectLogPosition; the total rounded up to record alignment.
             //   ValueLength is 4 for the ObjectId, so this becomes 8 + 5 + 3(key) + 4(value) totalling 20, plus 8 for objectLogPosition totaling 32 which is already rounded to record alignment
-            //   and is a even divisor for the page size. First valid address is 64, so a 512b page allows 14 records evenly; a memory size of 2k allows 56 total records. 
+            //   and is a even divisor for the page size. First valid address is 64, so a 4kb page allows 126 records evenly.
             Assert.That(store.Log.TailAddress, Is.EqualTo(PageHeader.Size + RecordSize));
 
             // Heap size:
-            //   MemorySizePerEntry is 208 heap bytes per record, which x 14 records per page is 2912 heap bytes per page.
+            //   MemorySizePerObject is 208 heap bytes per record, which x 126 records per page is 26208 heap bytes per page.
             // Total size:
-            //   Per-page, heap size plus the 512 bytes of the page itself is 3424 tatal bytes per page.
-            // We've limited ourselves to 9k memory size; so initially we'll have two fully allocated pages (6848 bytes) and then the third page will be partially allocated with the remaining memory
-            // before we need to start HeadAddress moving up (by 32 bytes each record), and then we'll evict pages as we pass their boundaries. For this test, the heap size per page being larger than
-            // the inline page size makes it easy to track (a page's inline size is less than 3 records' worth of heap data), so we'll stay at 3 pages and advance HeadAddress.
+            //   Per-page, heap size plus the 4kb of the page itself is 30304 tatal bytes per page.
+            // We've limited ourselves to 100_000 memory size; so initially we'll have 3 fully allocated pages including object heap cost (90912 total bytes) and then the third page will be partially
+            // allocated with the remaining memory before we need to start HeadAddress moving up (by 32 bytes each record), and then we'll evict pages as we pass their boundaries. For this test, the heap
+            // size per page being larger than the inline page size makes it easy to track (a page's inline size is less than 3 records' worth of heap data), so we'll stay at 3 pages and advance HeadAddress.
 
             // Allocate the first two pages (remember we added one record above); we should not evict.
-            int numRecords = 28;
+            int numRecords = 252;
             for (var ii = 1; ii < numRecords; ii++)
-                db.HashSet($"u{ii:00}", [new HashEntry("Title", "Faster")]);
+                db.HashSet($"u{ii:000}", [new HashEntry("Title", "Faster")]);
             Assert.That(evicted, Is.False, "Eviction should not have occurred yet");
             Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo(numRecords * MemorySizePerObject));
-            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(numRecords * MemorySizePerObject + 3 * PageSize));  // We are at the end of the second page and have the "allocate one page ahead" allocated
+            Assert.That(cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount, Is.EqualTo(3));                         // We are at the end of the second page and have the "allocate one page ahead" allocated
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(numRecords * MemorySizePerObject + 3 * PageSize));
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(64704)); // To help follow below
             Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size));
-            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2));
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageHeader.Size * 2 + RecordSize * numRecords));
 
             var (highTarget, lowTarget) = cacheSizeTracker.mainLogTracker.TargetDeltaRange;
-            Assert.That(highTarget, Is.EqualTo(9900));
-            Assert.That(lowTarget, Is.EqualTo(8820));
+            Assert.That(highTarget, Is.EqualTo(77000));
+            Assert.That(lowTarget, Is.EqualTo(68600));
             var remaining = highTarget - cacheSizeTracker.mainLogTracker.TotalSize;
-            Assert.That(remaining, Is.EqualTo(2540));
+            Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo(numRecords * MemorySizePerObject));
+            Assert.That(remaining, Is.EqualTo(12296));  // High Target - totalSize
 
-            // Our next allocation will add a page and thus subtract 512 from our budget, leaving 2028. This is enough for 9 more records (1872 bytes), which will put us in the middle of the third page
-            // with 156 bytes remaining in our budget. We should still not have evicted yet.
-            int batchSize = 9;
+            // Our next allocation will add a page and thus subtract 4kb from our budget, leaving 8200. This is enough for 39 more records (8112 bytes), which will put us in the middle of the third page
+            // with 88 bytes remaining in our budget. We should still not have evicted yet.
+            int batchSize = 39;
             for (var ii = 0; ii < batchSize; ii++)
-                db.HashSet($"u{ii + numRecords:00}", [new HashEntry("Title", "Faster")]);
+                db.HashSet($"u{ii + numRecords:000}", [new HashEntry("Title", "Faster")]);
             numRecords += batchSize;
-            Assert.That(numRecords, Is.EqualTo(37));
+            Assert.That(numRecords, Is.EqualTo(291));
             Assert.That(evicted, Is.False, "Eviction should not have occurred yet");
             Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo(numRecords * MemorySizePerObject));
             Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(numRecords * MemorySizePerObject + 4 * PageSize));  // We are now on the third page and have the "allocate one page ahead" allocated
             Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size));
-            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * batchSize));
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * batchSize));    // We're on the third page
 
             // Now we start evicting. Add one record, then wait for the eviction of one record. This will signal the completion event.
-            // Eviction will proceed until it goes at or below lowTarget. We will go 208-156=52 bytes over size, then evict until we have gained
-            // 9900-8820+52 (highTarget - lowTarget plus overage) = 1132 bytes, which is more than 5 records so we'll evict 6, leaving us with
-            // a total size of 6*208-1132=116 bytes under the low target.
-            db.HashSet($"u{numRecords++:00}", [new HashEntry("Title", "Faster")]);
-            Assert.That(numRecords, Is.EqualTo(38));
+            // Eviction will proceed until it goes at or below lowTarget. We will go 208-88=120 bytes over budget, then evict until we have gained
+            // 77000-68600+120 (highTarget - lowTarget plus overage) = 8520 bytes, which is more than 40 records so we'll evict 41, leaving us with
+            // a total size of 41*208-8520=8 bytes under the low target.
+            remaining = highTarget - cacheSizeTracker.mainLogTracker.TotalSize;
+            Assert.That(remaining, Is.EqualTo(88));   // Verify our expected math
+            db.HashSet($"u{numRecords++:000}", [new HashEntry("Title", "Faster")]);
+            Assert.That(numRecords, Is.EqualTo(292));   // Verify our expected count after the addition that triggers eviction
             Assert.That(epcEvent.Wait(TimeSpan.FromSeconds(2 * LogSizeTracker.ResizeTaskDelaySeconds)), Is.True, "Timeout occurred. Resizing did not happen within the specified time, pt 1");
             Assert.That(evicted, Is.True, "Eviction should have occurred");
-            var evictedRecords = 6;
+            var evictedRecords = 41;
 
-            // HeadAddress will have advanced those 6 records, but we've added only one record so Tail will only grow by one.
-            batchSize = 6;  // reuse this for the "batch" of evicted records
+            // HeadAddress will have advanced by #evictedRecords, but we've added only one record so Tail will only grow by one.
+            batchSize = 41;     // reuse this for the "batch" of evicted records
             Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size + RecordSize * batchSize));
-            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * 10));  // was 9 records in, now 10
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * 40));   // was 39 records into the page, now 40
             Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject));
             Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo((numRecords - batchSize) * MemorySizePerObject + 4 * PageSize));  // We are now on the third page and have the "allocate one page ahead" allocated
-            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 116));                // alternate verification of TotalSize, calculated from expected eviction amount
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 8));                  // alternate verification of TotalSize, calculated from expected eviction amount
 
-            // We have space for 4 records on the current page, and we are 116 bytes below lowTarget, and highTarget-lowTarget = 1080,
-            // so we have 1196 / 208 = 5 records worth of budget with 156 bytes left over. So add 6 records, which will go over budget by
-            // 208-156=52 again, so again we will evict 6 records, with HeadAddress staying on the same page.
+            remaining = highTarget - cacheSizeTracker.mainLogTracker.TotalSize;
+            Assert.That(remaining, Is.EqualTo(highTarget - lowTarget + 8));                                     // Another alternative verification of our expected math
+
+            // We are 40 records into the current page and thus have space for 86 more, and we are again 8 bytes below lowTarget, so we will
+            // add 41 records, which will go over budget by 120 bytes, and again we will evict 41 records leaving us 8 bytes under lowTarget,
+            // with HeadAddress staying on the same page.
             evicted = false;
             epcEvent.Reset();
-            batchSize = 6;
+            batchSize = 41;
             for (var ii = 0; ii < batchSize; ii++)
-                db.HashSet($"u{ii + numRecords:00}", [new HashEntry("Title", "Faster")]);
+                db.HashSet($"u{ii + numRecords:000}", [new HashEntry("Title", "Faster")]);
             numRecords += batchSize;
-            Assert.That(numRecords, Is.EqualTo(44));
-            evictedRecords += 6;
-            Assert.That(evictedRecords, Is.EqualTo(12));
+            Assert.That(numRecords, Is.EqualTo(333));
+            evictedRecords += 41;
+            Assert.That(evictedRecords, Is.EqualTo(82));
 
             Assert.That(epcEvent.Wait(TimeSpan.FromSeconds(2 * LogSizeTracker.ResizeTaskDelaySeconds)), Is.True, "Timeout occurred. Resizing did not happen within the specified time, pt 2");
             Assert.That(evicted, Is.True, "Eviction should have occurred");
 
-            // HeadAddress was at 6 records into its page, so it has 8 records to go on the page; we evicted 6 of them, so are now 12 in.
-            Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size + RecordSize * 12));
-            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 3 + PageHeader.Size + RecordSize * 2));    // We are two records into the fourth page
+            // HeadAddress has now advanced farther on the page.
+            Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size + RecordSize * evictedRecords));
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * 81));    // We are 81 records into the third page
             Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject));
             Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject + 4 * PageSize));  // We are now on the third page and have the "allocate one page ahead" allocated
-            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 116));                // alternate verification of TotalSize, calculated from expected eviction amount
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 8));          // alternate verification of TotalSize, calculated from expected eviction amount
 
-            // As before, evicting 6 left us with a total size of 6*208-1132=116 bytes under the low target, so have 1196 / 208 = 5 records worth of budget with 156 bytes left over.
-            // So add 6 records, which will go over budget by 208-156=52 again. This time, however, we have only 2 records for HeadAddress to advance before it can evict its page,
-            // which is more than twice a record size. That means we can evict to clear up the 1132 bytes by evicting 2 records for 416 bytes, then the page for 512 bytes, which
-            // totals 928 bytes leaving us still 204 bytes over budget, which means HeadAddress will advance one record in to the next page (rather than 4 in, which it would be if
-            // we could not reclaim the page space).
+            // As before, evicting 41 left us 8 bytes under the low target, so we have (8400 + 8) / 208 = 40 records worth of budget with 88 bytes left over.
+            // This will still leave HeadAddress on the same page, and by this point we are done with everything except verifying head address moving to the
+            // next page will evict the page it was on and subtract its size from the TotalSize. So just do another quick 41-record batch.
             evicted = false;
             epcEvent.Reset();
-            batchSize = 6;
+            batchSize = 41;
             for (var ii = 0; ii < batchSize; ii++)
-                db.HashSet($"u{ii + numRecords:00}", [new HashEntry("Title", "Faster")]);
+                db.HashSet($"u{ii + numRecords:000}", [new HashEntry("Title", "Faster")]);
             numRecords += batchSize;
-            evictedRecords += 3;
-            Assert.That(evictedRecords, Is.EqualTo(15));
-            Assert.That(numRecords, Is.EqualTo(50));
+            Assert.That(numRecords, Is.EqualTo(374));
+            evictedRecords += 41;
+            Assert.That(evictedRecords, Is.EqualTo(123));
+
+            Assert.That(epcEvent.Wait(TimeSpan.FromSeconds(2 * LogSizeTracker.ResizeTaskDelaySeconds)), Is.True, "Timeout occurred. Resizing did not happen within the specified time, pt 2");
+            Assert.That(evicted, Is.True, "Eviction should have occurred");
+
+            // HeadAddress has now advanced farther on the page.
+            Assert.That(store.Log.HeadAddress, Is.EqualTo(PageHeader.Size + RecordSize * evictedRecords));
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 2 + PageHeader.Size + RecordSize * 122));  // We are 122 records into the third page
+            Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject));
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject + 4 * PageSize));  // We are still on the third page and have the "allocate one page ahead" allocated
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 8));          // alternate verification of TotalSize, calculated from expected eviction amount
+
+            // Again, we have budget to add 40 records with 88 bytes left over. This time, however, we have only 3 records for HeadAddress to advance before it can evict its page.
+            // And we have only 4 records remaining on tail page. So the sequence will be:
+            // - Add 4 records, advancing tailAddress to the next page. This adds 4k to the budget, so we will take up 832 heap bytes for the 4 records' heap allocations plus
+            //   the 4k page, totalling 4928. 8408-4928 = 3480 budget remaining, which is enough for 16 more records with 152 bytes left over, so we'll add 19 on the second page,
+            //   totaling 21 records to add this loop and leaving us 56 bytes over budget.
+            // - As HeadAddress moves to the second page it will evict the first page. That means we will evict not only those 3 records with their 624 heap bytes, but also the 4k page,
+            //   so 4720 bytes evicted by the time HeadAddress moves to the first valid record of the second page. We started off with an eviction range of (hi-lo+56) for 8456, less 4720 = 3736,
+            //   which divided by 208 = just under 18 so we'll evict 18, again leaving us 8 under lowTarget and moving HeadAddress to be at the 19th record on the second page.
+            evicted = false;
+            epcEvent.Reset();
+            batchSize = 21;
+            for (var ii = 0; ii < batchSize; ii++)
+                db.HashSet($"u{ii + numRecords:000}", [new HashEntry("Title", "Faster")]);
+            numRecords += batchSize;
+            evictedRecords += 21;   // 3 + 18
+            Assert.That(evictedRecords, Is.EqualTo(144));
+            Assert.That(numRecords, Is.EqualTo(395));
 
             Assert.That(epcEvent.Wait(TimeSpan.FromSeconds(2 * LogSizeTracker.ResizeTaskDelaySeconds)), Is.True, "Timeout occurred. Resizing did not happen within the specified time, pt 3");
             Assert.That(evicted, Is.True, "Eviction should have occurred");
 
-            // HeadAddress should be one record in to its new page.
-            Assert.That(store.Log.HeadAddress, Is.EqualTo(PageSize + PageHeader.Size + RecordSize));
-            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 3 + PageHeader.Size + RecordSize * 8));    // We were two records into the fourth page, now we're 8 records in
+            // HeadAddress should be 19 records in to its new page.
+            Assert.That(store.Log.HeadAddress, Is.EqualTo(PageSize + PageHeader.Size + RecordSize * 18));       // Should be 18 records into the second page
+            Assert.That(store.Log.TailAddress, Is.EqualTo(PageSize * 3 + PageHeader.Size + RecordSize * 17));   // We are 17 records into the fifth page
             Assert.That(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject));
-            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject + 3 * PageSize));  // We trimmed an allocated page
-            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 4));                  // alternate verification of TotalSize, calculated from expected eviction amount
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo((numRecords - evictedRecords) * MemorySizePerObject + 4 * PageSize));  // We trimmed an allocated page but added a new page, so no change to page count
+            Assert.That(cacheSizeTracker.mainLogTracker.TotalSize, Is.EqualTo(lowTarget - 8));                  // alternate verification of TotalSize, calculated from expected eviction amount
         }
 
         [Test]
