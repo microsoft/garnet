@@ -117,6 +117,8 @@ namespace Garnet.cluster
                         // Create sink immediately from metadata; data chunks will follow
                         if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
                             ExceptionUtils.ThrowException(new GarnetException("RangeIndex not enabled but received RI checkpoint data"));
+                        if(activeSink != null)
+                            ExceptionUtils.ThrowException(new GarnetException("ActiveSink already initialized!"));
                         activeSink = RangeIndexFileDataSink.FromMetadata(type, token, data, clusterProvider.rangeIndexManager, logger);
                         return;
                     case CheckpointFileType.STORE_INDEX:

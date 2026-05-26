@@ -41,6 +41,10 @@ namespace Garnet.cluster
         private readonly int chunkSize;
         private readonly ILogger logger;
         private FileStream stream;
+
+        /// <summary>
+        /// Shared read buffer, set externally by the snapshot reader to avoid per-file allocations.
+        /// </summary>
         private byte[] buffer;
 
         /// <inheritdoc/>
@@ -116,11 +120,18 @@ namespace Garnet.cluster
             EndOffset = fileInfo.Length;
         }
 
+        /// <summary>
+        /// Sets the shared read buffer for chunk reads. The buffer must be at least
+        /// <see cref="chunkSize"/> bytes. Called by <see cref="RangeIndexSnapshotReader"/>
+        /// before transmission begins, allowing a single allocation to be reused across
+        /// all data sources.
+        /// </summary>
+        internal void SetBuffer(byte[] sharedBuffer) => buffer = sharedBuffer;
+
         /// <inheritdoc/>
         public async Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
         {
             stream ??= new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize, useAsync: true);
-            buffer ??= new byte[chunkSize];
 
             var remaining = EndOffset - CurrentOffset;
             var bytesToRead = (int)Math.Min(remaining, chunkSize);
