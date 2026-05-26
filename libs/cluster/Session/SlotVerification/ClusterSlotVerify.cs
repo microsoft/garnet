@@ -16,7 +16,7 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool returnTryAgainForMigratingKeys, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
@@ -48,7 +48,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => MigratingKeyResult(ref keySlice, _slot, readOnly: true), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -98,7 +98,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => MigratingKeyResult(ref keySlice, _slot, readOnly: false), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -111,6 +111,22 @@ namespace Garnet.cluster
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
                     };
                 }
+            }
+
+            ClusterSlotVerificationResult MigratingKeyResult(ref PinnedSpanByte keySlice, ushort slot, bool readOnly)
+            {
+                if (returnTryAgainForMigratingKeys)
+                {
+                    // Return TRYAGAIN immediately if key is blocked by active migration,
+                    // instead of spin-waiting which would stall the entire pipelined connection
+                    if (!clusterProvider.migrationManager.CanAccessKey(keySlice, slot, readOnly))
+                        return new(SlotVerifiedState.TRYAGAIN, slot);
+
+                    return Exists(keySlice) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
+                }
+
+                // Default: spin-wait until key is accessible, then check existence
+                return CanOperateOnKey(ref keySlice, slot, readOnly) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
             }
 
             bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly)
@@ -161,7 +177,7 @@ namespace Garnet.cluster
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
-            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, firstSlot);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.returnTryAgainForMigratingKeys, firstSlot);
 
             // Verify remaining keys from the first spec (starting from second key)
             var verifyResult = VerifyKeysInRange(ref config, ref parseState, ref csvi, searchArgs.firstIdx + searchArgs.step,
@@ -192,7 +208,7 @@ namespace Garnet.cluster
             {
                 ref var key = ref parseState.GetArgSliceByRef(i);
                 var slot = HashSlotUtils.HashSlot(key);
-                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, slot);
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.returnTryAgainForMigratingKeys, slot);
 
                 if (slot != firstSlot)
                     return new(SlotVerifiedState.CROSSSLOT, firstSlot);

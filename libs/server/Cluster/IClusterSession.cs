@@ -77,8 +77,9 @@ namespace Garnet.server
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
         /// <param name="waitForStableSlot"></param>
+        /// <param name="returnTryAgainForMigratingKeys"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot, bool returnTryAgainForMigratingKeys = false);
 
         /// <summary>
         /// Write cached slot verification message to output

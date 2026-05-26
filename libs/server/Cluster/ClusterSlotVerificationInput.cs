@@ -33,5 +33,14 @@ namespace Garnet.server
         /// Currently only true for Vector Set commands that are writes.
         /// </summary>
         public bool waitForStableSlot;
+
+        /// <summary>
+        /// If true, return TRYAGAIN instead of spin-waiting when a key is blocked
+        /// by active migration (sketch status is TRANSMITTING or DELETING).
+        /// 
+        /// Used for RangeIndex commands where migration can take a long time and
+        /// spin-waiting would stall the entire pipelined connection.
+        /// </summary>
+        public bool returnTryAgainForMigratingKeys;
     }
 }
