@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <sched.h>
 #include <stdio.h>
 #include <time.h>
 #include "file_linux.h"
@@ -17,6 +18,20 @@
 
 namespace FASTER {
 namespace environment {
+
+namespace {
+/// Maximum number of bounded sched_yield() retries after a transient kernel back-pressure
+/// signal (libaio's `io_submit == 0` / io_uring's `io_uring_get_sqe == nullptr`) before we
+/// give up and surface Status::IOError to the caller. On a NVMe completing ~750K IOPS the
+/// kernel ring drains a slot every ~1.3 µs and sched_yield is typically a 1-10 µs window,
+/// so a handful of retries reliably absorbs the burst-overshoot from the upper layer's
+/// racy throttle gate (AllocatorBase.Throttle is non-atomic test-then-increment, so N
+/// concurrent submitters can momentarily push in-flight to ThrottleLimit + N which can
+/// exceed the 128-slot per-context/per-ring kernel ring depth). Permanent submission errors
+/// (libaio `io_submit < 0`: EINVAL/EBADF/EIO; uring `io_uring_submit < 0`) are NEVER retried
+/// — they surface immediately so a real failure isn't masked by a delay.
+constexpr int kMaxSubmitRetries = 8;
+} // anonymous namespace
 
 using namespace FASTER::core;
 
@@ -291,16 +306,32 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   iocbs[0] = reinterpret_cast<struct iocb*>(io_context.get());
 
   // INVARIANT: We prepare exactly ONE iocb per call. libaio's io_submit returns the number
-  // of iocbs successfully queued; for N_prepared = 1 the return is either 1 (kernel accepted —
-  // will produce a completion event we own) or any other value (kernel did NOT accept — we
-  // still own io_context and caller_context_copy, the RAII guards free both). Do NOT batch
-  // multiple iocbs without revisiting ownership: partial submission with N_prepared > 1
-  // creates a UAF window (some accepted, some not, but only the failing one needs cleanup).
-  int result = ::io_submit(io_object_, 1, iocbs);
-  if(result != 1) {
-    // io_context's deleter calls ~IoCallbackContext() which is trivial, then frees the LSS
-    // slot. caller_copy_guard releases the caller's deep-copy. No leak.
-    return Status::IOError;
+  // of iocbs successfully queued; for N_prepared = 1 the return is one of:
+  //   res == 1  → kernel accepted the iocb; we will get exactly one completion.
+  //   res == 0  → transient back-pressure (kernel ring full). The iocb has NOT been queued;
+  //               we still own it. Bounded-retry with sched_yield until either the kernel
+  //               drains a slot or kMaxSubmitRetries is exhausted.
+  //   res <  0  → permanent error (EINVAL/EBADF/EIO). Surface immediately.
+  // Do NOT batch multiple iocbs without revisiting ownership: partial submission with
+  // N_prepared > 1 creates a UAF window (some accepted, some not, but only the failing one
+  // needs cleanup).
+  int retries = 0;
+  int result;
+  while (true) {
+    result = ::io_submit(io_object_, 1, iocbs);
+    if (result == 1) break;
+    if (result < 0) {
+      // Permanent submission error; RAII guards release io_context (LSS slot) and
+      // caller_context_copy (deep-copy + LSS slot). No leak.
+      return Status::IOError;
+    }
+    // result == 0 → transient EAGAIN. Yield to let the completion drainer run, then retry.
+    if (++retries > kMaxSubmitRetries) {
+      // Genuine sustained overload — application is submitting faster than the device can
+      // serve. Surface IOError so the caller can apply back-pressure.
+      return Status::IOError;
+    }
+    ::sched_yield();
   }
 
   // Ownership transferred to the kernel; release both RAII guards so they don't double-free
@@ -483,17 +514,27 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   SpinLock* sq_lock = nullptr;
   handler_->pick_ring(ring, sq_lock);
 
-  sq_lock->Acquire();
-  struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-  if (sqe == nullptr) {
-    // SQ ring is full; io_uring_get_sqe returned nullptr without producing a CQE. The previous
-    // code asserted here, which silently no-ops in Release and leaves the SQ ring untouched but
-    // never invokes the user callback — desynchronizing the C# numPending counter and ultimately
-    // hanging Dispose's drain loop. Fail the submission cleanly; the RAII guards above will
-    // release io_context (LSS slot) and caller_context_copy (deep-copy + LSS slot).
+  // Bounded retry on transient SQ-full. io_uring_get_sqe returns nullptr iff the SQ ring
+  // is full (kMaxEvents = 128 slots per ring). With completion drainers running on a
+  // separate thread, a sched_yield typically lets enough CQEs drain to free a slot before
+  // the next attempt. Permanent submit failures (io_uring_submit < 0) are NEVER retried —
+  // they surface immediately so a real failure isn't masked by a delay. We must release
+  // sq_lock around sched_yield: holding a SpinLock across a syscall stalls every other
+  // submitter on this ring.
+  struct io_uring_sqe* sqe = nullptr;
+  int retries = 0;
+  while (true) {
+    sq_lock->Acquire();
+    sqe = io_uring_get_sqe(ring);
+    if (sqe != nullptr) break;
     sq_lock->Release();
-    return Status::IOError;
+    if (++retries > kMaxSubmitRetries) {
+      // Sustained SQ overload — RAII guards above release io_context and caller_context_copy.
+      return Status::IOError;
+    }
+    ::sched_yield();
   }
+  // sq_lock still held; sqe is non-null.
 
   if (is_read) {
     io_uring_prep_readv(sqe, fd_, &io_context->vec_, 1, offset);
@@ -511,6 +552,11 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   //   res != 1  → kernel did NOT accept the SQE (or accepted it without queueing); no CQE will
   //               be produced. We still own io_context and caller_context_copy; both RAII guards
   //               will release them.
+  // We do NOT retry submit failures here. Once io_uring_get_sqe has returned a non-null SQE we
+  // have already "consumed" that slot in the ring's user-side bookkeeping; re-issuing the SQE
+  // through another get_sqe+prep on a retry would corrupt the ring (we'd hold two SQEs for one
+  // logical op). For our setup (SQPOLL disabled) submit returns 1 in steady state — a non-1
+  // here means an unrecoverable kernel-side error.
   // Do NOT switch to batched submission (N_prepared > 1) without revisiting the ownership model:
   // partial submission would require per-SQE accounting to know which contexts the kernel kept
   // and which we must free.
