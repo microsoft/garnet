@@ -10,6 +10,27 @@ namespace Garnet.server
     {
         readonly bool clusterEnabled;
         internal byte* saveKeyRecvBufferPtr;
+        int firstKeyInCurrentRecvBuffer;
+
+        public void BeginKeyTrackingForCurrentBuffer(byte* recvBufferPtr)
+        {
+            if (!clusterEnabled) return;
+
+            saveKeyRecvBufferPtr = recvBufferPtr;
+            firstKeyInCurrentRecvBuffer = txnKeysParseState.Count;
+        }
+
+        public void OnRecvBufferChanged(byte* recvBufferPtr)
+        {
+            if (!clusterEnabled || recvBufferPtr == saveKeyRecvBufferPtr)
+                return;
+
+            Debug.Assert(firstKeyInCurrentRecvBuffer <= txnKeysParseState.Count);
+
+            CopyKeysToScratchBuffer(firstKeyInCurrentRecvBuffer);
+            firstKeyInCurrentRecvBuffer = txnKeysParseState.Count;
+            saveKeyRecvBufferPtr = recvBufferPtr;
+        }
 
         /// <summary>
         /// Keep track of actual key accessed by command
@@ -37,7 +58,13 @@ namespace Garnet.server
         {
             Debug.Assert(clusterEnabled);
 
-            for (var i = 0; i < txnKeysParseState.Count; i++)
+            CopyKeysToScratchBuffer(0);
+            firstKeyInCurrentRecvBuffer = txnKeysParseState.Count;
+        }
+
+        void CopyKeysToScratchBuffer(int startIndex)
+        {
+            for (var i = startIndex; i < txnKeysParseState.Count; i++)
             {
                 ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
                 key = txnScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
