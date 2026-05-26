@@ -20,6 +20,7 @@ namespace Garnet.server
     {
         int sid = 0;
         bool initialized = false;
+        volatile bool isQuiescing = false;
         ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
         ReadOptimizedConcurrentSet<PatternSubscriptionEntry> patternSubscriptions;
         readonly TsavoriteLog aof;
@@ -47,6 +48,13 @@ namespace Garnet.server
                 aof.TruncateUntil(aof.CommittedUntilAddress);
             this.logger = logger;
         }
+
+        /// <summary>
+        /// Signal the broker to stop delivering messages to subscribers.
+        /// Any <see cref="Publish"/> or <see cref="PublishNow"/> calls made after this
+        /// are silently dropped, ensuring no new fan-out occurs during shutdown quiesce.
+        /// </summary>
+        public void BeginQuiesce() => isQuiescing = true;
 
         /// <summary>
         /// Remove all subscriptions for a session,
@@ -296,6 +304,7 @@ namespace Garnet.server
         /// <returns>Number of subscribers notified</returns>
         public unsafe int PublishNow(PinnedSpanByte key, PinnedSpanByte value)
         {
+            if (isQuiescing) return 0;
             if (subscriptions == null && patternSubscriptions == null) return 0;
             return Broadcast(key, value);
         }
@@ -307,6 +316,7 @@ namespace Garnet.server
         /// <param name="value">value that has been updated</param>
         public unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
+            if (isQuiescing) return;
             if (subscriptions == null && patternSubscriptions == null)
                 return;
 
