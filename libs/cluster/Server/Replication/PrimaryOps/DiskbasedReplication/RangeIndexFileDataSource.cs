@@ -41,6 +41,7 @@ namespace Garnet.cluster
         private readonly int chunkSize;
         private readonly ILogger logger;
         private FileStream stream;
+        private byte[] buffer;
 
         /// <inheritdoc/>
         public CheckpointFileType Type { get; }
@@ -119,10 +120,10 @@ namespace Garnet.cluster
         public async Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
         {
             stream ??= new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize, useAsync: true);
+            buffer ??= new byte[chunkSize];
 
             var remaining = EndOffset - CurrentOffset;
             var bytesToRead = (int)Math.Min(remaining, chunkSize);
-            var buffer = new byte[bytesToRead];
 
             var bytesRead = await stream.ReadAsync(buffer, 0, bytesToRead, cancellationToken).ConfigureAwait(false);
 
@@ -136,7 +137,7 @@ namespace Garnet.cluster
             var chunkStart = CurrentOffset;
             CurrentOffset += bytesRead;
 
-            return new DataSourceReadResult(buffer, chunkStartAddress: chunkStart);
+            return new DataSourceReadResult(buffer, bytesRead, chunkStartAddress: chunkStart);
         }
 
         /// <inheritdoc/>
