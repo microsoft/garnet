@@ -402,6 +402,11 @@ namespace Garnet
         [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis maxclients parameter, and settable at runtime with CONFIG SET maxclients.")]
         public int NetworkConnectionLimit { get; set; }
 
+        [IntRangeValidation(1, int.MaxValue)]
+        [Option("shutdown-timeout", Required = false, HelpText = "Timeout in seconds to wait for active connections to drain during graceful shutdown. " +
+            "The Windows SCM default pre-kill wait is 5 seconds, so values below 5 are not recommended when running as a Windows service.")]
+        public int ShutdownTimeoutSeconds { get; set; }
+
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
@@ -984,6 +989,7 @@ namespace Garnet
                 ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
+                ShutdownTimeoutSeconds = ShutdownTimeoutSeconds,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,
