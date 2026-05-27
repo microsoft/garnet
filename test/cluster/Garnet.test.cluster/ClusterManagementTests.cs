@@ -1255,7 +1255,6 @@ namespace Garnet.test.cluster
                 metricsSamplingFrequency: 1,
                 loggingFrequencySecs: 10,
                 checkpointThrottleFlushDelayMs: 0,
-                FastCommit: true,
                 FastAofTruncate: true,
                 OnDemandCheckpoint: true,
                 useTLS: true,

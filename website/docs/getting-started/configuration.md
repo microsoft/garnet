@@ -149,7 +149,6 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **AzureStorageServiceUri** | ```--storage-service-uri``` | ```string``` |  | The service URI to use when establishing connection to Azure Blobs Storage. |
 | **AzureStorageManagedIdentity** | ```--storage-managed-identity``` | ```string``` |  | The managed identity to use when establishing connection to Azure Blobs Storage. |
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
-| **EnableFastCommit** | ```--fast-commit``` | ```bool``` |  | Use FastCommit when writing AOF. |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |
 | **NetworkSendThrottleMax** | ```--network-send-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle the maximum outstanding network sends per session. |
 | **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO. |

@@ -82,11 +82,6 @@ namespace Garnet.cluster
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                 try
                 {
-                    if (!clusterProvider.serverOptions.EnableFastCommit && storeWrapper.appendOnlyFile != null)
-                    {
-                        await storeWrapper.appendOnlyFile.Log.CommitAsync().ConfigureAwait(false);
-                        await storeWrapper.appendOnlyFile.Log.WaitForCommitAsync().ConfigureAwait(false);
-                    }
 
                     // Reset background replay tasks if this node was a replica
                     clusterProvider.replicationManager.ResetReplicaReplayDriverStore();

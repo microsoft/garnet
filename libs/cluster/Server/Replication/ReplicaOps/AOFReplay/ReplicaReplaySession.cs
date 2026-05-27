@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 physicalSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
 
                 // Enqueue to AOF
-                _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
+                _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: true);
 
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {

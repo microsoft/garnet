@@ -375,7 +375,6 @@ namespace Garnet.fuzz.Targets
                 EnableAOF = true,
                 LogMemorySize = "1g",
                 GossipDelay = 5,
-                EnableFastCommit = true,
                 MetricsSamplingFrequency = 0,
                 TlsOptions = null,
                 DeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(),

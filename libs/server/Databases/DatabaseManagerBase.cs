@@ -475,17 +475,11 @@ namespace Garnet.server
         private ValueTask CompactionCommitAofAsync(GarnetDatabase db)
         {
             // If we are the primary, we commit the AOF.
-            // If we are the replica, we commit the AOF only if fast commit is disabled
-            // because we do not want to clobber AOF addresses.
             // TODO: replica should instead wait until the next AOF commit is done via primary
             if (StoreWrapper.serverOptions.EnableAOF)
             {
-                if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
-                {
-                    if (!StoreWrapper.serverOptions.EnableFastCommit && db.AppendOnlyFile != null)
-                        return db.AppendOnlyFile.Log.CommitAsync();
-                }
-                else
+                // Replica does not commit here because it would clobber AOF addresses.
+                if (!(StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica()))
                 {
                     if (db.AppendOnlyFile != null)
                         return db.AppendOnlyFile.Log.CommitAsync();
