@@ -1171,7 +1171,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteSimpleString(attributesOutput.ReadOnlySpan);
+                WriteBulkString(attributesOutput.ReadOnlySpan);
                 return true;
             }
             finally
