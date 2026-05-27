@@ -7,15 +7,6 @@
 #include <string>
 #include <stdexcept>
 
-#if !defined(_WIN32) && !defined(_WIN64)
-#include <experimental/filesystem>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/statvfs.h>
-#include <unistd.h>
-#include <errno.h>
-#endif
-
 #if defined(_WIN32) || defined(_WIN64)  
 #define EXPORTED_SYMBOL __declspec(dllexport)  
 #else  
@@ -211,53 +202,11 @@ extern "C" {
 	/// Returns the kernel's required direct-I/O alignment for `filename` (or the closest
 	/// existing ancestor) on Linux 6.1+ kernels that populate statx(STATX_DIOALIGN); returns
 	/// 512 otherwise. Always returns a power of two >= 512. Never throws or sets last_error.
-	/// The C# wrapper uses this to size SectorSize before any I/O is issued; mismatches with
-	/// the per-file alignment discovered at open() time are caught by the wrapper's
-	/// Initialize cross-check.
+	/// The C# wrapper uses this to size SectorSize before any I/O is issued; the same probe
+	/// is run by NativeDeviceImpl's ctor so its sector_size() reports an identical value,
+	/// giving the wrapper's cross-check a real signal (any disagreement implies ABI / loaded-
+	/// library drift, not a 4K-disk false positive).
 	EXPORTED_SYMBOL uint32_t NativeDevice_ProbeAlignment(const char* filename) {
-		if (filename == nullptr || *filename == '\0') return 512u;
-		uint32_t result = 512u;
-#if !defined(_WIN32) && !defined(_WIN64)
-		namespace fs = std::experimental::filesystem;
-		std::error_code ec;
-		fs::path target{ filename };
-
-		// Walk from the requested path up to an existing ancestor. statx requires an existing
-		// path; in normal startup the file may not exist yet, but its parent dir was created
-		// by the managed ctor moments before this probe runs.
-		auto resolve_existing = [&](fs::path p) -> std::string {
-			std::error_code e;
-			for (;;) {
-				if (fs::exists(p, e)) return p.string();
-				auto parent = p.parent_path();
-				if (parent.empty() || parent == p) return std::string{};
-				p = parent;
-			}
-		};
-		std::string probe_path = resolve_existing(target);
-		if (probe_path.empty()) return 512u;
-
-#if defined(STATX_DIOALIGN)
-		// Try statx on the resolved path. Opening read-only (without O_DIRECT) is enough —
-		// statx STATX_DIOALIGN reads the kernel's authoritative alignment from the FS, not
-		// from open() flags.
-		int fd = ::open(probe_path.c_str(), O_RDONLY | O_CLOEXEC);
-		if (fd >= 0) {
-			struct statx stx{};
-			int rc = ::statx(fd, "", AT_EMPTY_PATH, STATX_DIOALIGN, &stx);
-			::close(fd);
-			if (rc == 0) {
-				uint32_t required = std::max(stx.stx_dio_offset_align, stx.stx_dio_mem_align);
-				if (required != 0) {
-					// Round up to a power of two.
-					uint32_t pow2 = 512u;
-					while (pow2 < required) pow2 <<= 1;
-					return std::max(result, pow2);
-				}
-			}
-		}
-#endif
-#endif
-		return result;
+		return native_device::ProbeDioAlignment(filename);
 	}
 }

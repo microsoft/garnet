@@ -551,6 +551,22 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     ::sched_yield();
     sq_lock->Acquire();
   }
+  if (res != 1) {
+    // Submit failed but io_uring_get_sqe() already advanced the user-side sqe_tail, so the
+    // prepared SQE is still sitting in the SQ ring pointing at io_context. The next successful
+    // submit on this ring would consume it and dispatch a callback against the io_context we
+    // are about to free here, which is a use-after-free.
+    //
+    // Rewrite the slot in place as a no-op with the wake-up sentinel (user_data = nullptr).
+    // The QueueRunFor drain loop (file_linux.cc:429-432) explicitly skips nullptr user_data
+    // without dispatching a callback, so when a later submit flushes this nop the CQE is
+    // drained harmlessly.
+    //
+    // Safe to mutate `sqe` here: we still hold sq_lock and no concurrent submitter can have
+    // observed this SQE yet (the kernel only learns about it on the next io_uring_submit).
+    io_uring_prep_nop(sqe);
+    io_uring_sqe_set_data(sqe, nullptr);
+  }
   sq_lock->Release();
   if (res != 1) {
     return Status::IOError;

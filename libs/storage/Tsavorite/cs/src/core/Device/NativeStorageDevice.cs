@@ -651,7 +651,8 @@ namespace Tsavorite.core
                         $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
                         (ioBackendConfig == IoBackend.Uring
                             ? "The io_uring backend requires liburing.so.2 to be present at process start. " +
-                              "Install it (Debian/Ubuntu: 'sudo apt-get install -y liburing2'; Fedora/RHEL: 'sudo dnf install -y liburing'; Alpine: 'sudo apk add liburing') and restart the process. " +
+                              "Install it (Debian/Ubuntu: 'sudo apt-get install -y liburing2'; Fedora/RHEL: 'sudo dnf install -y liburing') and restart the process. " +
+                              "Alpine (musl) is not supported by the prebuilt native library — use a glibc-based image or fall back to a managed device. " +
                               "The libaio backend (selected with IoBackend.Default / IoBackend.Libaio) is always available and does not require liburing."
                             : "Verify the native library matches the requested backend."));
                 }

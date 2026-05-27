@@ -4,10 +4,82 @@
 #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING 1;
 #include "file_system_disk.h"
 #include "native_device_error.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <experimental/filesystem>
 #include <system_error>
+
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
+namespace native_device {
+
+/// Probe the kernel's required direct-I/O alignment for `filename` (or the closest existing
+/// ancestor) using statx(STATX_DIOALIGN). Returns the rounded-up-to-power-of-2 alignment in
+/// bytes; never returns a value smaller than 512. Cold path, called once per device at
+/// construction. Never throws.
+///
+/// Single source of truth for alignment shared by:
+///   - NativeDeviceImpl constructor (caches in device_alignment_, returned by sector_size())
+///   - The C ABI NativeDevice_ProbeAlignment (used by the C# wrapper to size SectorSize
+///     before any I/O is issued)
+///
+/// Both callers go through this function so the managed wrapper's probed SectorSize and the
+/// native shim's reported sector_size() are guaranteed to agree on the same machine — the
+/// ABI cross-check in EnsureNativeDeviceCreated can therefore reliably catch ABI / runtime
+/// drift without false positives on 4K-native disks.
+inline uint32_t ProbeDioAlignment(const char* filename) {
+    if (filename == nullptr || *filename == '\0') return 512u;
+    uint32_t result = 512u;
+#if !defined(_WIN32) && !defined(_WIN64)
+    namespace fs = std::experimental::filesystem;
+    std::error_code ec;
+    fs::path target{ filename };
+
+    // Walk from the requested path up to an existing ancestor. statx requires an existing
+    // path; in normal startup the file may not exist yet, but its parent dir was created
+    // by the managed ctor moments before this probe runs.
+    auto resolve_existing = [&](fs::path p) -> std::string {
+        std::error_code e;
+        for (;;) {
+            if (fs::exists(p, e)) return p.string();
+            auto parent = p.parent_path();
+            if (parent.empty() || parent == p) return std::string{};
+            p = parent;
+        }
+    };
+    std::string probe_path = resolve_existing(target);
+    if (probe_path.empty()) return 512u;
+
+#if defined(STATX_DIOALIGN)
+    // Try statx on the resolved path. Opening read-only (without O_DIRECT) is enough —
+    // statx STATX_DIOALIGN reads the kernel's authoritative alignment from the FS, not
+    // from open() flags.
+    int fd = ::open(probe_path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd >= 0) {
+        struct statx stx{};
+        int rc = ::statx(fd, "", AT_EMPTY_PATH, STATX_DIOALIGN, &stx);
+        ::close(fd);
+        if (rc == 0) {
+            uint32_t required = std::max(stx.stx_dio_offset_align, stx.stx_dio_mem_align);
+            if (required != 0) {
+                // Round up to a power of two.
+                uint32_t pow2 = 512u;
+                while (pow2 < required) pow2 <<= 1;
+                return std::max(result, pow2);
+            }
+        }
+    }
+#endif
+#endif
+    return result;
+}
+
+} // namespace native_device
 
 /// Abstract interface for a native device. Allows a single C ABI to dispatch to
 /// different IO backends (libaio, io_uring on Linux; ThreadPool on Windows).
@@ -95,6 +167,7 @@ public:
         , log_{ file, default_file_options_, &epoch_, segment_size, omit_segment_id }
         , segment_size_{ segment_size }
         , omit_segment_id_{ omit_segment_id }
+        , device_alignment_{ native_device::ProbeDioAlignment(file.c_str()) }
         , init_status_{ FASTER::core::Status::Ok } {
         // First gate: handler init (io_setup / io_uring_queue_init) succeeded?
         if (handler_.init_errno() != 0) {
@@ -229,7 +302,13 @@ public:
 
     /// Methods required by the (implicit) disk interface.
     uint32_t sector_size() const override {
-        return static_cast<uint32_t>(log_.alignment());
+        // device_alignment_ was probed at construction via the same statx STATX_DIOALIGN
+        // path the C# wrapper uses to size SectorSize, so the two values agree on the same
+        // machine. We deliberately do NOT delegate to `log_.alignment()` here — the
+        // FileSystemSegmentedFile path hardcodes 512, which would falsely trip the managed
+        // wrapper's sector-size cross-check on 4K-native disks where the probe returns
+        // 4096.
+        return device_alignment_;
     }
 
     uint64_t segment_size_bytes() const override {
@@ -356,6 +435,13 @@ private:
     /// `segment_size = 1<<63` together with this flag) — the bare filename can be opened by
     /// external readers that don't know about segment-id naming.
     const bool omit_segment_id_;
+
+    /// Kernel-reported direct-I/O alignment for the device backing `file`. Probed once at
+    /// construction via native_device::ProbeDioAlignment (statx STATX_DIOALIGN with parent-dir
+    /// fallback). Always a power of two >= 512. Returned by sector_size(); the managed C#
+    /// wrapper cross-checks this against its own probe of the same path so any ABI / runtime
+    /// drift is caught before the first IO.
+    const uint32_t device_alignment_;
 
     /// Result of construction. Status::Ok = ready; anything else = initialization failed and
     /// the caller (typically the C ABI wrapper) must delete the instance and surface the

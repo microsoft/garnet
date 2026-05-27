@@ -73,8 +73,9 @@ namespace Tsavorite.core
         /// <param name="epoch">The instance of the epoch protection framework to use, if
         /// needed.</param>
         /// <param name="omitSegmentIdFromFilename">When true, the segment index is not appended
-        /// to the filename. Only permitted when <paramref name="segmentSize"/> = -1, and only
-        /// supported by managed devices — <c>NativeStorageDevice</c> rejects this flag.</param>
+        /// to the filename. Only permitted when <paramref name="segmentSize"/> = -1 (unbounded
+        /// single segment) — devices reject this flag in any other configuration. Supported by
+        /// both managed devices and <c>NativeStorageDevice</c>.</param>
         void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false);
 
         /// <summary>
