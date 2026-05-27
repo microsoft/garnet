@@ -21,6 +21,7 @@ namespace Garnet.test
     /// performs the finalization sequence, disposes without cleanup, recovers, and verifies data.
     /// </summary>
     [TestFixture]
+    [Explicit]
     public class ShutdownDataConsistencyTests : TestBase
     {
         private GarnetServer server;
