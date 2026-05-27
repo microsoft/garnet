@@ -35,7 +35,7 @@ namespace Garnet.server
         /// <param name="hash">The hash value for which to retrieve the frontier sequence number.</param>
         /// <returns>The frontier sequence number corresponding to the specified hash value.</returns>
         public readonly long GetFrontierSequenceNumber(long hash)
-            => Math.Max(sketch[hash & SketchSlotMask], sketchMaxValue);
+            => Math.Max(sketch[(hash >>> 32) & SketchSlotMask], sketchMaxValue);
 
         /// <summary>
         /// Gets the sequence number associated with the specified hash key.
@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <param name="hash">The hash value for which to retrieve the sequence number.</param>
         /// <returns>The sequence number corresponding to the given hash key.</returns>
         public readonly long GetKeySequenceNumber(long hash)
-            => sketch[hash & SketchSlotMask];
+            => sketch[(hash >>> 32) & SketchSlotMask];
 
         /// <summary>
         /// Updates the maximum observed sequence number.
@@ -65,7 +65,7 @@ namespace Garnet.server
         /// current value to have an effect.</param>
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref sketch[hash & SketchSlotMask], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref sketch[(hash >>> 32) & SketchSlotMask], sequenceNumber, out _);
             _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
             SignalAdvanceTime();
         }
