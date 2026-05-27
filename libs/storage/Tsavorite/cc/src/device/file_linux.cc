@@ -211,6 +211,38 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
     return ret ? ret : n;
 }
 
+namespace {
+
+// No-op io_callback_t used by QueueIoHandler::Wake — frees the heap-allocated iocb that
+// was submitted purely to unblock a sleeping io_getevents waiter.
+void QueueWakeCompletionCallback(io_context_t, struct iocb* iocb, long /*res*/, long /*res2*/) {
+    delete iocb;
+}
+
+} // namespace
+
+int QueueIoHandler::Wake(int idx) {
+    if (idx != 0) return -1;
+    if (io_object_ == 0) return -1;
+    if (wake_fd_ < 0) return -1;
+    // Submit a 0-byte read on /dev/null. The kernel completes it immediately (reads on
+    // /dev/null always return 0 bytes), io_getevents wakes up, dispatches the callback
+    // which frees the iocb. We allocate a fresh iocb each call because Wake() runs at
+    // most once per Dispose() — the per-allocation cost is negligible vs the ~1s stall
+    // it eliminates.
+    static thread_local char dummy_buf[8] alignas(8) = {};
+    struct iocb* wake_iocb = new struct iocb();
+    ::io_prep_pread(wake_iocb, wake_fd_, dummy_buf, 0, 0);
+    ::io_set_callback(wake_iocb, &QueueWakeCompletionCallback);
+    struct iocb* iocbs[1] = { wake_iocb };
+    int res = ::io_submit(io_object_, 1, iocbs);
+    if (res != 1) {
+        delete wake_iocb;
+        return -1;
+    }
+    return 0;
+}
+
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -391,11 +423,39 @@ int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
         io_uring_cqe_seen(ring, cqe);
         cq_lock->Release();
 
+        // Wake-up SQEs are submitted with user_data = nullptr (see UringIoHandler::Wake)
+        // and only exist to unblock io_uring_wait_cqe_timeout. They carry no caller context
+        // and must NOT be dispatched.
+        if (context == nullptr) {
+            ++ret;
+            continue;
+        }
         DispatchUringCqe(io_res, context);
         ++ret;
     }
 
     return ret;
+}
+
+int UringIoHandler::Wake(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
+    struct io_uring* ring = rings_[idx];
+    if (ring == nullptr) return -1;
+    SpinLock* sq_lock = sq_locks_[idx];
+
+    sq_lock->Acquire();
+    struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+    if (sqe == nullptr) {
+        sq_lock->Release();
+        return -1;
+    }
+    io_uring_prep_nop(sqe);
+    // user_data = nullptr is the sentinel for "wake-up; do not dispatch a callback"
+    // recognised by the QueueRunFor drain loop.
+    io_uring_sqe_set_data(sqe, nullptr);
+    int res = io_uring_submit(ring);
+    sq_lock->Release();
+    return res == 1 ? 0 : -1;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,

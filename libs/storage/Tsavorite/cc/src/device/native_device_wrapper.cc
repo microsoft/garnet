@@ -189,6 +189,15 @@ extern "C" {
 		return device->QueueRunFor(ctx_idx, timeout_secs);
 	}
 
+	/// Same as NativeDevice_QueueRunFor but submits a no-op completion event that wakes
+	/// any thread blocked in QueueRunFor on context `ctx_idx`. Used by NSD.Dispose() to
+	/// unblock the completion drainer immediately rather than wait on its timeout.
+	/// Returns 0 on success, -1 on failure.
+	EXPORTED_SYMBOL int NativeDevice_WakeCompletionWorker(INativeDevice* device, int ctx_idx) {
+		if (device == nullptr) return -1;
+		return device->Wake(ctx_idx);
+	}
+
 	/// Number of submission/completion shards for `device`. >= 1.
 	EXPORTED_SYMBOL int NativeDevice_NumIoContexts(INativeDevice* device) {
 		if (device == nullptr) return 0;

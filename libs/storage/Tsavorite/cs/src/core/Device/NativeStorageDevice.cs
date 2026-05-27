@@ -372,6 +372,9 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRunFor", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRunFor(IntPtr device, int ctxIdx, int timeout_secs);
 
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_WakeCompletionWorker", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_WakeCompletionWorker(IntPtr device, int ctxIdx);
+
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_NumIoContexts", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_NumIoContexts(IntPtr device);
 
@@ -979,6 +982,14 @@ namespace Tsavorite.core
                 if (completionThreads != null)
                 {
                     completionThreadToken.Cancel();
+                    // Wake every blocked completion drainer immediately by submitting a no-op
+                    // IO to each io_context. Without this, t.Join() below would stall up to
+                    // CompletionWorkerTimeoutSecs per blocked thread waiting on the next
+                    // QueueRunFor timeout to fire — which is the common case for idle drainers.
+                    // NativeDevice_WakeCompletionWorker is best-effort; on submit failure the
+                    // thread will simply wake on the next timeout (existing behaviour).
+                    for (int i = 0; i < completionThreads.Length; i++)
+                        _ = NativeDevice_WakeCompletionWorker(nativeDevice, i);
                     foreach (var t in completionThreads) t.Join();
                     completionThreadToken.Dispose();
                     completionThreads = null;
@@ -1059,9 +1070,9 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Drain loop for one completion thread bound to io_context shard <paramref name="ctxIdx"/>.
-        /// Each iteration blocks up to <see cref="CompletionWorkerTimeoutSecs"/> seconds in
-        /// <c>NativeDevice_QueueRunFor</c> and then re-checks the cancellation token; worst-case
-        /// shutdown stall is one timeout window per blocked thread.
+        /// Blocks in <c>NativeDevice_QueueRunFor</c> with a long timeout (so the idle syscall rate
+        /// is negligible); Dispose() wakes blocked workers via <c>NativeDevice_WakeCompletionWorker</c>
+        /// rather than relying on the timeout to fire.
         /// </summary>
         void CompletionWorker(int ctxIdx)
         {
@@ -1073,8 +1084,9 @@ namespace Tsavorite.core
             }
         }
 
-        // Per-iteration timeout for completion workers; shorter values reduce Dispose stall at
-        // the cost of one extra syscall per idle second.
+        // Per-iteration timeout for completion workers. Long enough that the idle syscall rate is
+        // negligible; Dispose() does not rely on this firing because it submits a synthetic wake-up
+        // event via NativeDevice_WakeCompletionWorker to unblock the worker immediately.
         const int CompletionWorkerTimeoutSecs = 1;
     }
 }

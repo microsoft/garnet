@@ -166,36 +166,45 @@ class QueueIoHandler {
  public:
   QueueIoHandler()
     : io_object_{ 0 }
-    , init_errno_{ 0 } {
+    , init_errno_{ 0 }
+    , wake_fd_{ -1 } {
   }
   /// Construct + io_setup. On failure, io_object_ stays 0 and init_errno_ holds the positive
   /// errno value from io_setup so the caller can format an actionable error.
   QueueIoHandler(size_t /*max_threads*/)
     : io_object_{ 0 }
-    , init_errno_{ 0 } {
+    , init_errno_{ 0 }
+    , wake_fd_{ -1 } {
     int result = ::io_setup(kMaxEvents, &io_object_);
     if (result < 0) {
       init_errno_ = -result;
       io_object_ = 0;
+    } else {
+      OpenWakeFd();
     }
   }
   /// Cross-backend 2-arg overload; `num_contexts` is ignored (libaio uses a single io_context).
   QueueIoHandler(size_t /*max_threads*/, int /*num_contexts*/)
     : io_object_{ 0 }
-    , init_errno_{ 0 } {
+    , init_errno_{ 0 }
+    , wake_fd_{ -1 } {
     int result = ::io_setup(kMaxEvents, &io_object_);
     if (result < 0) {
       init_errno_ = -result;
       io_object_ = 0;
+    } else {
+      OpenWakeFd();
     }
   }
 
   /// Move constructor
   QueueIoHandler(QueueIoHandler&& other)
     : io_object_{ other.io_object_ }
-    , init_errno_{ other.init_errno_ } {
+    , init_errno_{ other.init_errno_ }
+    , wake_fd_{ other.wake_fd_ } {
     other.io_object_ = 0;
     other.init_errno_ = 0;
+    other.wake_fd_ = -1;
   }
 
   ~QueueIoHandler() {
@@ -203,6 +212,10 @@ class QueueIoHandler {
     io_object_ = 0;
     if (io_object != 0)
       ::io_destroy(io_object);
+    if (wake_fd_ >= 0) {
+      ::close(wake_fd_);
+      wake_fd_ = -1;
+    }
   }
 
   /// Non-zero iff io_setup failed during construction. The value is the positive errno.
@@ -257,13 +270,27 @@ class QueueIoHandler {
   int QueueRun(int timeout_secs);
   /// Process IO completions on context `idx` only. Returns -1 if idx != 0.
   int QueueRunFor(int idx, int timeout_secs) { return idx == 0 ? QueueRun(timeout_secs) : -1; }
+  /// Submit a no-op IO that completes immediately so any thread blocked in
+  /// io_getevents wakes up promptly. Used by Dispose() to unblock the completion
+  /// drainer without waiting on the QueueRun timeout. Returns 0 on success, -1 on failure.
+  int Wake(int idx);
 
  private:
+  /// Open the wake-up file descriptor (/dev/null) used by Wake() to submit a no-op
+  /// 0-byte read iocb. /dev/null reads always return 0 immediately and do not require
+  /// O_DIRECT alignment, so this is the simplest fd to use as a wake-up target without
+  /// interfering with the real segment files.
+  void OpenWakeFd() {
+    wake_fd_ = ::open("/dev/null", O_RDONLY);
+  }
+
   /// The Linux AIO context used for IO completions.
   io_context_t io_object_;
   /// If non-zero, the positive errno from a failed io_setup() in the constructor. Checked by
   /// NativeDeviceImpl::Init() to surface an actionable error to the managed caller.
   int init_errno_;
+  /// /dev/null fd used by Wake() to submit a no-op 0-byte read. -1 if not opened.
+  int wake_fd_;
 };
 
 /// The QueueFile class encapsulates asynchronous reads and writes, using the specified AIO
@@ -454,6 +481,11 @@ class UringIoHandler {
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.
   int QueueRunFor(int idx, int timeout_secs);
+  /// Submit a no-op SQE to ring `idx` so any thread blocked in io_uring_wait_cqe_timeout wakes
+  /// up. Used by Dispose() to unblock the completion drainer without waiting on the timeout.
+  /// The CQE is dispatched with a sentinel context that the dispatcher skips. Returns 0 on
+  /// success, -1 on failure.
+  int Wake(int idx);
 
 private:
   void Init(int num_rings) {

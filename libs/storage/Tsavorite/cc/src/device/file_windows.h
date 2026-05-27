@@ -292,6 +292,12 @@ class ThreadPoolIoHandler {
       return -1; // disable queue IO (sharding not applicable on Windows IOCP)
   }
 
+  /// Windows IOCP path does not run dedicated completion drainer threads (callbacks
+  /// fire on threadpool threads instead), so there is nothing to wake. Always returns 0.
+  inline static constexpr int Wake(int /*idx*/) {
+      return 0;
+  }
+
   inline static constexpr int num_contexts() {
       return 1; // single IOCP per-device; sharding not applicable
   }
@@ -356,6 +362,10 @@ class QueueIoHandler {
 
   bool TryComplete();
   int QueueRun(int timeout_secs);
+  /// Stub for cross-backend Wake API on Windows. The Windows QueueIoHandler completion port
+  /// is currently unused (callers route to ThreadPoolIoHandler instead), so there is no
+  /// blocked drainer to unblock. Returns 0 unconditionally.
+  inline int Wake(int /*idx*/) { return 0; }
 
  private:
   /// The completion port to whose queue completions are added.

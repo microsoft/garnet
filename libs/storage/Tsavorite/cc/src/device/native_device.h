@@ -34,6 +34,11 @@ public:
     /// Per-context (shard) drain. ctx_idx in [0, num_io_contexts). Used by completion threads
     /// bound 1:1 to a context. Returns -1 if ctx_idx is out of range.
     virtual int QueueRunFor(int ctx_idx, int timeout_secs) = 0;
+    /// Submit a no-op completion event so a thread blocked in QueueRunFor for `ctx_idx`
+    /// wakes up immediately. Used by Dispose() to unblock the completion drainer without
+    /// waiting on the QueueRunFor timeout (which is otherwise a per-context shutdown stall).
+    /// Returns 0 on success, -1 on failure (out-of-range ctx_idx, unable to submit, etc).
+    virtual int Wake(int ctx_idx) = 0;
     /// Number of submission/completion shards. >= 1.
     virtual int num_io_contexts() const = 0;
 };
@@ -323,6 +328,10 @@ public:
 
     int QueueRunFor(int ctx_idx, int timeout_secs) override {
         return handler_.QueueRunFor(ctx_idx, timeout_secs);
+    }
+
+    int Wake(int ctx_idx) override {
+        return handler_.Wake(ctx_idx);
     }
 
     int num_io_contexts() const override {
