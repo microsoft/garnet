@@ -2287,6 +2287,37 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VGETATTR_BinaryAttributes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var vectorSetKey = "binattr";
+
+            // Attribute containing CR, LF, and CRLF sequences
+            var binaryAttr = new byte[] {
+                (byte)'{', (byte)'"', (byte)'k', (byte)'"', (byte)':', (byte)'"',
+                0x0D, 0x0A,  // CR LF
+                (byte)'"', (byte)'}',
+            };
+            var elem1 = new byte[] { 0, 0, 0, 1 };
+            var addRes1 = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", elem1, "NOQUANT", "SETATTR", binaryAttr]);
+            ClassicAssert.AreEqual(1, (int)addRes1);
+
+            var getRes1 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elem1]);
+            ClassicAssert.IsTrue(binaryAttr.SequenceEqual(getRes1), "Binary attribute with CRLF round-trip mismatch");
+
+            // Attribute containing null bytes and high bytes
+            var binaryAttr2 = new byte[] { 0x00, 0xFF, 0x0D, 0x0A, 0x01, 0xFE };
+            var elem2 = new byte[] { 0, 0, 0, 2 };
+            var addRes2 = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "4.0", "5.0", "6.0", elem2, "NOQUANT", "SETATTR", binaryAttr2]);
+            ClassicAssert.AreEqual(1, (int)addRes2);
+
+            var getRes2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elem2]);
+            ClassicAssert.IsTrue(binaryAttr2.SequenceEqual(getRes2), "Binary attribute with null/high bytes round-trip mismatch");
+        }
+
+        [Test]
         public void VREM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
