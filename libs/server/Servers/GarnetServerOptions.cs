@@ -243,9 +243,24 @@ namespace Garnet.server
         public bool QuietMode = false;
 
         /// <summary>
+        /// Default connection-drain timeout in seconds when not configured.
+        /// </summary>
+        public const int DefaultShutdownTimeoutSeconds = 5;
+
+        /// <summary>
+        /// Default data-finalization timeout in seconds when not configured.
+        /// </summary>
+        public const int DefaultDataFinalizationTimeoutSeconds = 15;
+
+        /// <summary>
         /// Timeout (in seconds) for waiting on active connections to drain during graceful shutdown.
         /// </summary>
-        public int ShutdownTimeoutSeconds = 5;
+        public int ShutdownTimeoutSeconds = DefaultShutdownTimeoutSeconds;
+
+        /// <summary>
+        /// Timeout (in seconds) for AOF commit and checkpoint during graceful shutdown data finalization.
+        /// </summary>
+        public int DataFinalizationTimeoutSeconds = DefaultDataFinalizationTimeoutSeconds;
 
         /// <summary>
         /// SAVE and BGSAVE: We will take a full (index + log) checkpoint when ReadOnlyAddress of log increases by this amount, from the last full checkpoint.
