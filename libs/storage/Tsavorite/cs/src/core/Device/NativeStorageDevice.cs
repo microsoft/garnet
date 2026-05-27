@@ -544,155 +544,127 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
+            // Metadata only — matches LocalStorageDevice / RandomAccessLocalStorageDevice.
+            // The native handle is created lazily on first IO via EnsureNativeDeviceCreated()
+            // so that callers which invoke Initialize multiple times (e.g., factory pre-init
+            // with segmentSize=-1, then caller re-init with the real segment size) end up with
+            // a native handle whose segment-size routing matches the final base.segmentSizeBits.
             if (omitSegmentIdFromFilename && segmentSize != -1)
                 throw new TsavoriteException("omitSegmentIdFromFilename requires segmentSize = -1 (single unbounded segment); multiple segments would all map to the same on-disk path and clobber each other.");
-
-            ulong sizeForNative;
-            if (segmentSize == -1)
-            {
-                // Unbounded single-segment mode: ask native for 1<<63 so the C++ shift math
-                // collapses every non-negative upper-layer address into segment 0 (the same
-                // address space the managed side covers with segmentSizeBits=64/mask=~0).
-                sizeForNative = UnboundedNativeSegmentSizeBytes;
-            }
-            else
+            if (segmentSize != -1)
             {
                 if (segmentSize <= 0 || (segmentSize & (segmentSize - 1)) != 0)
                     throw new TsavoriteException($"Native device segment size must be a positive power of two (or -1 for unbounded); got {segmentSize}.");
                 if (segmentSize < SectorSize)
                     throw new TsavoriteException($"Segment size {segmentSize} must be at least the device sector size {SectorSize}.");
-                sizeForNative = (ulong)segmentSize;
             }
-            if (nativeDevice != IntPtr.Zero)
-                throw new TsavoriteException("NativeStorageDevice.Initialize called more than once.");
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
 
-            nativeSegmentSizeBytes = sizeForNative;
+        readonly object nativeCreateLock = new();
 
-            // Create the native device with the requested segment size. numCompletionThreadsConfig
-            // is also the number of independent kernel io_contexts (libaio) / io_urings (uring)
-            // the native shim creates — completion threads are bound 1:1 to contexts below.
-            nativeDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, omitSegmentIdFromFilename, numCompletionThreadsConfig);
-            if (nativeDevice == IntPtr.Zero)
+        /// <summary>
+        /// Lazily creates the native device, spawns completion-drainer threads, and runs the
+        /// startup ABI / segment-size / sector-size cross-checks. Idempotent: subsequent calls
+        /// are a single non-locking read once the native handle exists. Thread-safe via
+        /// double-checked locking. Throws if Initialize has not been called or if the native
+        /// shim rejects the requested configuration.
+        /// </summary>
+        void EnsureNativeDeviceCreated()
+        {
+            if (nativeDevice != IntPtr.Zero) return;
+            if (Volatile.Read(ref disposedFlag) != 0)
+                throw new ObjectDisposedException(nameof(NativeStorageDevice));
+            lock (nativeCreateLock)
             {
-                // Pull the actionable error message from the native thread-local before doing any
-                // other native_device API call on this thread (which would clobber it).
-                var nativeMessage = GetNativeLastError();
-                var available = GetAvailableBackends();
-                var detail = string.IsNullOrEmpty(nativeMessage)
-                    ? $"Requested IO backend '{ioBackendConfig}' is not available in the loaded native_device library."
-                    : $"Native device initialization failed: {nativeMessage}";
-                throw new TsavoriteException(
-                    $"{detail} " +
-                    $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
-                    (ioBackendConfig == IoBackend.Uring
-                        ? "Rebuild the native library with -DUSE_URING=ON and install liburing-dev to enable io_uring."
-                        : "Verify the native library matches the requested backend."));
-            }
+                if (nativeDevice != IntPtr.Zero) return;
+                if (Volatile.Read(ref disposedFlag) != 0)
+                    throw new ObjectDisposedException(nameof(NativeStorageDevice));
 
-            // Validate that the native side accepted the requested segment size. A mismatch
-            // means the loaded native_device library uses a different segment-size ABI than
-            // the managed wrapper expects.
-            ulong actualSegmentSize = NativeDevice_GetSegmentSize(nativeDevice);
-            if (actualSegmentSize != sizeForNative)
-            {
-                NativeDevice_Destroy(nativeDevice);
-                nativeDevice = IntPtr.Zero;
-                throw new TsavoriteException(
-                    $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
-                    "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
-                    "Ensure libnative_device.so matches the current build.");
-            }
+                ulong sizeForNative = segmentSize == -1
+                    ? UnboundedNativeSegmentSizeBytes
+                    : (ulong)segmentSize;
 
-            // Cross-check sector alignment: the C# probe at construction used
-            // NativeDevice_ProbeAlignment to seed base.SectorSize; the native side computed its
-            // own value via File::GetDeviceAlignment after open. They must agree, otherwise every
-            // I/O the upper layer issues will be misaligned for the kernel.
-            uint nativeSectorSize = NativeDevice_sector_size(nativeDevice);
-            if (nativeSectorSize != SectorSize)
-            {
-                NativeDevice_Destroy(nativeDevice);
-                nativeDevice = IntPtr.Zero;
-                throw new TsavoriteException(
-                    $"Native device sector-size mismatch on '{filename}': managed wrapper probed " +
-                    $"{SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the " +
-                    "actual file. The most likely cause is a 4K-native disk where the probe ran " +
-                    "against a directory on a different filesystem than the eventual log file, " +
-                    "or a stale libnative_device.so. Place the log file on a filesystem whose " +
-                    "DIO alignment matches the probe result, or rebuild the native library to " +
-                    "match the managed wrapper.");
-            }
+                nativeSegmentSizeBytes = sizeForNative;
 
-            results = new NativeResult[MaxResults];
-
-            // Spawn one completion-drainer thread per native io_context / io_uring. The gate on
-            // NativeDevice_QueueRun(>= 0) skips this branch for backends with no kernel queue
-            // (Windows IOCP returns -1), which is also why the new sharded-ABI probe below is
-            // safe to skip on those backends — they never call the new symbols at runtime.
-            // Thread handles are retained so Dispose() can Thread.Join() every worker before
-            // NativeDevice_Destroy; only Join() guarantees a worker has returned from its last
-            // io_getevents / io_uring_wait_cqe_timeout syscall.
-            if (NativeDevice_QueueRun(nativeDevice, 0) >= 0)
-            {
-                // Synchronous probe of the sharded-ABI exports. Surfaces a stale .so/.dll as a
-                // clear TsavoriteException at Initialize rather than later as an
-                // EntryPointNotFoundException inside a completion thread (which would stall
-                // Dispose's drain loop because numPending would never reach 0).
-                try
+                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numCompletionThreadsConfig);
+                if (newDevice == IntPtr.Zero)
                 {
-                    _ = NativeDevice_NumIoContexts(nativeDevice);
-                    _ = NativeDevice_QueueRunFor(nativeDevice, 0, 0);
-                }
-                catch (EntryPointNotFoundException ex)
-                {
-                    NativeDevice_Destroy(nativeDevice);
-                    nativeDevice = IntPtr.Zero;
+                    var nativeMessage = GetNativeLastError();
+                    var available = GetAvailableBackends();
+                    var detail = string.IsNullOrEmpty(nativeMessage)
+                        ? $"Requested IO backend '{ioBackendConfig}' is not available in the loaded native_device library."
+                        : $"Native device initialization failed: {nativeMessage}";
                     throw new TsavoriteException(
-                        "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                        "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. The shared library " +
-                        "predates the multi-io-context change and must be rebuilt from this branch " +
-                        "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
-                        "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                        $"{detail} " +
+                        $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
+                        (ioBackendConfig == IoBackend.Uring
+                            ? "Rebuild the native library with -DUSE_URING=ON and install liburing-dev to enable io_uring."
+                            : "Verify the native library matches the requested backend."));
                 }
 
-                completionThreadToken = new();
-                // Spawn exactly one drainer per context the native shim actually created. The
-                // hint passed at construction is advisory; the native side may use fewer (e.g.,
-                // libaio uses 1 regardless).
-                int actualIoContexts = NativeDevice_NumIoContexts(nativeDevice);
-                if (actualIoContexts < 1) actualIoContexts = 1;
-                completionThreads = new Thread[actualIoContexts];
-                for (int i = 0; i < actualIoContexts; i++)
+                ulong actualSegmentSize = NativeDevice_GetSegmentSize(newDevice);
+                if (actualSegmentSize != sizeForNative)
                 {
-                    int ctxIdx = i;
-                    completionThreads[i] = new Thread(() => CompletionWorker(ctxIdx))
-                    {
-                        IsBackground = true
-                    };
-                    completionThreads[i].Start();
+                    NativeDevice_Destroy(newDevice);
+                    throw new TsavoriteException(
+                        $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
+                        "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
+                        "Ensure libnative_device.so matches the current build.");
                 }
-            }
 
-            try
-            {
-                base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
-            }
-            catch
-            {
-                // Roll back the native device and drainer threads so a base.Initialize failure
-                // does not leak them.
-                if (completionThreads != null)
+                uint nativeSectorSize = NativeDevice_sector_size(newDevice);
+                if (nativeSectorSize != SectorSize)
                 {
-                    try { completionThreadToken.Cancel(); } catch { /* already disposed */ }
-                    foreach (var t in completionThreads)
+                    NativeDevice_Destroy(newDevice);
+                    throw new TsavoriteException(
+                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed " +
+                        $"{SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the " +
+                        "actual file. The most likely cause is a 4K-native disk where the probe ran " +
+                        "against a directory on a different filesystem than the eventual log file, " +
+                        "or a stale libnative_device.so. Place the log file on a filesystem whose " +
+                        "DIO alignment matches the probe result, or rebuild the native library to " +
+                        "match the managed wrapper.");
+                }
+
+                if (results == null) results = new NativeResult[MaxResults];
+
+                if (NativeDevice_QueueRun(newDevice, 0) >= 0)
+                {
+                    try
                     {
-                        try { t.Join(); } catch { /* unexpected; swallow to preserve original */ }
+                        _ = NativeDevice_NumIoContexts(newDevice);
+                        _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
                     }
-                    try { completionThreadToken.Dispose(); } catch { }
-                    completionThreads = null;
+                    catch (EntryPointNotFoundException ex)
+                    {
+                        NativeDevice_Destroy(newDevice);
+                        throw new TsavoriteException(
+                            "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
+                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. The shared library " +
+                            "predates the multi-io-context change and must be rebuilt from this branch " +
+                            "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
+                            "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                    }
+
+                    completionThreadToken = new();
+                    int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
+                    if (actualIoContexts < 1) actualIoContexts = 1;
+                    completionThreads = new Thread[actualIoContexts];
+                    for (int i = 0; i < actualIoContexts; i++)
+                    {
+                        int ctxIdx = i;
+                        completionThreads[i] = new Thread(() => CompletionWorker(ctxIdx))
+                        {
+                            IsBackground = true
+                        };
+                        completionThreads[i].Start();
+                    }
                 }
-                var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
-                if (dev != IntPtr.Zero) NativeDevice_Destroy(dev);
-                throw;
+
+                // Publish last: a reader observing nativeDevice != IntPtr.Zero is guaranteed to
+                // see a fully-initialised handle with completion threads already running.
+                Volatile.Write(ref nativeDevice, newDevice);
             }
         }
 
@@ -705,20 +677,23 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Reset()
         {
-            if (!EnsureReadyOrSilent()) return;
-            NativeDevice_Reset(nativeDevice);
+            if (Volatile.Read(ref disposedFlag) != 0) return;
+            // No-op if the native device has not been created yet (no handles to reset).
+            var dev = nativeDevice;
+            if (dev == IntPtr.Zero) return;
+            NativeDevice_Reset(dev);
         }
 
         /// <summary>
-        /// Returns false (silent no-op) if the device has been disposed. Throws
-        /// <see cref="InvalidOperationException"/> if the device has not been initialized yet.
+        /// Returns false (silent no-op) if the device has been disposed. Does not throw on
+        /// "not initialized yet": callers that hit IO paths use <see cref="EnsureNativeDeviceCreated"/>
+        /// which lazily creates the native handle on first use.
         /// </summary>
         bool EnsureReadyOrSilent()
         {
             if (Volatile.Read(ref disposedFlag) != 0) return false;
-            if (nativeDevice != IntPtr.Zero) return true;
-            throw new InvalidOperationException(
-                "NativeStorageDevice must be Initialize()d (which creates the underlying native device) before any IO is issued.");
+            EnsureNativeDeviceCreated();
+            return true;
         }
 
         /// <summary>
@@ -755,10 +730,9 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            // Fail fast if Initialize() hasn't run yet — calling into the native side with a
-            // null device handle would dereference a null pointer in C++.
-            if (nativeDevice == IntPtr.Zero)
-                throw new InvalidOperationException("NativeStorageDevice.ReadAsync called before Initialize().");
+            if (Volatile.Read(ref disposedFlag) != 0)
+                throw new ObjectDisposedException(nameof(NativeStorageDevice));
+            EnsureNativeDeviceCreated();
 
             // The libaio/io_uring path requires O_DIRECT-aligned offset, length, AND buffer.
             // Misalignment in release builds would otherwise produce a cryptic EINVAL from the
@@ -826,8 +800,9 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            if (nativeDevice == IntPtr.Zero)
-                throw new InvalidOperationException("NativeStorageDevice.WriteAsync called before Initialize().");
+            if (Volatile.Read(ref disposedFlag) != 0)
+                throw new ObjectDisposedException(nameof(NativeStorageDevice));
+            EnsureNativeDeviceCreated();
 
             // Same rationale as ReadAsync — see the comment there. Kernel rejects misaligned
             // O_DIRECT writes with EINVAL; we want to surface this in managed code with the
@@ -912,8 +887,10 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            if (!EnsureReadyOrSilent()) return;
-            NativeDevice_RemoveSegment(nativeDevice, (ulong)segment);
+            if (Volatile.Read(ref disposedFlag) != 0) return;
+            var dev = nativeDevice;
+            if (dev == IntPtr.Zero) return;
+            NativeDevice_RemoveSegment(dev, (ulong)segment);
         }
 
         /// <summary>
@@ -983,30 +960,40 @@ namespace Tsavorite.core
                 Thread.Yield();
             }
 
-            // Cancel and Join every completion thread. Thread.Join returns strictly after the
-            // worker's last NativeDevice_QueueRun syscall has returned, which is required before
-            // NativeDevice_Destroy can run.
-            if (completionThreads != null)
+            // Cancel and Join every completion thread, then destroy the native device.
+            // Take nativeCreateLock so a concurrent EnsureNativeDeviceCreated cannot publish a
+            // brand-new native handle after we have already torn down (which would leak it).
+            lock (nativeCreateLock)
             {
-                completionThreadToken.Cancel();
-                foreach (var t in completionThreads) t.Join();
-                completionThreadToken.Dispose();
-            }
+                if (completionThreads != null)
+                {
+                    completionThreadToken.Cancel();
+                    foreach (var t in completionThreads) t.Join();
+                    completionThreadToken.Dispose();
+                    completionThreads = null;
+                }
 
-            // Atomically null and capture the handle so a guard-bypassed concurrent caller cannot
-            // observe a non-null handle that points to freed memory.
-            var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
-            if (dev != IntPtr.Zero)
-                NativeDevice_Destroy(dev);
+                var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
+                if (dev != IntPtr.Zero)
+                    NativeDevice_Destroy(dev);
+            }
         }
 
         /// <inheritdoc/>
         public override bool TryComplete()
-            => !EnsureReadyOrSilent() ? false : NativeDevice_TryComplete(nativeDevice);
+        {
+            if (Volatile.Read(ref disposedFlag) != 0) return false;
+            var dev = nativeDevice;
+            return dev == IntPtr.Zero ? false : NativeDevice_TryComplete(dev);
+        }
 
         /// <inheritdoc/>
         public override long GetFileSize(int segment)
-            => !EnsureReadyOrSilent() ? 0 : (long)NativeDevice_GetFileSize(nativeDevice, (ulong)segment);
+        {
+            if (Volatile.Read(ref disposedFlag) != 0) return 0;
+            var dev = nativeDevice;
+            return dev == IntPtr.Zero ? 0 : (long)NativeDevice_GetFileSize(dev, (ulong)segment);
+        }
 
         /// <summary>
         ///
