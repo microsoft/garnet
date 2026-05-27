@@ -67,8 +67,10 @@ namespace Tsavorite.core
         /// <param name="path">File system path.</param>
         /// <param name="access">Access mode: Read, Write or ReadWrite.</param>
         /// <param name="createIfMissing">When true, opens with O_CREAT (mode 0644). When false, the file must already exist.</param>
-        /// <param name="dsync">When true, adds O_DSYNC. Most O_DIRECT writes are already on the platter on completion so this
-        /// is normally unnecessary; included for parity with the FileOptions.WriteThrough callsites that previously asked for it.</param>
+        /// <param name="dsync">When true, adds O_DSYNC. Most O_DIRECT writes are already on
+        /// the platter on completion so this is normally unnecessary; provided as an opt-in
+        /// for callers that use <see cref="FileOptions.WriteThrough"/> on the managed file
+        /// APIs and want the equivalent fsync-on-write semantics here.</param>
         /// <returns>An owning SafeFileHandle. Throws <see cref="IOException"/> if open fails.</returns>
         public static SafeFileHandle OpenDirect(string path, FileAccess access, bool createIfMissing, bool dsync = false)
         {

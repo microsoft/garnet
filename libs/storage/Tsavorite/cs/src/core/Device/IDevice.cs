@@ -59,11 +59,10 @@ namespace Tsavorite.core
         int ThrottleLimit { get; set; }
 
         /// <summary>
-        /// Initialize device. Must be called exactly once after construction and before any IO
-        /// entry point (<see cref="ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, object)"/>,
-        /// <see cref="WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>,
-        /// <see cref="RemoveSegmentAsync"/>). Calling an IO method on an uninitialized device
-        /// throws <see cref="InvalidOperationException"/>.
+        /// Override device defaults. The ctor already establishes a valid configuration
+        /// (unbounded single segment — equivalent to <paramref name="segmentSize"/> = -1), so
+        /// callers may issue IO immediately after construction without calling this method;
+        /// <see cref="Initialize"/> is purely an opt-in configuration step.
         ///
         /// Passing <paramref name="segmentSize"/> = -1 selects unbounded single-segment mode:
         /// the device keeps a single growing segment file and every IO routes to segment 0.

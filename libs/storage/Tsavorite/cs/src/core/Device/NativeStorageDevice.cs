@@ -43,9 +43,11 @@ namespace Tsavorite.core
         int resultOffset;
 
         /// <summary>
-        /// Configuration captured at construction time; native device creation is DEFERRED until
-        /// <see cref="Initialize"/> because the segment size only becomes available at that
-        /// point. All four fields are immutable after the constructor returns.
+        /// Configuration captured at construction time; the underlying native device is created
+        /// lazily on the first IO call via <see cref="EnsureNativeDeviceCreated"/> using
+        /// <c>segmentSize</c> as the requested segment size (defaults to -1 = unbounded
+        /// single segment unless <see cref="Initialize"/> was called to override). All four
+        /// fields are immutable after the constructor returns.
         /// </summary>
         readonly string filename;
         readonly bool deleteOnClose;
@@ -54,23 +56,24 @@ namespace Tsavorite.core
         readonly IoBackend ioBackendConfig;
 
         /// <summary>
-        /// Runtime segment size in bytes that we asked the native shim to use. Set by
-        /// <see cref="Initialize"/>. When the user requested <c>segmentSize = -1</c> (unbounded
-        /// single segment) this is <see cref="UnboundedNativeSegmentSizeBytes"/>, large enough
-        /// that any non-negative <c>long</c> upper-layer address routes to segment 0 under the
-        /// native shim's <c>shift = log2(segment_size_bytes)</c> math. Used only for
-        /// diagnostics/assertions on the C# side; the authoritative value lives inside the
-        /// native device.
+        /// Runtime segment size in bytes that the native shim was asked to use. Populated by
+        /// <see cref="EnsureNativeDeviceCreated"/> the first time the native handle is created.
+        /// When the upper-layer requested <c>segmentSize = -1</c> (unbounded single segment)
+        /// this is <see cref="UnboundedNativeSegmentSizeBytes"/>, large enough that any
+        /// non-negative <c>long</c> upper-layer address routes to segment 0 under the native
+        /// shim's <c>shift = log2(segment_size_bytes)</c> math. Used only for diagnostics /
+        /// assertions on the C# side; the authoritative value lives inside the native device.
         /// </summary>
         ulong nativeSegmentSizeBytes;
 
         /// <summary>
-        /// Native-side segment size used to represent unbounded single-segment mode
-        /// (corresponds to <c>Initialize(segmentSize: -1)</c>). 1&lt;&lt;63 = 9.2 EiB; any
-        /// non-negative <c>long</c> address is below this and so shifts to segment 0 inside the
-        /// native <c>FileSystemSegmentedFile</c>. The C# managed side still uses
-        /// <c>segmentSizeBits = 64</c> / <c>segmentSizeMask = ~0</c> for its own address math,
-        /// so segment IDs are always 0 in this mode on both sides.
+        /// Native-side segment size used to represent unbounded single-segment mode (the default
+        /// when neither the ctor nor <see cref="Initialize"/> overrides it, equivalent to
+        /// <c>Initialize(segmentSize: -1)</c>). 1&lt;&lt;63 = 9.2 EiB; any non-negative
+        /// <c>long</c> address is below this and so shifts to segment 0 inside the native
+        /// <c>FileSystemSegmentedFile</c>. The C# managed side uses <c>segmentSizeBits = 64</c> /
+        /// <c>segmentSizeMask = ~0</c> for its own address math, so segment IDs are always 0 in
+        /// this mode on both sides.
         /// </summary>
         const ulong UnboundedNativeSegmentSizeBytes = 1UL << 63;
 
@@ -475,13 +478,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Native device creation is DEFERRED until <see cref="Initialize"/> is called with the
-        /// segment size — the constructor only stores configuration. This is the only way to
-        /// thread the segment size from the upstream log layer (which knows it) down to the
-        /// native <c>FileSystemSegmentedFile</c> (which needs it for shift/mask geometry). Until
-        /// <see cref="Initialize"/> runs, <see cref="nativeDevice"/> is <c>IntPtr.Zero</c> and
-        /// every IO entry point (<see cref="ReadAsync"/>, <see cref="WriteAsync"/>, etc.) throws
-        /// <see cref="InvalidOperationException"/>.
+        /// The constructor only captures configuration; the underlying native device is created
+        /// lazily on the first IO call via <see cref="EnsureNativeDeviceCreated"/>. This lets
+        /// callers configure the segment size (if non-default) by calling <see cref="Initialize"/>
+        /// in between construction and the first IO, without paying any cost for the native
+        /// device creation up-front. Callers that do not call <see cref="Initialize"/> get the
+        /// ctor defaults (unbounded single segment, equivalent to <c>Initialize(-1)</c>).
         /// </para>
         /// </remarks>
         /// <param name="filename">File name (or prefix) with path</param>
@@ -510,7 +512,8 @@ namespace Tsavorite.core
             if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new TsavoriteException($"Path {filename} is too long");
 
-            // Capture configuration; native device creation defers to Initialize().
+            // Configuration is captured here; the native device handle (and its completion-drainer
+            // thread, libaio / io_uring rings, etc.) is created lazily on the first IO call.
             this.filename = filename;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
@@ -528,17 +531,19 @@ namespace Tsavorite.core
 
         /// <inheritdoc />
         /// <remarks>
-        /// Creates the underlying native device with the requested segment size. Validates that
-        /// segmentSize is a positive power of two and at least the device sector size — the
-        /// native side enforces the same invariant, but failing fast in managed code keeps the
-        /// error message close to the caller. The native device's actual segment size is read
-        /// back via <see cref="NativeDevice_GetSegmentSize"/> as a defense against ABI mismatches
-        /// between the .so and the C# wrapper.
+        /// Validates that segmentSize is a positive power of two and at least the device sector
+        /// size — the native side enforces the same invariant when it later creates the device,
+        /// but failing fast in managed code keeps the error message close to the caller. Like
+        /// the base implementation this is purely a configuration call (the ctor already
+        /// establishes valid defaults); the underlying native handle is created lazily on the
+        /// first IO via <see cref="EnsureNativeDeviceCreated"/> using the final
+        /// <c>base.segmentSizeBits</c>, so subsequent calls that change the segment size are
+        /// honoured as long as no IO has flowed yet.
         /// <para>
-        /// Passing <c>segmentSize = -1</c> selects unbounded single-segment mode: native is
-        /// asked to use <see cref="UnboundedNativeSegmentSizeBytes"/> (1&lt;&lt;63) so every
-        /// non-negative upper-layer address routes to segment 0 in both the C++ and managed
-        /// bit-shift math, and the on-disk layout is a single segment file
+        /// Passing <c>segmentSize = -1</c> selects unbounded single-segment mode: the native
+        /// shim is asked to use <see cref="UnboundedNativeSegmentSizeBytes"/> (1&lt;&lt;63) so
+        /// every non-negative upper-layer address routes to segment 0 in both the C++ and
+        /// managed bit-shift math, and the on-disk layout is a single segment file
         /// (<c>&lt;basename&gt;.0</c>) that grows on demand. When combined with
         /// <paramref name="omitSegmentIdFromFilename"/> = true, the file is named
         /// just <c>&lt;basename&gt;</c> (no segment suffix) — only allowed with
@@ -547,11 +552,10 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
-            // Metadata only — matches LocalStorageDevice / RandomAccessLocalStorageDevice.
-            // The native handle is created lazily on first IO via EnsureNativeDeviceCreated()
-            // so that callers which invoke Initialize multiple times (e.g., factory pre-init
-            // with segmentSize=-1, then caller re-init with the real segment size) end up with
-            // a native handle whose segment-size routing matches the final base.segmentSizeBits.
+            // Metadata only — matches LocalStorageDevice / RandomAccessLocalStorageDevice. The
+            // native handle is created lazily on first IO via EnsureNativeDeviceCreated() using
+            // the current base.segmentSizeBits, so repeated calls before the first IO end up
+            // creating a native device with the most-recently-requested segment size.
             if (omitSegmentIdFromFilename && segmentSize != -1)
                 throw new TsavoriteException("omitSegmentIdFromFilename requires segmentSize = -1 (single unbounded segment); multiple segments would all map to the same on-disk path and clobber each other.");
             if (segmentSize != -1)
@@ -568,10 +572,12 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Lazily creates the native device, spawns completion-drainer threads, and runs the
-        /// startup ABI / segment-size / sector-size cross-checks. Idempotent: subsequent calls
-        /// are a single non-locking read once the native handle exists. Thread-safe via
-        /// double-checked locking. Throws if Initialize has not been called or if the native
-        /// shim rejects the requested configuration.
+        /// startup ABI / segment-size / sector-size cross-checks. Uses
+        /// <c>segmentSize</c> as the requested segment size — callers may override
+        /// the default (-1, unbounded single segment) by calling <see cref="Initialize"/>
+        /// before the first IO. Idempotent: subsequent calls are a single non-locking read once
+        /// the native handle exists. Thread-safe via double-checked locking. Throws if the
+        /// device has been disposed or if the native shim rejects the configuration.
         /// </summary>
         void EnsureNativeDeviceCreated()
         {
@@ -688,9 +694,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Returns false (silent no-op) if the device has been disposed. Does not throw on
-        /// "not initialized yet": callers that hit IO paths use <see cref="EnsureNativeDeviceCreated"/>
-        /// which lazily creates the native handle on first use.
+        /// Returns false (silent no-op) if the device has been disposed. Otherwise drives
+        /// <see cref="EnsureNativeDeviceCreated"/> to materialise the native handle on first
+        /// use; subsequent calls are a single read once the handle exists.
         /// </summary>
         bool EnsureReadyOrSilent()
         {
@@ -931,8 +937,11 @@ namespace Tsavorite.core
         /// <see cref="InvalidOperationException"/> in that case.
         /// </para>
         /// <para>
-        /// Worst-case shutdown stall = (<see cref="CompletionWorkerTimeoutSecs"/> + duration of
-        /// the longest in-flight user callback). If callbacks are slow, Dispose() waits for them.
+        /// Worst-case shutdown stall is bounded by the duration of the longest in-flight user
+        /// callback: blocked completion drainers are woken immediately by
+        /// <see cref="NativeDevice_WakeCompletionWorker"/> rather than waiting on
+        /// <see cref="CompletionWorkerTimeoutSecs"/> to fire. If callbacks are slow,
+        /// Dispose() waits for them.
         /// </para>
         /// </remarks>
         public override void Dispose()
@@ -980,12 +989,12 @@ namespace Tsavorite.core
                 if (completionThreads != null)
                 {
                     completionThreadToken.Cancel();
-                    // Wake every blocked completion drainer immediately by submitting a no-op
-                    // IO to each io_context. Without this, t.Join() below would stall up to
-                    // CompletionWorkerTimeoutSecs per blocked thread waiting on the next
-                    // QueueRunFor timeout to fire — which is the common case for idle drainers.
-                    // NativeDevice_WakeCompletionWorker is best-effort; on submit failure the
-                    // thread will simply wake on the next timeout (existing behaviour).
+                    // Wake every blocked completion drainer by submitting a no-op IO to each
+                    // io_context. The drainer is otherwise sleeping in NativeDevice_QueueRunFor
+                    // waiting for completion events; the wake-up causes the syscall to return
+                    // promptly so the cancellation token can be observed on the next loop
+                    // iteration. Best-effort: on submit failure the drainer still wakes when
+                    // its QueueRunFor timeout fires.
                     for (int i = 0; i < completionThreads.Length; i++)
                         _ = NativeDevice_WakeCompletionWorker(nativeDevice, i);
                     foreach (var t in completionThreads) t.Join();
@@ -1044,7 +1053,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// Never throws: on any failure returns <see cref="MinSectorSize"/> (512). A stale or
-        /// wrong probe is caught by the <see cref="Initialize"/> cross-check.
+        /// wrong probe is caught when <see cref="EnsureNativeDeviceCreated"/> later cross-checks
+        /// the managed SectorSize against the value the native shim reports for the actual file.
         /// </remarks>
         private static uint GetSectorSize(string filename)
         {

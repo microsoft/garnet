@@ -37,8 +37,8 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
-            // Initialize our own state via the base, then forward to the wrapped device so that
-            // its EnsureInitialized() guard passes when our IO methods delegate to it.
+            // Forward to both: our own base (so segment-size routing reflects the override) and
+            // the wrapped device (so its segment-size geometry matches ours for IO routing).
             base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
             underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
         }

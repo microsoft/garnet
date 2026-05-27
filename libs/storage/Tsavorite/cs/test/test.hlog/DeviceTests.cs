@@ -675,10 +675,10 @@ namespace Tsavorite.test
         [Category("NativeStorageDevice")]
         public void NativeStorageDevice_DisposeBeforeInitialize_IsNoOp()
         {
-            // Constructing a device without ever calling Initialize must NOT crash on Dispose:
-            // the native device handle is still IntPtr.Zero and the Dispose path must skip
-            // the NativeDevice_Destroy P/Invoke entirely (already verified by the guard added
-            // in Phase 6).
+            // Constructing a device without ever invoking IO must NOT crash on Dispose: the
+            // native device handle is still IntPtr.Zero (created lazily on first IO) and the
+            // Dispose path must skip the NativeDevice_Destroy P/Invoke and the
+            // completion-thread join entirely.
             var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
             Assert.DoesNotThrow(() => device.Dispose());
         }
@@ -701,10 +701,10 @@ namespace Tsavorite.test
         public void NativeStorageDevice_InitializeTwice_Idempotent()
         {
             // Initialize is idempotent (matches LocalStorageDevice / RandomAccessLocalStorageDevice
-            // contract): metadata is updated on each call and the native handle is created lazily
-            // on first IO with the final segmentSize/Bits/Mask. This supports the common factory
-            // pattern (LocalStorageNamedDeviceFactory.Get pre-inits with segmentSize=-1, then
-            // the consumer re-initializes with the real segment size).
+            // contract): metadata is updated on each call and the native handle is created
+            // lazily on first IO using the final segmentSize / segmentSizeBits / segmentSizeMask.
+            // Repeated Initialize calls with the same or different segment sizes are legal as
+            // long as no IO has flowed yet.
             using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
             Assert.DoesNotThrow(() => device.Initialize(64 * Mib));
             Assert.DoesNotThrow(() => device.Initialize(64 * Mib));
