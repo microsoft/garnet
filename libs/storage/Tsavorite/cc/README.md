@@ -19,24 +19,41 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 
 ## Runtime dependencies (end users)
 
-The shipped Linux prebuilt `libnative_device.so` is linked against **libaio**
-only — most distributions already have it; the `Native` device works out of
-the box with no extra installs required. The `default` and `libaio` backends
-both route to the libaio code path.
+We ship **two** Linux prebuilt native libraries next to each other under
+`runtimes/linux-x64/native/`:
+
+1. `libnative_device.so` — built with `USE_URING=ON`, links **libaio**
+   AND **liburing**. Exposes both `IoBackend.Libaio` and `IoBackend.Uring`
+   to the C# caller. Loaded when liburing2 is present on the host.
+2. `libnative_device_libaio.so` — built with `USE_URING=OFF`, links
+   **libaio** only. Exposes `IoBackend.Libaio`. Loaded automatically as a
+   fallback when liburing2 is **not** present on the host so the libaio
+   backend (the default) still works without any extra setup.
+
+The C# `NativeStorageDevice` loader tries `libnative_device.so` first and
+silently falls back to `libnative_device_libaio.so` if the dynamic linker
+reports `liburing.so.2: cannot open shared object file`. The libaio backend
+always works out of the box on any Linux distribution that ships libaio
+(essentially all of them).
+
+If a caller explicitly selects `IoBackend.Uring` on a host without
+liburing installed, construction throws a `TsavoriteException` with the
+install command for the user's distribution (`apt-get install -y
+liburing2`, `dnf install -y liburing`, `apk add liburing`). We never
+silently downgrade Uring to Libaio.
 
 ```sh
-# libaio is usually present on Debian / Ubuntu / Fedora / Alpine by default.
-# If for some reason it is missing, install it via the distribution package
-# (Debian/Ubuntu 24.04+: libaio1t64; older Debian/Ubuntu: libaio1; Fedora/RHEL/
-# AzureLinux: libaio; Alpine: libaio).
-```
+# libaio (always required — both shipped binaries link it):
+#   Debian / Ubuntu 24.04+: libaio1t64
+#   Older Debian / Ubuntu:  libaio1
+#   Fedora / RHEL / AzureLinux: libaio
+#   Alpine: libaio
 
-The `uring` backend is **not** enabled in the shipped binary because liburing
-is not installed by default on most Linux distributions and we want the shipped
-`.so` to load without external setup. To use the io_uring backend, rebuild the
-native lib yourself with `-DUSE_URING=ON` and install `liburing-dev` (see
-"Building on Linux" below); requesting the `uring` backend against the shipped
-build is rejected at construction with a clear exception.
+# liburing (optional — only needed if you want IoBackend.Uring):
+#   Debian / Ubuntu: liburing2
+#   Fedora / RHEL / AzureLinux: liburing
+#   Alpine: liburing
+```
 
 Windows users do not need any of this; the shipped `native_device.dll`
 uses the Windows ThreadPool API and has no native runtime dependencies
@@ -187,21 +204,23 @@ cmake -DCMAKE_BUILD_TYPE=Debug ../..
 make -j"$(nproc)"
 ```
 
-The output is `build/<config>/libnative_device.so`. By default the build
-links libaio only and the `Libaio` (`Default`) backend is available at
-runtime; the `Uring` backend is rejected at construction unless you opt
-in at build time (see "Enabling io_uring" below). Select backends at
-runtime via the C# `IoBackend` enum, which Garnet surfaces as
-`--device-io-backend libaio|uring`. The Linux default is libaio.
+The output is `build/<config>/libnative_device.so`. The build links libaio
+(always) and, when `USE_URING=ON` (the default), also links liburing — the
+resulting binary exposes the `Libaio` and (if `USE_URING=ON`) `Uring`
+backends to the C# caller via the `IoBackend` enum (`--device-io-backend
+libaio|uring`). The Linux default is libaio; Uring must be explicitly
+selected.
 
-> **Runtime dependencies of the shipped prebuilt.** The Linux prebuilt
-> checked into this repo is built with `USE_URING=OFF`, so it has only
-> `libaio.so.1` recorded as a `NEEDED` ELF entry. End users do not need
-> to install liburing — most Linux distributions ship libaio in the base
-> system, so the prebuilt loads without any additional setup. If you
-> rebuild the native lib yourself with `-DUSE_URING=ON` (see "Enabling
-> io_uring" below), you also need to install `liburing2` / `liburing` on
-> the deployment host.
+> **The repo ships two prebuilt Linux binaries.** To support hosts that
+> may or may not have liburing2 installed, the repo ships both:
+> `libnative_device.so` (built with `USE_URING=ON`, links libaio +
+> liburing) and `libnative_device_libaio.so` (built with `USE_URING=OFF`,
+> links libaio only). The C# loader tries the uring-enabled binary first
+> and falls back to the libaio-only binary on `liburing.so.2: cannot open`.
+> If you rebuild the prebuilts, rebuild both — once with `-DUSE_URING=ON`,
+> once with `-DUSE_URING=OFF` — and copy each over the corresponding file
+> in `runtimes/linux-x64/native/` (see the "Updating the shipped prebuilt
+> binaries" section below for the rebuild script).
 
 > **Ubuntu 24.04 (t64 ABI) note.** Since the t64 transition the system
 > ships `libaio.so.1t64` instead of `libaio.so.1`. CMake's `-laio` will
@@ -212,21 +231,20 @@ runtime via the C# `IoBackend` enum, which Garnet surfaces as
 > libaio.so.1 libnative_device.so` after the build (see the prebuilt
 > update section below).
 
-#### Enabling io_uring (optional)
+#### Disabling io_uring at build time (optional)
 
-The shipped prebuilt does not include io_uring support; to enable it,
-install `liburing-dev` and pass `-DUSE_URING=ON` to cmake:
+If you want a build that does not have a runtime dependency on liburing
+at all (e.g., for a constrained image where liburing is unavailable),
+pass `-DUSE_URING=OFF` to cmake:
 
 ```sh
-# Debian / Ubuntu:
-sudo apt-get install -y liburing-dev
-
-cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=ON ../..
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=OFF ../..
 ```
 
-The resulting binary links both libaio and liburing, and the deployment
-host must have `liburing2` installed at runtime. Both `Libaio` and
-`Uring` backends become available.
+The resulting binary links only libaio. Requesting the `Uring` backend at
+runtime against this build is rejected at construction with the same clear
+exception (pointing the user at the install command for liburing2). This is
+the build flavour that ships as `libnative_device_libaio.so`.
 
 ### Updating the shipped prebuilt binaries
 

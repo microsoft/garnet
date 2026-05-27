@@ -92,13 +92,32 @@ namespace Tsavorite.core
 
         const string NativeLibraryName = "native_device";
         static readonly string NativeLibraryPath = null;
+        static readonly string LibaioFallbackLibraryPath = null;
 
         static NativeStorageDevice()
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
                 NativeLibraryPath = "runtimes/win-x64/native/native_device.dll";
+                LibaioFallbackLibraryPath = null;
+            }
             else
+            {
+                // We ship two Linux native libraries:
+                //   * libnative_device.so         — built with USE_URING=ON, links libaio AND
+                //     liburing. Used on hosts that have liburing2 installed; exposes both the
+                //     Libaio and Uring backends.
+                //   * libnative_device_libaio.so  — built with USE_URING=OFF, links libaio only.
+                //     Used as a fallback on hosts without liburing2 installed; exposes the
+                //     Libaio backend only (selecting Uring at construction time produces a
+                //     clear TsavoriteException pointing the user at the install command).
+                // The two-binary scheme keeps the Uring hot path zero-overhead (direct calls,
+                // no function-pointer indirection) while still giving end-users on stock
+                // distributions a libnative_device that loads cleanly without installing
+                // liburing manually.
                 NativeLibraryPath = "runtimes/linux-x64/native/libnative_device.so";
+                LibaioFallbackLibraryPath = "runtimes/linux-x64/native/libnative_device_libaio.so";
+            }
             NativeLibrary.SetDllImportResolver(typeof(NativeStorageDevice).Assembly, ImportResolver);
         }
 
@@ -107,11 +126,34 @@ namespace Tsavorite.core
             if (libraryName != NativeLibraryName || NativeLibraryPath == null)
                 return IntPtr.Zero;
 
-            var resolvedPath = ResolveNativeLibraryPath(assembly);
+            var resolvedPath = ResolveNativeLibraryPath(assembly, NativeLibraryPath);
 
             try
             {
                 return NativeLibrary.Load(resolvedPath);
+            }
+            catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                                                  && LibaioFallbackLibraryPath != null
+                                                  && ex.Message.Contains("liburing.so.2", StringComparison.Ordinal))
+            {
+                // Host has no liburing2 installed. Fall back to the libaio-only build so that
+                // the Libaio backend (the default) keeps working. Selecting IoBackend.Uring at
+                // construction time on the fallback binary throws TsavoriteException with an
+                // install-liburing2 instruction; we never silently downgrade Uring to Libaio.
+                var fallbackPath = ResolveNativeLibraryPath(assembly, LibaioFallbackLibraryPath);
+                try
+                {
+                    return NativeLibrary.Load(fallbackPath);
+                }
+                catch (DllNotFoundException fallbackEx)
+                {
+                    throw new DllNotFoundException(
+                        $"Failed to load either '{Path.GetFileName(resolvedPath)}' (needs liburing.so.2) " +
+                        $"or fallback '{Path.GetFileName(fallbackPath)}' (libaio-only). " +
+                        $"Primary error: {ex.Message}. Fallback error: {fallbackEx.Message}. " +
+                        $"On Debian/Ubuntu install with: sudo apt-get install -y libaio1t64 liburing2",
+                        ex);
+                }
             }
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && ex.Message.Contains("libaio.so.1", StringComparison.Ordinal))
@@ -138,13 +180,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Resolve NativeLibraryPath (which is a NuGet-style "runtimes/&lt;rid&gt;/native/&lt;lib&gt;" relative
-        /// path) to an absolute filesystem path. We probe (in order) the assembly's own directory, the
-        /// application's base directory, and finally the current working directory when it is available.
-        /// Falls back to the raw relative path if none of these exist, so dlopen's error message
-        /// surfaces as before.
+        /// Resolve <paramref name="relativePath"/> (a NuGet-style "runtimes/&lt;rid&gt;/native/&lt;lib&gt;"
+        /// relative path) to an absolute filesystem path. We probe (in order) the assembly's own
+        /// directory, the application's base directory, and finally the current working directory
+        /// when it is available. Falls back to the raw relative path if none of these exist, so
+        /// dlopen's error message surfaces as before.
         /// </summary>
-        static string ResolveNativeLibraryPath(Assembly assembly)
+        static string ResolveNativeLibraryPath(Assembly assembly, string relativePath)
         {
             string[] searchRoots =
             [
@@ -157,12 +199,12 @@ namespace Tsavorite.core
             {
                 if (string.IsNullOrEmpty(root))
                     continue;
-                var candidate = Path.Combine(root, NativeLibraryPath);
+                var candidate = Path.Combine(root, relativePath);
                 if (File.Exists(candidate))
                     return Path.GetFullPath(candidate);
             }
 
-            return NativeLibraryPath;
+            return relativePath;
         }
 
         /// <summary>
@@ -608,7 +650,9 @@ namespace Tsavorite.core
                         $"{detail} " +
                         $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
                         (ioBackendConfig == IoBackend.Uring
-                            ? "Rebuild the native library with -DUSE_URING=ON and install liburing-dev to enable io_uring."
+                            ? "The io_uring backend requires liburing.so.2 to be present at process start. " +
+                              "Install it (Debian/Ubuntu: 'sudo apt-get install -y liburing2'; Fedora/RHEL: 'sudo dnf install -y liburing'; Alpine: 'sudo apk add liburing') and restart the process. " +
+                              "The libaio backend (selected with IoBackend.Default / IoBackend.Libaio) is always available and does not require liburing."
                             : "Verify the native library matches the requested backend."));
                 }
 
