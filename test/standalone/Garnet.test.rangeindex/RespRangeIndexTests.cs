@@ -2444,5 +2444,143 @@ namespace Garnet.test
                 ClassicAssert.AreEqual($"value-{i:000}-pad", got, $"field-{i:000}");
             }
         }
+
+        /// <summary>
+        /// Demonstrates that concurrent RI.SET writes to the same field can produce
+        /// AOF log ordering that diverges from BfTree's actual execution order.
+        ///
+        /// <para><b>Root cause:</b> RI.SET acquires only a shared lock (BfTree is internally
+        /// thread-safe for point operations), so multiple concurrent RI.SET calls on the same
+        /// field execute in parallel. The native BfTree insert and the AOF enqueue are two
+        /// separate, unserialized steps — BfTree serializes the inserts internally (last-writer-wins),
+        /// but the AOF enqueue that follows may complete in a different order across threads.
+        /// On AOF replay (recovery), the replayed "last write" may therefore differ from the
+        /// primary's actual winner, causing primary/replica divergence.</para>
+        ///
+        /// <para><b>Test approach:</b> The test runs 200 rounds. In each round, 8 workers
+        /// (each with its own <see cref="ConnectionMultiplexer"/>) synchronize on a
+        /// <see cref="Barrier"/> and then concurrently issue <c>RI.SET racetest field-NNNN
+        /// v-NNNN-wWW</c> — all targeting the same field but with worker-specific values.
+        /// After each round the primary's winner is recorded via <c>RI.GET</c>. Using a unique
+        /// field per round ensures that earlier divergences are preserved and observable after
+        /// a single recovery pass. After all rounds, the AOF is committed, the server is
+        /// disposed, and a fresh server recovers from AOF. Each field's recovered value is
+        /// compared to the primary's recorded winner — any mismatch proves the bug.</para>
+        ///
+        /// <para><b>Probabilistic nature:</b> The race is timing-dependent and may not trigger
+        /// on every run, but empirically ~2-5% of rounds diverge with 8 workers, making false
+        /// negatives unlikely over 200 rounds.</para>
+        /// </summary>
+        [Test]
+        [CancelAfter(120_000)]
+        public void RISetAofOrderingDivergenceTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                enableRangeIndexPreview: true, enableAOF: true);
+            server.Start();
+
+            const int numWorkers = 8;
+            const int numRounds = 200;
+
+            // Track what the primary's BfTree actually holds after each round
+            var primaryWinners = new string[numRounds];
+
+            // Open one connection per worker (separate multiplexers for true concurrency)
+            var connections = new ConnectionMultiplexer[numWorkers];
+            var dbs = new IDatabase[numWorkers];
+            for (int w = 0; w < numWorkers; w++)
+            {
+                connections[w] = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                dbs[w] = connections[w].GetDatabase(0);
+            }
+
+            try
+            {
+                // Create a MEMORY-backed RI with bounds that accept our test values
+                dbs[0].Execute("RI.CREATE", "racetest", "MEMORY",
+                    "CACHESIZE", "1048576",
+                    "MINRECORD", "8",
+                    "MAXRECORD", "256",
+                    "MAXKEYLEN", "64");
+
+                var barrier = new Barrier(numWorkers);
+
+                for (int round = 0; round < numRounds; round++)
+                {
+                    var field = $"field-{round:D4}";
+                    int r = round;
+
+                    // All workers write the same field concurrently with different values
+                    var tasks = new Task[numWorkers];
+                    for (int w = 0; w < numWorkers; w++)
+                    {
+                        int workerId = w;
+                        tasks[w] = Task.Run(() =>
+                        {
+                            barrier.SignalAndWait();
+                            var value = $"v-{r:D4}-w{workerId:D2}";
+                            dbs[workerId].Execute("RI.SET", "racetest", field, value);
+                        });
+                    }
+                    Task.WaitAll(tasks);
+
+                    // Read the primary's actual winner
+                    primaryWinners[round] = (string)dbs[0].Execute("RI.GET", "racetest", field);
+                    ClassicAssert.IsNotNull(primaryWinners[round],
+                        $"Round {round}: RI.GET returned null for {field}");
+                }
+
+                // Commit AOF
+                using (var adminConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    adminConn.GetDatabase(0).Execute("COMMITAOF");
+                }
+            }
+            finally
+            {
+                foreach (var conn in connections)
+                    conn?.Dispose();
+            }
+
+            // Recover from AOF and compare
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                int mismatches = 0;
+
+                for (int round = 0; round < numRounds; round++)
+                {
+                    var field = $"field-{round:D4}";
+                    var recovered = (string)db.Execute("RI.GET", "racetest", field);
+                    if (recovered != primaryWinners[round])
+                    {
+                        mismatches++;
+                        TestContext.Out.WriteLine(
+                            $"DIVERGENCE round={round} field={field} " +
+                            $"primary={primaryWinners[round]} recovered={recovered}");
+                    }
+                }
+
+                TestContext.Out.WriteLine(
+                    $"Total rounds={numRounds} workers={numWorkers} mismatches={mismatches}");
+
+                // If any mismatch found, the bug is demonstrated
+                if (mismatches > 0)
+                {
+                    ClassicAssert.Fail(
+                        $"AOF ordering divergence detected: {mismatches}/{numRounds} rounds " +
+                        $"had primary vs recovered mismatch. This confirms that concurrent " +
+                        $"RI.SET writes can produce AOF log ordering inconsistent with " +
+                        $"BfTree's actual execution order.");
+                }
+            }
+        }
     }
 }
