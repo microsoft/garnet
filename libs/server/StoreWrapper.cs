@@ -647,7 +647,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) break;
 
-                    // if we are replica and in auto-commit - do not commit as it will clobber the AOF addresses
+                    // Replicas should never run the periodic commit task because it can clobber replicated AOF addresses.
                     if (clusterProvider?.IsReplica() ?? false)
                     {
                         await Task.Delay(commitFrequencyMs, token).ConfigureAwait(false);
