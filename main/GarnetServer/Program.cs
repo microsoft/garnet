@@ -22,27 +22,34 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                using var cts = new CancellationTokenSource();
+                using var runCts = new CancellationTokenSource();
+                using var shutdownForceCts = new CancellationTokenSource();
+                var shutdownSignals = 0;
 
-                ConsoleCancelEventHandler cancelKeyPressHandler = (sender, e) =>
+                void OnShutdownSignal()
                 {
-                    e.Cancel = true; // Prevent the process from terminating immediately
-                    if (!cts.IsCancellationRequested)
-                        cts.Cancel();
-                };
+                    // First signal: graceful shutdown. Second signal (or ProcessExit while shutting down): fast path.
+                    if (Interlocked.Increment(ref shutdownSignals) >= 2)
+                        shutdownForceCts.Cancel();
 
-                EventHandler processExitHandler = (sender, e) =>
-                {
                     try
                     {
-                        if (!cts.IsCancellationRequested)
-                            cts.Cancel();
+                        if (!runCts.IsCancellationRequested)
+                            runCts.Cancel();
                     }
                     catch (ObjectDisposedException)
                     {
                         // The cancellation source may already be disposed during process teardown.
                     }
+                }
+
+                ConsoleCancelEventHandler cancelKeyPressHandler = (sender, e) =>
+                {
+                    e.Cancel = true; // Prevent the process from terminating immediately
+                    OnShutdownSignal();
                 };
+
+                EventHandler processExitHandler = (sender, e) => OnShutdownSignal();
 
                 // Signal cancellation on Ctrl+C; avoid blocking the event handler with async work
                 Console.CancelKeyPress += cancelKeyPressHandler;
@@ -55,15 +62,14 @@ namespace Garnet
                 {
                     try
                     {
-                        await Task.Delay(Timeout.Infinite, cts.Token).ConfigureAwait(false);
+                        await Task.Delay(Timeout.Infinite, runCts.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
-                        // Graceful shutdown: drain connections, commit AOF, take checkpoint
+                        // Graceful shutdown on first signal; second signal cancels persistence via shutdownForceCts.
                         await server.ShutdownAsync(
                             TimeSpan.FromSeconds(server.ShutdownTimeoutSeconds),
-                            token: CancellationToken.None
-                            ).ConfigureAwait(false);
+                            token: shutdownForceCts.Token).ConfigureAwait(false);
                     }
                 }
                 finally
