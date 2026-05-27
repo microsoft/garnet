@@ -370,6 +370,13 @@ bool UringIoHandler::TryCompleteFor(int idx) {
     auto* context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
     io_uring_cqe_seen(ring, cqe);
     cq_lock->Release();
+    // user_data == nullptr is the sentinel for wake-up SQEs (UringIoHandler::Wake) and
+    // rewritten-after-failed-submit SQEs (ScheduleOperation error path). Must NOT
+    // dispatch — there's no caller context to deliver to. Counts as a successful drain
+    // so TryComplete()'s any-flag flips, matching the QueueRunFor semantics.
+    if (context == nullptr) {
+      return true;
+    }
     DispatchUringCqe(io_res, context);
     return true;
   }
