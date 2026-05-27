@@ -75,7 +75,12 @@ namespace Garnet
         /// <summary>
         /// Configured shutdown drain timeout in seconds.
         /// </summary>
-        public int ShutdownTimeoutSeconds => opts.ShutdownTimeoutSeconds > 0 ? opts.ShutdownTimeoutSeconds : 5;
+        public int ShutdownTimeoutSeconds => opts.ShutdownTimeoutSeconds > 0 ? opts.ShutdownTimeoutSeconds : GarnetServerOptions.DefaultShutdownTimeoutSeconds;
+
+        /// <summary>
+        /// Configured data-finalization timeout in seconds (AOF commit / checkpoint during shutdown).
+        /// </summary>
+        public int DataFinalizationTimeoutSeconds => opts.DataFinalizationTimeoutSeconds > 0 ? opts.DataFinalizationTimeoutSeconds : GarnetServerOptions.DefaultDataFinalizationTimeoutSeconds;
 
         /// <summary>
         /// Create Garnet Server instance using specified command line arguments; use Start to start the server.
@@ -505,11 +510,12 @@ namespace Garnet
         /// </summary>
         /// <param name="timeout">Timeout for waiting on active connections (default: configured <see cref="ShutdownTimeoutSeconds"/> value)</param>
         /// <param name="noSave">If true, skip data persistence (AOF commit and checkpoint) during shutdown</param>
-        /// <param name="token">Cancellation token</param>
+        /// <param name="token">Cancellation token; when cancelled (e.g. second Ctrl+C), connection draining and data finalization are aborted</param>
         /// <returns>Task representing the async shutdown operation</returns>
         public async Task ShutdownAsync(TimeSpan? timeout = null, bool noSave = false, CancellationToken token = default)
         {
             var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(ShutdownTimeoutSeconds);
+            var skipPersistence = noSave;
 
             try
             {
@@ -532,9 +538,14 @@ namespace Garnet
                 {
                     await WaitForActiveConnectionsAsync(shutdownTimeout, token).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    skipPersistence = true;
+                    logger?.LogWarning("Connection draining was cancelled due to forced shutdown.");
+                }
                 catch (OperationCanceledException)
                 {
-                    logger?.LogWarning("Connection draining was cancelled. Proceeding with data finalization...");
+                    logger?.LogWarning("Connection draining timed out. Proceeding with data finalization...");
                 }
             }
             catch (Exception ex)
@@ -543,24 +554,33 @@ namespace Garnet
             }
             finally
             {
-                if (!noSave)
+                if (skipPersistence)
+                {
+                    logger?.LogInformation("Skipping data persistence during shutdown.");
+                }
+                else
                 {
                     // Attempt AOF commit or checkpoint as best-effort,
-                    // even if connection draining was cancelled or failed.
-                    // Use a bounded timeout instead of the caller's token to ensure completion.
-                    using var finalizeCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    // even if connection draining timed out. Honor caller cancellation (forced shutdown)
+                    // and cap total finalize time with DataFinalizationTimeoutSeconds.
+                    using var finalizeCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    finalizeCts.CancelAfter(TimeSpan.FromSeconds(DataFinalizationTimeoutSeconds));
                     try
                     {
                         await FinalizeDataAsync(finalizeCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        logger?.LogWarning("Data finalization was cancelled due to forced shutdown.");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        logger?.LogWarning("Data finalization timed out after {TimeoutSeconds} seconds.", DataFinalizationTimeoutSeconds);
                     }
                     catch (Exception ex)
                     {
                         logger?.LogError(ex, "Error during data finalization");
                     }
-                }
-                else
-                {
-                    logger?.LogInformation("Shutdown with noSave flag - skipping data persistence.");
                 }
             }
         }

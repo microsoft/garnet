@@ -167,7 +167,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ShutdownAsyncRespectsCancellation()
+        public void ShutdownAsyncRespectsCancellation()
         {
             // Arrange
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -175,16 +175,30 @@ namespace Garnet.test
 
             using var cts = new CancellationTokenSource();
 
-            // Act - Cancel immediately
+            // Act - Cancel immediately (forced shutdown: skip data finalization)
             cts.Cancel();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             Assert.DoesNotThrowAsync(async () =>
             {
                 await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(30), token: cts.Token).ConfigureAwait(false);
             });
+            sw.Stop();
+
+            // Assert - Should not wait for the full data-finalization timeout
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 5_000);
         }
 
         [Test]
-        public async Task ShutdownAsyncWithAofCommit()
+        public void ShutdownAsyncNoSaveSkipsPersistence()
+        {
+            Assert.DoesNotThrowAsync(async () =>
+            {
+                await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5), noSave: true).ConfigureAwait(false);
+            });
+        }
+
+        [Test]
+        public void ShutdownAsyncWithAofCommit()
         {
             // Arrange - Create server with AOF enabled
             server?.Dispose();
@@ -201,7 +215,7 @@ namespace Garnet.test
                 db.StringSet($"aof-key-{i}", $"value-{i}");
             }
 
-            // Act - Shutdown should commit AOF without errors
+            // Act & Assert - Shutdown should commit AOF without errors
             Assert.DoesNotThrowAsync(async () =>
             {
                 await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5)).ConfigureAwait(false);
