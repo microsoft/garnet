@@ -138,7 +138,7 @@ namespace Garnet.test
             PopulateData();
 
             // Create CancellationTokenSource with a long timeout to prevent hanging indefinitely in case of issues during shutdown
-            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             TestContext.Progress.WriteLine($"Created CancellationTokenSource with 5 minute timeout for test shutdown");
 
             // Sequence: Checkpoint first, then AOF commit
