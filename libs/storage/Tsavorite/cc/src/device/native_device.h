@@ -14,28 +14,33 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <cstdio>
+#else
+#include <Windows.h>
+#include <winioctl.h>
 #endif
 
 namespace native_device {
 
 /// Probe the block device backing `filename` for its sector size, returning
-/// `max(logical_block_size, physical_block_size)` from sysfs (rounded up to a power of two,
-/// floor 512 B). Cold path, called once per device at construction. Never throws.
+/// `max(logical_block_size, physical_block_size)` (rounded up to a power of two, floor 512 B).
+/// Cold path, called once per device at construction. Never throws.
 ///
-/// Why max(logical, physical) and not statx STATX_DIOALIGN:
-///   - `logical_block_size` is the kernel-enforced minimum DIO alignment (same value the
-///     kernel surfaces via STATX_DIOALIGN, but available on every kernel — STATX_DIOALIGN
-///     needs 6.1+ AND the FS to populate it; ext4 on a 512-byte device leaves the field
-///     unset on 6.8, falling back to the 512 default).
+/// Why max(logical, physical) and not just the kernel-required minimum:
+///   - `logical_block_size` is the kernel-enforced minimum DIO alignment.
 ///   - `physical_block_size` exposes the firmware's internal sector — on a 512e drive
-///     (logical=512, physical=4096) STATX_DIOALIGN reports 512 but the device wants 4096,
-///     and we'd silently take a firmware RMW penalty on every partial-sector write.
-///     sysfs gives us both, so taking the max picks the larger of "must" and "prefer".
+///     (logical=512, physical=4096) the firmware wants 4096 even though the kernel will
+///     accept 512, and sub-4096 writes silently take an internal read-modify-write penalty.
+///     Taking the max picks the larger of "must" and "prefer" in one shot.
 ///
-/// Implementation: stat the file (or its closest existing ancestor) to get st_dev, then
-/// read /sys/dev/block/<major>:<minor>/queue/{logical,physical}_block_size. For partitions
-/// the queue dir lives on the parent (whole-disk) block device — fall through to
-/// `<major>:<minor>/../queue/<field>` if the partition path doesn't have queue/.
+/// Linux: stat the file (or its closest existing ancestor) for st_dev, then read
+///   /sys/dev/block/<major>:<minor>/queue/{logical,physical}_block_size. Partitions don't
+///   have their own queue/ dir — fall through to <major>:<minor>/../queue/<field>.
+///
+/// Windows: open \\.\<drive>: (no admin needed — FILE_READ_ATTRIBUTES is enough) and issue
+///   IOCTL_STORAGE_QUERY_PROPERTY with StorageAccessAlignmentProperty. The resulting
+///   STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR carries BytesPerLogicalSector and
+///   BytesPerPhysicalSector. This is the Windows equivalent of Linux sysfs queue/* and
+///   gives us the same correctness-floor + RMW-avoidance signal.
 ///
 /// Single source of truth shared by:
 ///   - NativeDeviceImpl constructor (caches in device_alignment_, returned by sector_size())
@@ -50,10 +55,48 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
     constexpr uint32_t kFallback = 512u;
     if (filename == nullptr || *filename == '\0') return kFallback;
 #if defined(_WIN32) || defined(_WIN64)
-    // Windows path uses the ThreadPool backend; file_windows.h queries the sector size
-    // directly via GetDiskFreeSpace when the file is opened. The probe here is just a
-    // pre-IO floor used by the C# wrapper.
-    return kFallback;
+    // Resolve the volume root for `filename` ("C:\foo\bar.dat" -> "\\.\C:"). UNC paths
+    // (\\?\..., \\server\share\...) aren't supported — fall back to 512 in that case.
+    if (filename[0] == '\0' || filename[1] != ':') return kFallback;
+    char volume_path[8];
+    volume_path[0] = '\\';
+    volume_path[1] = '\\';
+    volume_path[2] = '.';
+    volume_path[3] = '\\';
+    volume_path[4] = filename[0];
+    volume_path[5] = ':';
+    volume_path[6] = '\0';
+
+    HANDLE h = ::CreateFileA(volume_path,
+                             FILE_READ_ATTRIBUTES,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL,
+                             OPEN_EXISTING,
+                             0,
+                             NULL);
+    if (h == INVALID_HANDLE_VALUE) return kFallback;
+
+    STORAGE_PROPERTY_QUERY query{};
+    query.PropertyId = StorageAccessAlignmentProperty;
+    query.QueryType = PropertyStandardQuery;
+
+    STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR descriptor{};
+    DWORD bytes_returned = 0;
+    BOOL ok = ::DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY,
+                                &query, sizeof(query),
+                                &descriptor, sizeof(descriptor),
+                                &bytes_returned, NULL);
+    ::CloseHandle(h);
+    if (!ok || bytes_returned < sizeof(descriptor)) return kFallback;
+
+    uint32_t logical = descriptor.BytesPerLogicalSector;
+    uint32_t physical = descriptor.BytesPerPhysicalSector;
+    uint32_t sec = std::max(logical, physical);
+    if (sec == 0) return kFallback;
+
+    uint32_t pow2 = kFallback;
+    while (pow2 < sec) pow2 <<= 1;
+    return pow2;
 #else
     namespace fs = std::experimental::filesystem;
 
