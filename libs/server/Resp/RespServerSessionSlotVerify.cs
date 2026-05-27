@@ -10,7 +10,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        // Single-key spec for custom raw-string/object commands (key at parseState[0])
+        // Key spec for CustomRawStringCmd and CustomObjCmd: a single key at arg index 1.
         private static readonly SimpleRespKeySpec[] CustomCommandSingleKeySpec =
         [
             new SimpleRespKeySpec
@@ -21,7 +21,7 @@ namespace Garnet.server
         ];
 
         /// <summary>
-        /// Validate if this command can be served based on the current slot assignment
+        /// Validates whether a command can be served based on the current slot assignment
         /// </summary>
         /// <param name="cmd"></param>
         /// <returns></returns>
@@ -29,27 +29,14 @@ namespace Garnet.server
         {
             Debug.Assert(clusterSession != null);
 
-            // CustomRawStringCmd and CustomObjCmd fall outside IsDataCommand()'s range and
-            // would otherwise skip slot verification, so route them through a synthetic
-            // single-key spec (both dispatch via parseState[0] as the only key)
-            if (cmd is RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd)
-            {
-                // We can't use cmd.IsReadOnly() since both custom enum values fall above LastReadCommand
-                var isReadOnly = cmd == RespCommand.CustomRawStringCmd
-                    ? currentCustomRawStringCommand.type == CommandType.Read
-                    : currentCustomObjectCommand.type == CommandType.Read;
-
-                csvi.keySpecs = CustomCommandSingleKeySpec;
-                csvi.isSubCommand = false;
-                csvi.readOnly = isReadOnly;
-                csvi.sessionAsking = SessionAsking;
-                csvi.waitForStableSlot = false;
-                return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
-            }
-
-            // Verify slot for command if it falls into data command category
             if (!cmd.IsDataCommand())
+            {
+                // Custom commands sit outside IsDataCommand but still touch user keys.
+                if (cmd is RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd)
+                    return CanServeSlotForCustomCommand(cmd);
+
                 return true;
+            }
 
             cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))
@@ -68,6 +55,26 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR;
+            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+        }
+
+        /// <summary>
+        /// Validates whether a custom command can be served based on the current slot assignment
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <returns></returns>
+        bool CanServeSlotForCustomCommand(RespCommand cmd)
+        {
+            // cmd.IsReadOnly() can't be used here since both custom enum values sort past LastReadCommand.
+            var isReadOnly = cmd == RespCommand.CustomRawStringCmd
+                ? currentCustomRawStringCommand.type == CommandType.Read
+                : currentCustomObjectCommand.type == CommandType.Read;
+
+            csvi.keySpecs = CustomCommandSingleKeySpec;
+            csvi.isSubCommand = false;
+            csvi.readOnly = isReadOnly;
+            csvi.sessionAsking = SessionAsking;
+            csvi.waitForStableSlot = false;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
