@@ -657,6 +657,8 @@ namespace Garnet
 
         /// <summary>
         /// Persists data during shutdown using AOF or checkpoint based on configuration.
+        /// Both Enabled AOF and checkpoint, but AOF is prioritized.
+        /// IF AOF commit failed, checkpoint will be performed.
         /// </summary>
         private async Task FinalizeDataAsync(CancellationToken token)
         {
@@ -669,6 +671,7 @@ namespace Garnet
                     if (commitSuccess)
                     {
                         logger?.LogDebug("AOF committed successfully.");
+                        return; // skip checkpoint
                     }
                     else
                     {
@@ -679,8 +682,6 @@ namespace Garnet
                 {
                     logger?.LogError(ex, "Error committing AOF during shutdown");
                 }
-
-                return;
             }
 
             if (!opts.EnableStorageTier)
@@ -703,6 +704,7 @@ namespace Garnet
             {
                 logger?.LogError(ex, "Error taking checkpoint during shutdown");
             }
+            return;
         }
 
         /// <summary>
