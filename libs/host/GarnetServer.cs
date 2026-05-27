@@ -503,13 +503,13 @@ namespace Garnet
         /// Performs graceful shutdown of the server.
         /// Stops accepting new connections, waits for active connections to complete, commits AOF, and takes checkpoint if needed.
         /// </summary>
-        /// <param name="timeout">Timeout for waiting on active connections (default: 30 seconds)</param>
+        /// <param name="timeout">Timeout for waiting on active connections (default: configured <see cref="ShutdownTimeoutSeconds"/> value)</param>
         /// <param name="noSave">If true, skip data persistence (AOF commit and checkpoint) during shutdown</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>Task representing the async shutdown operation</returns>
         public async Task ShutdownAsync(TimeSpan? timeout = null, bool noSave = false, CancellationToken token = default)
         {
-            var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(30);
+            var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(ShutdownTimeoutSeconds);
 
             try
             {
