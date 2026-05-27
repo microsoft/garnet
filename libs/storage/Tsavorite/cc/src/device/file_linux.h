@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <fcntl.h>
 #include <libaio.h>
 #include "libaio_compat.h"
 #include <sys/types.h>

@@ -46,7 +46,6 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0-alpine AS runtime
 # Install dependencies
 RUN apk add --no-cache \
       libaio \
-      liburing \
       gcompat \
       lua5.4-libs \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \

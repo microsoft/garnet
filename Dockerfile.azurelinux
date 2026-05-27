@@ -40,8 +40,11 @@ RUN find /app -name '*.xml' -delete
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-azurelinux3.0 AS runtime
 
-# Install libaio and liburing; lua-libs is already present in the base image
-RUN tdnf install -y libaio liburing && tdnf clean all \
+# Install libaio; lua-libs is already present in the base image. liburing is
+# not required because the shipped libnative_device.so links libaio only;
+# users that build the native lib with -DUSE_URING=ON should add `liburing`
+# to this list.
+RUN tdnf install -y libaio && tdnf clean all \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
     && ln -sf "/usr/lib/liblua-5.4.so" "$DN_DIR/liblua54.so"
 
