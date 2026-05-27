@@ -31,7 +31,10 @@ namespace Tsavorite.test
             for (int i = 0; i < entry.Length; i++)
                 entry[i] = (byte)i;
 
-            bufferPool = new SectorAlignedBufferPool(1, 512);
+            // Use 4096 to match the strictest device.SectorSize we expect on any modern
+            // hardware (4Kn or 512e drives). Matches HardeningSectorSize used in the
+            // IDevice_ contract tests below.
+            bufferPool = new SectorAlignedBufferPool(1, 4096);
             semaphore = new SemaphoreSlim(0);
         }
 
@@ -62,7 +65,7 @@ namespace Tsavorite.test
         public unsafe void NativeDeviceTest2()
         {
             int size = 1 << 16;
-            int sector_size = 512;
+            int sector_size = 4096;
 
             var rbuffer = GC.AllocateArray<byte>(size + sector_size, true);
             new Span<byte>(rbuffer).Clear();

@@ -440,16 +440,25 @@ class UringIoHandler {
   /// Number of io_uring shards. >= 1 once initialized.
   int num_contexts() const { return static_cast<int>(rings_.size()); }
 
-  /// Pick a (ring, sq_lock) pair for the next submission via atomic round-robin.
+  /// Pick a (ring, sq_lock) pair for the next submission via per-thread affinity.
+  /// Each calling thread is assigned a ring on first call (round-robin against other
+  /// callers) and continues to use that same ring for every subsequent submission.
+  /// Same-thread submits never contend on sq_lock with each other; different threads
+  /// only contend if they got assigned the same ring (only happens when num threads >
+  /// num rings). Match libaio's no-user-lock behavior when num_rings >= num_submitters.
   void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
     if (rings_.size() == 1) {
       ring_out = rings_[0];
       lock_out = sq_locks_[0];
       return;
     }
-    uint64_t idx = submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size();
-    ring_out = rings_[idx];
-    lock_out = sq_locks_[idx];
+    thread_local int my_ring_idx = -1;
+    if (my_ring_idx < 0) {
+      my_ring_idx = static_cast<int>(
+          submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size());
+    }
+    ring_out = rings_[my_ring_idx];
+    lock_out = sq_locks_[my_ring_idx];
   }
 
   struct IoCallbackContext {
