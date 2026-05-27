@@ -142,12 +142,16 @@ namespace Tsavorite.test
         // up its own files via TestUtils.MethodTestDir, allocations stay below 16 MB, and the
         // parallel tests cap in-flight IOs well below the device's ThrottleLimit of 120.
         //
-        // Tests use sectorSize=512 to match all other Garnet Linux devices. Segment sizes vary
-        // from 64 MiB to 1 GiB. We use the per-test `TestUtils.MethodTestDir` directory to
-        // avoid cross-test interference from leftover .0 / .1 segment files.
+        // Tests use HardeningSectorSize = 4096 because NativeStorageDevice's probe is
+        // max(logical_block_size, physical_block_size) from sysfs — on 4Kn drives or
+        // 512e drives with physical=4096 (common on modern enterprise NVMe), the device
+        // reports SectorSize=4096 and the libaio/io_uring path rejects sub-4096-aligned
+        // buffers with EINVAL. 4096 covers every current hardware sector size; if a
+        // future 8K-DIO disk appears, this constant needs to be bumped (or the helper
+        // refactored to consult device.SectorSize per-call).
         // ===================================================================================
 
-        const int HardeningSectorSize = 512;
+        const int HardeningSectorSize = 4096;
         const long Mib = 1L << 20;
         const long Gib = 1L << 30;
 
