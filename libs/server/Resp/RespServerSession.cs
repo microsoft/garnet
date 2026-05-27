@@ -465,6 +465,7 @@ namespace Garnet.server
         }
 
         bool txnSkip = false;
+        bool consistentReadActive = false;
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
@@ -484,25 +485,23 @@ namespace Garnet.server
 
                 if (storeWrapper.EnforceConsistentRead())
                 {
-                    try
+                    txnSkip = false;
+                    Debug.Assert(consistentReadDBSession != null);
+                    if (!consistentReadActive)
                     {
                         // We actively switch session because we aim to avoid performing any additional checks or switches on the normal processing path
                         // This requires us to cache txnSkip result since the txnManager instance will change when the following finally executes
                         // Switching is required because we cannot guarantee the role of the node outside the epoch protection
-                        txnSkip = false;
-                        Debug.Assert(consistentReadDBSession != null);
                         SwitchActiveDatabaseSession(consistentReadDBSession);
-                        ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
-                        txnSkip = txnManager.IsSkippingOperations();
+                        consistentReadActive = true;
                     }
-                    finally
-                    {
-                        // Switch back to normal session in the event a failover results in this node to become a primary
-                        SwitchActiveDatabaseSession(databaseSessions.Map[0]);
-                    }
+                    ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
+                    txnSkip = txnManager.IsSkippingOperations();
                 }
                 else
                 {
+                    if (consistentReadActive)
+                        SwitchActiveDatabaseSession(databaseSessions.Map[0]);
                     txnSkip = false;
                     ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
                     txnSkip = txnManager.IsSkippingOperations();
