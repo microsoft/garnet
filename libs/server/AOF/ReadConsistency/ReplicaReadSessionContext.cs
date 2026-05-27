@@ -62,14 +62,14 @@ namespace Garnet.server
         ReplicaReadSessionContext batchReadContext;
 
         /// <summary>
-        /// A cancellation token source used to signal cancellation for consistent read operations.
+        /// A cancellation token source used to signal cancellation for consistent read operations (e.g., on dispose).
         /// </summary>
         readonly CancellationTokenSource consistentReadCts;
 
         /// <summary>
-        /// Timeout cancellation token source.
+        /// Timeout duration for consistent read wait operations.
         /// </summary>
-        CancellationTokenSource timeoutCts;
+        readonly TimeSpan readTimeout;
 
         /// <summary>
         /// Consistent read in progress lock
@@ -108,8 +108,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
             consistentReadCts = new();
-            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
-            timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
+            readTimeout = serverOptions.ReplicaSyncTimeout;
         }
 
         /// <summary>
@@ -118,25 +117,8 @@ namespace Garnet.server
         public void Dispose()
         {
             consistentReadCts.Cancel();
-            timeoutCts.Cancel();
             inProgress.WriteLock();
             consistentReadCts.Dispose();
-            timeoutCts.Dispose();
-        }
-
-        void ResetTimeoutCts()
-        {
-            if (timeoutCts.TryReset())
-            {
-                timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
-            }
-            else
-            {
-                // TryReset failed (too many resets), recreate the CTS
-                timeoutCts?.Dispose();
-                timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
-                timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
-            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -146,8 +128,7 @@ namespace Garnet.server
                 throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
             try
             {
-                ResetTimeoutCts();
-                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(hash & long.MaxValue, ref replicaReadContext, timeoutCts.Token);
+                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(hash & long.MaxValue, ref replicaReadContext, readTimeout, consistentReadCts.Token);
             }
             finally
             {
@@ -171,7 +152,7 @@ namespace Garnet.server
             {
                 var keyCount = parameters.Length;
                 var consistencyManager = appendOnlyFile.readConsistencyManager;
-                // First check if version of consistency mananger has changed
+                // First check if version of consistency manager has changed
                 appendOnlyFile.readConsistencyManager.CheckConsistencyManagerVersion(ref replicaReadContext);
 
                 // Allocate array to cache key hashes for batch read
@@ -186,8 +167,7 @@ namespace Garnet.server
                 for (var i = 0; i < parameters.Length; i++)
                 {
                     var key = parameters[i];
-                    ResetTimeoutCts();
-                    consistencyManager.BeforeConsistentReadKeyBatch(key.ReadOnlySpan, ref batchReadContext, timeoutCts.Token, out var hash);
+                    consistencyManager.BeforeConsistentReadKeyBatch(key.ReadOnlySpan, ref batchReadContext, readTimeout, consistentReadCts.Token, out var hash);
                     keyHashCache[i] = hash;
                 }
             }

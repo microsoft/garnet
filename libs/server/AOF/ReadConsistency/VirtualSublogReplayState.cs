@@ -94,8 +94,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="hash">The hash value identifying the session whose sequence number is being monitored.</param>
         /// <param name="maximumSessionSequenceNumber">The target sequence number to wait for.</param>
-        /// <param name="ct">A cancellation token that can be used to cancel the wait operation.</param>
-        public void WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
+        /// <param name="timeout">The maximum duration to wait before timing out.</param>
+        /// <param name="ct">A cancellation token that can be used to cancel the wait operation (e.g., on dispose).</param>
+        public void WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, TimeSpan timeout, CancellationToken ct)
         {
             while (true)
             {
@@ -109,7 +110,8 @@ namespace Garnet.server
 
                 try
                 {
-                    updateSignal.Wait(ct);
+                    if (!updateSignal.Wait(timeout, ct))
+                        throw new TimeoutException("Consistent read timed out waiting for replay to catch up.");
                 }
                 finally
                 {

@@ -132,9 +132,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyHash"></param>
         /// <param name="replicaReadSessionContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             var virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
 
@@ -148,6 +149,7 @@ namespace Garnet.server
                     vsrs[virtualSublogIdx].WaitForSequenceNumber(
                         keyHash,
                         replicaReadSessionContext.maximumSessionSequenceNumber,
+                        timeout,
                         ct);
                 }
             }
@@ -166,14 +168,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="hash"></param>
         /// <param name="replicaReadSessionContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
-        public void BeforeConsistentReadKey(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        public void BeforeConsistentReadKey(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             // Check version
             CheckConsistencyManagerVersion(ref replicaReadSessionContext);
 
             // Verify key freshness
-            VerifyKeyFreshness(hash, ref replicaReadSessionContext, ct);
+            VerifyKeyFreshness(hash, ref replicaReadSessionContext, timeout, ct);
         }
 
         /// <summary>
@@ -195,13 +198,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="batchReadContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
         /// <param name="hash"></param>
-        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, CancellationToken ct, out long hash)
+        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, TimeSpan timeout, CancellationToken ct, out long hash)
         {
             // Verify key freshness
             hash = GarnetLog.HASH(key);
-            VerifyKeyFreshness(hash, ref batchReadContext, ct);
+            VerifyKeyFreshness(hash, ref batchReadContext, timeout, ct);
 
             // Keep track of max sequence number to check for updates after batch read.
             batchReadContext.maximumSessionSequenceNumber = Math.Max(
