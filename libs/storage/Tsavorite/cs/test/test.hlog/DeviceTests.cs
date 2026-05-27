@@ -198,11 +198,6 @@ namespace Tsavorite.test
             switch (kind)
             {
                 case DeviceKind.Native:
-                    if (!OperatingSystem.IsLinux())
-                    {
-                        Assert.Ignore("NativeStorageDevice is Linux-only");
-                        return null;
-                    }
                     var nd = new NativeStorageDevice(path, deleteOnClose: deleteOnClose);
                     nd.Initialize(segmentSize);
                     return nd;
@@ -487,11 +482,6 @@ namespace Tsavorite.test
             // segmentSizeBits = 64, segmentSizeMask = ~0UL) that route every IO to segment 0,
             // which is functionally identical to having called Initialize(-1). IO without an
             // explicit Initialize() call must succeed (single-segment mode is the default).
-            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
-            {
-                Assert.Ignore("NativeStorageDevice is Linux-only");
-                return;
-            }
             var path = Path.Join(TestUtils.MethodTestDir, $"initopt_read_{kind}.log");
             // First write a small block via a separate device so the read below has data to
             // return. Both producer and consumer skip Initialize() — relying on ctor defaults.
@@ -540,11 +530,6 @@ namespace Tsavorite.test
         {
             // Companion of the read test above: IO without an explicit Initialize() call must
             // succeed because ctor defaults already establish unbounded single-segment routing.
-            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
-            {
-                Assert.Ignore("NativeStorageDevice is Linux-only");
-                return;
-            }
             var path = Path.Join(TestUtils.MethodTestDir, $"initopt_write_{kind}.log");
             IDevice device = kind switch
             {
@@ -607,11 +592,6 @@ namespace Tsavorite.test
             // to the bare basename (no `.0` suffix). All three managed and native device kinds
             // support this; combined with -1 it lets external tooling open the data file by a
             // fixed, predictable name (e.g. log commit-metadata files named just `commit.42`).
-            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
-            {
-                Assert.Ignore("NativeStorageDevice is Linux-only");
-                return;
-            }
             const uint kBlock = 4096;
             var basePath = Path.Join(TestUtils.MethodTestDir, $"omit_{kind}.log");
             IDevice device = kind switch
@@ -650,11 +630,6 @@ namespace Tsavorite.test
             // omitSegmentIdFromFilename is only meaningful in unbounded single-segment mode.
             // Combining it with a positive segment size would let segment 1, 2, ... all collapse
             // onto the same on-disk file and clobber each other; reject it at Initialize.
-            if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
-            {
-                Assert.Ignore("NativeStorageDevice is Linux-only");
-                return;
-            }
             var path = Path.Join(TestUtils.MethodTestDir, $"omit_pos_{kind}.log");
             IDevice device = kind switch
             {
