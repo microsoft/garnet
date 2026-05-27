@@ -98,12 +98,16 @@ namespace Garnet.test
                             await redis.GetDatabase(0).PingAsync();
                             await Task.Delay(10);
                         }
+                        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                        {
+                            break;
+                        }
                         catch
                         {
                             // Connection failures are expected after StopListening
                         }
                     }
-                }, cts.Token));
+                }));
             }
 
             await Task.Delay(50); // Let some connections establish
