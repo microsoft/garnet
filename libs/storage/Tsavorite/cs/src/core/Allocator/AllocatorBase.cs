@@ -1671,19 +1671,9 @@ namespace Tsavorite.core
         private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-
-            // Start: round down to sector boundary. Length: caller's IO size rounded up to sector
-            // (do NOT pad with leading slop — that adds an extra trailing sector on misaligned reads,
-            // costing ~12.5% extra IO bandwidth). The slop is accounted for in valid_offset/available_bytes.
             alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
-            alignedReadLength = (uint)RoundUp(numBytes, sectorSize);
-
-            // Records never span page boundaries (HandlePageOverflow guarantees this), so the IO must
-            // not cross page-end — otherwise on page-aligned segments the native O_DIRECT device fails.
-            // pageEnd is sector-aligned, so the clamped length stays sector-aligned.
-            var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
-            if (alignedFileOffset + alignedReadLength > pageEndInFile)
-                alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
+            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
+            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
