@@ -904,7 +904,10 @@ namespace Garnet.server
         private IEnumerable<(string Path, string Name, long Address)> EnumerateFlushFiles()
         {
             if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
+            {
+                logger?.LogInformation("Root directory invalid {riLogRoot}", riLogRoot);
                 yield break;
+            }
 
             foreach (var path in Directory.EnumerateFiles(riLogRoot, $"*{FlushSuffix}"))
             {
