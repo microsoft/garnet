@@ -245,6 +245,16 @@ class ThreadPoolIoHandler {
     : threadpool_{ std::move(other.threadpool_) } {
   }
 
+  /// Cross-platform symmetry with QueueIoHandler / UringIoHandler. The Windows
+  /// ThreadPool API does not have a separable "init" step that can fail like
+  /// libaio's io_setup or io_uring's io_uring_queue_init; the threadpool is
+  /// created (or fails to be created) inside our threadpool_'s constructor and
+  /// is always treated as ready here, so both return their "no failure" values
+  /// unconditionally. NativeDeviceImpl gates on these to decide whether to
+  /// surface an actionable error message before attempting log_.Open.
+  int init_errno() const { return 0; }
+  bool initialized() const { return true; }
+
   /// Invoked whenever an asynchronous IO completes; needed because Windows asynchronous IOs are
   /// tied to a specific TP_IO object. As a result, we allocate pointers for a per-operation
   /// callback along with its OVERLAPPED structure. This allows us to call a specific function in
