@@ -672,13 +672,16 @@ namespace Tsavorite.test
 
         [Test]
         [Category("NativeStorageDevice")]
-        public void NativeStorageDevice_InitializeTwice_Throws()
+        public void NativeStorageDevice_InitializeTwice_Idempotent()
         {
-            // Phase 6's contract: Initialize is one-shot. Calling it a second time must throw
-            // rather than leak native resources or silently swap the segment size.
+            // Initialize is idempotent (matches LocalStorageDevice / RandomAccessLocalStorageDevice
+            // contract): metadata is updated on each call and the native handle is created lazily
+            // on first IO with the final segmentSize/Bits/Mask. This supports the common factory
+            // pattern (LocalStorageNamedDeviceFactory.Get pre-inits with segmentSize=-1, then
+            // the consumer re-initializes with the real segment size).
             using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-            device.Initialize(64 * Mib);
-            Assert.Throws<TsavoriteException>(() => device.Initialize(64 * Mib));
+            Assert.DoesNotThrow(() => device.Initialize(64 * Mib));
+            Assert.DoesNotThrow(() => device.Initialize(64 * Mib));
         }
 
         // ----- Recovery (3 tests) ----------------------------------------------------------
@@ -772,8 +775,14 @@ namespace Tsavorite.test
 
             {
                 using var device2 = new NativeStorageDevice(path, deleteOnClose: true);
-                var ex = Assert.Throws<TsavoriteException>(() => device2.Initialize(smallSegment));
+                // Initialize is metadata-only — the native device (and the C++ recovery walk
+                // that detects the mismatch) is created lazily on first IO. The mismatch must
+                // surface here as a TsavoriteException, not as a silent successful Initialize.
+                device2.Initialize(smallSegment);
+                var (rbuf, rptr) = AllocateAlignedBuffer(4096, _ => 0);
+                var ex = Assert.Throws<TsavoriteException>(() => device2.ReadAsync(0, 0, rptr, 4096, IOCallback, null));
                 StringAssert.Contains("segment", ex.Message, "Expected mismatch message to mention segment");
+                GC.KeepAlive(rbuf);
             }
         }
 

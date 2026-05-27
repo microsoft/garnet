@@ -730,6 +730,7 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
+            EnsureInitialized();
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             EnsureNativeDeviceCreated();
@@ -800,6 +801,7 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            EnsureInitialized();
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             EnsureNativeDeviceCreated();
@@ -889,8 +891,17 @@ namespace Tsavorite.core
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
             var dev = nativeDevice;
-            if (dev == IntPtr.Zero) return;
-            NativeDevice_RemoveSegment(dev, (ulong)segment);
+            if (dev != IntPtr.Zero)
+            {
+                // Native owns the open handle; let it close+unlink.
+                NativeDevice_RemoveSegment(dev, (ulong)segment);
+                return;
+            }
+            // No native handle yet — delete the on-disk segment file directly so callers
+            // observe the same semantics as LocalStorageDevice / RandomAccessLocalStorageDevice
+            // (best-effort unlink that ignores ENOENT).
+            try { File.Delete(GetSegmentName(segment)); }
+            catch { }
         }
 
         /// <summary>
@@ -992,7 +1003,22 @@ namespace Tsavorite.core
         {
             if (Volatile.Read(ref disposedFlag) != 0) return 0;
             var dev = nativeDevice;
-            return dev == IntPtr.Zero ? 0 : (long)NativeDevice_GetFileSize(dev, (ulong)segment);
+            if (dev != IntPtr.Zero)
+                return (long)NativeDevice_GetFileSize(dev, (ulong)segment);
+            // No native handle yet — stat the on-disk segment file directly. Matches
+            // LocalStorageDevice / RandomAccessLocalStorageDevice semantics where size is
+            // observable before any IO has flowed through the device. Returns 0 for missing
+            // files (the cluster manager and checkpoint-recovery code rely on this to decide
+            // whether to recover persisted config without first opening the device).
+            try
+            {
+                var fi = new FileInfo(GetSegmentName(segment));
+                return fi.Exists ? fi.Length : 0;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         /// <summary>
