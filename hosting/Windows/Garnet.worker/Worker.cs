@@ -19,8 +19,8 @@ namespace Garnet
         /// <param name="args">Command line arguments forwarded to <see cref="GarnetServer"/>.</param>
         /// <param name="shutdownTimeout">
         /// How long to wait for active connections to drain during graceful shutdown.
-        /// Must be less than the host <see cref="Microsoft.Extensions.Hosting.HostOptions.ShutdownTimeout"/>
-        /// so that data finalization (AOF commit / checkpoint) can also complete within the host budget.
+        /// Must fit within the host <see cref="Microsoft.Extensions.Hosting.HostOptions.ShutdownTimeout"/>,
+        /// which also budgets for data finalization and a small margin (see <c>Program.cs</c>).
         /// </param>
         public Worker(string[] args, TimeSpan shutdownTimeout)
         {
