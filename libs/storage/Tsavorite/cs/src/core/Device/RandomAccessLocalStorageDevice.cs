@@ -148,7 +148,6 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
-            EnsureInitialized();
             using (ExecutionContext.SuppressFlow())
             {
                 _ = ReadWorkerAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
@@ -207,7 +206,6 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            EnsureInitialized();
             using (ExecutionContext.SuppressFlow())
             {
                 _ = WriteWorkerAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
@@ -263,7 +261,6 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            EnsureInitialized();
             if (logHandles.TryRemove(segment, out (AsyncPool<StorageAccessContext>, AsyncPool<StorageAccessContext>) logHandle))
             {
                 logHandle.Item1.Dispose();
@@ -284,7 +281,6 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            EnsureInitialized();
             RemoveSegment(segment);
             callback(result);
         }

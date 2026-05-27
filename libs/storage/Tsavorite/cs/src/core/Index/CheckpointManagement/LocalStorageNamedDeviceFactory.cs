@@ -71,10 +71,10 @@ namespace Tsavorite.core
                 device.ThrottleLimit = throttleLimit.Value;
             }
             // Checkpoint/commit metadata devices are used as a single growing segment file
-            // ("<base>.0" only); initialize them in unbounded single-segment mode so the
-            // IDevice "must Initialize before IO" contract is satisfied without forcing every
-            // consumer of the factory to remember to do so.
-            device.Initialize(segmentSize: -1L);
+            // ("<base>.0" only); the IDevice ctor defaults already establish unbounded
+            // single-segment mode (segmentSize = -1, all addresses route to segment 0), so no
+            // explicit Initialize call is needed. Consumers that want multi-segment routing
+            // can still call device.Initialize(segmentSize) on the returned device.
             return device;
         }
 

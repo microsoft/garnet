@@ -139,7 +139,6 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            EnsureInitialized();
             Stream logReadHandle = null;
             AsyncPool<Stream> streampool = null;
             uint errorCode = 0;
@@ -245,7 +244,6 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            EnsureInitialized();
             Stream logWriteHandle = null;
             AsyncPool<Stream> streampool = null;
             uint errorCode = 0;
@@ -346,7 +344,6 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            EnsureInitialized();
             if (logHandles.TryRemove(segment, out (AsyncPool<Stream>, AsyncPool<Stream>) logHandle))
             {
                 logHandle.Item1.Dispose();
@@ -367,7 +364,6 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            EnsureInitialized();
             RemoveSegment(segment);
             callback(result);
         }

@@ -76,7 +76,6 @@ namespace Tsavorite.core
 
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
-            EnsureInitialized();
             // This device is epoch-protected and cannot be stale while the operation is in flight
             IDevice closestDevice = devices[FindClosestDeviceContaining(segmentId)];
             // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
@@ -86,7 +85,6 @@ namespace Tsavorite.core
 
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            EnsureInitialized();
             int startTier = FindClosestDeviceContaining(segmentId);
             Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
 
@@ -119,7 +117,6 @@ namespace Tsavorite.core
 
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            EnsureInitialized();
             int startTier = FindClosestDeviceContaining(segment);
             var countdown = new CountdownEvent(devices.Count);
             for (int i = startTier; i < devices.Count; i++)

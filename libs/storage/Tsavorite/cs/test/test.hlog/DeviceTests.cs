@@ -474,25 +474,46 @@ namespace Tsavorite.test
             GC.KeepAlive(roots); GC.KeepAlive(rbuf);
         }
 
-        // ----- IDevice contract: Initialize is mandatory before any IO -----------------------
+        // ----- IDevice contract: Initialize is optional; ctor defaults are valid for IO ------
 
         [Test]
         [TestCase(DeviceKind.Native)]
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
         [Category("IDevice")]
-        public unsafe void IDevice_ReadAsyncBeforeInitialize_Throws(DeviceKind kind)
+        public unsafe void IDevice_ReadAsyncBeforeInitialize_UsesCtorDefaults(DeviceKind kind)
         {
-            // Uniform IDevice contract: every device must be Initialize()d before any IO. The
-            // guard raised by EnsureInitialized() (or NativeStorageDevice's null-handle check)
-            // turns a latent NPE / undefined behaviour into a managed InvalidOperationException
-            // with a clear message naming the device by FileName.
+            // Uniform IDevice contract: ctor establishes valid defaults (segmentSize = -1,
+            // segmentSizeBits = 64, segmentSizeMask = ~0UL) that route every IO to segment 0,
+            // which is functionally identical to having called Initialize(-1). IO without an
+            // explicit Initialize() call must succeed (single-segment mode is the default).
             if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
             {
                 Assert.Ignore("NativeStorageDevice is Linux-only");
                 return;
             }
-            var path = Path.Join(TestUtils.MethodTestDir, $"initreq_read_{kind}.log");
+            var path = Path.Join(TestUtils.MethodTestDir, $"initopt_read_{kind}.log");
+            // First write a small block via a separate device so the read below has data to
+            // return. Both producer and consumer skip Initialize() — relying on ctor defaults.
+            const uint kBlock = 4096;
+            {
+                IDevice writer = kind switch
+                {
+                    DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: false),
+                    DeviceKind.RandomAccess => new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: false),
+                    DeviceKind.ManagedLocal => new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: false),
+                    _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                };
+                using (writer)
+                {
+                    var (wbuf, wptr) = AllocateAlignedBuffer((int)kBlock, i => (byte)(i & 0xFF));
+                    writer.WriteAsync(wptr, 0, 0, kBlock, IOCallback, null);
+                    semaphore.Wait();
+                    GC.KeepAlive(wbuf);
+                }
+            }
+
+            // Reader: no Initialize() call. Should succeed using ctor defaults.
             IDevice device = kind switch
             {
                 DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: true),
@@ -502,8 +523,10 @@ namespace Tsavorite.test
             };
             using (device)
             {
-                var (buf, ptr) = AllocateAlignedBuffer(4096, _ => 0);
-                Assert.Throws<InvalidOperationException>(() => device.ReadAsync(0, 0, ptr, 4096, IOCallback, null));
+                var (buf, ptr) = AllocateAlignedBuffer((int)kBlock, _ => 0);
+                Assert.DoesNotThrow(() => device.ReadAsync(0, 0, ptr, kBlock, IOCallback, null));
+                semaphore.Wait();
+                AssertBufferContents(ptr, (int)kBlock, i => (byte)(i & 0xFF), "read without Initialize");
                 GC.KeepAlive(buf);
             }
         }
@@ -513,14 +536,16 @@ namespace Tsavorite.test
         [TestCase(DeviceKind.RandomAccess)]
         [TestCase(DeviceKind.ManagedLocal)]
         [Category("IDevice")]
-        public unsafe void IDevice_WriteAsyncBeforeInitialize_Throws(DeviceKind kind)
+        public unsafe void IDevice_WriteAsyncBeforeInitialize_UsesCtorDefaults(DeviceKind kind)
         {
+            // Companion of the read test above: IO without an explicit Initialize() call must
+            // succeed because ctor defaults already establish unbounded single-segment routing.
             if (kind == DeviceKind.Native && !OperatingSystem.IsLinux())
             {
                 Assert.Ignore("NativeStorageDevice is Linux-only");
                 return;
             }
-            var path = Path.Join(TestUtils.MethodTestDir, $"initreq_write_{kind}.log");
+            var path = Path.Join(TestUtils.MethodTestDir, $"initopt_write_{kind}.log");
             IDevice device = kind switch
             {
                 DeviceKind.Native => new NativeStorageDevice(path, deleteOnClose: true),
@@ -531,7 +556,8 @@ namespace Tsavorite.test
             using (device)
             {
                 var (buf, ptr) = AllocateAlignedBuffer(4096, i => (byte)i);
-                Assert.Throws<InvalidOperationException>(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
+                Assert.DoesNotThrow(() => device.WriteAsync(ptr, 0, 0, 4096, IOCallback, null));
+                semaphore.Wait();
                 GC.KeepAlive(buf);
             }
         }

@@ -733,7 +733,6 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            EnsureInitialized();
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             EnsureNativeDeviceCreated();
@@ -804,7 +803,6 @@ namespace Tsavorite.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            EnsureInitialized();
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             EnsureNativeDeviceCreated();
