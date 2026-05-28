@@ -23,7 +23,7 @@ namespace Garnet.server
         bool ReadWriteSession { get; }
 
         /// <summary>
-        /// If the current session has seen an APPENDLOG command.
+        /// If the current session is part of an active replication stream (set on first APPENDLOG, including the init handshake).
         /// </summary>
         bool IsReplicating { get; }
 

@@ -314,6 +314,24 @@ namespace Tsavorite.core
         public override bool Throttle() => numPending > ThrottleLimit;
 
         /// <summary>
+        /// Selects the Linux asynchronous I/O backend used by the underlying native device.
+        /// On non-Linux platforms this value is ignored.
+        /// </summary>
+        public enum IoBackend : int
+        {
+            /// <summary>Platform default (libaio on Linux, ThreadPool-style on Windows).</summary>
+            Default = 0,
+            /// <summary>Linux libaio (io_submit / io_getevents). Same as Default on Linux.</summary>
+            Libaio = 1,
+        }
+
+        /// <summary>
+        /// Configured I/O backend. Stored for reporting and forward-compatibility; the shipped
+        /// native library currently uses libaio on Linux for both Default and Libaio.
+        /// </summary>
+        public IoBackend ConfiguredIoBackend { get; }
+
+        /// <summary>
         /// Constructor with more options for derived classes
         /// </summary>
         /// <param name="filename">File name (or prefix) with path</param>
@@ -322,13 +340,19 @@ namespace Tsavorite.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="numCompletionThreads">Number of IO completion threads</param>
         /// <param name="logger"></param>
+        /// <param name="ioBackend">Linux async I/O backend selector (Default, Libaio). Ignored on Windows.</param>
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
-                                      long capacity = Devices.CAPACITY_UNSPECIFIED, int numCompletionThreads = 1, ILogger logger = null)
+                                      long capacity = Devices.CAPACITY_UNSPECIFIED,
+                                      int numCompletionThreads = 1,
+                                      ILogger logger = null,
+                                      IoBackend ioBackend = IoBackend.Default)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
+
+            ConfiguredIoBackend = ioBackend;
 
             // Native device uses a fixed segment size
             nativeSegmentSizeBits = 30;

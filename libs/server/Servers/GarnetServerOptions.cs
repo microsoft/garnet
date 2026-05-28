@@ -289,10 +289,6 @@ namespace Garnet.server
         /// </summary>
         public int CheckpointThrottleFlushDelayMs = 0;
 
-        /// <summary>
-        /// Enable FastCommit mode for TsavoriteAof
-        /// </summary>
-        public bool EnableFastCommit = true;
 
         /// <summary>
         /// Throttle FastCommit to write metadata once every K commits
@@ -874,7 +870,7 @@ namespace Garnet.server
                     SegmentSizeBits = segmentSizeBits,
                     LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
-                    FastCommitMode = EnableFastCommit,
+                    FastCommitMode = true,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
                     Epoch = null
@@ -886,7 +882,7 @@ namespace Garnet.server
                     FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(aofDir, AofPhysicalSublogCount == 1 ? -1 : i),
                         removeOutdated: true,
-                        fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+                        fastCommitThrottleFreq: FastCommitThrottleFreq);
             }
         }
 
