@@ -102,6 +102,10 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | Valid IP address | IP address that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
 | **Password** | ```--password``` | ```string``` |  | Authentication string for password authentication. |
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |
