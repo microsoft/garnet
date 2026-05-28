@@ -107,8 +107,13 @@ namespace Tsavorite.kvbench
 
         [Option("device-completion-threads", Required = false, Default = 0,
             HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
-                       "completion queue. Today all drainers share the same kernel io_context / " +
-                       "io_uring, so values > 1 are rarely useful. 0 = Garnet default (1).")]
+                       "completion queue. Each drainer is bound 1:1 to its own kernel io_context " +
+                       "(libaio) or io_uring ring; submitters distribute across rings via per-thread " +
+                       "affinity. For io_uring, throughput scales with this value up to the available " +
+                       "submitter concurrency (and the uring backend uses min 4 rings even at value=1, " +
+                       "with the single drainer covering all rings via the legacy QueueRun compat " +
+                       "scanner). For libaio the kernel's per-context mutex is already efficient and " +
+                       "extra drainers rarely help past 1. 0 = Garnet default (1).")]
         public int DeviceCompletionThreads { get; set; }
 
         [Option("data-path", Required = false, Default = null,
