@@ -2167,12 +2167,11 @@ namespace Tsavorite.core
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
             var ctx = result.context;
-            // We've extracted the context for this IO; clear the wrapper's reference so a
-            // pooled instance doesn't transitively retain the AsyncIOContext (and via it,
-            // SectorAlignedMemory buffers) past the lifetime of this callback. The wrapper
-            // is returned to the pool in the finally block below, including reread paths
-            // where the next AsyncGetFromDisk call rents a fresh wrapper.
-            result.context = default;
+            // poolReturn=true means we own this wrapper's lifetime and will return it to
+            // the pool ourselves (e.g., reread path, exception path, completion-event path).
+            // On the success+callbackQueue path we transfer ownership to the worker by
+            // enqueueing the wrapper reference; the worker returns it to the pool after
+            // it consumes result.context in InternalCompletePendingRequest.
             var poolReturn = true;
             try
             {
@@ -2191,6 +2190,10 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
+                        // Reread rents a fresh wrapper via AsyncReadRecordToMemory. Clear our
+                        // wrapper's context (so it doesn't transitively retain freed buffers)
+                        // and return it to the pool in the finally block.
+                        result.context = default;
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2198,9 +2201,20 @@ namespace Tsavorite.core
 
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
+                {
                     ctx.completionEvent.Set(ref ctx);
+                    // completionEvent took ownership of the data via Set; clear and return wrapper.
+                    result.context = default;
+                }
                 else
-                    ctx.callbackQueue.Enqueue(ctx);
+                {
+                    // Write modified ctx back to the wrapper and transfer ownership to the
+                    // worker via the per-session ready queue. The worker reads result.context
+                    // in InternalCompletePendingRequest and returns the wrapper to the pool.
+                    result.context = ctx;
+                    poolReturn = false;
+                    ctx.callbackQueue.Enqueue(result);
+                }
             }
             catch (Exception e)
             {
@@ -2212,6 +2226,7 @@ namespace Tsavorite.core
                 else
                 {
                     // Return the wrapper before the throw so a failing callback doesn't leak it.
+                    result.context = default;
                     if (poolReturn)
                         asyncGetFromDiskResultPool.Enqueue(result);
                     poolReturn = false;
@@ -2223,6 +2238,20 @@ namespace Tsavorite.core
                 if (poolReturn)
                     asyncGetFromDiskResultPool.Enqueue(result);
             }
+        }
+
+        /// <summary>
+        /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
+        /// pool after the worker has consumed its <c>context</c> field in
+        /// <see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ReturnAsyncGetFromDiskResult(AsyncGetFromDiskResult<AsyncIOContext> result)
+        {
+            // Clear the captured ctx so a pooled wrapper doesn't transitively retain
+            // SectorAlignedMemory / DiskLogRecord references across rentals.
+            result.context = default;
+            asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>

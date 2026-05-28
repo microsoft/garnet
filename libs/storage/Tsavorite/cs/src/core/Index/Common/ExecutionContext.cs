@@ -27,7 +27,7 @@ namespace Tsavorite.core
             public long totalPending;
             public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
             public readonly AsyncCountDown pendingReads;
-            public readonly AsyncQueue<AsyncIOContext> readyResponses;
+            public readonly AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> readyResponses;
             public int asyncPendingCount;
             internal RevivificationStats RevivificationStats = new();
             public bool isAcquiredTransactional;
@@ -36,7 +36,7 @@ namespace Tsavorite.core
             {
                 SessionState = SystemState.Make(Phase.REST, 1);
                 this.sessionID = sessionID;
-                readyResponses = new AsyncQueue<AsyncIOContext>();
+                readyResponses = new AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
                 isAcquiredTransactional = false;
