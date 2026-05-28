@@ -172,10 +172,6 @@ namespace Garnet.cluster
                 }
                 else if (payloadLength < 0)
                 {
-                    if (!serverOptions.EnableFastCommit)
-                    {
-                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-                    }
                     TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                     physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
@@ -245,10 +241,6 @@ namespace Garnet.cluster
                     }
                     else if (payloadLength < 0)
                     {
-                        if (!serverOptions.EnableFastCommit)
-                        {
-                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-                        }
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                         physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);

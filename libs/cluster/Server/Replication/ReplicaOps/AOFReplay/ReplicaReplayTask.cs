@@ -113,9 +113,6 @@ namespace Garnet.cluster
                             }
                             else if (payloadLength < 0)
                             {
-                                if (!clusterProvider.serverOptions.EnableFastCommit)
-                                    ExceptionUtils.ThrowException(new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false));
-
                                 // Only a single thread should commit metadata
                                 if (replayTaskIdx == 0)
                                 {
