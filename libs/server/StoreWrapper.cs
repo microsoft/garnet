@@ -280,7 +280,7 @@ namespace Garnet.server
             }
 
             if (clusterFactory != null)
-                clusterProvider = clusterFactory.CreateClusterProvider(this);
+                clusterProvider = clusterFactory.CreateClusterProvider(this, rangeIndexManager);
             ctsCommit = new();
 
             if (!serverOptions.EnableCluster)
