@@ -123,9 +123,12 @@ namespace Tsavorite.test
             device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                 (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
-            buffer = new byte[numBytesToRead];
+            // Return only the caller-requested logical size, not the sector-rounded read
+            // length. Otherwise the returned buffer is `numBytesToRead` (e.g. 4096 when
+            // size=1024 and SectorSize=4096), which mismatches the caller's expectation.
+            buffer = new byte[size];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, size, size);
             pbuffer.Return();
         }
 
