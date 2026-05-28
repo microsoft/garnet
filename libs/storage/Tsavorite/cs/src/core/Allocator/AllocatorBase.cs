@@ -202,6 +202,18 @@ namespace Tsavorite.core
         /// <summary>Buffer pool</summary>
         internal SectorAlignedBufferPool bufferPool;
 
+        /// <summary>
+        /// Pool of <see cref="AsyncGetFromDiskResult{TContext}"/> wrappers used by the
+        /// pending-read path (one per in-flight IO). The wrapper is the <c>object context</c>
+        /// passed to <c>IDevice.ReadAsync</c>, so pooling it removes the only
+        /// per-IO heap allocation on the steady-state read path. Bounded by
+        /// <c>device.ThrottleLimit</c> in-flight IOs, so the pool naturally settles around
+        /// that size; the underlying <c>ConcurrentQueue</c> is fine here because pool
+        /// churn is strictly bounded — no segment growth in steady state.
+        /// </summary>
+        readonly System.Collections.Concurrent.ConcurrentQueue<AsyncGetFromDiskResult<AsyncIOContext>>
+            asyncGetFromDiskResultPool = new();
+
         /// <summary>Address type for this hlog's records'</summary>
         /// <summary>Read cache eviction callback</summary>
         protected readonly Action<long, long> EvictCallback = null;
@@ -1656,7 +1668,9 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            var asyncResult = new AsyncGetFromDiskResult<AsyncIOContext> { context = context };
+            if (!asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
+                asyncResult = new AsyncGetFromDiskResult<AsyncIOContext>();
+            asyncResult.context = context;
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
@@ -1689,7 +1703,12 @@ namespace Tsavorite.core
             if (alignedFileOffset + alignedReadLength > pageEndInFile)
                 alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
 
-            var record = bufferPool.Get((int)alignedReadLength);
+            // Rent the read-destination buffer with clearOnReturn=false: the device read
+            // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
+            // and downstream consumers bound their access by valid_offset / available_bytes,
+            // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
+            // bandwidth per pending read).
+            var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;
@@ -2148,6 +2167,13 @@ namespace Tsavorite.core
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
             var ctx = result.context;
+            // We've extracted the context for this IO; clear the wrapper's reference so a
+            // pooled instance doesn't transitively retain the AsyncIOContext (and via it,
+            // SectorAlignedMemory buffers) past the lifetime of this callback. The wrapper
+            // is returned to the pool in the finally block below, including reread paths
+            // where the next AsyncGetFromDisk call rents a fresh wrapper.
+            result.context = default;
+            var poolReturn = true;
             try
             {
                 // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
@@ -2184,7 +2210,18 @@ namespace Tsavorite.core
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
                 else
+                {
+                    // Return the wrapper before the throw so a failing callback doesn't leak it.
+                    if (poolReturn)
+                        asyncGetFromDiskResultPool.Enqueue(result);
+                    poolReturn = false;
                     throw;
+                }
+            }
+            finally
+            {
+                if (poolReturn)
+                    asyncGetFromDiskResultPool.Enqueue(result);
             }
         }
 

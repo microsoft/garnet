@@ -11,15 +11,56 @@ namespace Tsavorite.core
     /// <summary>
     /// An <see cref="IKey"/> that can be used in heap allocated contexts.
     /// </summary>
+    /// <remarks>
+    /// Carries key bytes via one of three storage modes selected at <see cref="Create{TKey}"/>:
+    /// <list type="bullet">
+    ///   <item><b>Pinned</b> — caller guarantees the key bytes are pinned for the
+    ///     lifetime of this struct (used by pre-pinned RESP buffers). Stored as a raw
+    ///     pointer; copy of this struct is safe because the pointer is to externally
+    ///     pinned memory.</item>
+    ///   <item><b>Inline</b> — key (and optional namespace) bytes fit in a fixed
+    ///     <see cref="InlineCapacity"/>-byte buffer carried by the struct itself. No
+    ///     heap allocation. Span accessors point into the receiver's own storage —
+    ///     callers must not stash the span across struct copies (the span is implicitly
+    ///     scoped to the receiver's lifetime, same contract as the pinned path).</item>
+    ///   <item><b>Hoisted (pooled)</b> — key bytes are copied into a
+    ///     <see cref="SectorAlignedMemory"/> rented from a pool. Used only when the key
+    ///     exceeds <see cref="InlineCapacity"/>. <see cref="Dispose"/> returns the
+    ///     buffer to the pool.</item>
+    /// </list>
+    /// The pending-IO path on small keys (8-byte hashes, 16-byte UUIDs, short RESP
+    /// keys) hits the Inline branch and avoids the per-pending-read
+    /// <c>SectorAlignedBufferPool.Get/Return</c> cycle that otherwise dominates GC on
+    /// disk-bound workloads.
+    /// </remarks>
     public unsafe struct ConditionallyHoistedKey : IKey, IDisposable
     {
+        /// <summary>
+        /// Maximum total bytes (key + namespace) that will be stored inline inside
+        /// this struct without renting a <see cref="SectorAlignedMemory"/>. Sized to
+        /// cover typical Garnet RESP small-key workloads (≤ 32 B) while keeping the
+        /// containing structs (<c>PendingContext</c>, <see cref="AsyncIOContext"/>)
+        /// compact enough that the per-op struct copy
+        /// (Buffer.BulkMoveWithWriteBarrier) does not regress the hot path.
+        /// </summary>
+        internal const int InlineCapacity = 32;
+
+        /// <summary>Fixed-size inline byte buffer used for the Inline storage mode.</summary>
+        [InlineArray(InlineCapacity)]
+        private struct InlineBuf
+        {
+            private byte _e0;
+        }
+
         private static ConditionallyHoistedKey Empty { get; } = new((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference<byte>([])), 0);
 
         private readonly byte* keyPtr;
-        private readonly int keyLen;
+        private int keyLen;
         private readonly byte* namespacePtr;
-        private readonly int namespaceLen;
+        private int namespaceLen;
         private SectorAlignedMemory keyAndNamespaceMem;
+        private InlineBuf inlineBuf;
+        private bool isInline;
 
         /// <inheritdoc/>
         public readonly bool IsEmpty => keyLen == 0;
@@ -36,6 +77,15 @@ namespace Tsavorite.core
                 if (keyPtr != null)
                 {
                     return new ReadOnlySpan<byte>(keyPtr, keyLen);
+                }
+                else if (isInline)
+                {
+                    // Span points into the receiver's own inline storage. Lifetime is the
+                    // receiver's lifetime; callers MUST consume the span before letting the
+                    // receiver go out of scope (same contract as the pinned-pointer mode).
+                    return MemoryMarshal.CreateReadOnlySpan(
+                        ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))),
+                        keyLen);
                 }
                 else if (keyAndNamespaceMem != null)
                 {
@@ -61,6 +111,13 @@ namespace Tsavorite.core
                 if (namespacePtr != null)
                 {
                     return new ReadOnlySpan<byte>(namespacePtr, namespaceLen);
+                }
+                else if (isInline)
+                {
+                    // Namespace bytes follow the key bytes in the inline buffer.
+                    return MemoryMarshal.CreateReadOnlySpan(
+                        ref Unsafe.Add(ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))), keyLen),
+                        namespaceLen);
                 }
                 else if (keyAndNamespaceMem != null)
                 {
@@ -145,6 +202,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
+            // Inline mode owns no external memory, so Dispose is a no-op there.
             keyAndNamespaceMem?.Return();
             keyAndNamespaceMem = null;
         }
@@ -152,6 +210,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a new <see cref="ConditionallyHoistedKey"/>, copying bytes if needed.
         /// </summary>
+        /// <remarks>
+        /// Storage mode selection:
+        /// <list type="bullet">
+        ///   <item><see cref="IKey.IsPinned"/> → raw pointer (no copy, no alloc).</item>
+        ///   <item>Else key (+ optional namespace) total bytes ≤ <see cref="InlineCapacity"/>
+        ///     → inline buffer carried by this struct (no alloc).</item>
+        ///   <item>Else → <see cref="SectorAlignedMemory"/> rented from <paramref name="bufferPool"/>
+        ///     and freed by <see cref="Dispose"/>.</item>
+        /// </list>
+        /// </remarks>
         internal static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -188,16 +256,28 @@ namespace Tsavorite.core
             }
             else
             {
-                // TODO: This matches existing use, but is this correct?  Seems like we'd get a big record here
-
-                var recordMinLen = keyBytes.Length;
+                // Inline-storage fast path: copy small keys directly into the struct so the
+                // pending-read path doesn't burn a SectorAlignedMemory.Get + Return + Array.Clear
+                // cycle on every IO. Total budget is InlineCapacity bytes shared between key
+                // and namespace.
                 if (key.HasNamespace)
                 {
                     var namespaceBytes = key.NamespaceBytes;
+                    var totalLen = keyBytes.Length + namespaceBytes.Length;
 
-                    recordMinLen += namespaceBytes.Length;
+                    if (totalLen <= InlineCapacity)
+                    {
+                        ConditionallyHoistedKey result = default;
+                        result.keyLen = keyBytes.Length;
+                        result.namespaceLen = namespaceBytes.Length;
+                        result.isInline = true;
+                        Span<byte> dst = result.inlineBuf;
+                        keyBytes.CopyTo(dst);
+                        namespaceBytes.CopyTo(dst[keyBytes.Length..]);
+                        return result;
+                    }
 
-                    var mem = bufferPool.Get(keyBytes.Length);
+                    var mem = bufferPool.Get(totalLen);
                     keyBytes.CopyTo(mem.TotalValidSpan);
                     namespaceBytes.CopyTo(mem.TotalValidSpan[keyBytes.Length..]);
 
@@ -205,6 +285,16 @@ namespace Tsavorite.core
                 }
                 else
                 {
+                    if (keyBytes.Length <= InlineCapacity)
+                    {
+                        ConditionallyHoistedKey result = default;
+                        result.keyLen = keyBytes.Length;
+                        result.isInline = true;
+                        Span<byte> dst = result.inlineBuf;
+                        keyBytes.CopyTo(dst);
+                        return result;
+                    }
+
                     var mem = bufferPool.Get(keyBytes.Length);
                     keyBytes.CopyTo(mem.TotalValidSpan);
 
