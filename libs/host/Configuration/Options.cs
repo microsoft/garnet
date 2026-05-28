@@ -389,9 +389,6 @@ namespace Garnet
         [Option("checkpoint-throttle-delay", Required = false, HelpText = "Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync")]
         public int CheckpointThrottleFlushDelayMs { get; set; }
 
-        [OptionValidation]
-        [Option("fast-commit", Required = false, HelpText = "Use FastCommit when writing AOF.")]
-        public bool? EnableFastCommit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("fast-commit-throttle", Required = false, HelpText = "Throttle FastCommit to write metadata once every K commits.")]
@@ -794,8 +791,6 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
-            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
-                throw new Exception("Cannot use sharded-log without FastCommit!");
 
             if (!EnableAOF.GetValueOrDefault())
             {
@@ -869,7 +864,6 @@ namespace Garnet
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
-                EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(

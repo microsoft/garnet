@@ -2270,21 +2270,22 @@ namespace Garnet.test.cluster
         {
             context.logger?.LogDebug("0. ClusterMigrateSetSlotRangeResilience started");
             var shards = 2;
+            var sourceNodeIndex = 0;
+            var targetNodeIndex = 1;
             context.CreateInstances(shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             // Setup: node 0 owns all slots, node 1 owns none
             _ = context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger);
-            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
-            context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
-            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
-            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(sourceNodeIndex, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             // Create data in a single slot using the standard helper
             var keyCount = 50;
             var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
-            var sourceNodeIndex = 0;
-            var targetNodeIndex = 1;
 
             context.logger?.LogDebug("1. Verifying data insertion into slot {slot}", slot);
             var actualKeyCount = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, slot, logger: context.logger);
