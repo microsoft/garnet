@@ -188,8 +188,8 @@ namespace Garnet
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
-            if (opts.EnableCluster && opts.EnableRangeIndexPreview)
-                throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
+            if (opts.ReplicaDisklessSync && opts.EnableRangeIndexPreview)
+                throw new GarnetException("Range Index (preview) is not supported in cluster diskless mode.");
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",

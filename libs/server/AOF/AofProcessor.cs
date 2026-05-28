@@ -542,16 +542,22 @@ namespace Garnet.server
             // RangeIndex commands need actual execution on replay
             if (stringInput.header.cmd == RespCommand.RICREATE)
             {
-                rangeIndexManager?.HandleRangeIndexCreateReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+                if (rangeIndexManager == null)
+                    ExceptionUtils.ThrowException(new GarnetException("RangeIndexPreview disabled; Replay failed"));
+                rangeIndexManager.HandleRangeIndexCreateReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                 return;
             }
             if (stringInput.header.cmd == RespCommand.RISET)
             {
+                if (rangeIndexManager == null)
+                    ExceptionUtils.ThrowException(new GarnetException("RangeIndexPreview disabled; Replay failed"));
                 rangeIndexManager.HandleRangeIndexSetReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                 return;
             }
             if (stringInput.header.cmd == RespCommand.RIDEL)
             {
+                if (rangeIndexManager == null)
+                    ExceptionUtils.ThrowException(new GarnetException("RangeIndexPreview disabled; Replay failed"));
                 rangeIndexManager.HandleRangeIndexDelReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                 return;
             }
