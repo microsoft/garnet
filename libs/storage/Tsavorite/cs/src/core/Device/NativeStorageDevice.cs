@@ -54,13 +54,6 @@ namespace Tsavorite.core
         readonly bool disableFileBuffering;
         readonly int numCompletionThreadsConfig;
         readonly int numIoContextsConfig;
-        /// Default ring count for the uring backend. Sized so that on a typical multi-submitter
-        /// workload, threads distributed across 4 rings rarely contend on sq_lock; with a single
-        /// drainer covering all 4 rings via QueueRun, this matches libaio ct=1 throughput on
-        /// the test hardware (~700K IOPS on Dell P5600). Smaller values leave throughput on the
-        /// table at moderate thread counts; larger values cost the single drainer extra empty-
-        /// ring polls at low thread counts without measurable gain at high thread counts.
-        const int kDefaultUringRings = 4;
         readonly IoBackend ioBackendConfig;
 
         /// <summary>
@@ -482,13 +475,35 @@ namespace Tsavorite.core
             if (s_instrument) Interlocked.Increment(ref completeCount);
             int offset = (int)context;
             var result = results[offset];
-            // try/finally so a throwing user callback still returns the result slot AND decrements
-            // numPending. The Dispose() drain loop spins until numPending == 0, so decrementing
-            // here (after the callback returns) guarantees Dispose waits for all in-flight user
-            // callbacks to finish before destroying the native device underneath them.
+            // CRITICAL: this method is invoked via a function pointer from native code (libaio /
+            // io_uring completion drainer thread) across the C ABI boundary. ANY managed
+            // exception that escapes this method propagates back into the native dispatch
+            // loop and, when it crosses the ABI boundary, causes the .NET runtime to
+            // terminate the drainer thread (silently, since it's a background thread). That
+            // leaves the device with no completion processor: all subsequent IOs are
+            // submitted but never completed, numPending grows unbounded, device.Throttle()
+            // stays true forever, and the next worker thread to call ReadAsync deadlocks
+            // spinning in the throttle-wait loop.
+            //
+            // Tsavorite's user callback (AsyncGetFromDiskCallback) re-throws in several
+            // error paths (no completionEvent set, exception during validation, etc.). So we
+            // MUST catch absolutely everything here and never let it escape — even fatal
+            // exceptions like OOM should be swallowed and the slot/bookkeeping cleaned up.
+            // Errors that need surfacing should go through the result.callback's own error
+            // channel (numBytes=0 + errorCode), not via a throw.
+            //
+            // try/finally also ensures that on a throwing user callback the result slot is
+            // returned AND numPending is decremented. Dispose() spins until numPending == 0,
+            // so decrementing here (after the callback returns) guarantees Dispose waits for
+            // all in-flight user callbacks to finish before destroying the native device
+            // underneath them.
             try
             {
                 result.callback((uint)errorCode, (uint)numBytes, result.context);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unhandled exception in user IO completion callback (suppressed to keep drainer alive)");
             }
             finally
             {
@@ -571,23 +586,18 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
-            // For uring, force at least kDefaultUringRings shards even if the caller asked for a
-            // single drainer. This eliminates per-ring sq_lock contention without requiring the
-            // caller to know how many submitter threads they have or to pay for N drainer threads.
-            // Per-thread ring affinity (file_linux.h pick_ring) distributes submitters across the
-            // rings; the single drainer scans all rings via QueueRun. With ct = 1 and 16 submitter
-            // threads on Dell P5600 NVMe this lifts uring throughput from ~340K to ~700K IOPS,
-            // matching libaio at ct=1.
-            //
-            // When numCompletionThreads > kDefaultUringRings, rings tracks numCompletionThreads
-            // (1:1 binding, existing sharded behavior).
-            //
-            // libaio doesn't benefit from extra rings (the kernel io_context mutex is already
-            // efficient and io_submit batches well), so it uses numCompletionThreads directly.
-            int rings = (ioBackend == IoBackend.Uring)
-                ? Math.Max(kDefaultUringRings, this.numCompletionThreadsConfig)
-                : this.numCompletionThreadsConfig;
-            this.numIoContextsConfig = rings;
+            // rings always tracks numCompletionThreads (1:1 drainer-to-ring binding). An earlier
+            // experiment used min 4 rings for uring even at ct=1 (single drainer scans all
+            // rings via QueueRun) to escape per-ring sq_lock contention without forcing the
+            // caller to allocate multiple drainer threads. That mode is fundamentally broken:
+            // with per-thread submit affinity (pick_ring's thread_local index), submitters
+            // assigned to ring N>0 never get their completions drained because the single
+            // drainer blocks on ring 0 with a 1s timeout in QueueRun and only briefly polls
+            // the other rings between wake-ups. The result is ~50x throughput degradation on
+            // workloads where submitters land on rings != 0. For uring perf scaling, users
+            // should set numCompletionThreads >= expected_submitter_concurrency; the rings
+            // are then 1:1 with drainers and each ring's completions are continuously drained.
+            this.numIoContextsConfig = this.numCompletionThreadsConfig;
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
 
@@ -732,18 +742,14 @@ namespace Tsavorite.core
                     completionThreadToken = new();
                     int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
                     if (actualIoContexts < 1) actualIoContexts = 1;
-                    // Drainers: numCompletionThreadsConfig threads cover actualIoContexts rings.
-                    // Three cases:
-                    //   D == R: 1:1 binding, each drainer calls QueueRunFor(i).
-                    //   D == 1, R > 1: single drainer calls QueueRun (all rings).
-                    //   D > 1, R != D: not currently supported; clamp drainers to actualIoContexts.
-                    int numDrainers = numCompletionThreadsConfig;
-                    if (numDrainers > actualIoContexts) numDrainers = actualIoContexts;
-                    bool singleDrainerAllRings = numDrainers == 1 && actualIoContexts > 1;
-                    completionThreads = new Thread[numDrainers];
-                    for (int i = 0; i < numDrainers; i++)
+                    // We pass numCompletionThreadsConfig to the native ctor as num_io_contexts;
+                    // the native side may clamp at 1 if it received 0 or negative, but otherwise
+                    // honors it. So actualIoContexts should equal numCompletionThreadsConfig. Each
+                    // drainer is bound 1:1 to its own ring via QueueRunFor(ctxIdx, ...).
+                    completionThreads = new Thread[actualIoContexts];
+                    for (int i = 0; i < actualIoContexts; i++)
                     {
-                        int ctxIdx = singleDrainerAllRings ? -1 : i;
+                        int ctxIdx = i;
                         completionThreads[i] = new Thread(() => CompletionWorker(ctxIdx))
                         {
                             IsBackground = true
@@ -1158,25 +1164,32 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Drain loop for one completion thread.
-        ///
-        /// When <paramref name="ctxIdx"/> is &gt;= 0, the thread is bound 1:1 to that ring shard
-        /// and blocks in <c>NativeDevice_QueueRunFor</c> with a long timeout. When ctxIdx == -1
-        /// (only set when numDrainers == 1 &amp;&amp; numRings &gt; 1) the thread calls
-        /// <c>NativeDevice_QueueRun</c> which scans all rings (waits on ring 0 with timeout,
-        /// then polls the rest). Dispose() wakes blocked workers via
-        /// <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the timeout to fire.
+        /// Drain loop for one completion thread, bound 1:1 to ring shard <paramref name="ctxIdx"/>.
+        /// Blocks in <c>NativeDevice_QueueRunFor</c> with a long timeout. Dispose() wakes blocked
+        /// workers via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the
+        /// timeout to fire.
         /// </summary>
         void CompletionWorker(int ctxIdx)
         {
-            while (true)
+            // Defense-in-depth: catch around the whole drain loop. _callback already swallows
+            // all exceptions from the user callback (see its big comment), but if anything
+            // else managed-side throws here (e.g. nativeDevice goes IntPtr.Zero mid-call
+            // during a race with Dispose, or a P/Invoke marshalling exception), losing the
+            // drainer thread silently is catastrophic: no completions ever fire, numPending
+            // grows unbounded, the next submitter spins forever in device.Throttle() and the
+            // whole engine deadlocks. So if anything escapes, log it loudly and exit cleanly.
+            try
             {
-                if (completionThreadToken.IsCancellationRequested) break;
-                if (ctxIdx < 0)
-                    NativeDevice_QueueRun(nativeDevice, CompletionWorkerTimeoutSecs);
-                else
+                while (true)
+                {
+                    if (completionThreadToken.IsCancellationRequested) break;
                     NativeDevice_QueueRunFor(nativeDevice, ctxIdx, CompletionWorkerTimeoutSecs);
-                Thread.Yield();
+                    Thread.Yield();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "NativeStorageDevice completion drainer (ctxIdx={ctxIdx}) terminated by unhandled exception", ctxIdx);
             }
         }
 

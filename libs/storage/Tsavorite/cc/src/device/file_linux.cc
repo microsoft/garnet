@@ -299,19 +299,40 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   iocbs[0] = reinterpret_cast<struct iocb*>(io_context.get());
 
   // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
-  //   1  : kernel accepted; one completion will fire.
-  //   0  : transient kernel ring full; retry with sched_yield up to kMaxSubmitRetries.
-  //        The iocb is not queued; we still own it.
-  //   <0 : permanent error (EINVAL/EBADF/EIO); surface immediately.
-  // Batching is unsupported here; partial submission would require per-iocb ownership tracking.
+  //   1            : kernel accepted; one completion will fire.
+  //   0 or -EAGAIN : transient kernel ring full; retry indefinitely with bounded backoff.
+  //                  The iocb is not queued; we still own it.
+  //   other <0     : permanent error (EINVAL/EBADF/EIO); surface immediately.
+  //
+  // We MUST NOT surface transient EAGAIN to the caller. The libaio io_context is 128 slots
+  // wide; the upper-layer device throttle caps in-flight at ~120; the engine's pending-IO
+  // queue bursts up to 1024 reads per chunk through device.ReadAsync(). When the burst races
+  // the kernel drainer we transiently hit -EAGAIN. If we returned IOError, the engine
+  // interprets numBytes=0 as a short read, recursively retries via AsyncGetFromDiskCallback,
+  // and we spiral into a positive feedback loop that backs up the ThreadPool and never
+  // drains. So instead: yield/sleep until the kernel has space, regardless of how long
+  // that takes. This matches Tsavorite's longstanding contract that device submit either
+  // succeeds or returns a permanent error.
+  //
+  // Backoff curve: 64 sched_yield's, then 1ms nanosleep loops. Permanent errors still
+  // surface immediately.
+  constexpr int kYieldBudget = 64;
   int retries = 0;
   int result;
   while (true) {
     result = ::io_submit(io_object_, 1, iocbs);
     if (result == 1) break;
-    if (result < 0) return Status::IOError;
-    if (++retries > kMaxSubmitRetries) return Status::IOError;
-    ::sched_yield();
+    if (result < 0 && result != -EAGAIN) return Status::IOError;
+    // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")
+    if (retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++retries;
   }
 
   // Ownership transferred to the kernel.
@@ -540,9 +561,12 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   SpinLock* sq_lock = nullptr;
   handler_->pick_ring(ring, sq_lock);
 
-  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; retry with
-  // sched_yield up to kMaxSubmitRetries. sq_lock is released around sched_yield so other
-  // submitters on this ring are not blocked across the syscall.
+  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; bounded-yield
+  // then sleep — same rationale as the libaio path. We MUST NOT surface a "ring full" as an
+  // error to the caller; the engine retries-on-error and we'd spiral into a positive-feedback
+  // loop. sq_lock is released around sched_yield/nanosleep so other submitters on this ring
+  // are not blocked across the wait.
+  constexpr int kYieldBudget = 64;
   struct io_uring_sqe* sqe = nullptr;
   int retries = 0;
   while (true) {
@@ -550,8 +574,15 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
     sq_lock->Release();
-    if (++retries > kMaxSubmitRetries) return Status::IOError;
-    ::sched_yield();
+    if (retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++retries;
   }
   // sq_lock is held; sqe is non-null.
 
@@ -564,18 +595,24 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   // Submit. Exactly one SQE was prepared and is committed to the user-side SQ ring; we MUST
   // keep re-submitting on transient negatives (-EAGAIN/-EBUSY) or the slot leaks permanently.
-  // Other negatives are surfaced as IOError. A positive return other than 1 should not occur
-  // for a single prepared SQE on a non-SQPOLL ring; treated as IOError defensively.
-  // Batching multiple SQEs is unsupported by this caller.
+  // Indefinite retry with bounded backoff — same rationale as libaio above. Other negatives
+  // are surfaced as IOError.
   int res;
   int submit_retries = 0;
   while (true) {
     res = io_uring_submit(ring);
     if (res == 1) break;
     if (res != -EAGAIN && res != -EBUSY) break;
-    if (++submit_retries > kMaxSubmitRetries) break;
     sq_lock->Release();
-    ::sched_yield();
+    if (submit_retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++submit_retries;
     sq_lock->Acquire();
   }
   if (res != 1) {

@@ -1675,6 +1675,20 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
+            // Records never span page boundaries (HandlePageOverflow guarantees this), but the
+            // sector-aligned read window above can over-extend past the page-end on records near
+            // the end of a page. When the device segment size is a multiple of the page size
+            // (e.g. 4MB pages, 1GB segments — the Garnet default), an over-extended read at the
+            // last page of a segment also crosses the device's segment boundary; native devices
+            // that implement segmented files (FileSystemSegmentedFile in NativeStorageDevice)
+            // reject such reads with IOError and the engine spins retrying the same address
+            // forever. Clamp the read length so it never crosses page-end. pageEnd is
+            // sector-aligned (PageSizeBits >= SectorSize), so the clamped length stays
+            // sector-aligned.
+            var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
+            if (alignedFileOffset + alignedReadLength > pageEndInFile)
+                alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
+
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
