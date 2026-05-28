@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -139,11 +140,7 @@ namespace Garnet.cluster
             var bytesRead = await stream.ReadAsync(buffer, 0, bytesToRead, cancellationToken).ConfigureAwait(false);
 
             if (bytesRead == 0)
-            {
-                logger?.LogWarning("RangeIndexFileDataSource: unexpected EOF at offset {currentOffset}, expected {endOffset} for {filePath}", CurrentOffset, EndOffset, filePath);
-                CurrentOffset = EndOffset;
-                return new DataSourceReadResult([], chunkStartAddress: CurrentOffset);
-            }
+                ExceptionUtils.ThrowException(new GarnetException($"RangeIndexFileDataSource: unexpected EOF at offset {CurrentOffset}, expected {EndOffset} for {filePath}"));
 
             var chunkStart = CurrentOffset;
             CurrentOffset += bytesRead;
