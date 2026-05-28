@@ -152,11 +152,13 @@ class File {
 
 class QueueFile;
 
-/// Handles libaio submission and completion via a single io_context. The sharded API
-/// surface (TryCompleteFor / QueueRunFor / num_contexts / 2-arg ctor) is preserved for
-/// symmetry with UringIoHandler so the shared C ABI and templated NativeDeviceImpl can
-/// treat both backends uniformly; on the libaio path those methods operate on the single
-/// io_context and num_contexts() always returns 1.
+/// Handles libaio submission and completion via N independent io_contexts (sharded).
+/// pick_context() distributes submissions across contexts via per-thread affinity:
+/// each calling thread is assigned a context on first call (round-robin) and continues
+/// to use that same context for every subsequent submission. With one drainer thread
+/// per context (the documented usage), io_submit contention on the per-context kernel
+/// mutex is eliminated; different threads only share a context when num_submitters >
+/// num_contexts. Each context has its own /dev/null wake-up fd for Dispose drain.
 class QueueIoHandler {
  public:
   typedef QueueFile async_file_t;
@@ -166,68 +168,79 @@ class QueueIoHandler {
 
  public:
   QueueIoHandler()
-    : io_object_{ 0 }
-    , init_errno_{ 0 }
-    , wake_fd_{ -1 } {
+    : init_errno_{ 0 } {
+    Init(1);
   }
-  /// Construct + io_setup. On failure, io_object_ stays 0 and init_errno_ holds the positive
-  /// errno value from io_setup so the caller can format an actionable error.
+  /// 1-arg ctor for back-compat; creates a single io_context.
   QueueIoHandler(size_t /*max_threads*/)
-    : io_object_{ 0 }
-    , init_errno_{ 0 }
-    , wake_fd_{ -1 } {
-    int result = ::io_setup(kMaxEvents, &io_object_);
-    if (result < 0) {
-      init_errno_ = -result;
-      io_object_ = 0;
-    } else {
-      OpenWakeFd();
-    }
+    : init_errno_{ 0 } {
+    Init(1);
   }
-  /// Cross-backend 2-arg overload; `num_contexts` is ignored (libaio uses a single io_context).
-  QueueIoHandler(size_t /*max_threads*/, int /*num_contexts*/)
-    : io_object_{ 0 }
-    , init_errno_{ 0 }
-    , wake_fd_{ -1 } {
-    int result = ::io_setup(kMaxEvents, &io_object_);
-    if (result < 0) {
-      init_errno_ = -result;
-      io_object_ = 0;
-    } else {
-      OpenWakeFd();
-    }
+  /// Creates `num_contexts` independent io_contexts. With N>1 submissions are
+  /// distributed across contexts via pick_context(); each context requires its own
+  /// completion drainer thread (see QueueRunFor).
+  QueueIoHandler(size_t /*max_threads*/, int num_contexts)
+    : init_errno_{ 0 } {
+    Init(num_contexts < 1 ? 1 : num_contexts);
   }
 
   /// Move constructor
   QueueIoHandler(QueueIoHandler&& other)
-    : io_object_{ other.io_object_ }
-    , init_errno_{ other.init_errno_ }
-    , wake_fd_{ other.wake_fd_ } {
-    other.io_object_ = 0;
+    : io_objects_{ std::move(other.io_objects_) }
+    , wake_fds_{ std::move(other.wake_fds_) }
+    , init_errno_{ other.init_errno_ } {
+    other.io_objects_.clear();
+    other.wake_fds_.clear();
     other.init_errno_ = 0;
-    other.wake_fd_ = -1;
   }
 
+  QueueIoHandler(const QueueIoHandler&) = delete;
+  QueueIoHandler& operator=(const QueueIoHandler&) = delete;
+  QueueIoHandler& operator=(QueueIoHandler&&) = delete;
+
   ~QueueIoHandler() {
-    io_context_t io_object = io_object_;
-    io_object_ = 0;
-    if (io_object != 0)
-      ::io_destroy(io_object);
-    if (wake_fd_ >= 0) {
-      ::close(wake_fd_);
-      wake_fd_ = -1;
+    for (auto& ctx : io_objects_) {
+      if (ctx != 0)
+        ::io_destroy(ctx);
     }
+    io_objects_.clear();
+    for (int fd : wake_fds_) {
+      if (fd >= 0) ::close(fd);
+    }
+    wake_fds_.clear();
   }
 
   /// Non-zero iff io_setup failed during construction. The value is the positive errno.
   int init_errno() const { return init_errno_; }
-  bool initialized() const { return io_object_ != 0; }
+  bool initialized() const { return !io_objects_.empty() && io_objects_[0] != 0; }
 
-  /// Number of io_context shards. Always 1 for libaio.
-  int num_contexts() const { return 1; }
+  /// Number of io_context shards. >= 1 once initialized.
+  int num_contexts() const { return static_cast<int>(io_objects_.size()); }
 
-  /// Always returns the single io_context.
-  io_context_t pick_context() { return io_object_; }
+  /// Returns the io_context for the calling thread (assigned on first call via
+  /// round-robin). Same-thread submits always go to the same context so io_submit
+  /// only contends across threads that landed on the same shard.
+  /// <para>
+  /// The TLS affinity is bound to <c>this</c>: if a thread calls pick_context on
+  /// handler A (where it cached some index), then later on handler B (potentially
+  /// with a different num_contexts), the cached affinity from A is invalid and
+  /// must be re-assigned for B. The owner pointer + bounds check below guards
+  /// against any cross-instance index reuse (which would be a memory-safety bug
+  /// if A had more shards than B).
+  /// </para>
+  io_context_t pick_context() {
+    if (io_objects_.size() == 1) {
+      return io_objects_[0];
+    }
+    thread_local const QueueIoHandler* tls_owner = nullptr;
+    thread_local int tls_idx = -1;
+    if (tls_owner != this || tls_idx < 0 || tls_idx >= static_cast<int>(io_objects_.size())) {
+      tls_owner = this;
+      tls_idx = static_cast<int>(
+          submit_counter_.fetch_add(1, std::memory_order_relaxed) % io_objects_.size());
+    }
+    return io_objects_[tls_idx];
+  }
 
   /// Invoked whenever a Linux AIO completes.
   static void IoCompletionCallback(io_context_t ctx, struct iocb* iocb, long res, long res2);
@@ -258,63 +271,100 @@ class QueueIoHandler {
     core::AsyncIOCallback callback;
   };
 
+  /// Back-compat single-context accessor; returns io_objects_[0] (shard 0). Callers
+  /// that submit via this directly will land on the same kernel mutex as anything
+  /// else using shard 0. Prefer pick_context() for new code.
   inline io_context_t io_object() const {
-    return io_object_;
+    return io_objects_.empty() ? 0 : io_objects_[0];
   }
 
-  /// Try to execute the next IO completion on the queue, if any.
+  /// Drain one completion from context 0; sharded callers should use TryCompleteFor(idx).
   bool TryComplete();
-  /// Try to execute the next IO completion on context `idx`. Returns false if idx != 0.
-  bool TryCompleteFor(int idx) { return idx == 0 ? TryComplete() : false; }
+  /// Drain one completion from context `idx`. Returns false if idx out of range or no events.
+  bool TryCompleteFor(int idx);
 
-  // Process IO completions on queue with timeout
+  /// Drain completions across all contexts (back-compat for callers that do not know
+  /// about sharding). First context uses the full timeout; subsequent contexts poll.
   int QueueRun(int timeout_secs);
-  /// Process IO completions on context `idx` only. Returns -1 if idx != 0.
-  int QueueRunFor(int idx, int timeout_secs) { return idx == 0 ? QueueRun(timeout_secs) : -1; }
+  /// Drain completions on context `idx` only.
+  int QueueRunFor(int idx, int timeout_secs);
   /// Submit a no-op IO that completes immediately so any thread blocked in
-  /// io_getevents wakes up promptly. Used by Dispose() to unblock the completion
-  /// drainer without waiting on the QueueRun timeout. Returns 0 on success, -1 on failure.
+  /// io_getevents on context `idx` wakes up promptly. Used by Dispose() to unblock
+  /// the completion drainer without waiting on the QueueRun timeout. Returns 0 on
+  /// success, -1 on failure.
   int Wake(int idx);
 
  private:
-  /// Open the wake-up file descriptor (/dev/null) used by Wake() to submit a no-op
-  /// 0-byte read iocb. /dev/null reads always return 0 immediately and do not require
-  /// O_DIRECT alignment, so this is the simplest fd to use as a wake-up target without
-  /// interfering with the real segment files.
-  void OpenWakeFd() {
-    wake_fd_ = ::open("/dev/null", O_RDONLY);
+  void Init(int num_contexts) {
+    // Build into temporary vectors and only publish to members on full success.
+    // On any failure, all partially-created resources are released here and the
+    // handler's vectors remain empty (so num_contexts()==0, initialized()==false,
+    // and all per-shard operations return -1 / no-op).
+    std::vector<io_context_t> tmp_objects(num_contexts, 0);
+    std::vector<int> tmp_fds(num_contexts, -1);
+    for (int i = 0; i < num_contexts; ++i) {
+      int result = ::io_setup(kMaxEvents, &tmp_objects[i]);
+      if (result < 0) {
+        init_errno_ = -result;
+        for (int j = 0; j < i; ++j) {
+          if (tmp_objects[j] != 0) ::io_destroy(tmp_objects[j]);
+          if (tmp_fds[j] >= 0) ::close(tmp_fds[j]);
+        }
+        return;
+      }
+      tmp_fds[i] = ::open("/dev/null", O_RDONLY);
+      if (tmp_fds[i] < 0) {
+        // Wake fd is mandatory: without it Dispose() falls back to waiting for
+        // the QueueRunFor timeout per shard (multi-second shutdown stalls).
+        // Treat as fatal so the caller sees init_errno != 0 and can surface a
+        // clear error rather than silently shipping a half-functional handler.
+        init_errno_ = errno;
+        if (tmp_objects[i] != 0) ::io_destroy(tmp_objects[i]);
+        for (int j = 0; j < i; ++j) {
+          if (tmp_objects[j] != 0) ::io_destroy(tmp_objects[j]);
+          if (tmp_fds[j] >= 0) ::close(tmp_fds[j]);
+        }
+        return;
+      }
+    }
+    // All N contexts + wake fds created successfully; publish to members.
+    io_objects_ = std::move(tmp_objects);
+    wake_fds_ = std::move(tmp_fds);
   }
 
-  /// The Linux AIO context used for IO completions.
-  io_context_t io_object_;
+  /// One io_context per shard. Size == num_contexts(). All entries non-zero once initialized.
+  std::vector<io_context_t> io_objects_;
+  /// Per-shard /dev/null fd used by Wake() to submit a no-op 0-byte read. -1 if not opened.
+  std::vector<int> wake_fds_;
+  /// Round-robin submit counter; only consulted when io_objects_.size() > 1.
+  std::atomic<uint64_t> submit_counter_{ 0 };
   /// If non-zero, the positive errno from a failed io_setup() in the constructor. Checked by
   /// NativeDeviceImpl::Init() to surface an actionable error to the managed caller.
   int init_errno_;
-  /// /dev/null fd used by Wake() to submit a no-op 0-byte read. -1 if not opened.
-  int wake_fd_;
 };
 
-/// The QueueFile class encapsulates asynchronous reads and writes, using the specified AIO
-/// context.
+/// The QueueFile class encapsulates asynchronous reads and writes. Holds a
+/// QueueIoHandler* and picks a context per submission via the handler's per-thread
+/// affinity.
 class QueueFile : public File {
  public:
   QueueFile()
     : File()
-    , io_object_{ nullptr } {
+    , handler_{ nullptr } {
   }
   QueueFile(const std::string& filename)
     : File(filename)
-    , io_object_{ nullptr } {
+    , handler_{ nullptr } {
   }
   /// Move constructor
   QueueFile(QueueFile&& other)
     : File(std::move(other))
-    , io_object_{ other.io_object_ } {
+    , handler_{ other.handler_ } {
   }
   /// Move assignment operator.
   QueueFile& operator=(QueueFile&& other) {
     File::operator=(std::move(other));
-    io_object_ = other.io_object_;
+    handler_ = other.handler_;
     return *this;
   }
 
@@ -330,7 +380,7 @@ class QueueFile : public File {
   core::Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
                            uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
 
-  io_context_t io_object_;
+  QueueIoHandler* handler_;
 };
 
 #ifdef FASTER_URING
