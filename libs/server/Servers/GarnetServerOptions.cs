@@ -362,6 +362,19 @@ namespace Garnet.server
         public DeviceType DeviceType = DeviceType.Default;
 
         /// <summary>
+        /// For DeviceType.Native on Linux: which IO backend to use (libaio or io_uring).
+        /// Ignored for other device types or platforms. io_uring requires the native library
+        /// to be built with -DUSE_URING=ON.
+        /// </summary>
+        public NativeStorageDevice.IoBackend DeviceIoBackend = NativeStorageDevice.IoBackend.Default;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: number of background IO completion drain threads.
+        /// Has a strong effect on io_uring throughput; default of 1 is usually enough for libaio.
+        /// </summary>
+        public int DeviceCompletionThreads = 1;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -659,8 +672,15 @@ namespace Garnet.server
 
             if (DeviceType == DeviceType.Default)
                 DeviceType = Devices.GetDefaultDeviceType();
-            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
-            logger?.LogInformation("Using device type {deviceType}", DeviceType);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(
+                deviceType: DeviceType,
+                ioBackend: DeviceIoBackend,
+                numCompletionThreads: DeviceCompletionThreads,
+                logger: logger);
+            if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct})", DeviceType, DeviceIoBackend, DeviceCompletionThreads);
+            else
+                logger?.LogInformation("Using device type {deviceType}", DeviceType);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");

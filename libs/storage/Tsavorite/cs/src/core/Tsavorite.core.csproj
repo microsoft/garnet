@@ -44,6 +44,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>runtimes/linux-x64/native/libnative_device.so</TargetPath>
     </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libnative_device_libaio.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/linux-x64/native/libnative_device_libaio.so</TargetPath>
+    </ContentWithTargetPath>
   </ItemGroup>
 
   <ItemGroup>

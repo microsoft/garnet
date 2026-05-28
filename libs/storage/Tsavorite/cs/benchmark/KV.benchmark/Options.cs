@@ -102,11 +102,18 @@ namespace Tsavorite.kvbench
         public int DeviceThrottle { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
-            HelpText = "Linux native backend: libaio, default (=libaio).")]
+            HelpText = "Linux native backend: libaio, uring, default (=libaio).")]
         public string DeviceIoBackend { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
-            HelpText = "Native completion thread count. 0 = Garnet default (1).")]
+            HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
+                       "completion queue. Each drainer is bound 1:1 to its own kernel io_context " +
+                       "(libaio) or io_uring ring; submitters distribute across rings via per-thread " +
+                       "affinity. For io_uring, throughput scales with this value up to the available " +
+                       "submitter concurrency (and the uring backend uses min 4 rings even at value=1, " +
+                       "with the single drainer covering all rings via the legacy QueueRun compat " +
+                       "scanner). For libaio the kernel's per-context mutex is already efficient and " +
+                       "extra drainers rarely help past 1. 0 = Garnet default (1).")]
         public int DeviceCompletionThreads { get; set; }
 
         [Option("data-path", Required = false, Default = null,
@@ -233,7 +240,7 @@ namespace Tsavorite.kvbench
                 return $"--device must be one of: native, randomaccess, filestream, null, default (got: {Device})";
             ResolvedIoBackend = ParseIoBackend(DeviceIoBackend);
             if (ResolvedIoBackend == Tsavorite.core.NativeStorageDevice.IoBackend.Default && !IsKnownIoBackendName(DeviceIoBackend))
-                return $"--device-io-backend must be one of: libaio, default (got: {DeviceIoBackend})";
+                return $"--device-io-backend must be one of: libaio, uring, default (got: {DeviceIoBackend})";
 
             ResolvedPageSizeBytes = KvSize.ParseSize(PageSize);
             if (ResolvedPageSizeBytes <= 0) return $"--page-size invalid: {PageSize}";
@@ -343,6 +350,7 @@ namespace Tsavorite.kvbench
             {
                 "default" => Tsavorite.core.NativeStorageDevice.IoBackend.Default,
                 "libaio" => Tsavorite.core.NativeStorageDevice.IoBackend.Libaio,
+                "uring" or "io_uring" or "iouring" => Tsavorite.core.NativeStorageDevice.IoBackend.Uring,
                 _ => Tsavorite.core.NativeStorageDevice.IoBackend.Default,
             };
         }
@@ -356,7 +364,7 @@ namespace Tsavorite.kvbench
         static bool IsKnownIoBackendName(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return true;
-            return s.ToLowerInvariant() is "default" or "libaio";
+            return s.ToLowerInvariant() is "default" or "libaio" or "uring" or "io_uring" or "iouring";
         }
     }
 }

@@ -1,18 +1,31 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#include <algorithm>
 #include <cstring>
+#include <type_traits>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <linux/fs.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <sched.h>
 #include <stdio.h>
 #include <time.h>
 #include "file_linux.h"
+#include "native_device_error.h"
 
 namespace FASTER {
 namespace environment {
+
+namespace {
+/// Maximum sched_yield() retries on transient kernel back-pressure during submission
+/// (libaio io_submit == 0, uring io_uring_get_sqe == nullptr or io_uring_submit -EAGAIN/-EBUSY).
+/// Permanent submission errors are not retried.
+constexpr int kMaxSubmitRetries = 8;
+} // anonymous namespace
 
 using namespace FASTER::core;
 
@@ -34,30 +47,44 @@ Status File::Open(int flags, FileCreateDisposition create_disposition, bool* exi
 
   int create_flags = GetCreateDisposition(create_disposition);
 
+  // Probe file existence BEFORE open(); errno is unspecified after a successful open().
+  // TOCTOU between stat() and open() is acceptable here: `exists` is informational only.
+  bool file_existed_before_open = false;
+  if (exists != nullptr) {
+    struct stat st;
+    file_existed_before_open = (::stat(filename_.c_str(), &st) == 0);
+  }
+
+  // OpenExisting on a missing file is a non-error: report via *exists=false + Status::Ok
+  // (matches the Windows path).
+  if (exists != nullptr && create_disposition == FileCreateDisposition::OpenExisting && !file_existed_before_open) {
+    *exists = false;
+    return Status::Ok;
+  }
+
   /// Always unbuffered (O_DIRECT).
   fd_ = ::open(filename_.c_str(), flags | O_RDWR | create_flags, S_IRUSR | S_IWUSR);
 
-  if(exists) {
-    // Let the caller know whether the file we tried to open or create (already) exists.
-    if(create_disposition == FileCreateDisposition::CreateOrTruncate ||
-        create_disposition == FileCreateDisposition::OpenOrCreate) {
-      *exists = (errno == EEXIST);
-    } else if(create_disposition == FileCreateDisposition::OpenExisting) {
-      *exists = (errno != ENOENT);
-      if(!*exists) {
-        // The file doesn't exist. Don't return an error, since the caller is expecting this case.
-        return Status::Ok;
-      }
-    }
-  }
   if(fd_ == -1) {
-    int error = errno;
+    int saved_errno = errno;
+    native_device::set_last_error(
+        "open('%s') failed: %d (%s). %s",
+        filename_.c_str(), saved_errno, std::strerror(saved_errno),
+        saved_errno == EACCES ? "Check directory and file permissions." :
+        saved_errno == ENOSPC ? "Disk is full." :
+        saved_errno == EINVAL && (flags & O_DIRECT) ? "Filesystem may not support O_DIRECT — try ext4/xfs, or pass disableFileBuffering=false." :
+        "");
     return Status::IOError;
+  }
+
+  if (exists != nullptr) {
+    *exists = file_existed_before_open;
   }
 
   Status result = GetDeviceAlignment();
   if(result != Status::Ok) {
     Close();
+    return result;
   }
   owner_ = true;
   return result;
@@ -86,8 +113,26 @@ Status File::Delete() {
 }
 
 Status File::GetDeviceAlignment() {
-  // For now, just hardcode 512-byte alignment.
+  // Probe the kernel's required direct-I/O alignment for this file and record it in
+  // device_alignment_. Uses statx(STATX_DIOALIGN) on Linux 6.1+ when available; falls back
+  // to 512 (also the default for pre-6.1 kernels and filesystems that do not populate the
+  // statx alignment fields). Mismatches with the upper layer's pre-computed sector size are
+  // caught by the C# Initialize cross-check.
   device_alignment_ = 512;
+
+#if defined(__linux__) && defined(STATX_DIOALIGN)
+  struct statx stx{};
+  if (::statx(fd_, "", AT_EMPTY_PATH, STATX_DIOALIGN, &stx) == 0) {
+    uint32_t required = std::max(stx.stx_dio_offset_align, stx.stx_dio_mem_align);
+    if (required != 0) {
+      // Round up to a power of two (the upper-layer bit-mask arithmetic assumes pow2).
+      uint32_t pow2 = 512;
+      while (pow2 < required) pow2 <<= 1;
+      device_alignment_ = std::max<size_t>(device_alignment_, pow2);
+    }
+  }
+#endif
+
   return Status::Ok;
 }
 
@@ -166,6 +211,38 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
     return ret ? ret : n;
 }
 
+namespace {
+
+// No-op io_callback_t used by QueueIoHandler::Wake — frees the heap-allocated iocb that
+// was submitted purely to unblock a sleeping io_getevents waiter.
+void QueueWakeCompletionCallback(io_context_t, struct iocb* iocb, long /*res*/, long /*res2*/) {
+    delete iocb;
+}
+
+} // namespace
+
+int QueueIoHandler::Wake(int idx) {
+    if (idx != 0) return -1;
+    if (io_object_ == 0) return -1;
+    if (wake_fd_ < 0) return -1;
+    // Submit a 0-byte read on /dev/null. The kernel completes it immediately (reads on
+    // /dev/null always return 0 bytes), io_getevents wakes up, dispatches the callback
+    // which frees the iocb. We allocate a fresh iocb each call because Wake() runs at
+    // most once per Dispose() — the per-allocation cost is negligible vs the ~1s stall
+    // it eliminates.
+    static thread_local char dummy_buf[8] alignas(8) = {};
+    struct iocb* wake_iocb = new struct iocb();
+    ::io_prep_pread(wake_iocb, wake_fd_, dummy_buf, 0, 0);
+    ::io_set_callback(wake_iocb, &QueueWakeCompletionCallback);
+    struct iocb* iocbs[1] = { wake_iocb };
+    int res = ::io_submit(io_object_, 1, iocbs);
+    if (res != 1) {
+        delete wake_iocb;
+        return -1;
+    }
+    return 0;
+}
+
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -211,6 +288,9 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   IAsyncContext* caller_context_copy;
   RETURN_NOT_OK(context.DeepCopy(caller_context_copy));
+  // Guards own io_context and caller_context_copy until io_submit returns 1; on every
+  // failure path the destructors release both.
+  auto caller_copy_guard = core::make_context_unique_ptr<IAsyncContext>(caller_context_copy);
 
   new(io_context.get()) QueueIoHandler::IoCallbackContext(operationType, fd_, offset, length,
       buffer, caller_context_copy, callback);
@@ -218,58 +298,212 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   struct iocb* iocbs[1];
   iocbs[0] = reinterpret_cast<struct iocb*>(io_context.get());
 
-  int result = ::io_submit(io_object_, 1, iocbs);
-  if(result != 1) {
-    return Status::IOError;
+  // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
+  //   1            : kernel accepted; one completion will fire.
+  //   0 or -EAGAIN : transient kernel ring full; retry indefinitely with bounded backoff.
+  //                  The iocb is not queued; we still own it.
+  //   other <0     : permanent error (EINVAL/EBADF/EIO); surface immediately.
+  //
+  // We MUST NOT surface transient EAGAIN to the caller. The libaio io_context is 128 slots
+  // wide; the upper-layer device throttle caps in-flight at ~120; the engine's pending-IO
+  // queue bursts up to 1024 reads per chunk through device.ReadAsync(). When the burst races
+  // the kernel drainer we transiently hit -EAGAIN. If we returned IOError, the engine
+  // interprets numBytes=0 as a short read, recursively retries via AsyncGetFromDiskCallback,
+  // and we spiral into a positive feedback loop that backs up the ThreadPool and never
+  // drains. So instead: yield/sleep until the kernel has space, regardless of how long
+  // that takes. This matches Tsavorite's longstanding contract that device submit either
+  // succeeds or returns a permanent error.
+  //
+  // Backoff curve: 64 sched_yield's, then 1ms nanosleep loops. Permanent errors still
+  // surface immediately.
+  constexpr int kYieldBudget = 64;
+  int retries = 0;
+  int result;
+  while (true) {
+    result = ::io_submit(io_object_, 1, iocbs);
+    if (result == 1) break;
+    if (result < 0 && result != -EAGAIN) return Status::IOError;
+    // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")
+    if (retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++retries;
   }
 
+  // Ownership transferred to the kernel.
+  caller_copy_guard.release();
   io_context.release();
   return Status::Ok;
 }
 
 #ifdef FASTER_URING
 
-bool UringIoHandler::TryComplete() {
-  struct io_uring_cqe* cqe = nullptr;
-  cq_lock_.Acquire();
-  int res = io_uring_peek_cqe(ring_, &cqe);
-  if(res == 0 && cqe) {
-    int io_res = cqe->res;
-    auto *context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
-    io_uring_cqe_seen(ring_, cqe);
-    cq_lock_.Release();
-    Status return_status;
-    size_t byte_transferred;
+namespace {
+
+// Dispatches one completion CQE to the user callback. Negative `io_res` becomes
+// Status::IOError; non-negative carries the bytes-transferred count. Every submission
+// must produce exactly one callback to balance the C# numPending counter.
+inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* context) {
+    static_assert(std::is_trivially_destructible<UringIoHandler::IoCallbackContext>::value,
+                  "DispatchUringCqe relies on trivial destruction; route through "
+                  "make_context_unique_ptr if a non-trivial member is added.");
+    core::Status return_status;
+    size_t bytes_transferred;
     if (io_res < 0) {
-      // Retry if it is failed.....
-      sq_lock_.Acquire();
-      struct io_uring_sqe *sqe = io_uring_get_sqe(ring_);
-      assert(sqe != 0);
-      if (context->is_read_) {
-        io_uring_prep_readv(sqe, context->fd_, &context->vec_, 1, context->offset_);
-      } else {
-        io_uring_prep_writev(sqe, context->fd_, &context->vec_, 1, context->offset_);
-      }
-      io_uring_sqe_set_data(sqe, context);
-      int retry_res = io_uring_submit(ring_);
-      assert(retry_res == 1);
-      sq_lock_.Release();
-      return false;
+        return_status = core::Status::IOError;
+        bytes_transferred = 0;
     } else {
-      return_status = Status::Ok;
-      byte_transferred = io_res;
+        return_status = core::Status::Ok;
+        bytes_transferred = static_cast<size_t>(io_res);
     }
-    context->callback(context->caller_context, return_status, byte_transferred);
+    context->callback(context->caller_context, return_status, bytes_transferred);
     lss_allocator.Free(context);
-    return true;
-  } else {
-    cq_lock_.Release();
-    return false;
+}
+
+} // anonymous namespace
+
+bool UringIoHandler::TryComplete() {
+  // Drain one CQE from any ring (compat: scans all rings).
+  bool any = false;
+  for (int i = 0; i < num_contexts(); ++i) {
+    if (TryCompleteFor(i)) any = true;
   }
+  return any;
+}
+
+bool UringIoHandler::TryCompleteFor(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
+  struct io_uring* ring = rings_[idx];
+  if (ring == nullptr) return false;
+  // cq_lock serialises peek + cqe_seen against the all-rings compat scanner so the same
+  // CQE cannot be dispatched twice.
+  SpinLock* cq_lock = cq_locks_[idx];
+  struct io_uring_cqe* cqe = nullptr;
+  cq_lock->Acquire();
+  int res = io_uring_peek_cqe(ring, &cqe);
+  if (res == 0 && cqe) {
+    int io_res = cqe->res;
+    auto* context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(io_uring_cqe_get_data(cqe));
+    io_uring_cqe_seen(ring, cqe);
+    cq_lock->Release();
+    // user_data == nullptr is the sentinel for wake-up SQEs (UringIoHandler::Wake) and
+    // rewritten-after-failed-submit SQEs (ScheduleOperation error path). Must NOT
+    // dispatch — there's no caller context to deliver to. Counts as a successful drain
+    // so TryComplete()'s any-flag flips, matching the QueueRunFor semantics.
+    if (context == nullptr) {
+      return true;
+    }
+    DispatchUringCqe(io_res, context);
+    return true;
+  }
+  cq_lock->Release();
+  return false;
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
-    return 0; // not implemented
+  // Compat: drain across all rings. First ring uses the full timeout; subsequent rings poll.
+  if (rings_.empty()) return 0;
+  int total = 0;
+  int first = QueueRunFor(0, timeout_secs);
+  if (first > 0) total += first;
+  for (int i = 1; i < static_cast<int>(rings_.size()); ++i) {
+    int n = QueueRunFor(i, 0);
+    if (n > 0) total += n;
+  }
+  return total > 0 ? total : first;
+}
+
+int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
+    // Blocking drain for one ring. The wait phase is lock-free (kernel wakes every blocked
+    // thread on a CQE); peek+advance is serialised by cq_lock against the compat scanner.
+    if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
+    struct io_uring* ring = rings_[idx];
+    if (ring == nullptr) return -1;
+    SpinLock* cq_lock = cq_locks_[idx];
+
+    int ret = 0;
+
+    // Phase 1: wait up to `timeout_secs` for at least one CQE; do not consume.
+    if (timeout_secs > 0) {
+        struct __kernel_timespec ts;
+        ts.tv_sec = timeout_secs;
+        ts.tv_nsec = 0;
+        struct io_uring_cqe* wait_cqe = nullptr;
+        (void)io_uring_wait_cqe_timeout(ring, &wait_cqe, &ts);
+    }
+
+    // Phase 2: batch-drain. The current scheme amortizes one cq_lock acquire/release across
+    // up to kCqeBatch CQEs (libaio's io_getevents pulls up to 128 per syscall; this is the
+    // io_uring equivalent). Just as important, the snapshot-then-advance-then-release pattern
+    // moves the user callback dispatch OUT of the locked section so submitters that need the
+    // ring aren't blocked by callback latency. Without batching, a single drainer caps the
+    // ring at ~340K IOPS on this hardware even though libaio at ct=1 saturates at ~750K;
+    // with batching the per-CQE lock cost goes away and the gap closes substantially.
+    //
+    // Snapshot BEFORE io_uring_cq_advance: once advanced the kernel may reuse the CQ slots,
+    // so the cqe pointers (which point into the CQ ring) become dangling.
+    constexpr unsigned kCqeBatch = 64;
+    struct io_uring_cqe* cqes[kCqeBatch];
+    struct DrainSlot {
+        int io_res;
+        UringIoHandler::IoCallbackContext* context;
+    } snapshot[kCqeBatch];
+
+    for (;;) {
+        cq_lock->Acquire();
+        unsigned n = io_uring_peek_batch_cqe(ring, cqes, kCqeBatch);
+        if (n == 0) {
+            cq_lock->Release();
+            break;
+        }
+        for (unsigned i = 0; i < n; ++i) {
+            snapshot[i].io_res = cqes[i]->res;
+            snapshot[i].context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(
+                io_uring_cqe_get_data(cqes[i]));
+        }
+        io_uring_cq_advance(ring, n);
+        cq_lock->Release();
+
+        // Dispatch outside the lock. user_data == nullptr marks the wake-up SQE
+        // (UringIoHandler::Wake) and rewritten-after-failed-submit SQEs — both carry no
+        // caller context and must be skipped, never dispatched.
+        for (unsigned i = 0; i < n; ++i) {
+            if (snapshot[i].context == nullptr) {
+                ++ret;
+                continue;
+            }
+            DispatchUringCqe(snapshot[i].io_res, snapshot[i].context);
+            ++ret;
+        }
+    }
+
+    return ret;
+}
+
+int UringIoHandler::Wake(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
+    struct io_uring* ring = rings_[idx];
+    if (ring == nullptr) return -1;
+    SpinLock* sq_lock = sq_locks_[idx];
+
+    sq_lock->Acquire();
+    struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+    if (sqe == nullptr) {
+        sq_lock->Release();
+        return -1;
+    }
+    io_uring_prep_nop(sqe);
+    // user_data = nullptr is the sentinel for "wake-up; do not dispatch a callback"
+    // recognised by the QueueRunFor drain loop.
+    io_uring_sqe_set_data(sqe, nullptr);
+    int res = io_uring_submit(ring);
+    sq_lock->Release();
+    return res == 1 ? 0 : -1;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
@@ -283,8 +517,7 @@ Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptio
     return Status::Ok;
   }
 
-  ring_ = handler->io_uring();
-  sq_lock_ = handler->sq_lock();
+  handler_ = handler;
   return Status::Ok;
 }
 
@@ -317,29 +550,94 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   IAsyncContext* caller_context_copy;
   RETURN_NOT_OK(context.DeepCopy(caller_context_copy));
+  // Guard owns caller_context_copy until io_uring_submit returns 1.
+  auto caller_copy_guard = core::make_context_unique_ptr<IAsyncContext>(caller_context_copy);
 
   bool is_read = operationType == FileOperationType::Read;
   new(io_context.get()) UringIoHandler::IoCallbackContext(is_read, fd_, buffer, length, offset, caller_context_copy, callback);
 
-  sq_lock_->Acquire();
-  struct io_uring_sqe *sqe = io_uring_get_sqe(ring_);
-  assert(sqe != 0);
+  // pick_ring distributes submissions across rings via atomic round-robin (single ring under N=1).
+  struct io_uring* ring = nullptr;
+  SpinLock* sq_lock = nullptr;
+  handler_->pick_ring(ring, sq_lock);
+
+  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; bounded-yield
+  // then sleep — same rationale as the libaio path. We MUST NOT surface a "ring full" as an
+  // error to the caller; the engine retries-on-error and we'd spiral into a positive-feedback
+  // loop. sq_lock is released around sched_yield/nanosleep so other submitters on this ring
+  // are not blocked across the wait.
+  constexpr int kYieldBudget = 64;
+  struct io_uring_sqe* sqe = nullptr;
+  int retries = 0;
+  while (true) {
+    sq_lock->Acquire();
+    sqe = io_uring_get_sqe(ring);
+    if (sqe != nullptr) break;
+    sq_lock->Release();
+    if (retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++retries;
+  }
+  // sq_lock is held; sqe is non-null.
 
   if (is_read) {
     io_uring_prep_readv(sqe, fd_, &io_context->vec_, 1, offset);
-    //io_uring_prep_read(sqe, fd_, buffer, length, offset);
   } else {
     io_uring_prep_writev(sqe, fd_, &io_context->vec_, 1, offset);
-    //io_uring_prep_write(sqe, fd_, buffer, length, offset);
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  int res = io_uring_submit(ring_);
-  sq_lock_->Release();
+  // Submit. Exactly one SQE was prepared and is committed to the user-side SQ ring; we MUST
+  // keep re-submitting on transient negatives (-EAGAIN/-EBUSY) or the slot leaks permanently.
+  // Indefinite retry with bounded backoff — same rationale as libaio above. Other negatives
+  // are surfaced as IOError.
+  int res;
+  int submit_retries = 0;
+  while (true) {
+    res = io_uring_submit(ring);
+    if (res == 1) break;
+    if (res != -EAGAIN && res != -EBUSY) break;
+    sq_lock->Release();
+    if (submit_retries < kYieldBudget) {
+      ::sched_yield();
+    } else {
+      struct timespec ts;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 1000000; // 1 ms
+      ::nanosleep(&ts, nullptr);
+    }
+    ++submit_retries;
+    sq_lock->Acquire();
+  }
+  if (res != 1) {
+    // Submit failed but io_uring_get_sqe() already advanced the user-side sqe_tail, so the
+    // prepared SQE is still sitting in the SQ ring pointing at io_context. The next successful
+    // submit on this ring would consume it and dispatch a callback against the io_context we
+    // are about to free here, which is a use-after-free.
+    //
+    // Rewrite the slot in place as a no-op with the wake-up sentinel (user_data = nullptr).
+    // The QueueRunFor drain loop (file_linux.cc:429-432) explicitly skips nullptr user_data
+    // without dispatching a callback, so when a later submit flushes this nop the CQE is
+    // drained harmlessly.
+    //
+    // Safe to mutate `sqe` here: we still hold sq_lock and no concurrent submitter can have
+    // observed this SQE yet (the kernel only learns about it on the next io_uring_submit).
+    io_uring_prep_nop(sqe);
+    io_uring_sqe_set_data(sqe, nullptr);
+  }
+  sq_lock->Release();
   if (res != 1) {
     return Status::IOError;
   }
-  
+
+  // Ownership transferred to the kernel.
+  caller_copy_guard.release();
   io_context.release();
   return Status::Ok;
 }
