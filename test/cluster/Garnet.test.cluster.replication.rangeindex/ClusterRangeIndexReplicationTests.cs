@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -66,6 +67,12 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual($"value{i:D4}", (string)result,
                     $"Mismatch at field{i:D4} on node {nodeIndex}");
             }
+        }
+
+        string GetRiLogRoot(int nodeIndex)
+        {
+            var port = ((IPEndPoint)context.endpoints[nodeIndex]).Port;
+            return Path.Combine(context.TestFolder, port.ToString(), "Store", "rangeindex");
         }
 
         /// <summary>
@@ -153,6 +160,12 @@ namespace Garnet.test.cluster
             PopulateRangeIndex(primaryIndex, "idx1", 10);
             PopulateRangeIndex(primaryIndex, "idx2", 10);
 
+            // Verify flush.bftree files were created on the primary (confirms eviction triggered flush path)
+            var primaryRiLogRoot = GetRiLogRoot(primaryIndex);
+            var primaryFlushFiles = Directory.GetFiles(primaryRiLogRoot, "*.flush.bftree");
+            ClassicAssert.IsTrue(primaryFlushFiles.Length > 0,
+                "flush.bftree files should exist on primary after eviction");
+
             // Take checkpoint
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
@@ -164,6 +177,14 @@ namespace Garnet.test.cluster
             // Validate on replica — even evicted keys should be accessible
             ValidateRangeIndex(replicaIndex, "idx1", 10);
             ValidateRangeIndex(replicaIndex, "idx2", 10);
+
+            // Verify flush.bftree files were transferred to the replica
+            var replicaRiLogRoot = GetRiLogRoot(replicaIndex);
+            var replicaFlushFiles = Directory.GetFiles(replicaRiLogRoot, "*.flush.bftree");
+            ClassicAssert.IsTrue(replicaFlushFiles.Length > 0,
+                "flush.bftree files should exist on replica after replication sync");
+            ClassicAssert.AreEqual(primaryFlushFiles.Length, replicaFlushFiles.Length,
+                "replica should have the same number of flush.bftree files as the primary");
         }
 
         /// <summary>
