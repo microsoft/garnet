@@ -28,6 +28,17 @@ namespace Tsavorite.core
             public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
             public readonly AsyncCountDown pendingReads;
             public readonly AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> readyResponses;
+
+            /// <summary>
+            /// Per-session pool of <see cref="IHeapContainer{TInput}"/> wrappers
+            /// (either <see cref="SpanByteHeapContainer"/> or <see cref="StandardHeapContainer{T}"/>,
+            /// determined by <typeparamref name="TInput"/>). Each pending operation rents one when
+            /// copying its input into the <see cref="PendingContext{TInput, TOutput, TContext}"/>;
+            /// the wrapper returns itself to this stack on <see cref="System.IDisposable.Dispose"/>.
+            /// Sessions are single-threaded, so a non-concurrent <see cref="Stack{T}"/> suffices and
+            /// the pool naturally settles around the in-flight pending IO count.
+            /// </summary>
+            public readonly Stack<IHeapContainer<TInput>> heapContainerPool;
             public int asyncPendingCount;
             internal RevivificationStats RevivificationStats = new();
             public bool isAcquiredTransactional;
@@ -38,6 +49,7 @@ namespace Tsavorite.core
                 this.sessionID = sessionID;
                 readyResponses = new AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
+                heapContainerPool = new Stack<IHeapContainer<TInput>>();
                 pendingReads = new AsyncCountDown();
                 isAcquiredTransactional = false;
             }
