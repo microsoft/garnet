@@ -566,7 +566,8 @@ namespace Garnet.test
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -633,7 +634,8 @@ namespace Garnet.test
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                    enableRangeIndexPreview: enableRangeIndexPreview);
 
                 ClassicAssert.IsNotNull(opts);
 

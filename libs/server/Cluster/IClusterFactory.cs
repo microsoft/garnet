@@ -19,6 +19,6 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster provider
         /// </summary>
-        IClusterProvider CreateClusterProvider(StoreWrapper store);
+        IClusterProvider CreateClusterProvider(StoreWrapper store, RangeIndexManager rangeIndexManager);
     }
 }

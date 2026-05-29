@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
@@ -55,8 +56,19 @@ namespace Garnet.server
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
         internal const int IndexSizeBytes = RangeIndexStub.Size;
 
+        // Flush filename layout: <hash:32>.<addr:16>.flush.bftree
+        private const int HashPrefixLength = 32;
+        private const int AddrHexLength = 16;
+        private const string FlushSuffix = ".flush.bftree";
+        private const int FlushFileNameLength = HashPrefixLength + 1 + AddrHexLength + 13; // ".flush.bftree".Length == 13
+        private const int AddrStartIndex = HashPrefixLength + 1;
+
         /// <summary>Gets the number of live (registered) BfTree indexes (activated + pending).</summary>
         internal int LiveIndexCount => liveIndexes.Count;
+
+        /// <summary>Gets the log-tied root directory for RI files. Used by the cluster replication layer
+        /// to determine the target directory for received flush files on the replica side.</summary>
+        public string RiLogRoot => riLogRoot;
 
         /// <summary>
         /// Tracks BfTree entries (activated + pending), keyed by <see cref="KeyId"/> = a Guid
@@ -241,11 +253,11 @@ namespace Garnet.server
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".scratch.cpr");
 
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
-        internal string LogFlushPath(string hashPrefix, long logicalAddress)
-            => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}.flush.bftree");
+        public string LogFlushPath(string hashPrefix, long logicalAddress)
+            => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}{FlushSuffix}");
 
         /// <summary>{cprDir}/&lt;token&gt;/rangeindex/&lt;hash&gt;.bftree</summary>
-        internal string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
+        public string CheckpointSnapshotPath(string hashPrefix, Guid checkpointToken)
             => Path.Combine(cprDir ?? string.Empty, checkpointToken.ToString(), "rangeindex", hashPrefix + ".bftree");
 
         /// <summary>The directory holding per-checkpoint RI snapshots for a given token.</summary>
@@ -860,22 +872,8 @@ namespace Garnet.server
 
             try
             {
-                foreach (var path in Directory.EnumerateFiles(riLogRoot))
+                foreach (var (path, _, addr) in EnumerateFlushFiles())
                 {
-                    var name = Path.GetFileName(path);
-
-                    if (!name.EndsWith(".flush.bftree", StringComparison.Ordinal))
-                        continue;
-
-                    // Pattern: <hash>.<addr:x16>.flush.bftree
-                    // hash is 32 hex chars, then '.', then 16 hex chars (addr), then ".flush.bftree".
-                    if (name.Length != 32 + 1 + 16 + ".flush.bftree".Length)
-                        continue;
-
-                    var addrSegment = name.AsSpan(33, 16);
-                    if (!long.TryParse(addrSegment, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var addr))
-                        continue;
-
                     if (addr < newBeginAddress)
                         TryDelete(path);
                 }
@@ -889,6 +887,132 @@ namespace Garnet.server
             {
                 try { File.Delete(p); }
                 catch (Exception ex) { logger?.LogWarning(ex, "OnTruncate: failed to delete {Path}", p); }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Shared flush-file enumeration helper
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Enumerates all <c>*.flush.bftree</c> files under <c>riLogRoot</c>, parsing and
+        /// yielding the embedded logical address from each valid filename.
+        /// </summary>
+        /// <returns>Tuples of (fullPath, fileName, logicalAddress). Skips files that don't
+        /// match the expected naming pattern. Returns empty if riLogRoot is not configured
+        /// or does not exist.</returns>
+        private IEnumerable<(string Path, string Name, long Address)> EnumerateFlushFiles()
+        {
+            if (string.IsNullOrEmpty(riLogRoot) || !Directory.Exists(riLogRoot))
+            {
+                logger?.LogInformation("Root directory invalid {riLogRoot}", riLogRoot);
+                yield break;
+            }
+
+            foreach (var path in Directory.EnumerateFiles(riLogRoot, $"*{FlushSuffix}"))
+            {
+                var name = Path.GetFileName(path);
+
+                // Pattern: <hash:32>.<addr:16>.flush.bftree
+                if (name.Length != FlushFileNameLength)
+                    continue;
+
+                var addrSegment = name.AsSpan(AddrStartIndex, AddrHexLength);
+                if (!long.TryParse(addrSegment, NumberStyles.HexNumber,
+                        CultureInfo.InvariantCulture, out var addr))
+                    continue;
+
+                yield return (path, name, addr);
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Replication: file enumeration for checkpoint transfer
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Represents a single RangeIndex file that must be shipped during replication.
+        /// </summary>
+        public readonly struct RangeIndexFileEntry
+        {
+            /// <summary>Full path to the file on the primary.</summary>
+            public readonly string Path;
+
+            /// <summary>The 32-character key hash prefix identifying the RangeIndex tree.</summary>
+            public readonly string KeyHash;
+
+            /// <summary>The hlog logical address (for flush files); 0 for checkpoint snapshots.</summary>
+            public readonly long Address;
+
+            /// <summary>Whether this is a per-flush file (true) or a per-checkpoint snapshot (false).</summary>
+            public readonly bool IsFlushFile;
+
+            public RangeIndexFileEntry(string path, string keyHash, long address, bool isFlushFile)
+            {
+                Path = path;
+                KeyHash = keyHash;
+                Address = address;
+                IsFlushFile = isFlushFile;
+            }
+        }
+
+        /// <summary>
+        /// Enumerates all RangeIndex files that must be sent during disk-based replication
+        /// for a given checkpoint token and hlog address range.
+        ///
+        /// <para>Two categories of files are collected:</para>
+        /// <list type="number">
+        /// <item><b>Per-flush files</b> in <c>riLogRoot</c> whose embedded address falls within
+        /// <c>[hlogStartAddress, hlogEndAddress)</c>. These correspond to RI stubs in the hlog
+        /// segments being transferred.</item>
+        /// <item><b>Per-checkpoint snapshot files</b> under
+        /// <c>cpr-checkpoints/&lt;token&gt;/rangeindex/</c>. These correspond to RI stubs in
+        /// the snapshot region at checkpoint time.</item>
+        /// </list>
+        ///
+        /// <para>Multiple flush files per key hash are possible and all within the range are
+        /// included — <see cref="PreStageAndRegisterPending"/> uses the exact source address
+        /// to locate the specific flush file.</para>
+        /// </summary>
+        /// <param name="checkpointToken">The checkpoint token (storeHlogToken) to locate
+        /// per-checkpoint snapshots.</param>
+        /// <param name="hlogStartAddress">The <c>hybridLogFileStartAddress</c> from
+        /// <c>LogFileInfo</c> — inclusive lower bound for flush file filtering.</param>
+        /// <param name="hlogEndAddress">The <c>hybridLogFileEndAddress</c> from
+        /// <c>LogFileInfo</c> — exclusive upper bound for flush file filtering.</param>
+        /// <returns>An enumerable of <see cref="RangeIndexFileEntry"/> describing files to
+        /// transfer. Empty if RangeIndex is not configured or no files match.</returns>
+        public IEnumerable<RangeIndexFileEntry> EnumerateFilesForReplication(
+            Guid checkpointToken, long hlogStartAddress, long hlogEndAddress)
+        {
+            // 1. Per-flush files: <hash>.<addr:x16>.flush.bftree where addr ∈ [start, end)
+            foreach (var (path, name, addr) in EnumerateFlushFiles())
+            {
+                if (addr >= hlogStartAddress && addr < hlogEndAddress)
+                {
+                    var keyHash = name[..HashPrefixLength];
+                    yield return new RangeIndexFileEntry(path, keyHash, addr, isFlushFile: true);
+                }
+            }
+
+            // 2. Per-checkpoint snapshot files: cpr-checkpoints/<token>/rangeindex/<hash>.bftree
+            if (!string.IsNullOrEmpty(cprDir))
+            {
+                var snapshotDir = CheckpointSnapshotDir(checkpointToken);
+                if (Directory.Exists(snapshotDir))
+                {
+                    foreach (var path in Directory.EnumerateFiles(snapshotDir, "*.bftree"))
+                    {
+                        var name = Path.GetFileName(path);
+
+                        // Skip files that don't match the expected format: <32-hex-hash>.bftree
+                        if (name.Length != HashPrefixLength + ".bftree".Length)
+                            continue;
+
+                        var keyHash = name[..HashPrefixLength];
+                        yield return new RangeIndexFileEntry(path, keyHash, address: 0, isFlushFile: false);
+                    }
+                }
             }
         }
     }
