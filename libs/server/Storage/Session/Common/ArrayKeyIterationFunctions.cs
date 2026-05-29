@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -293,8 +293,8 @@ namespace Garnet.server
                     }
 
                     if (info.matchType != null &&
-                        ((logRecord.Info.ValueIsObject && (info.matchType == typeof(string) || info.matchType != logRecord.ValueObject.GetType())) ||
-                         (!logRecord.Info.ValueIsObject && info.matchType != typeof(string))))
+                        ((logRecord.DataHeader.ValueIsObject && (info.matchType == typeof(string) || info.matchType != logRecord.ValueObject.GetType())) ||
+                         (!logRecord.DataHeader.ValueIsObject && info.matchType != typeof(string))))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;

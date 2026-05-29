@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -35,6 +35,10 @@ namespace Tsavorite.core
 
         /// <summary>The cumulative length of object data read from the device during deserialization.</summary>
         internal ulong deserializedLength;
+
+        /// <summary>When true, <see cref="Read"/> will auto-extend the read buffer if it runs out of data during deserialization.
+        /// Set for value objects whose serialized size exceeds the DataHeader's 3-byte ValueLength field limit (sentinel case).</summary>
+        bool autoExtendOnBufferExhaustion;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
@@ -92,7 +96,7 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records should have been checked by the caller");
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
@@ -108,8 +112,18 @@ namespace Tsavorite.core
             var keyWasSet = false;
             try
             {
-                if (logRecord.Info.KeyIsOverflow)
+                if (logRecord.DataHeader.KeyIsOverflow)
                 {
+                    // If key length is sentinel, the actual length is stored as a 4-byte int prefix in the object stream.
+                    if (LogSettings.IsKeyLengthSentinel(keyLength))
+                    {
+                        Span<byte> prefixBuf = stackalloc byte[LogSettings.KeyOverflowPrefixSize];
+                        _ = Read(prefixBuf);
+                        keyLength = BitConverter.ToInt32(prefixBuf);
+                        // Extend read buffer: actual stream data is prefix + actualLength, but we estimated only sentinel bytes.
+                        readBuffers.ExtendReadLength((ulong)(keyLength + LogSettings.KeyOverflowPrefixSize - LogSettings.KeyLengthSentinel));
+                    }
+
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
@@ -117,21 +131,39 @@ namespace Tsavorite.core
                         return false;
                 }
 
-                if (logRecord.Info.ValueIsOverflow)
+                if (logRecord.DataHeader.ValueIsOverflow)
                 {
+                    // If value length is sentinel, the actual length is stored as an 8-byte long prefix in the object stream.
+                    var actualValueLength = (long)valueLength;
+                    if (LogSettings.IsValueLengthSentinel((int)valueLength))
+                    {
+                        Span<byte> prefixBuf = stackalloc byte[LogSettings.ValueOverflowPrefixSize];
+                        _ = Read(prefixBuf);
+                        actualValueLength = BitConverter.ToInt64(prefixBuf);
+                        readBuffers.ExtendReadLength((ulong)(actualValueLength + LogSettings.ValueOverflowPrefixSize - LogSettings.ValueLengthSentinel));
+                    }
+
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
-                    logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    logRecord.ValueOverflow = new OverflowByteArray((int)actualValueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.ValueOverflow.Span);
                 }
-                else if (logRecord.Info.ValueIsObject)
+                else if (logRecord.DataHeader.ValueIsObject)
                 {
-                    // Info.ValueIsObject is true. DoDeserialize() also allocates the slot in ObjectIdMap and updates the value length to be ObjectIdSize.
+                    // For value objects with sentinel (serialized size > 3-byte limit), enable auto-extension during deserialization.
+                    // No prefix was written for value objects, so the deserializer reads data directly. If the buffer runs out,
+                    // Read() will auto-extend one buffer at a time.
+                    autoExtendOnBufferExhaustion = LogSettings.IsValueLengthSentinel((int)valueLength);
                     DoDeserialize(ref logRecord);
+                    autoExtendOnBufferExhaustion = false;
                 }
+
+                // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
+                logRecord.OnObjectReadComplete();
                 return true;
             }
             catch
             {
+                autoExtendOnBufferExhaustion = false;
                 logRecord.OnDeserializationError(keyWasSet);
                 throw;
             }
@@ -171,7 +203,21 @@ namespace Tsavorite.core
                 if (buffer.AvailableLength == 0)
                 {
                     if (!readBuffers.MoveToNextBuffer(out buffer))
+                    {
+                        // Auto-extension for sentinel value objects: the serialized data exceeds the 3-byte DataHeader limit,
+                        // so the initial totalBytesToRead was an underestimate. Extend by one buffer and retry.
+                        if (autoExtendOnBufferExhaustion)
+                        {
+                            readBuffers.ExtendReadLength((ulong)readBuffers.bufferSize);
+                            buffer = readBuffers.GetCurrentBuffer();
+                            if (buffer is not null && buffer.WaitForDataAvailable())
+                            {
+                                destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
+                                continue;
+                            }
+                        }
                         return prevCopyLength;
+                    }
                 }
                 destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
             }

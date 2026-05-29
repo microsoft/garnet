@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -57,7 +57,7 @@ namespace Tsavorite.core
 
         /// <summary>Address of the <see cref="RecordDataHeader"/></summary>
         internal readonly long DataHeaderAddress => physicalAddress + RecordInfo.Size;
-        /// <summary>Address of the namespace indicator byte. If the <see cref="RecordDataHeader.ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="RecordDataHeader.NamespaceIndicatorMask"/> bits
+        /// <summary>Address of the namespace indicator byte. If the bit at position <see cref="RecordDataHeader.ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="RecordDataHeader.NamespaceIndicatorMask"/> bits
         /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
         private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.NamespaceOffsetInHeader;
         /// <summary>Address of the Record type indicator byte</summary>
@@ -65,7 +65,26 @@ namespace Tsavorite.core
 
         public readonly byte IndicatorByte => *(byte*)DataHeaderAddress;
 
-        public readonly RecordDataHeader RecordDataHeader => new((byte*)DataHeaderAddress);
+        /// <summary>Returns a copy of the <see cref="core.RecordDataHeader"/> for reads.</summary>
+        public readonly RecordDataHeader DataHeader => *(RecordDataHeader*)DataHeaderAddress;
+
+        /// <summary>Returns a ref to the in-memory <see cref="core.RecordDataHeader"/> for mutations.</summary>
+        public readonly ref RecordDataHeader DataHeaderRef => ref *(RecordDataHeader*)DataHeaderAddress;
+
+        // MIGRATION: Old property. Will be removed in Phase 8.5.
+        public readonly RecordDataHeader RecordDataHeader => *(RecordDataHeader*)DataHeaderAddress;
+
+        /// <summary>
+        /// Initialize both the RecordInfo and the RecordDataHeader for a newly-allocated record. This is the single entry point for resetting
+        /// a record's headers before <see cref="InitializeRecord{TKey}(TKey, in RecordSizeInfo)"/> populates the actual data. Both headers must
+        /// be reset together so neither retains stale bits (Sealed, KeyIsInline/ValueIsInline) from a previous occupant of the slot.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void InitializeHeadersForNewRecord(bool inNewVersion, long previousAddress)
+        {
+            InfoRef.WriteInfo(inNewVersion, previousAddress);
+            DataHeaderRef.InitializeForNewRecord();
+        }
 
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,24 +121,24 @@ namespace Tsavorite.core
             if (ReferenceEquals(allocatorMap, transientMap))
                 return;
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var dataHeader = DataHeader;
 
-            if (Info.KeyIsOverflow)
+            if (DataHeader.KeyIsOverflow)
             {
-                var (length, dataAddress) = dataHeader.GetKeyFieldInfo();
+                var (length, dataAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
 
-            if (Info.ValueIsOverflow)
+            if (DataHeader.ValueIsOverflow)
             {
-                var (length, dataAddress) = dataHeader.GetValueFieldInfo(Info);
+                var (length, dataAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
-            else if (Info.ValueIsObject)
+            else if (DataHeader.ValueIsObject)
             {
-                var (length, dataAddress) = dataHeader.GetValueFieldInfo(Info);
+                var (length, dataAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
                 var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
             }
@@ -135,7 +154,7 @@ namespace Tsavorite.core
             get
             {
                 var indicator = *(byte*)NamespaceAddress;
-                if ((indicator & RecordDataHeader.ExtendedNamespaceIndicatorBit) == 0)
+                if ((indicator & (1 << RecordDataHeader.ExtendedNamespaceIndicatorBit)) == 0)
                 {
                     // Single-byte namespace
                     return new ReadOnlySpan<byte>(ref *(byte*)NamespaceAddress);
@@ -169,13 +188,13 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
-                return Info.KeyIsInline ? new((byte*)dataAddress, length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).ReadOnlySpan;
+                var (length, dataAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
+                return DataHeader.KeyIsInline ? new((byte*)dataAddress, length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).ReadOnlySpan;
             }
         }
 
         /// <inheritdoc/>
-        public readonly bool IsPinnedKey => Info.KeyIsInline;
+        public readonly bool IsPinnedKey => DataHeader.KeyIsInline;
 
         /// <inheritdoc/>
         public readonly byte* PinnedKeyPointer
@@ -185,7 +204,7 @@ namespace Tsavorite.core
             {
                 if (!IsPinnedKey)
                     ThrowTsavoriteException("PinnedKeyPointer is unavailable when Key is not pinned; use IsPinnedKey");
-                (_ /*length*/, var dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
+                (_ /*length*/, var dataAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
                 return (byte*)dataAddress;
             }
         }
@@ -195,15 +214,15 @@ namespace Tsavorite.core
         {
             get
             {
-                if (Info.KeyIsInline)
+                if (DataHeader.KeyIsInline)
                     ThrowTsavoriteException("get_Overflow is unavailable when Key is inline");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
+                var (length, dataAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
                 return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
             }
             set
             {
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
-                if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
+                var (length, dataAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
+                if (!DataHeader.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     ThrowTsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
@@ -215,10 +234,10 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (Info.ValueIsObject)
+                if (DataHeader.ValueIsObject)
                     ThrowTsavoriteException("ValueSpan is not valid for Object values");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                return Info.ValueIsInline ? new((byte*)dataAddress, (int)length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Span;
+                var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                return DataHeader.ValueIsInline ? new((byte*)dataAddress, (int)length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Span;
             }
         }
 
@@ -228,9 +247,9 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (Info.ValueIsObject)
+                if (DataHeader.ValueIsObject)
                 {
-                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                     return objectIdMap.GetHeapObject(*(int*)valueAddress);
                 }
                 ThrowTsavoriteException("ValueObject is not valid for Span values");
@@ -238,9 +257,9 @@ namespace Tsavorite.core
             }
             internal set
             {
-                if (Info.ValueIsObject)
+                if (DataHeader.ValueIsObject)
                 {
-                    var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                     Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
                     *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
 
@@ -258,9 +277,9 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (Info.ValueIsObject)
+                if (DataHeader.ValueIsObject)
                 {
-                    return *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId;
+                    return *(int*)DataHeader.GetValueFieldInfo(physicalAddress).valueAddress != ObjectIdMap.InvalidObjectId;
                 }
                 ThrowTsavoriteException("ValueObjectIsSet is not valid for Span values");
                 return default;
@@ -275,9 +294,9 @@ namespace Tsavorite.core
         /// <param name="deserializedLength">The deserialized length of the object</param>
         internal readonly void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
         {
-            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
 
-            if (!Info.ValueIsObject)
+            if (!DataHeader.ValueIsObject)
                 ThrowTsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
             Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
 
@@ -293,7 +312,7 @@ namespace Tsavorite.core
         public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new((byte*)physicalAddress, ActualSize);
 
         /// <inheritdoc/>
-        public readonly bool IsPinnedValue => Info.ValueIsInline;
+        public readonly bool IsPinnedValue => DataHeader.ValueIsInline;
 
         /// <inheritdoc/>
         public readonly byte* PinnedValuePointer
@@ -303,7 +322,7 @@ namespace Tsavorite.core
             {
                 if (!IsPinnedValue)
                     ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedValue");
-                return (byte*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress;
+                return (byte*)DataHeader.GetValueFieldInfo(physicalAddress).valueAddress;
             }
         }
 
@@ -317,7 +336,7 @@ namespace Tsavorite.core
             {
                 if (!IsPinnedValue)
                     ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedValue");
-                var (length, address) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                var (length, address) = DataHeader.GetValueFieldInfo(physicalAddress);
                 return (address, (int)length);
             }
         }
@@ -327,15 +346,15 @@ namespace Tsavorite.core
         {
             get
             {
-                if (!Info.ValueIsOverflow)
+                if (!DataHeader.ValueIsOverflow)
                     ThrowTsavoriteException("get_Overflow is unavailable when Value is not overflow");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                 return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
             }
             set
             {
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
+                var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                if (!DataHeader.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     ThrowTsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
@@ -347,10 +366,10 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (Info.ValueIsObject)
+                if (DataHeader.ValueIsObject)
                     ThrowTsavoriteException("ValueSpanByteAndMemory is not valid for Object values");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                if (Info.ValueIsInline)
+                var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                if (DataHeader.ValueIsInline)
                     return SpanByteAndMemory.FromPinnedPointer((byte*)dataAddress, (int)length);
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
                 return new SpanByteAndMemory(new BorrowedMemoryOwner(overflow.AsMemory()), overflow.Length);
@@ -358,9 +377,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
+        public readonly long ETag => DataHeader.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
         /// <inheritdoc/>
-        public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
+        public readonly long Expiration => DataHeader.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => true;
@@ -378,36 +397,43 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo()
         {
-            var (keyLength, valueLength) = new RecordDataHeader((byte*)DataHeaderAddress).GetKVLengths(Info);
+            var dataHeader = DataHeader;
             return new()
             {
-                KeySize = keyLength,
-                ValueSize = valueLength,
-                ValueIsObject = Info.ValueIsObject,
-                HasETag = Info.HasETag,
-                HasExpiration = Info.HasExpiration
+                KeySize = dataHeader.KeyLength,
+                ValueSize = dataHeader.ValueLength,
+                ValueIsObject = dataHeader.ValueIsObject,
+                HasETag = dataHeader.HasETag,
+                HasExpiration = dataHeader.HasExpiration
             };
         }
 
         /// <inheritdoc/>
-        public readonly int AllocatedSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetAllocatedRecordSize();
+        public readonly int AllocatedSize
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Info.IsNull ? RecordInfo.Size : DataHeader.GetRecordLength(physicalAddress);
+        }
 
-        public readonly int ActualSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetActualRecordSize(Info);
+        public readonly int ActualSize
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Info.IsNull ? RecordInfo.Size : DataHeader.GetUnalignedComponentSum();
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetAllocatedSize(long physicalAddress)
         {
             // Ensure this isn't called accidentally on a null record; it is used by revivification so that should never happen.
             Debug.Assert(!(*(RecordInfo*)physicalAddress).IsNull, "GetAllocatedSize should not be called on a null RecordInfo");
-            return new RecordDataHeader((byte*)(physicalAddress + RecordInfo.Size)).GetAllocatedRecordSize();
+            return (*(RecordDataHeader*)(physicalAddress + RecordInfo.Size)).GetRecordLength(physicalAddress);
         }
 
         #endregion // ISourceLogRecord
 
         internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            dataHeader.SetRecordLength(recordLength);
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen);
+            DataHeaderRef.SetFiller(physicalAddress, newFillerLen);
         }
 
         /// <summary>
@@ -420,21 +446,17 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress);   // TODO: Pass in (possibly) namespace span
-
-            // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
-            // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
+            _ = DataHeaderRef.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress, physicalAddress);   // TODO: Pass in (possibly) namespace span
 
             // Serialize Key
             if (sizeInfo.KeyIsInline)
             {
-                InfoRef.SetKeyIsInline();
+                DataHeaderRef.SetKeyIsInline();
                 key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
             }
             else
             {
-                InfoRef.SetKeyIsOverflow();
+                DataHeaderRef.SetKeyIsOverflow();
                 var overflow = new OverflowByteArray(key.KeyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                 key.KeyBytes.CopyTo(overflow.Span);
 
@@ -456,14 +478,16 @@ namespace Tsavorite.core
 
             // Initialize Value metadata (but we don't have the value here to set yet; that's done in ISessionFunctions).
             if (sizeInfo.ValueIsInline)
-                InfoRef.SetValueIsInline();
+            {
+                DataHeaderRef.SetValueIsInline();
+            }
             else
             {
                 if (!sizeInfo.ValueIsObject)
                 {
                     // We must have the space allocated for Overflow just like we do for inline, so we set the Overflow allocation and objectId here.
                     // We have no value data to copy yet.
-                    InfoRef.SetValueIsOverflow();
+                    DataHeaderRef.SetValueIsOverflow();
                     var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
 
                     // This is record initialization so no object has been allocated for this field yet.
@@ -477,7 +501,7 @@ namespace Tsavorite.core
 
                     // Unlike for Keys and Overflow values, we do not set the objectId here; we wait for the UMD operation to do that.
                     *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
-                    InfoRef.SetValueIsObject();
+                    DataHeaderRef.SetValueIsObject();
                 }
             }
         }
@@ -492,10 +516,9 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/);
+            _ = DataHeaderRef.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/, physicalAddress);
 
-            InfoRef.SetKeyAndValueInline();
+            DataHeaderRef.SetKeyAndValueInline();
 
             // Serialize Key. Do nothing for the value; we've set it inline and the actual value setting is done in ISessionFunctions).
             key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
@@ -521,8 +544,9 @@ namespace Tsavorite.core
 
         internal static ReadOnlySpan<byte> GetInlineKey(long physicalAddress)
         {
-            Debug.Assert((*(RecordInfo*)physicalAddress).KeyIsInline, "Key must be inline");
-            var (length, dataAddress) = new RecordDataHeader((byte*)(physicalAddress + RecordInfo.Size)).GetKeyFieldInfo();
+            var dataHeader = *(RecordDataHeader*)(physicalAddress + RecordInfo.Size);
+            Debug.Assert(dataHeader.KeyIsInline, "Key must be inline");
+            var (length, dataAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
             return new((byte*)dataAddress, length);
         }
 
@@ -562,9 +586,11 @@ namespace Tsavorite.core
         private readonly bool TrySetContentLengthsAndPrepareOptionals(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
         {
             // Get the number of bytes in existing key and value lengths.
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen, out valueAddress);
+            var dataHeader = DataHeader;
+            var (keyLength, oldInlineValueSize) = dataHeader.GetKVLengths(physicalAddress, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen, out valueAddress);
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
             var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
+            var extendedNamespaceSize = dataHeader.ExtendedNamespaceLength;
 
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // optionalStartAddress will change if inline value size changes.
@@ -579,8 +605,8 @@ namespace Tsavorite.core
             // we can exit early with success.
             var newInlineValueSize = sizeInfo.InlineValueSize;
             var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
-            if (Info.RecordIsInline && sizeInfo.RecordIsInline && inlineValueGrowth == 0
-                    && Info.HasETag == sizeInfo.FieldInfo.HasETag && Info.HasExpiration == sizeInfo.FieldInfo.HasExpiration)
+            if (dataHeader.RecordIsInline && sizeInfo.RecordIsInline && inlineValueGrowth == 0
+                    && dataHeader.HasETag == sizeInfo.FieldInfo.HasETag && dataHeader.HasExpiration == sizeInfo.FieldInfo.HasExpiration)
                 return true;
 
             // inlineValueGrowth and fillerLen may be negative if shrinking value or converting to Overflow/Object.
@@ -598,20 +624,41 @@ namespace Tsavorite.core
             // Update record part 1: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
             // overflow and they'd overwrite needed data.
             var optionalFields = new OptionalFieldsShift();
-            optionalFields.Save(optionalStartAddress, Info);
+            optionalFields.Save(optionalStartAddress, dataHeader);
 
-            // Update record part 2: Do any necessary conversions between Inline, Overflow, and Object. This may allocate or free Heap Objects.
+            // Update record part 2: Atomically install a "dummy" DataHeader in the live record that absorbs the entire post-key span as a single inline
+            // value (no optionals, no filler, no object/overflow flags). This keeps any concurrent reader that walks records by computing
+            //   record_length = RecordInfo.Size + RDH.Size + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize [+ explicit filler]
+            // from seeing a torn state while we shuffle data around. The dummy preserves Namespace + RecordType + KeyLength.
+            var dummyValueLength = recordLength - (RecordInfo.Size + RecordDataHeader.Size + extendedNamespaceSize + keyLength);
+            Debug.Assert((uint)dummyValueLength <= LogSettings.ValueLengthSentinel,
+                $"Dummy ValueLength {dummyValueLength} exceeds 24-bit field; reserve LogSettings.OptionalsReservedBytes is insufficient");
+            RecordDataHeader dummyHeader = default;
+            dummyHeader.SetKeyAndValueInline();                          // KeyIsInline | ValueIsInline; clears ValueIsObject
+            dummyHeader.SetNamespaceByteRaw((byte)((dataHeader.word >> 56) & 0xFF));  // preserve namespace byte (raw, including extended-namespace indicator)
+            dummyHeader.RecordType = dataHeader.RecordType;
+            dummyHeader.KeyLength = keyLength;
+            dummyHeader.ValueLength = dummyValueLength;
+            DataHeaderRef = dummyHeader;  // atomic 8-byte install
+
+            // Update record part 3: Do any necessary conversions between Inline, Overflow, and Object. This may allocate or free Heap Objects.
+            // All bit-flag changes go into the LOCAL `local` header; data-area writes go to the LIVE record. The dummy header keeps any
+            // concurrent record-walker safe throughout.
             // Evaluate in order of most common (i.e. most perf-critical) cases first.
-            if (Info.ValueIsInline && sizeInfo.ValueIsInline)
+            var local = dataHeader;
+            if (dataHeader.ValueIsInline && sizeInfo.ValueIsInline)
             {
-                // Both are inline, so nothing to do here; we will adjust the lengths below.
+                // Both are inline. The conversion routines below would normally update the local's ValueLength; here we must do it explicitly
+                // (previously implied by the now-removed RecordLength field).
+                local.ValueLength = newInlineValueSize;
             }
-            else if (Info.ValueIsOverflow && sizeInfo.ValueIsOverflow)
+            else if (dataHeader.ValueIsOverflow && sizeInfo.ValueIsOverflow)
             {
                 // Both are out-of-line, so reallocate in place if needed; the caller will operate on that space after we return.
                 _ = LogField.ReallocateValueOverflow(physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                // local already reflects ValueIsOverflow + ValueLength == ObjectIdSize
             }
-            else if (Info.ValueIsObject && sizeInfo.ValueIsObject)
+            else if (dataHeader.ValueIsObject && sizeInfo.ValueIsObject)
             {
                 // Both are object records, so nothing to change; the caller will operate on the object after we return.
             }
@@ -619,65 +666,79 @@ namespace Tsavorite.core
             {
                 // Overflow/Object-ness differs and we've verified there is enough space for the change, so convert. The LogField.ConvertTo* functions copy
                 // existing data, as we are likely here for IPU or for the initial update going from inline to overflow with Value length == sizeof(IntPtr).
-                if (Info.ValueIsInline)
+                if (dataHeader.ValueIsInline)
                 {
                     if (sizeInfo.ValueIsOverflow)
                     {
                         Debug.Assert(inlineValueGrowth == ObjectIdMap.ObjectIdSize - oldInlineValueSize,
                                     $"ValueGrowth {inlineValueGrowth} does not equal expected {oldInlineValueSize - ObjectIdMap.ObjectIdSize}");
-                        _ = LogField.ConvertInlineToOverflow(ref InfoRef, physicalAddress, valueAddress, oldInlineValueSize, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertInlineToOverflow(ref local, physicalAddress, valueAddress, oldInlineValueSize, in sizeInfo, objectIdMap);
                     }
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 1");
-                        _ = LogField.ConvertInlineToValueObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertInlineToValueObject(ref local, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
+                    // After conversion away from inline, the local's ValueLength is the ObjectIdSize (already set in the original local since ValueIsInline);
+                    // we need to set it explicitly to ObjectIdSize to match the post-conversion state.
+                    local.ValueLength = ObjectIdMap.ObjectIdSize;
                 }
-                else if (Info.ValueIsOverflow)
+                else if (dataHeader.ValueIsOverflow)
                 {
                     if (sizeInfo.ValueIsInline)
-                        _ = LogField.ConvertOverflowToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                    {
+                        _ = LogField.ConvertOverflowToInline(ref local, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        local.ValueLength = newInlineValueSize;
+                    }
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 2");
-                        _ = LogField.ConvertOverflowToValueObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertOverflowToValueObject(ref local, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        // ObjectId-sized; local.ValueLength remains ObjectIdSize
                     }
                 }
                 else
                 {
-                    Debug.Assert(Info.ValueIsObject, "Expected ValueIsObject to be set, pt 3");
+                    Debug.Assert(dataHeader.ValueIsObject, "Expected ValueIsObject to be set, pt 3");
 
                     if (sizeInfo.ValueIsInline)
-                        _ = LogField.ConvertValueObjectToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                    {
+                        _ = LogField.ConvertValueObjectToInline(ref local, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        local.ValueLength = newInlineValueSize;
+                    }
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsOverflow, "Expected ValueIsOverflow to be true");
-                        _ = LogField.ConvertValueObjectToOverflow(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertValueObjectToOverflow(ref local, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        // ObjectId-sized; local.ValueLength remains ObjectIdSize
                     }
                 }
             }
 
-            // Update record part 3: Restore optionals to their new location. If we have some optionals in sizeInfo that weren't in the record previously, they'll get
-            // their default values; subsequently, the caller should set them to the actual values. We have to do this even if not sizeInfo.HasOptionalFields because 
+            // Update record part 4: Restore optionals to their new location. If we have some optionals in sizeInfo that weren't in the record previously, they'll get
+            // their default values; subsequently, the caller should set them to the actual values. We have to do this even if not sizeInfo.HasOptionalFields because
             // this also sets or clears optional flags.
             optionalStartAddress += inlineValueGrowth;
-            optionalFields.Restore(optionalStartAddress, in sizeInfo, ref InfoRef);
+            optionalFields.Restore(optionalStartAddress, in sizeInfo, ref local);
 
-            // Update record part 4: Update Filler length in the record. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
+            // Update Filler length on the local DataHeader. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here, so don't adjust fillerLen for that. However, a change in the presence or absence of the pseudo-optional
             // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects. Note that we don't have a valueLength to update;
             // it is a calculated value, which depends (in part) upon FillerLength.
             var newFillerLen = oldFillerLen - inlineValueGrowth - optionalGrowth;
             if (newFillerLen != oldFillerLen)
-                dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
+                local.SetFiller(physicalAddress, newFillerLen > 0 ? newFillerLen : 0);
             if (zeroInit && inlineValueGrowth > 0)
             {
                 // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
                 new Span<byte>((byte*)(valueAddress + oldInlineValueSize), newInlineValueSize - oldInlineValueSize).Clear();
             }
 
-            Debug.Assert(Info.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
-            Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
+            // Update Record Part 5: All data movement is complete; atomically replace the dummy header with the real (fully-updated) one.
+            DataHeaderRef = local;
+
+            Debug.Assert(local.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
+            Debug.Assert(!local.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
             return true;
         }
 
@@ -694,7 +755,7 @@ namespace Tsavorite.core
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         public readonly bool TrySetPinnedValueLength(in int newValueSize, long valueAddress, ref int valueLength, bool zeroInit = false)
         {
-            if (!Info.ValueIsInline)
+            if (!DataHeader.ValueIsInline)
             {
                 Debug.Fail($"{nameof(TrySetPinnedValueLength)} should only be called when Value is known to be inline, such as INCRBY");
                 return false;
@@ -705,35 +766,63 @@ namespace Tsavorite.core
             if (inlineValueGrowth == 0)
                 return true;
 
-            // Get the number of bytes in existing key and value lengths.
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            int oldFillerLen, recordLength;
-            if (!Info.HasOptionalOrObjectFields)
+            // Snapshot DataHeader and existing lengths.
+            var dataHeader = DataHeader;
+            int oldFillerLen;
+            int oldOptionalSize = 0;
+            int oldETagLen = 0;
+            int oldExpirationLen = 0;
+            int oldObjectLogPositionLen = 0;
+            int keyLength = dataHeader.KeyLength;
+            int extendedNamespaceSize = dataHeader.ExtendedNamespaceLength;
+            int recordLength;
+            if (!dataHeader.HasOptionalOrObjectFields)
             {
-                oldFillerLen = dataHeader.GetFillerLength(Info, out recordLength);
+                oldFillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
                 if (oldFillerLen < inlineValueGrowth)
                     return false;
+                recordLength = dataHeader.GetRecordLength(physicalAddress);
             }
             else
             {
-                _ = dataHeader.GetKVLengths(Info, out recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out oldFillerLen, out _ /*valueAddress*/);
+                _ = dataHeader.GetKVLengths(physicalAddress, out oldETagLen, out oldExpirationLen, out oldObjectLogPositionLen, out oldFillerLen, out _ /*valueAddress*/);
                 if (oldFillerLen < inlineValueGrowth)
                     return false;
+                oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
+                recordLength = dataHeader.GetRecordLength(physicalAddress);
+            }
 
-                // Shift optionals if needed. We include space for the ObjectLogPosition here even though it's the last field and not used until we
-                // serialize the record, because otherwise we may not have enough bytes to write the full FillerLength.
-                var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
+            // Install a dummy DataHeader in the live record that absorbs the entire post-key span as opaque inline value bytes,
+            // keeping concurrent record-walkers safe while we shift optionals and update filler.
+            var dummyValueLength = recordLength - (RecordInfo.Size + RecordDataHeader.Size + extendedNamespaceSize + keyLength);
+            Debug.Assert((uint)dummyValueLength <= LogSettings.ValueLengthSentinel,
+                $"Dummy ValueLength {dummyValueLength} exceeds 24-bit field; reserve LogSettings.OptionalsReservedBytes is insufficient");
+            RecordDataHeader dummyHeader = default;
+            dummyHeader.SetKeyAndValueInline();
+            dummyHeader.SetNamespaceByteRaw((byte)((dataHeader.word >> 56) & 0xFF));
+            dummyHeader.RecordType = dataHeader.RecordType;
+            dummyHeader.KeyLength = keyLength;
+            dummyHeader.ValueLength = dummyValueLength;
+            DataHeaderRef = dummyHeader;  // atomic install
+
+            // Shift optionals in the data area if needed.
+            if (oldOptionalSize != 0)
+            {
                 var optionalStartAddress = valueAddress + valueLength;
-                if (oldOptionalSize != 0)
-                    Buffer.MemoryCopy((void*)optionalStartAddress, (void*)(optionalStartAddress + inlineValueGrowth), oldOptionalSize, oldOptionalSize);
+                Buffer.MemoryCopy((void*)optionalStartAddress, (void*)(optionalStartAddress + inlineValueGrowth), oldOptionalSize, oldOptionalSize);
             }
 
             // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
             if (zeroInit && inlineValueGrowth > 0)
                 new Span<byte>((byte*)(valueAddress + valueLength), inlineValueGrowth).Clear();
 
-            // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
+            // Build the real DataHeader on a local: update ValueLength and Filler. Optional flags and Key/Namespace/RecordType are unchanged from dataHeader.
+            var local = dataHeader;
+            local.ValueLength = newValueSize;
+            local.SetFiller(physicalAddress, oldFillerLen - inlineValueGrowth);
+
+            // Atomic install of the real DataHeader.
+            DataHeaderRef = local;
 
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // So the only things that change are FillerLength and ValueLength.
@@ -783,13 +872,13 @@ namespace Tsavorite.core
             // This is called when reinitializing a record for InitialUpdater or InitialWriter; we don't want to them to see initial state with optionals set.
             // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
             ClearOptionals();
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(Info);
-            var recordLength = dataHeader.GetRecordLength();
+            var dataHeader = DataHeader;
+            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
             if (fillerLength < 0)
                 return false;
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLength);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLength);
             return true;
         }
 
@@ -809,15 +898,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetValueObject(IHeapObject value)
         {
-            Debug.Assert(Info.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
+            Debug.Assert(DataHeader.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
-            if (!Info.ValueIsObject)
+            if (!DataHeader.ValueIsObject)
             {
                 Debug.Fail($"Cannot call {GetCurrentMethodName()} with no {nameof(RecordSizeInfo)} when !ValueIsObject");
                 return false;
             }
 
-            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
 
             // If there is no object there yet, allocate a slot
             var objectId = *(int*)valueAddress;
@@ -829,14 +918,14 @@ namespace Tsavorite.core
             return true;
         }
 
-        public readonly int ETagLen => Info.HasETag ? ETagSize : 0;
-        public readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
-        internal readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
+        public readonly int ETagLen => DataHeader.HasETag ? ETagSize : 0;
+        public readonly int ExpirationLen => DataHeader.HasExpiration ? ExpirationSize : 0;
+        internal readonly int ObjectLogPositionLen => DataHeader.RecordHasObjects ? ObjectLogPositionSize : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress()
         {
-            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             return valueAddress + valueLength;
         }
 
@@ -889,13 +978,19 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly void InitializeForReuse(in RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
+            Debug.Assert(!DataHeader.HasETag && !DataHeader.HasExpiration, "Record should not have ETag or Expiration here");
 
             // This is called after the record has been allocated, so it's at the tail (or very close to it), and before it is returned to the TryBlockAllocate
             // caller. So all we need to do is initialize it to a consistent RecordLength state. We could make this a little leaner for this case but this is
             // called only on recovery from a failed TryAllocate (e.g. HeadAddress moved up so we couldn't complete the allocation), so it's not perf-critical.
             InfoRef = RecordInfo.InitialValid;
-            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/);
+
+            // Reuse records must be heap-free; preserve their allocation size via filler.
+            var reuseSizeInfo = new RecordSizeInfo { AllocatedInlineRecordSize = sizeInfo.AllocatedInlineRecordSize };
+            reuseSizeInfo.SetKeyIsInline();
+            reuseSizeInfo.SetValueIsInline();
+            DataHeaderRef.InitializeForNewRecord();
+            _ = DataHeaderRef.Initialize(in reuseSizeInfo, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/, physicalAddress);
         }
 
         /// <summary>
@@ -906,17 +1001,17 @@ namespace Tsavorite.core
         public readonly bool TrySetETag(long eTag)
         {
             var optionalStartAddress = GetOptionalStartAddress();
-            if (Info.HasETag)
+            if (DataHeader.HasETag)
             {
                 *(long*)GetETagAddress(optionalStartAddress) = eTag;
                 return true;
             }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            var dataHeader = DataHeader;
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ETagSize;
@@ -924,12 +1019,12 @@ namespace Tsavorite.core
                 return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 address -= ObjectLogPositionSize;
 
             // Preserve Expiration if present; set ETag; re-enter Expiration if present
             var expiration = 0L;
-            if (Info.HasExpiration)
+            if (DataHeader.HasExpiration)
             {
                 address -= ExpirationSize;
                 expiration = *(long*)address;
@@ -937,21 +1032,21 @@ namespace Tsavorite.core
 
             // Set the eTag
             *(long*)address = eTag;
-            InfoRef.SetHasETag();
+            DataHeaderRef.SetHasETag();
             address += ETagSize;
 
             // Restore expiration, if any
-            if (Info.HasExpiration)
+            if (DataHeader.HasExpiration)
             {
                 *(long*)address = expiration;   // will be 0 or a valid expiration
                 address += ExpirationSize;      // repositions to ObjectLogPosition address
             }
 
             // ObjectLogPosition is not preserved (it's only for serialization) so set it to NotSet.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
             return true;
         }
 
@@ -962,20 +1057,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool RemoveETag()
         {
-            if (!Info.HasETag)
+            if (!DataHeader.HasETag)
                 return true;
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            var dataHeader = DataHeader;
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ETagSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
             {
                 address -= ObjectLogPositionSize;
                 *(ulong*)address = 0;
@@ -984,7 +1079,7 @@ namespace Tsavorite.core
             // Move Expiration, if present, up to cover ETag; then clear the ETag bit
             var expiration = 0L;
             var expirationSize = 0;
-            if (Info.HasExpiration)
+            if (DataHeader.HasExpiration)
             {
                 expirationSize = ExpirationSize;
                 address -= expirationSize;
@@ -992,17 +1087,17 @@ namespace Tsavorite.core
                 *(long*)address = 0L;  // To ensure zero-init
             }
 
-            // Expiration will be either zero or a valid expiration, and we have not changed the info.HasExpiration flag
+            // Expiration will be either zero or a valid expiration, and we have not changed the dataHeader.HasExpiration flag
             address -= ETagSize;
             *(long*)address = expiration;       // will be 0 or a valid expiration
             address += expirationSize;          // repositions to fillerAddress if expirationSize is nonzero
-            InfoRef.ClearHasETag();
+            DataHeaderRef.ClearHasETag();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
             return true;
         }
 
@@ -1017,17 +1112,17 @@ namespace Tsavorite.core
                 return RemoveExpiration();
 
             var optionalStartAddress = GetOptionalStartAddress();
-            if (Info.HasExpiration)
+            if (DataHeader.HasExpiration)
             {
                 *(long*)GetExpirationAddress(optionalStartAddress) = expiration;
                 return true;
             }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            var dataHeader = DataHeader;
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
 
             // We're adding an Expiration where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ExpirationSize;
@@ -1035,19 +1130,19 @@ namespace Tsavorite.core
                 return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 address -= ObjectLogPositionSize;
 
             // Set the Expiration
-            InfoRef.SetHasExpiration();
+            DataHeaderRef.SetHasExpiration();
             *(long*)address = expiration;
             address += ExpirationSize;
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
             return true;
         }
 
@@ -1058,20 +1153,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool RemoveExpiration()
         {
-            if (!Info.HasExpiration)
+            if (!DataHeader.HasExpiration)
                 return true;
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            var dataHeader = DataHeader;
+            var recordLength = dataHeader.GetRecordLength(physicalAddress);
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ExpirationSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
             {
                 address -= ObjectLogPositionSize;
                 *(ulong*)address = 0;
@@ -1080,13 +1175,13 @@ namespace Tsavorite.core
             // Remove Expiration and clear the Expiration bit; this will be the new fillerLenAddress
             address -= ExpirationSize;
             *(long*)address = 0;
-            InfoRef.ClearHasExpiration();
+            DataHeaderRef.ClearHasExpiration();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (Info.RecordHasObjects)
+            if (DataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
             return true;
         }
 
@@ -1098,7 +1193,7 @@ namespace Tsavorite.core
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (srcLogRecord.Info.ValueIsInline)
+            if (srcLogRecord.DataHeader.ValueIsInline)
             {
                 if (!TrySetContentLengths(in sizeInfo))
                     return false;
@@ -1106,9 +1201,9 @@ namespace Tsavorite.core
             }
             else
             {
-                if (srcLogRecord.Info.ValueIsOverflow)
+                if (srcLogRecord.DataHeader.ValueIsOverflow)
                 {
-                    Debug.Assert(Info.ValueIsOverflow, "Expected this.Info.ValueIsOverflow to be set already");
+                    Debug.Assert(DataHeader.ValueIsOverflow, "Expected this.DataHeader.ValueIsOverflow to be set already");
                     ValueOverflow = srcLogRecord.ValueOverflow;
                 }
                 else
@@ -1134,12 +1229,12 @@ namespace Tsavorite.core
         {
             Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (keyLength, existingValueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
+            var dataHeader = DataHeader;
+            var (keyLength, existingValueLength) = dataHeader.GetKVLengths(physicalAddress, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
 
             // The sizeInfo's FieldInfo has already been populated. Key size won't change in IPU.
             var keyOverflowInlineSize = 0;
-            if (Info.KeyIsInline)
+            if (DataHeader.KeyIsInline)
                 sizeInfo.SetKeyIsInline();
             else
                 keyOverflowInlineSize = ObjectLogPositionSize;
@@ -1166,13 +1261,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetValueHeapMemorySize()
         {
-            if (Info.ValueIsInline)
+            if (DataHeader.ValueIsInline)
                 return 0;
 
-            if (Info.ValueIsObject)
+            if (DataHeader.ValueIsObject)
                 return ValueObject.HeapMemorySize;
 
-            var (_ /*length*/, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+            var (_ /*length*/, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).HeapMemorySize;
         }
 
@@ -1188,11 +1283,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool CanGrowPinnedValue(int newValueLength, int newETagLen, int newExpirationLen, out long valueAddress, out int valueLength)
         {
-            if (!Info.ValueIsInline)
+            if (!DataHeader.ValueIsInline)
                 ThrowTsavoriteException("Cannot call CanGrowInline when !ValueIsInline");
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            (var keyLength, valueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out valueAddress);
+            var dataHeader = DataHeader;
+            (_ /*keyLength*/, valueLength) = dataHeader.GetKVLengths(physicalAddress, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out valueAddress);
 
             var growth = (newValueLength - valueLength) + (newETagLen - eTagLen) + (newExpirationLen - expirationLen);
             return growth <= fillerLen;
@@ -1206,15 +1301,15 @@ namespace Tsavorite.core
         public readonly bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var srcRecordInfo = srcLogRecord.Info;
+            var srcDataHeader = srcLogRecord.DataHeader;
 
             // If the source has optionals and the destination wants them, copy them over
-            if (!srcRecordInfo.HasETag || !sizeInfo.FieldInfo.HasETag)
+            if (!srcDataHeader.HasETag || !sizeInfo.FieldInfo.HasETag)
                 _ = RemoveETag();
             else if (!TrySetETag(srcLogRecord.ETag))
                 return false;
 
-            if (!srcRecordInfo.HasExpiration || !sizeInfo.FieldInfo.HasExpiration)
+            if (!srcDataHeader.HasExpiration || !sizeInfo.FieldInfo.HasExpiration)
                 _ = RemoveExpiration();
             else if (!TrySetExpiration(srcLogRecord.Expiration))
                 return false;
@@ -1235,15 +1330,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void ClearValueIfHeap()
         {
-            if (Info.ValueIsInline)
+            if (DataHeader.ValueIsInline)
                 return;
 
             // If the key is Heap and we're not clearing it then we don't want to to change ObjectLogPosition and Filler, so just clear the value and return.
-            if (!Info.KeyIsInline)
+            if (!DataHeader.KeyIsInline)
             {
-                var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-                var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+                var dataHeader = DataHeader;
+                var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
                 return;
             }
 
@@ -1253,38 +1348,37 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Clears any heap-allocated field, Object or Overflow, in the Value and optionally the Key. If we go from 
-        /// <see cref="RecordInfo.RecordIsInline"/> being false to true, then we need to adjust filler as well.
+        /// <see cref="RecordDataHeader.RecordIsInline"/> being false to true, then we need to adjust filler as well.
         /// </summary>
         public readonly void ClearHeapFields(bool clearKey)
         {
-            if (Info.RecordIsInline)
+            if (DataHeader.RecordIsInline)
                 return;
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var dataHeader = DataHeader;
+            var fillerLen = dataHeader.GetTotalFillerLength(physicalAddress);
 
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out var keyLength, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+            var valueAddress = keyAddress + keyLength;
 
             // If the key is Heap and we're not clearing it then we don't want to to change ObjectLogPosition and Filler, so just clear the value and return.
-            if (!clearKey && !Info.KeyIsInline)
+            if (!clearKey && !DataHeader.KeyIsInline)
             {
-                if (!Info.ValueIsInline)
-                    LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+                if (!DataHeader.ValueIsInline)
+                    LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
                 return;
             }
 
             // If we're here and the key is overflow we're clearing it.
-            if (!Info.KeyIsInline)
+            if (!DataHeader.KeyIsInline)
             {
-                var keyAddress = valueAddress - keyLength;
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
+                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, keyAddress, objectIdMap, isKey: true);
             }
-            if (!Info.ValueIsInline)
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+            if (!DataHeader.ValueIsInline)
+                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
 
             // Now update filler to account for removal of ObjectLogPosition
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen + ObjectLogPositionSize);
+            DataHeaderRef.SetFiller(physicalAddress, fillerLen + ObjectLogPositionSize);
         }
 
         /// <summary>
@@ -1294,7 +1388,7 @@ namespace Tsavorite.core
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void PrepareForRevivification(ref RecordSizeInfo sizeInfo)
-            => RecordDataHeader.InitializeForRevivification(ref InfoRef, ref sizeInfo);
+            => DataHeaderRef.InitializeForRevivification(ref sizeInfo, physicalAddress);
 
         /// <summary>
         /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.
@@ -1307,44 +1401,47 @@ namespace Tsavorite.core
         /// </remarks>
         internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
         {
-            if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
+            if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
                 Debug.Fail("Cannot call SetObjectLogRecordStartPositionAndLength for an inline record");
                 return;
             }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var dataHeader = DataHeader;
 
-            if (Info.KeyIsOverflow)
-            {
-                var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo();
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
-                *(int*)keyAddress = overflow.Length;
-            }
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
 
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
-
-            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            // Write ObjectLogPosition (clean, without high-byte trick)
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
             *objectLogPositionPtr = objectLogFilePosition.word;
 
-            if (Info.ValueIsOverflow)
+            // Write overflow key length to DataHeader (or sentinel if exceeds limit)
+            if (DataHeader.KeyIsOverflow)
+            {
+                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
+                dataHeader.KeyLength = (LogSettings.KeySizeExceedsHeaderLimit(overflow.Length)
+                    ? LogSettings.KeyLengthSentinel
+                    : overflow.Length);
+            }
+
+            // Write overflow/object value length to DataHeader (or sentinel if exceeds limit)
+            if (DataHeader.ValueIsOverflow)
             {
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
-                *(int*)valueAddress = overflow.Length;
+                dataHeader.ValueLength = (LogSettings.ValueSizeExceedsHeaderLimit(overflow.Length)
+                    ? LogSettings.ValueLengthSentinel
+                    : overflow.Length);
             }
-            else if (Info.ValueIsObject)
+            else if (DataHeader.ValueIsObject)
             {
-                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
-                // (it is combined with the length that is stored in the ObjectId field data of the record).
-                *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
-                ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
+                dataHeader.ValueLength = (LogSettings.ValueSizeExceedsHeaderLimit((long)valueObjectLength)
+                    ? LogSettings.ValueLengthSentinel
+                    : (int)valueObjectLength);
             }
-            else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
-            {
-                Debug.Fail("Cannot call SetObjectLogRecordStartPositionAndLength for an inline record");
-                return;
-            }
+
+            // Atomic write back
+            DataHeaderRef = dataHeader;
         }
 
         /// <summary>
@@ -1355,31 +1452,20 @@ namespace Tsavorite.core
         /// <returns>The object log position for this record</returns>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
         {
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            if (Info.KeyIsOverflow)
-            {
-                (keyLength, var keyAddress) = dataHeader.GetKeyFieldInfo();
-                keyLength = *(int*)keyAddress;
-            }
+            var dataHeader = DataHeader;
+            if (DataHeader.KeyIsOverflow)
+                keyLength = dataHeader.GetKeyLengthRaw();  // actual length or sentinel (NOT the effective length)
             else // KeyIsInline is true; keyLength will be ignored
                 keyLength = 0;
 
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
-            if (Info.ValueIsOverflow)
-                valueObjectLength = (ulong)*(int*)valueAddress;
-            else if (Info.ValueIsObject)
-            {
-                // Get the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
-                // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
-                var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-                valueObjectLength = *(uint*)valueAddress | ((ulong)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
-            }
+            if (DataHeader.ValueIsOverflow || DataHeader.ValueIsObject)
+                valueObjectLength = (ulong)dataHeader.GetValueLengthRaw();  // actual length or sentinel (NOT the effective length)
             else // ValueIsInline is true; valueLength will be ignored
             {
                 valueObjectLength = 0;
-                if (Info.RecordIsInline) // If the record is fully inline, we should not be called here
+                if (DataHeader.RecordIsInline) // If the record is fully inline, we should not be called here
                 {
-                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLength for an inline record");
+                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLengths for an inline record");
                     return 0;
                 }
             }
@@ -1400,71 +1486,103 @@ namespace Tsavorite.core
         ///     segment boundaries.</returns>
         internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
         {
-            if (Info.RecordIsInline)
+            if (DataHeader.RecordIsInline)
             {
                 Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
                 return 0;
             }
 
-            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var dataHeader = DataHeader;
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
             ulong objectLengths = 0;
 
-            // In case we're a ValueObject, store off the ulong at objectLogPositionPtr before overwriting it with the position in the log file.
+            // In case we're a ValueObject, store off the deserialized length at objectLogPositionPtr before overwriting it with the position in the log file.
             var valueObjectLength = *objectLogPositionPtr;
             *objectLogPositionPtr = pagePositionInfo.word;
 
-            if (Info.KeyIsOverflow)
+            if (DataHeader.KeyIsOverflow)
             {
-                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo();
+                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
                 objectLengths += (uint)overflow.Length;
+                if (LogSettings.KeySizeExceedsHeaderLimit(overflow.Length))
+                {
+                    dataHeader.KeyLength = (LogSettings.KeyLengthSentinel);
+                    objectLengths += LogSettings.KeyOverflowPrefixSize;  // account for prefix in object log
+                }
+                else
+                    dataHeader.KeyLength = (overflow.Length);
             }
 
-            if (Info.ValueIsOverflow)
+            if (DataHeader.ValueIsOverflow)
             {
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
                 objectLengths += (uint)overflow.Length;
+                if (LogSettings.ValueSizeExceedsHeaderLimit(overflow.Length))
+                {
+                    dataHeader.ValueLength = (LogSettings.ValueLengthSentinel);
+                    objectLengths += LogSettings.ValueOverflowPrefixSize;  // account for prefix in object log
+                }
+                else
+                    dataHeader.ValueLength = (overflow.Length);
             }
-            else if (Info.ValueIsObject)
+            else if (DataHeader.ValueIsObject)
             {
                 objectLengths += valueObjectLength;
-
-                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
-                // (it is combined with the length that is stored in the ObjectId field data of the record).
-                *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
-                ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
-            }
-            else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
-            {
-                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
-                return 0;
+                // No prefix for value objects; auto-extension handles large objects on the read side
+                dataHeader.ValueLength = (LogSettings.ValueSizeExceedsHeaderLimit((long)valueObjectLength)
+                    ? LogSettings.ValueLengthSentinel
+                    : (int)valueObjectLength);
             }
 
-            // We no longer need the valueObjectLength in our objectLogPositionPtr, so now we overwrite that with the pagePositionInfo,
-            // then update pagePositionInfo.
+            // Atomic write back
+            DataHeaderRef = dataHeader;
             return objectLengths;
+        }
+
+        /// <summary>
+        /// Called after <see cref="ObjectLogReader{TStoreFunctions}"/> completes deserialization of a record's objects.
+        /// Resets non-inline length fields in <see cref="RecordDataHeader"/> back to <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// so that in-memory record length calculations work correctly.
+        /// </summary>
+        internal readonly void OnObjectReadComplete()
+        {
+            var dataHeader = DataHeader;
+            var modified = false;
+            if (!dataHeader.KeyIsInline)
+            {
+                dataHeader.KeyLength = (ObjectIdMap.ObjectIdSize);
+                modified = true;
+            }
+            if (!dataHeader.ValueIsInline)
+            {
+                dataHeader.ValueLength = (ObjectIdMap.ObjectIdSize);
+                modified = true;
+            }
+            if (modified)
+                DataHeaderRef = dataHeader;
         }
 
         internal readonly void OnDeserializationError(bool keyWasSet)
         {
             // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
             // This is a transient logRecord, so it is no problem to clear these fields.
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo();
+            var dataHeader = DataHeader;
+            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
             if (keyWasSet)
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
-            else if (!Info.KeyIsInline)
-                InfoRef.SetKeyIsInline();
+                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, keyAddress, objectIdMap, isKey: true);
+            else if (!DataHeader.KeyIsInline)
+            {
+                DataHeaderRef.SetKeyIsInline();
+            }
 
             // Value length may not be ObjectIdSize.
-            if (!Info.ValueIsInline)
+            if (!DataHeader.ValueIsInline)
             {
                 var valueAddress = keyAddress + keyLength;
                 *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
             }
         }
 
@@ -1474,7 +1592,7 @@ namespace Tsavorite.core
         public readonly int GetSerializedSize()
         {
             var recordSize = AllocatedSize;
-            if (Info.RecordIsInline)
+            if (DataHeader.RecordIsInline)
                 return recordSize;
 
             _ = GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
@@ -1486,14 +1604,14 @@ namespace Tsavorite.core
             long size = 0;
             if (!Info.Tombstone)
             {
-                if (Info.KeyIsOverflow)
+                if (DataHeader.KeyIsOverflow)
                     size += KeyOverflow.HeapMemorySize;
 
-                if (Info.ValueIsOverflow)
+                if (DataHeader.ValueIsOverflow)
                     size += ValueOverflow.HeapMemorySize;
-                else if (Info.ValueIsObject)
+                else if (DataHeader.ValueIsObject)
                 {
-                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                     var objectId = *(int*)valueAddress;
                     if (objectId != ObjectIdMap.InvalidObjectId)
                     {
@@ -1520,18 +1638,16 @@ namespace Tsavorite.core
             string keyString, valueString;
             try { keyString = SpanByte.ToShortString(Key, 12); }
             catch (Exception ex) { keyString = $"<exception: {ex.Message}>"; }
-            try { valueString = Info.ValueIsObject ? "obj" : ValueSpan.ToShortString(20); }
+            try { valueString = DataHeader.ValueIsObject ? "obj" : ValueSpan.ToShortString(20); }
             catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var keyOid = Info.KeyIsInline ? "na" : (*(int*)dataHeader.GetKeyFieldInfo().keyAddress).ToString();
-            var valOid = Info.ValueIsInline ? "na" : (*(int*)dataHeader.GetValueFieldInfo(Info).valueAddress).ToString();
+            var dataHeader = DataHeader;
+            var keyOid = DataHeader.KeyIsInline ? "na" : (*(int*)dataHeader.GetKeyFieldInfo(physicalAddress).keyAddress).ToString();
+            var valOid = DataHeader.ValueIsInline ? "na" : (*(int*)dataHeader.GetValueFieldInfo(physicalAddress).valueAddress).ToString();
 
-            var eTagStr = Info.HasETag ? ETag.ToString() : "na";
-            var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
-            return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
+            var eTagStr = DataHeader.HasETag ? ETag.ToString() : "na";
+            var expirStr = DataHeader.HasExpiration ? Expiration.ToString() : "na";
+            return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString, physicalAddress)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
         }
-
-        public bool TrySetValueObjectAndPrepareOptionals(IHeapObject srcValue, in object sizeInfo) => throw new NotImplementedException();
     }
 }

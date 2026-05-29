@@ -93,11 +93,29 @@ namespace Tsavorite.core
         {
             // If the key is overflow, start with that
             if (!keyOverflow.IsEmpty)
+            {
+                // If key length exceeds the 2-byte header limit, write a 4-byte int prefix with the actual length
+                if (LogSettings.KeySizeExceedsHeaderLimit(keyOverflow.Length))
+                {
+                    Span<byte> prefix = stackalloc byte[LogSettings.KeyOverflowPrefixSize];
+                    BitConverter.TryWriteBytes(prefix, keyOverflow.Length);
+                    Write(prefix);
+                }
                 WriteDirect(keyOverflow);
+            }
 
             // Now do value overflow or object, if either is present
             if (!valueOverflow.IsEmpty)
+            {
+                // If value length exceeds the 3-byte header limit, write an 8-byte long prefix with the actual length
+                if (LogSettings.ValueSizeExceedsHeaderLimit(valueOverflow.Length))
+                {
+                    Span<byte> prefix = stackalloc byte[LogSettings.ValueOverflowPrefixSize];
+                    BitConverter.TryWriteBytes(prefix, (long)valueOverflow.Length);
+                    Write(prefix);
+                }
                 WriteDirect(valueOverflow);
+            }
             else if (valueObject is not null)
                 DoSerialize(valueObject);
 

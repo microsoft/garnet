@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -557,7 +557,7 @@ namespace Garnet.server
             using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress, db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
             while (iter1.GetNext())
             {
-                if (!iter1.Info.ValueIsObject)
+                if (!iter1.DataHeader.ValueIsObject)
                     continue;
 
                 var valueObject = iter1.ValueObject;

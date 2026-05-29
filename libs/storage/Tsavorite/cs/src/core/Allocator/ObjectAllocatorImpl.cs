@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -77,8 +77,8 @@ namespace Tsavorite.core
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
-            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+            maxInlineKeySize = settings.LogSettings.MaxInlineKeySize;
+            maxInlineValueSize = settings.LogSettings.MaxInlineValueSize;
 
             ObjectLogSegmentSize = 1L << settings.LogSettings.ObjectLogSegmentSizeBits;
 
@@ -355,7 +355,7 @@ namespace Tsavorite.core
                     if (!logRecord.Info.Tombstone)
                         remainingHeap = logRecord.CalculateHeapMemorySize();
                     else
-                        remainingHeap = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                        remainingHeap = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
                     if (remainingHeap != 0)
                         logSizeTracker?.IncrementSize(-remainingHeap);
                 }
@@ -425,7 +425,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    heapSize = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                    heapSize = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
                 }
 
                 if (heapSize != 0)
@@ -750,6 +750,16 @@ namespace Tsavorite.core
             var startPadding = startOffset - alignedStartOffset;
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
+            // Flush state determines write strategy:
+            //   - Snapshot: writes to a separate snapshot device. v+1 records get SetInvalid in the disk image only (the in-memory record stays valid).
+            //               This requires an out-of-place srcBuffer copy so the main log allocator page isn't modified.
+            //   - ReadOnly: writes to the main log device. fuzzyStartLogicalAddress is long.MaxValue (no v+1 marking). The destination IS the main log,
+            //               so we can update the DataHeader in-place atomically (8-byte aligned word write) and write directly from the allocator page.
+            //   - Recovery: writes to the main log device after deserialization. Same as ReadOnly: can write in-place.
+            //
+            // In-place avoids the per-flush page copy that was the motivating perf reason for the fixed-size RecordDataHeader.
+            var useInPlaceUpdate = asyncResult.flushRequestState != FlushRequestState.Snapshot;
+
             // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
             // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
             // happening. Otherwise, we are here because we are moving the read-only address (FoldOver checkpoint is a special case of this). In that case
@@ -764,42 +774,63 @@ namespace Tsavorite.core
 
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             SectorAlignedMemory srcBuffer = default;
+            // recordsBasePtr is the page-relative base pointer such that (recordsBasePtr + pageOffset) points to the record at that page offset.
+            // For in-place updates this is the allocator page itself. For srcBuffer (Snapshot), srcBuffer holds data starting at alignedStartOffset,
+            // so we subtract alignedStartOffset to get the same page-relative addressing.
+            byte* recordsBasePtr;
+            // diskWritePtr is the pointer passed to device.WriteAsync — the sector-aligned start of the data to write.
+            byte* diskWritePtr;
             try
             {
-                // Create a local copy of the main-log page inline data. Space for ObjectIds and the ObjectLogPosition will be updated as we go
-                // (ObjectId space and a byte of the length-metadata space will combine for 5 bytes or 1TB of object size, which is our max). This does
-                // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
-                // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
-                // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
                 var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
-                srcBuffer = bufferPool.Get(alignedBufferSize);
-                asyncResult.freeBuffer1 = srcBuffer;
 
-                // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
-                if (startPadding > 0)
+                if (useInPlaceUpdate)
                 {
-                    // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
-                    // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
-                    PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
-                    device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
-                    result.handle.Wait();
-                    result.DisposeHandle();
+                    // No srcBuffer; the main log allocator page is both our source of truth and the disk-write source.
+                    // The startPadding region (bytes between alignedStartOffset and startOffset) contains data from a prior partial flush
+                    // that already wrote the correct on-disk format; we write it again with the same values (no read-back required since
+                    // in-place updates leave the main log DataHeader in the disk-correct format).
+                    recordsBasePtr = (byte*)logPagePointer;
+                    diskWritePtr = (byte*)logPagePointer + alignedStartOffset;
                 }
-
-                try
+                else
                 {
-                    if (pulseEpoch)
-                        epoch.Resume();
+                    // Snapshot path: out-of-place copy. We must not modify the main-log allocator page because:
+                    //   - v+1 records will be SetInvalid in the disk image (main log must stay valid for the v+1 records);
+                    //   - DataHeader lengths/positions are tracked for the snapshot file (different from main log positions).
+                    srcBuffer = bufferPool.Get(alignedBufferSize);
+                    asyncResult.freeBuffer1 = srcBuffer;
 
-                    // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
-                    var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
-                    allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
-                    srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
-                }
-                finally
-                {
-                    if (pulseEpoch)
-                        epoch.Suspend();
+                    // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
+                    if (startPadding > 0)
+                    {
+                        // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
+                        // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
+                        PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+                        device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                        result.handle.Wait();
+                        result.DisposeHandle();
+                    }
+
+                    try
+                    {
+                        if (pulseEpoch)
+                            epoch.Resume();
+
+                        // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
+                        var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
+                        allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
+                        srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
+                    }
+                    finally
+                    {
+                        if (pulseEpoch)
+                            epoch.Suspend();
+                    }
+
+                    // srcBuffer starts at alignedStartOffset in page-space; subtract to get page-relative addressing.
+                    recordsBasePtr = srcBuffer.GetValidPointer() - alignedStartOffset;
+                    diskWritePtr = srcBuffer.GetValidPointer();
                 }
 
                 if (asyncResult.flushBuffers is not null)
@@ -808,21 +839,23 @@ namespace Tsavorite.core
                     _ = logWriter.OnBeginPartialFlush(objectLogTail);
                 }
 
-                // Include page header when calculating end address.
-                var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
-                var physicalAddress = (long)srcBuffer.GetValidPointer() + firstRecordOffset - alignedStartOffset;
+                // Include page header when calculating end address. Using page-relative addressing makes both paths look identical.
+                var endPhysicalAddress = (long)recordsBasePtr + startOffset + numBytesToWrite;
+                var physicalAddress = (long)recordsBasePtr + firstRecordOffset;
 
                 // For recovery flushes we don't re-serialize; rather we just update the object lengths and positions in the log file using deserialized
                 // Overflow and/or Object information. That means we also have to track the increasing object log position "as if" we were re-serializing
                 // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
                 // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
-                ref var pageHeader = ref *(PageHeader*)srcBuffer.GetValidPointer();
+                ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
                 while (physicalAddress < endPhysicalAddress)
                 {
-                    // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
+                    // For in-place: LogRecord operates on the main log allocator page. SetObjectLogRecordStartPositionAndLength performs an atomic
+                    //   8-byte DataHeader write so concurrent Scan never sees a torn header.
+                    // For srcBuffer (Snapshot): LogRecord operates on the local copy; main log is unaffected.
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
                     var logRecordSize = logRecord.AllocatedSize;
@@ -832,12 +865,13 @@ namespace Tsavorite.core
                     // record's state (IsValid, IsInNewVersion, inline data, etc.) will not change.
                     if (logRecord.Info.Valid)
                     {
-                        // Do not write v+1 records (e.g. during a checkpoint)
+                        // Do not write v+1 records (e.g. during a checkpoint). For non-Snapshot flushes, fuzzyStartLogicalAddress is long.MaxValue
+                        // so this condition is always true and the SetInvalid branch is unreachable — safe for in-place updates.
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
                             // Do not write objects for fully-inline records. This should always be false if we don't have a logWriter (i.e. no flushBuffers),
                             // which would be the case where we were created to be used for inline string records only.
-                            if (logRecord.Info.RecordHasObjects)
+                            if (logRecord.DataHeader.RecordHasObjects)
                             {
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
@@ -874,12 +908,12 @@ namespace Tsavorite.core
                                             }
                                         }
 
-                                        if (logRecord.Info.KeyIsOverflow)
+                                        if (logRecord.DataHeader.KeyIsOverflow)
                                             keyOverflow = logRecord.KeyOverflow;
 
-                                        if (logRecord.Info.ValueIsOverflow)
+                                        if (logRecord.DataHeader.ValueIsOverflow)
                                             valueOverflow = logRecord.ValueOverflow;
-                                        else if (logRecord.Info.ValueIsObject)
+                                        else if (logRecord.DataHeader.ValueIsObject)
                                             valueObject = logRecord.ValueObject;
                                     }
                                     finally
@@ -888,6 +922,17 @@ namespace Tsavorite.core
                                             epoch.Suspend();
                                     }
 
+                                    // WriteRecordObjects can do disk IO and must not hold the epoch. SetObjectLogRecordStartPositionAndLength then
+                                    // atomically writes the DataHeader (single 8-byte aligned store) — safe to interleave with concurrent readers/Scan.
+                                    //
+                                    // In-place updates only happen for ReadOnly and Recovery flushes, neither of which pulses the epoch
+                                    // (pulseEpoch = (state == Snapshot)). For ReadOnly, HeadAddress cannot advance past this page because
+                                    // FlushedUntilAddress hasn't moved past it yet. For Recovery, no concurrent access exists. So no epoch
+                                    // re-acquisition is needed around the in-place SetObjectLogRecordStartPositionAndLength call.
+                                    //
+                                    // For Snapshot (srcBuffer path), SetObjectLogRecordStartPositionAndLength writes into srcBuffer (not main log),
+                                    // so HeadAddress is irrelevant for the write itself.
+                                    Debug.Assert(!useInPlaceUpdate || !pulseEpoch, "Unexpected pulseEpoch with in-place update; epoch handling around SetObjectLogRecordStartPositionAndLength must be added");
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                                 }
@@ -905,7 +950,10 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            // Mark v+1 records as invalid to avoid deserializing them on recovery
+                            // Mark v+1 records as invalid to avoid deserializing them on recovery.
+                            // This is only reachable when fuzzyStartLogicalAddress < long.MaxValue, which only happens for Snapshot flushes.
+                            // Snapshot always uses srcBuffer (useInPlaceUpdate is false), so we are only setting Invalid in the disk image, not the main log.
+                            Debug.Assert(!useInPlaceUpdate, "v+1 SetInvalid must not happen on the main log allocator page");
                             logRecord.InfoRef.SetInvalid();
                         }
                     } // endif record id Valid
@@ -915,9 +963,21 @@ namespace Tsavorite.core
                     physicalAddress += logRecordSize + extraRecordOffset;   // advance in source buffer
                 }
 
+                // Update the PageHeader's highest object-log position after all records are processed.
+                // For in-place updates, pageHeader IS the main log allocator page's header (one write covers both).
+                // For srcBuffer, update the srcBuffer copy (so the snapshot file has it) AND the main log allocator page (so subsequent partial flushes see it).
+                if (logWriter is not null)
+                {
+                    var nextPos = logWriter.GetNextRecordStartPosition();
+                    if (useInPlaceUpdate || alignedStartOffset == 0)
+                        pageHeader.SetHighestObjectLogPosition(nextPos);
+                    if (!useInPlaceUpdate)
+                        ((PageHeader*)logPagePointer)->SetHighestObjectLogPosition(nextPos);
+                }
+
             WritePage:
-                // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
-                // to the main log file unless we are to skip it because HeadAddress advanced.
+                // We are done with the per-record objectlog flushes and we've updated the page (in-place or in srcBuffer). Now write that page
+                // to the main log file (or snapshot file) unless we are to skip it because HeadAddress advanced.
                 if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                 {
                     if (asyncResult.partial)
@@ -930,9 +990,9 @@ namespace Tsavorite.core
                     // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                     // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                     if (logWriter is not null)
-                        logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
+                        logWriter.OnPartialFlushComplete(diskWritePtr, alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                     else
-                        device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+                        device.WriteAsync((IntPtr)diskWritePtr, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
                 }
             }
             finally
@@ -1048,7 +1108,7 @@ namespace Tsavorite.core
 
             // If the record is inline, we have no Overflow or Objects to retrieve.
             ref var diskLogRecord = ref ctx.diskLogRecord;
-            if (diskLogRecord.Info.RecordIsInline)
+            if (diskLogRecord.DataHeader.RecordIsInline)
                 return true;
 
             var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
@@ -1096,38 +1156,58 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-
-            // Iterate all records in range to determine how many bytes we need to read from objlog.
-            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
-            var endKeyLength = 0;
-            ulong endValueLength = 0;
-            ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
             var endAddress = pageStartAddress + result.maxAddressOffsetOnPage;
 
-            while (recordAddress < endAddress)
-            {
-                // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
-                var logRecord = new LogRecord(recordAddress);
-                recordAddress += logRecord.AllocatedSize;
+            // Determine startPosition and totalBytesToRead.
+            // Prefer PageHeader's stored positions — they are exact and handle sentinel-encoded lengths correctly.
+            ref var pageHeader = ref *(PageHeader*)pageStartAddress;
+            var startPosition = pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits);
+            var highestPosition = pageHeader.GetHighestObjectLogPosition(objectLogTail.SegmentSizeBits);
+            ulong totalBytesToRead;
 
-                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+            if (startPosition.IsSet && highestPosition.IsSet)
+            {
+                totalBytesToRead = highestPosition - startPosition;
+            }
+            else
+            {
+                // Fallback: scan records for positions. With sentinels, the last record's lengths may be underestimates,
+                // but ExtendReadLength in ReadRecordObjects handles the difference.
+                ObjectLogFilePositionInfo endPosition = new();
+                var endKeyLength = 0;
+                ulong endValueLength = 0;
+                startPosition = new();
+
+                var scanAddress = recordAddress;
+                while (scanAddress < endAddress)
                 {
-                    if (!startPosition.IsSet)
-                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
-                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    var logRecord = new LogRecord(scanAddress);
+                    scanAddress += logRecord.AllocatedSize;
+                    if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
+                    {
+                        if (!startPosition.IsSet)
+                            startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
+                        endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    }
                 }
+
+                if (!startPosition.IsSet)
+                {
+                    result.callback(errorCode, numBytes, context);
+                    result.Free();
+                    return;
+                }
+
+                endPosition.Advance((ulong)endKeyLength + endValueLength);
+                totalBytesToRead = endPosition - startPosition;
             }
 
             // The page may not have contained any records with objects
-            if (startPosition.IsSet)
+            if (startPosition.IsSet && totalBytesToRead > 0)
             {
-                endPosition.Advance((ulong)endKeyLength + endValueLength);
-                totalBytesToRead = endPosition - startPosition;
-
-                // Iterate all records again to actually do the deserialization.
+                // Iterate all records to do the deserialization.
                 result.readBuffers.nextFileReadPosition = startPosition;
-                recordAddress = pageStartAddress + PageHeader.Size;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
@@ -1139,14 +1219,14 @@ namespace Tsavorite.core
                     var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
                     recordAddress += logRecord.AllocatedSize;
 
-                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                    if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
                         // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
                         // key overflow for tombstoned records. Add it here so the tracker stays balanced.
                         if (logRecord.Info.Tombstone)
                         {
-                            if (logRecord.Info.KeyIsOverflow)
+                            if (logRecord.DataHeader.KeyIsOverflow)
                                 logSizeTracker?.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
                         }
                         else

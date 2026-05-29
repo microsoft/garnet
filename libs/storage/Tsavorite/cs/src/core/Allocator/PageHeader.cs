@@ -30,9 +30,12 @@ namespace Tsavorite.core
         [FieldOffset(sizeof(long))]
         internal ulong objectLogLowestPositionWord;
 
-        // Unused; as they become used, start with higher #
+        /// <summary>The highest object-log position on this main-log page, if ObjectAllocator. Set after all records are written;
+        /// used with <see cref="objectLogLowestPositionWord"/> to compute the total bytes to read from the object log for the page.</summary>
         [FieldOffset(sizeof(long) * 2)]
-        internal long unusedLong6;
+        internal ulong objectLogHighestPositionWord;
+
+        // Unused; as they become used, start with higher #
         [FieldOffset(sizeof(long) * 3)]
         internal long unusedLong5;
         [FieldOffset(sizeof(long) * 4)]
@@ -53,6 +56,7 @@ namespace Tsavorite.core
             this = default;
             version = CurrentVersion;
             objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
+            objectLogHighestPositionWord = ObjectLogFilePositionInfo.NotSet;
         }
 
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
@@ -68,13 +72,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// Get the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="segmentBits">The number of bits in the object log's segments.</param>
         internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits)
             => objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
 
+        /// <summary>
+        /// Set the highest object-log position on this main-log page, if ObjectAllocator.
+        /// Called after all records on the page have been written to the object log.
+        /// </summary>
+        /// <param name="position">The position in the object log after the last record's objects.</param>
+        internal void SetHighestObjectLogPosition(in ObjectLogFilePositionInfo position)
+            => objectLogHighestPositionWord = position.word;
+
+        /// <summary>
+        /// Get the highest object-log position on this main-log page, if ObjectAllocator.
+        /// </summary>
+        /// <param name="segmentBits">The number of bits in the object log's segments.</param>
+        internal ObjectLogFilePositionInfo GetHighestObjectLogPosition(int segmentBits)
+            => objectLogHighestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogHighestPositionWord, segmentBits);
+
         public override readonly string ToString()
-            => $"ver {version}, lowObjLogPos {objectLogLowestPositionWord}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
+            => $"ver {version}, lowObjLogPos {objectLogLowestPositionWord}, highObjLogPos {objectLogHighestPositionWord}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}";
     }
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Tsavorite.core;
@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            logRecord.InfoRef.ClearHasETag();
+            logRecord.DataHeaderRef.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
         }

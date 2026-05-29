@@ -66,7 +66,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Free BfTree and delete data files on key deletion.
                 if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
@@ -86,7 +86,7 @@ namespace Garnet.server
         public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
         {
             if (rangeIndexManager is null
-                || logRecord.Info.ValueIsObject
+                || logRecord.DataHeader.ValueIsObject
                 || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
                 return;
 
@@ -96,7 +96,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Free BfTree on page eviction under exclusive lock.
                 if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
@@ -115,7 +115,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnDiskRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Invalidate stale TreeHandle bytes on records loaded from disk.
                 // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
@@ -141,7 +141,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
                 // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
@@ -199,7 +199,7 @@ namespace Garnet.server
             // before the next Read-with-RangeIndex-cmd can pass the type-mismatch guard in
             // ReadMethods.CheckRecordTypeMismatch.
             if (rangeIndexManager is null
-                || dstLogRecord.Info.ValueIsObject
+                || dstLogRecord.DataHeader.ValueIsObject
                 || srcLogRecord.RecordType != RangeIndexManager.RangeIndexRecordType)
                 return;
 

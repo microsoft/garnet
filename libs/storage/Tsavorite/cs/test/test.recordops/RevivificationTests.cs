@@ -275,8 +275,8 @@ namespace Tsavorite.test.Revivification
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            // Records all have a Span<byte> corresponding to a 'long' ii and value, which means one length byte.
-            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
+            // Records all have a Span<byte> corresponding to a 'long' ii and value — with fixed RecordDataHeader, header is always Size bytes.
+            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.Size + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
@@ -544,15 +544,15 @@ namespace Tsavorite.test.Revivification
 
                 // If an overflow logRecord is from new recordPtr creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
                 // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
-                if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
+                if (!logRecord.DataHeader.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
                 {
-                    var (valueLength, _ /*valueAddress*/) = new RecordDataHeader((byte*)logRecord.DataHeaderAddress).GetValueFieldInfo(logRecord.Info);
+                    var (valueLength, _ /*valueAddress*/) = (*(RecordDataHeader*)logRecord.DataHeaderAddress).GetValueFieldInfo(recordAddress);
                     ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, (int)valueLength);
                 }
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else
-                    ClassicAssert.AreEqual(logRecord.Info.ValueIsInline ? expectedValueLength : ObjectIdMap.ObjectIdSize, logRecord.ValueSpan.Length);
+                    ClassicAssert.AreEqual(logRecord.DataHeader.ValueIsInline ? expectedValueLength : ObjectIdMap.ObjectIdSize, logRecord.ValueSpan.Length);
 
                 ClassicAssert.GreaterOrEqual(recordAddress, store.hlogBase.ReadOnlyAddress);
 
@@ -1957,7 +1957,7 @@ namespace Tsavorite.test.Revivification
                     FieldInfo = new()
                     {
                         KeySize = DefaultKeySize,
-                        ValueSize = recordSize - DefaultKeySize - RecordInfo.Size - RecordDataHeader.MinHeaderBytes
+                        ValueSize = recordSize - DefaultKeySize - RecordInfo.Size - RecordDataHeader.Size
                     }
                 };
                 sizeInfo.SetKeyIsInline();
@@ -1972,9 +1972,9 @@ namespace Tsavorite.test.Revivification
                 logRecord.InitializeRecord(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), in sizeInfo);
                 Assert.That(logRecord.Key.AsRef<long>(), Is.EqualTo(key));
 
-                var dataHeader = new RecordDataHeader((byte*)&recordPtr->headerWord);
-                Assert.That(dataHeader.GetActualRecordSize(recordPtr->recordInfo), Is.EqualTo(sizeInfo.ActualInlineRecordSize));
-                Assert.That(dataHeader.GetAllocatedRecordSize(), Is.EqualTo(sizeInfo.AllocatedInlineRecordSize));
+                var dataHeader = *(RecordDataHeader*)(&recordPtr->headerWord);
+                Assert.That(dataHeader.GetAlignedComponentSum(), Is.EqualTo(sizeInfo.ActualInlineRecordSize));
+                Assert.That(dataHeader.GetRecordLength((long)recordPtr), Is.EqualTo(sizeInfo.AllocatedInlineRecordSize));
             }
         }
 

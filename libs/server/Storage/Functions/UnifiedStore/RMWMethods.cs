@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -35,7 +35,7 @@ namespace Garnet.server
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
+            Debug.Assert(logRecord.DataHeader.ValueIsObject || (!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
             return input.header.cmd switch
@@ -64,7 +64,7 @@ namespace Garnet.server
             ref UnifiedOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
             var cmd = input.header.cmd;
-            if (cmd == RespCommand.DELIFEXPIM && srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            if (cmd == RespCommand.DELIFEXPIM && srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndStop;
                 return false;
@@ -79,13 +79,13 @@ namespace Garnet.server
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
 
-            if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
-            if (srcLogRecord.Info.ValueIsObject)
+            if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
                 // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have
@@ -107,7 +107,7 @@ namespace Garnet.server
             if (!result)
                 return false;
 
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
 
@@ -118,7 +118,7 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            if (srcLogRecord.Info.ValueIsObject)
+            if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
@@ -126,7 +126,7 @@ namespace Garnet.server
 
                 // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-                var hasExpiration = dstLogRecord.Info.HasExpiration;
+                var hasExpiration = dstLogRecord.DataHeader.HasExpiration;
                 if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
 
@@ -143,7 +143,7 @@ namespace Garnet.server
                         break;
                 }
 
-                sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+                sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
 
             }
 
@@ -178,7 +178,7 @@ namespace Garnet.server
             var cmd = input.header.cmd;
 
             // Expired data
-            if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
                 // Heap disposal and cache size tracking are handled by
                 // OnDispose(Deleted) in InternalRMW for both ExpireAndStop and ExpireAndResume.
@@ -186,7 +186,7 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            var hasExpiration = logRecord.Info.HasExpiration;
+            var hasExpiration = logRecord.DataHeader.HasExpiration;
 
             var ipuResult = IPUResult.Succeeded;
             switch (cmd)
@@ -236,7 +236,7 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                 return false;
 
-            if (srcLogRecord.Info.HasExpiration)
+            if (srcLogRecord.DataHeader.HasExpiration)
             {
                 dstLogRecord.RemoveExpiration();
                 functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);

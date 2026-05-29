@@ -18,16 +18,11 @@ namespace Tsavorite.core
         //   Bit 0:   KeyIsInline
         //   Bit 1:   ValueIsInline
         //   Bit 2:   IsRevivifiedRecord
-        //   Bits 3-5: KeyLengthBytes (max value 4)
-        //   Bits 6-8: RecordLengthBytes (max value 4)
         private const int KeyIsInlineBit = 1 << 0;
         private const int ValueIsInlineBit = 1 << 1;
         private const int IsRevivifiedRecordBit = 1 << 2;
-        private const int KeyLengthBytesShift = 3;
-        private const int RecordLengthBytesShift = 6;
-        private const int LengthBytesMask = 0x7;
 
-        /// <summary>Packed field containing KeyIsInline, ValueIsInline, IsRevivifiedRecord, KeyLengthBytes, and RecordLengthBytes.</summary>
+        /// <summary>Packed field containing KeyIsInline, ValueIsInline, and IsRevivifiedRecord.</summary>
         internal int word;
 
         /// <summary>The value length and whether optional fields are present.</summary>
@@ -54,32 +49,6 @@ namespace Tsavorite.core
         /// <summary>Sets <see cref="ValueIsInline"/> to true.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetValueIsInline() => word |= ValueIsInlineBit;
-
-        /// <summary>Number of bytes in key length; see <see cref="RecordDataHeader"/>.</summary>
-        public int KeyLengthBytes
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word >> KeyLengthBytesShift) & LengthBytesMask;
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                Debug.Assert(value is <= sizeof(int) and > 0, $"KeyLengthBytes value {value} should be the number of bytes needed to store an int value from 1 to int.MaxValue");
-                word = (word & ~(LengthBytesMask << KeyLengthBytesShift)) | (value << KeyLengthBytesShift);
-            }
-        }
-
-        /// <summary>Number of bytes in entire record length; see <see cref="RecordDataHeader"/>.</summary>
-        public int RecordLengthBytes
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word >> RecordLengthBytesShift) & LengthBytesMask;
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                Debug.Assert(value is <= sizeof(int) and > 0, $"RecordLengthBytes value {value} should be the number of bytes needed to store an int value from 1 to int.MaxValue");
-                word = (word & ~(LengthBytesMask << RecordLengthBytesShift)) | (value << RecordLengthBytesShift);
-            }
-        }
 
         /// <summary>Whether the record allocation returned a revivified record.</summary>
         internal readonly bool IsRevivifiedRecord
@@ -135,27 +104,22 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CalculateSizes(int keySize, int valueSize)
         {
-            if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
-                ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
+            // Max overflow length is bounded by kMaxStringSizeBits (512MB). Even for inline records the caller's specified key/value
+            // length must be storable in an overflow if it doesn't fit inline; reject anything larger.
+            const int maxOverflowSize = 1 << LogSettings.kMaxStringSizeBits;
+            if ((uint)FieldInfo.KeySize > maxOverflowSize)
+                ThrowTsavoriteException($"FieldInfo.KeySize ({FieldInfo.KeySize}) exceeds max overflow length ({maxOverflowSize})");
+            if ((uint)FieldInfo.ValueSize > maxOverflowSize)
+                ThrowTsavoriteException($"FieldInfo.ValueSize ({FieldInfo.ValueSize}) exceeds max overflow length ({maxOverflowSize})");
 
-            // Calculate full used record size. Use the full possible RecordLengthBytes initially to reserve space in the record for it;
-            // then replace it with the exact size needed and update ActualInlineRecordSize.
-            KeyLengthBytes = RecordDataHeader.GetByteCount(keySize);
-            const int initialRecordLengthBytes = sizeof(int);
-            ActualInlineRecordSize = RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + KeyLengthBytes + initialRecordLengthBytes
-                            + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
+            // ExtendedNamespaceSize uses the lower bits of the Namespace byte below the indicator bit at position
+            // RecordDataHeader.ExtendedNamespaceIndicatorBit; anything not strictly less than (1 << ExtendedNamespaceIndicatorBit) cannot be encoded.
+            if (FieldInfo.ExtendedNamespaceSize >= 1 << RecordDataHeader.ExtendedNamespaceIndicatorBit)
+                ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) must be less than {1 << RecordDataHeader.ExtendedNamespaceIndicatorBit}");
 
-            // Adjust to the actual record length bytes needed (must include roundup).
-            var allocatedSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
-            RecordLengthBytes = RecordDataHeader.GetByteCount(allocatedSize);
-            ActualInlineRecordSize -= initialRecordLengthBytes - RecordLengthBytes;
-
-            // Finally, calculate allocated size (record-aligned). Round up again as our subtraction might have knocked us down
-            // by one kRecordAlignment. This may leave us with one extra byte of RecordLengthBytes if for example ActualInlineRecordSize
-            // went down from 257 to 255, so recalculate the size. This cannot reduce RecordLengthBytes by more than 1.
+            // With fixed-size RecordDataHeader (8 bytes containing KeyLength and ValueLength), the calculation is straightforward.
+            ActualInlineRecordSize = RecordInfo.Size + RecordDataHeader.Size + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
-            if (AllocatedInlineRecordSize != allocatedSize)
-                RecordLengthBytes = RecordDataHeader.GetByteCount(AllocatedInlineRecordSize);
         }
 
         /// <summary>
@@ -170,14 +134,14 @@ namespace Tsavorite.core
 
         /// <summary>Called from Upsert or RMW methods with the final record info; ensures consistency between the Get*FieldInfo methods and the actual update methods./// </summary>
         [Conditional("DEBUG")]
-        public void AssertOptionalsIfSet(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
+        public void AssertOptionalsIfSet(RecordDataHeader dataHeader, bool checkETag = true, bool checkExpiration = true)
         {
             if (!IsSet)
                 return;
             if (checkETag)
-                Debug.Assert(FieldInfo.HasETag == recordInfo.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {recordInfo.HasETag}");
+                Debug.Assert(FieldInfo.HasETag == dataHeader.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {dataHeader.HasETag}");
             if (checkExpiration)
-                Debug.Assert(FieldInfo.HasExpiration == recordInfo.HasExpiration, $"Mismatch between expected HasExpiration {FieldInfo.HasExpiration} and actual HasExpiration {recordInfo.HasExpiration}");
+                Debug.Assert(FieldInfo.HasExpiration == dataHeader.HasExpiration, $"Mismatch between expected HasExpiration {FieldInfo.HasExpiration} and actual HasExpiration {dataHeader.HasExpiration}");
         }
 
         /// <inheritdoc/>

@@ -328,6 +328,10 @@ namespace Tsavorite.core
         public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
         /// <inheritdoc/>
         public RecordInfo Info => diskLogRecord.Info;
+        /// <inheritdoc/>
+        public ref RecordDataHeader DataHeaderRef => ref diskLogRecord.DataHeaderRef;
+        /// <inheritdoc/>
+        public RecordDataHeader DataHeader => diskLogRecord.DataHeader;
 
         /// <inheritdoc/>
         public byte RecordType => diskLogRecord.RecordType;

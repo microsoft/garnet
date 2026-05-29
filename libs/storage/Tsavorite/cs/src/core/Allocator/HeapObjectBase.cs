@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -105,7 +105,7 @@ namespace Tsavorite.core
             // of the record is not reachable once the (v+1) version is inserted, but if a checkpoint is ongoing, the (v) version is part of that.
             // (If this was an Overflow instead of an Object, then PostCopyUpdater will follow the normal RCU logic, creating a new ValueSpan which will
             // probably (but not necessarily) be another Overflow.)
-            Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
+            Debug.Assert(dstLogRecord.DataHeader.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
 
             // CopyUpdater may have already set the ValueObject so only set if not already set.
             if (!dstLogRecord.ValueObjectIsSet)

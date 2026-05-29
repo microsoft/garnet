@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -11,7 +11,7 @@ namespace Tsavorite.benchmark
         /// <inheritdoc />
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
-            if (!srcLogRecord.Info.ValueIsObject)
+            if (!srcLogRecord.DataHeader.ValueIsObject)
             {
                 // Copy only the first cache line for more interpretable results
                 srcLogRecord.ValueSpan.Slice(0, 32).CopyTo(output.SpanByte.Span);
@@ -27,7 +27,7 @@ namespace Tsavorite.benchmark
         public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
-            if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
+            if (!logRecord.DataHeader.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
                 srcValue.CopyTo(logRecord.ValueSpan);
             else                                    // Slice the input because it comes from a larger buffer
                 ((ObjectValue)logRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
@@ -38,9 +38,9 @@ namespace Tsavorite.benchmark
         public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
-            if (dstLogRecord.Info.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
+            if (dstLogRecord.DataHeader.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
                 srcValue.CopyTo(dstLogRecord.ValueSpan);
-            else if (!dstLogRecord.Info.ValueIsObject)  // process overflow
+            else if (!dstLogRecord.DataHeader.ValueIsObject)  // process overflow
                 return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             else                                        // Slice the input because it comes from a larger buffer
                 ((ObjectValue)dstLogRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
@@ -65,7 +65,7 @@ namespace Tsavorite.benchmark
         public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // This does not try to set ETag or Expiration
-            if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
+            if (!logRecord.DataHeader.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
                 input.CopyTo(logRecord.ValueSpan);
             else                                    // Slice the input because it comes from a larger buffer
                 ((ObjectValue)logRecord.ValueObject).value = input.ReadOnlySpan.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;

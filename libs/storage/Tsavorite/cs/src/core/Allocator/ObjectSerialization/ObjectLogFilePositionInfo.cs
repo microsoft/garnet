@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -66,33 +65,6 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             word = ulong.Parse(value);
         }
-
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
-        public int ObjectSizeHighByte
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get { return (int)((word >> NumSegmentAndOffsetBits) & 0xFFUL); }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                if (value > byte.MaxValue)
-                    throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-                word = (word & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
-            }
-        }
-
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SetObjectSizeHighByte(ulong* wordPtr, int value)
-        {
-            if (value > byte.MaxValue)
-                throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-            *wordPtr = (*wordPtr & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
-        }
-
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe int GetObjectSizeHighByte(ulong* wordPtr) => (int)((*wordPtr >> NumSegmentAndOffsetBits) & 0xFFUL);
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset

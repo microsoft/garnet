@@ -262,6 +262,10 @@ namespace Tsavorite.core
         public ref RecordInfo InfoRef => ref CurrentIter.InfoRef;
         /// <inheritdoc/>
         public RecordInfo Info => CurrentIter.Info;
+        /// <inheritdoc/>
+        public ref RecordDataHeader DataHeaderRef => ref CurrentIter.DataHeaderRef;
+        /// <inheritdoc/>
+        public RecordDataHeader DataHeader => CurrentIter.DataHeader;
 
         /// <inheritdoc/>
         public byte RecordType => CurrentIter.RecordType;

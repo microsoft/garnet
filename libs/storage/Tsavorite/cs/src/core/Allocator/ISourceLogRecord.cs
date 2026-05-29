@@ -18,6 +18,12 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         RecordInfo Info { get; }
 
+        /// <summary>A ref to the record data header</summary>
+        ref RecordDataHeader DataHeaderRef { get; }
+
+        /// <summary>Fast access returning a copy of the record data header</summary>
+        RecordDataHeader DataHeader { get; }
+
         /// <summary>Type of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
         byte RecordType { get; }
 
@@ -98,10 +104,10 @@ namespace Tsavorite.core
         /// </remarks>
         SpanByteAndMemory ValueSpanByteAndMemory { get; }
 
-        /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
+        /// <summary>The ETag of the record, if any (see <see cref="RecordDataHeader.HasETag"/>; 0 by default.</summary>
         long ETag { get; }
 
-        /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
+        /// <summary>The Expiration of the record, if any (see <see cref="RecordDataHeader.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
         /// <summary>If requested by CopyUpdater or InPlaceDeleter, the source ValueObject or ValueOverflow will be cleared immediately (to manage object size tracking most effectively).

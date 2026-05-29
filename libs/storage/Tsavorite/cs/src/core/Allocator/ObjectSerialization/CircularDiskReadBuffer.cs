@@ -229,6 +229,27 @@ namespace Tsavorite.core
             return false;
         }
 
+        /// <summary>
+        /// Extends the total read length by the specified amount. Used when sentinel-encoded lengths in the DataHeader
+        /// are smaller than the actual object-log data (e.g., overflow key/value exceeding the header field limit).
+        /// Issues reads to any empty buffer slots to fill them with the newly-available data range.
+        /// </summary>
+        internal void ExtendReadLength(ulong additionalLength)
+        {
+            unreadLengthRemaining += additionalLength;
+
+            // Fill empty buffer slots starting from the current index (most needed first).
+            for (var count = 0; count < buffers.Length; count++)
+            {
+                if (unreadLengthRemaining == 0)
+                    break;
+                var ii = (currentIndex + count) % buffers.Length;
+                var buf = buffers[ii];
+                if (buf is null || (!buf.HasData && !buf.HasInFlightRead))
+                    DoReadBuffer(ii, unalignedReadStartPosition: 0);
+            }
+        }
+
         internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)

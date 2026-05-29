@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -99,9 +99,9 @@ namespace Tsavorite.core
             logRecord.RecordSpan.CopyTo(recordBuffer.RequiredValidSpan);
 
             return new DiskLogRecord(recordBuffer, transientObjectIdMap,
-                logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow : default,
-                logRecord.Info.ValueIsOverflow ? logRecord.ValueOverflow : default,
-                logRecord.Info.ValueIsObject ? logRecord.ValueObject : default);
+                logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow : default,
+                logRecord.DataHeader.ValueIsOverflow ? logRecord.ValueOverflow : default,
+                logRecord.DataHeader.ValueIsObject ? logRecord.ValueObject : default);
         }
 
         /// <summary>
@@ -166,7 +166,7 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public readonly bool IsPinnedKey => logRecord.Info.KeyIsInline;
+        public readonly bool IsPinnedKey => logRecord.DataHeader.KeyIsInline;
 
         /// <inheritdoc/>
         public readonly byte* PinnedKeyPointer => logRecord.PinnedKeyPointer;
@@ -179,7 +179,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly bool IsPinnedValue => logRecord.Info.ValueIsInline;
+        public readonly bool IsPinnedValue => logRecord.DataHeader.ValueIsInline;
 
         /// <inheritdoc/>
         public readonly byte* PinnedValuePointer => logRecord.PinnedValuePointer;
@@ -234,6 +234,10 @@ namespace Tsavorite.core
         public ref RecordInfo InfoRef => ref logRecord.InfoRef;
         /// <inheritdoc/>
         public readonly RecordInfo Info => logRecord.Info;
+        /// <inheritdoc/>
+        public ref RecordDataHeader DataHeaderRef => ref logRecord.DataHeaderRef;
+        /// <inheritdoc/>
+        public readonly RecordDataHeader DataHeader => logRecord.DataHeader;
 
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> Key => logRecord.Key;
@@ -353,17 +357,17 @@ namespace Tsavorite.core
             var estimatedTotalSize = alignedInlineRecordSize + sizeof(int); // Include the record-size prefix in case we can use the SpanByte directly (see DirectCopyInlinePortionOfRecord)
 
             var heapSize = 0;
-            if (logRecord.Info.RecordIsInline)
+            if (logRecord.DataHeader.RecordIsInline)
             {
                 // estimatedTotalSize is accurate here.
                 DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
             }
             else
             {
-                var estimatedRecordHeapSize = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
-                if (logRecord.Info.ValueIsOverflow)
+                var estimatedRecordHeapSize = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
+                if (logRecord.DataHeader.ValueIsOverflow)
                     estimatedRecordHeapSize += logRecord.ValueOverflow.Length;
-                else if (logRecord.Info.ValueIsObject)
+                else if (logRecord.DataHeader.ValueIsObject)
                 {
                     // We don't know this size exactly so use a small value. Either we'll fit in inline and then have to adjust if we go beyond that, or we
                     // will just allocate max here and then if we go beyond that, we'll throw the capacity-exceeded exception. This is where "estimated" comes in.
@@ -391,9 +395,9 @@ namespace Tsavorite.core
             // See if we have enough space in the SpanByte and, if not, if we would fit in maxHeapAllocationSize.
             // For SpanByte the recordSize must include the length prefix, which is included in the output stream
             // if we can write directly to the SpanByte, which is a span in the network buffer.
-            if (!output.IsSpanByte || estimatedTotalSize + sizeof(int) > output.SpanByte.Length || logRecord.Info.ValueIsObject)
+            if (!output.IsSpanByte || estimatedTotalSize + sizeof(int) > output.SpanByte.Length || logRecord.DataHeader.ValueIsObject)
             {
-                var allocationSizeToUse = logRecord.Info.ValueIsObject ? maxHeapAllocationSize : estimatedTotalSize + sizeof(int);
+                var allocationSizeToUse = logRecord.DataHeader.ValueIsObject ? maxHeapAllocationSize : estimatedTotalSize + sizeof(int);
                 if (estimatedTotalSize > allocationSizeToUse)
                     throw new TsavoriteException($"estimatedRecordSize ({estimatedTotalSize}) exceeds max allocated heap size (to use: {allocationSizeToUse}; max: {maxHeapAllocationSize})");
                 output.EnsureHeapMemorySize(allocationSizeToUse, memoryPool);
@@ -432,12 +436,12 @@ namespace Tsavorite.core
         /// <returns></returns>
         private static int SerializeHeapObjects(in LogRecord logRecord, int inlineRecordSize, int heapSize, IObjectSerializer<IHeapObject> valueObjectSerializer, ref SpanByteAndMemory output)
         {
-            if (logRecord.Info.RecordIsInline)
+            if (logRecord.DataHeader.RecordIsInline)
                 return inlineRecordSize;
 
             // Serialize Key then Value, just like the Object log file. And this will be easy to modify for future chunking of multi-networkBuffer Keys and Values.
             var outputOffset = (ulong)inlineRecordSize;
-            if (logRecord.Info.KeyIsOverflow)
+            if (logRecord.DataHeader.KeyIsOverflow)
             {
                 var overflow = logRecord.KeyOverflow;
                 overflow.ReadOnlySpan.CopyTo(output.Span.Slice(inlineRecordSize));
@@ -445,7 +449,7 @@ namespace Tsavorite.core
             }
 
             var valueObjectLength = 0UL;
-            if (logRecord.Info.ValueIsOverflow)
+            if (logRecord.DataHeader.ValueIsOverflow)
             {
                 var overflow = logRecord.ValueOverflow;
                 overflow.ReadOnlySpan.CopyTo(output.Span.Slice((int)outputOffset));
@@ -453,7 +457,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(logRecord.Info.ValueIsObject, "Expected ValueIsObject to be true");
+                Debug.Assert(logRecord.DataHeader.ValueIsObject, "Expected ValueIsObject to be true");
                 if (output.IsSpanByte)
                     valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, output.SpanByte.ToPointer() + outputOffset, output.Length);
                 else
@@ -506,7 +510,7 @@ namespace Tsavorite.core
             // location to be serialized length. Create a transient logRecord to decode these and restore the objectId values.
             var ptr = recordSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
-            if (serializedLogRecord.Info.RecordIsInline)
+            if (serializedLogRecord.DataHeader.RecordIsInline)
                 return new(serializedLogRecord);
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
@@ -514,7 +518,7 @@ namespace Tsavorite.core
             var keyWasSet = false;
             try
             {
-                if (serializedLogRecord.Info.KeyIsOverflow)
+                if (serializedLogRecord.DataHeader.KeyIsOverflow)
                 {
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
@@ -523,7 +527,7 @@ namespace Tsavorite.core
                     keyWasSet = true;
                 }
 
-                if (serializedLogRecord.Info.ValueIsOverflow)
+                if (serializedLogRecord.DataHeader.ValueIsOverflow)
                 {
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
