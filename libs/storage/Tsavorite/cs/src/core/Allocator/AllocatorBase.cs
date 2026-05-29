@@ -214,6 +214,16 @@ namespace Tsavorite.core
         readonly System.Collections.Concurrent.ConcurrentQueue<AsyncGetFromDiskResult<AsyncIOContext>>
             asyncGetFromDiskResultPool = new();
 
+        /// <summary>
+        /// Cached delegate for <see cref="AsyncGetFromDiskCallback"/>. The C# compiler does
+        /// not cache method-group conversions to delegates for <em>instance</em> methods
+        /// (only for static), so without this field every <see cref="AsyncGetFromDisk"/>
+        /// call would allocate a fresh ~48 B <see cref="DeviceIOCompletionCallback"/>
+        /// delegate. Pre-binding it once in the ctor removes that per-pending-op
+        /// allocation from the disk-read hot path.
+        /// </summary>
+        readonly DeviceIOCompletionCallback asyncGetFromDiskCallbackDelegate;
+
         /// <summary>Address type for this hlog's records'</summary>
         /// <summary>Read cache eviction callback</summary>
         protected readonly Action<long, long> EvictCallback = null;
@@ -528,6 +538,10 @@ namespace Tsavorite.core
 
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
+
+            // Pre-bind the instance-method delegate once so the pending-IO hot path does
+            // not allocate a fresh DeviceIOCompletionCallback per AsyncGetFromDisk call.
+            asyncGetFromDiskCallbackDelegate = AsyncGetFromDiskCallback;
 
             this.transientObjectIdMap = transientObjectIdMap;
 
@@ -2024,7 +2038,7 @@ namespace Tsavorite.core
                 }
             }
 
-            AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
+            AsyncReadRecordToMemory(fromLogicalAddress, numBytes, asyncGetFromDiskCallbackDelegate, ref context);
         }
 
         /// <summary>
