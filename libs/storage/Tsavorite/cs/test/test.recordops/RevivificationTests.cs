@@ -275,8 +275,8 @@ namespace Tsavorite.test.Revivification
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            // Records all have a Span<byte> corresponding to a 'long' ii and value, which means one length byte.
-            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
+            // Records all have a Span<byte> corresponding to a 'long' ii and value, so we use the fixed RDH size.
+            recordSize = RoundUp(RecordInfo.Size + RecordDataHeader.Size + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
@@ -1957,7 +1957,7 @@ namespace Tsavorite.test.Revivification
                     FieldInfo = new()
                     {
                         KeySize = DefaultKeySize,
-                        ValueSize = recordSize - DefaultKeySize - RecordInfo.Size - RecordDataHeader.MinHeaderBytes
+                        ValueSize = recordSize - DefaultKeySize - RecordInfo.Size - RecordDataHeader.Size
                     }
                 };
                 sizeInfo.SetKeyIsInline();
@@ -2208,7 +2208,7 @@ namespace Tsavorite.test.Revivification
                 int minAddress = AddressIncrement - freeRecordPool.bins[0].recordCount - 10;
 
                 // Add too-small records to wrap around the end of the bin records. Use lower addresses so we don't mix up the "real" results.
-                const int smallSize = 22;   // min required size for 8-byte key is 22
+                const int smallSize = 25;   // min required size for 8-byte key (8 RI + 8 RDH + 8 key + 1 value = 25)
                 var logRecord_smallSize = artificialFreeBinAllocator.AllocateLogRecord(smallSize);
                 for (var ii = 0; ii < freeRecordPool.bins[0].recordCount - 2; ++ii, ++expectedAdds)
                     ClassicAssert.IsTrue(freeRecordPool.TryAdd(minAddress + ii + 1, ref logRecord_smallSize, ref revivStats));
@@ -2314,7 +2314,7 @@ namespace Tsavorite.test.Revivification
             var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(store, binDef);
             const long TestAddress = AddressIncrement, minAddress = AddressIncrement - 10;
             long counter = 0, globalAddress = 0;
-            const int smallSize = 22;   // min required size for 8-byte key is 22
+            const int smallSize = 25;   // min required size for 8-byte key (8 RI + 8 RDH + 8 key + 1 value = 25)
             var logRecord_smallSize = artificialFreeBinAllocator.AllocateLogRecord(smallSize);
             const int numIterations = 10000;
 

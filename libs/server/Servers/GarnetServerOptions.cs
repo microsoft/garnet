@@ -813,7 +813,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
-        /// Tsavorite requires this to be at least 64 bytes (1 &lt;&lt; LogSettings.kLowestMaxInlineSizeBits)
+        /// Tsavorite requires this to be at least 64 bytes (<see cref="Tsavorite.core.LogSettings.MinMaxInlineSize"/>)
         /// and at most 256 MB (1 &lt;&lt; (LogSettings.kMaxStringSizeBits - 1)). The value will be rounded down to the previous power of 2.
         /// Additionally, the effective (power-of-2) value must be strictly less than the effective PageSize
         /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
@@ -823,7 +823,7 @@ namespace Garnet.server
         /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
         public int ValueOverflowThresholdBytes()
         {
-            const long MinBytes = 64L;                  // 1 << LogSettings.kLowestMaxInlineSizeBits
+            const long MinBytes = 64L;                  // Tsavorite.core.LogSettings.MinMaxInlineSize
             const long MaxBytes = 1L << 28;             // 1 << (LogSettings.kMaxStringSizeBits - 1)
 
             if (string.IsNullOrEmpty(ValueOverflowThreshold))

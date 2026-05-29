@@ -77,8 +77,8 @@ namespace Tsavorite.core
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
-            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+            maxInlineKeySize = settings.LogSettings.MaxInlineKeySize;
+            maxInlineValueSize = settings.LogSettings.MaxInlineValueSize;
 
             ObjectLogSegmentSize = 1L << settings.LogSettings.ObjectLogSegmentSizeBits;
 

@@ -406,8 +406,14 @@ namespace Tsavorite.core
         internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            dataHeader.SetRecordLength(recordLength);
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen);
+
+            var keyLength = dataHeader.GetKeyLength();
+            var nonValueBytes = RecordInfo.Size + RecordDataHeader.Size + dataHeader.ExtendedNamespaceLength
+                              + keyLength + Info.GetOptionalSize();
+            var nonFiller = recordLength - newFillerLen;
+            var newValueLength = nonFiller - nonValueBytes;
+            dataHeader.SetValueLength(newValueLength);
+            dataHeader.SetFillerLengthAtNonFiller(ref InfoRef, nonFiller: nonFiller, fillerLength: newFillerLen);
         }
 
         /// <summary>
@@ -663,13 +669,17 @@ namespace Tsavorite.core
             optionalStartAddress += inlineValueGrowth;
             optionalFields.Restore(optionalStartAddress, in sizeInfo, ref InfoRef);
 
-            // Update record part 4: Update Filler length in the record. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
+            // Update record part 4: Update the stored ValueLength in the header to match the new inline value size. The header's KeyLength is unchanged; the
+            // RecordLength is derived from KeyLength + ValueLength + components + filler, so updating ValueLength is required to keep the derived length correct.
+            if (inlineValueGrowth != 0)
+                dataHeader.SetValueLength(newInlineValueSize);
+
+            // Update record part 5: Update Filler length in the record. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here, so don't adjust fillerLen for that. However, a change in the presence or absence of the pseudo-optional
-            // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects. Note that we don't have a valueLength to update;
-            // it is a calculated value, which depends (in part) upon FillerLength.
+            // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects.
             var newFillerLen = oldFillerLen - inlineValueGrowth - optionalGrowth;
             if (newFillerLen != oldFillerLen)
-                dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
+                dataHeader.SetFillerLength(ref InfoRef, newFillerLen > 0 ? newFillerLen : 0);
             if (zeroInit && inlineValueGrowth > 0)
             {
                 // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
@@ -732,11 +742,13 @@ namespace Tsavorite.core
             if (zeroInit && inlineValueGrowth > 0)
                 new Span<byte>((byte*)(valueAddress + valueLength), inlineValueGrowth).Clear();
 
-            // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
+            // Update the stored ValueLength in the header to match the new size; the derived RecordLength relies on this.
+            dataHeader.SetValueLength(newValueSize);
 
-            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
-            // So the only things that change are FillerLength and ValueLength.
+            // Update FillerLength.
+            dataHeader.SetFillerLength(ref InfoRef, oldFillerLen - inlineValueGrowth);
+
+            // Key does not change, so its size remains the same. valueAddress does not change either, as everything before it is immutable.
             valueLength += inlineValueGrowth;
             return true;
         }
@@ -789,7 +801,9 @@ namespace Tsavorite.core
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
             if (fillerLength < 0)
                 return false;
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLength);
+            // Update the stored ValueLength to the new inline size so the derived RecordLength remains correct.
+            dataHeader.SetValueLength(sizeInfo.InlineValueSize);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLength);
             return true;
         }
 
@@ -836,7 +850,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress()
         {
-            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
             return valueAddress + valueLength;
         }
 
@@ -916,7 +930,7 @@ namespace Tsavorite.core
             var recordLength = dataHeader.GetRecordLength();
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetFillerLength(Info);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ETagSize;
@@ -951,7 +965,7 @@ namespace Tsavorite.core
             if (Info.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLen);
             return true;
         }
 
@@ -969,7 +983,7 @@ namespace Tsavorite.core
             var recordLength = dataHeader.GetRecordLength();
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetFillerLength(Info);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ETagSize;
@@ -1002,7 +1016,7 @@ namespace Tsavorite.core
             if (Info.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLen);
             return true;
         }
 
@@ -1027,7 +1041,7 @@ namespace Tsavorite.core
             var recordLength = dataHeader.GetRecordLength();
 
             // We're adding an Expiration where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetFillerLength(Info);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ExpirationSize;
@@ -1047,7 +1061,7 @@ namespace Tsavorite.core
             if (Info.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLen);
             return true;
         }
 
@@ -1065,7 +1079,7 @@ namespace Tsavorite.core
             var recordLength = dataHeader.GetRecordLength();
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetFillerLength(Info);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ExpirationSize;
@@ -1086,7 +1100,7 @@ namespace Tsavorite.core
             if (Info.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLen);
             return true;
         }
 
@@ -1242,7 +1256,7 @@ namespace Tsavorite.core
             if (!Info.KeyIsInline)
             {
                 var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-                var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+                var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
                 LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
                 return;
             }
@@ -1262,9 +1276,9 @@ namespace Tsavorite.core
 
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             var recordLength = dataHeader.GetRecordLength();
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            var fillerLen = dataHeader.GetFillerLength(Info);
 
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out var keyLength, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out var keyLength);
 
             // If the key is Heap and we're not clearing it then we don't want to to change ObjectLogPosition and Filler, so just clear the value and return.
             if (!clearKey && !Info.KeyIsInline)
@@ -1284,7 +1298,7 @@ namespace Tsavorite.core
                 LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
 
             // Now update filler to account for removal of ObjectLogPosition
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen + ObjectLogPositionSize);
+            dataHeader.SetFillerLength(ref InfoRef, fillerLen + ObjectLogPositionSize);
         }
 
         /// <summary>

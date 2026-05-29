@@ -25,10 +25,10 @@ namespace Tsavorite.benchmark
         /// The size remains the same as the previous key size for comparison purposes, making sure the large init_key and txn_key arrays use the same amount of memory.
         /// </summary>
         /// <remarks>
-        /// Combined with the header length total of <see cref="RecordDataHeader.MinHeaderBytes"/> bytes, we get:
+        /// Combined with the header length total of <see cref="RecordDataHeader.Size"/> bytes, we get:
         ///     [RecordInfo header no_extended_namespace keydata valuedata]
-        ///   = [8 + 5 (NumIndicatorBytes + 2 1-byte lengths) + 12 + 100 (see <see cref="SpanByteYcsbConstants.kValueDataSize"/>)] = 125
-        /// which is rounded up to <see cref="Constants.kRecordAlignment"/> (8) so the final record size is exactly aligned to two cache lines.
+        ///   = [8 + 8 (RecordDataHeader.Size) + 12 + 100 (see <see cref="SpanByteYcsbConstants.kValueDataSize"/>)] = 128
+        /// which is exactly aligned to two cache lines (and <see cref="Constants.kRecordAlignment"/> (8)).
         /// To illustrate why this is important: during the conversion to <see cref="ReadOnlySpan{_byte_}"/>, the change in key alignment was not correctly accounted for;
         /// the record was 8 bytes shorter, and the next record's RecordInfo was in the final bytes of the previous record's cache line. This resulted in about a 10% slowdown.
         /// </remarks>

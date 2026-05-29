@@ -287,7 +287,7 @@ namespace Tsavorite.test.Objects
         public class TestInlineObjectFunctions : TestObjectFunctions
         {
             // Force test of overflow values
-            const int OverflowValueSize = 1 << (LogSettings.kDefaultMaxInlineValueSizeBits + 1);
+            const int OverflowValueSize = LogSettings.DefaultMaxInlineValueSize * 2;
             byte[] pinnedValueOverflowBytes = GC.AllocateArray<byte>(OverflowValueSize, pinned: true);
             Span<byte> GetOverflowValueSpanByte() => new(pinnedValueOverflowBytes);
 

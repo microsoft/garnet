@@ -553,10 +553,12 @@ namespace Tsavorite.core
                     throw new TsavoriteException($"{rcs.SecondChanceFraction} must be >= 0.0 and <= 1.0");
             }
 
-            if (logSettings.MaxInlineKeySizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
-            if (logSettings.MaxInlineValueSizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
+            if (logSettings.MaxInlineKeySize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineKeySize > LogSettings.MaxInlineKeySizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySize)} ({logSettings.MaxInlineKeySize}) must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineKeySizeLimit} (0x{LogSettings.MaxInlineKeySizeLimit:X})");
+            if (logSettings.MaxInlineValueSize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineValueSize > LogSettings.MaxInlineValueSizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSize)} ({logSettings.MaxInlineValueSize}) must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineValueSizeLimit} (0x{LogSettings.MaxInlineValueSizeLimit:X})");
+            if (logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
+                throw new TsavoriteException($"{nameof(logSettings.PageSizeBits)} must be at most {LogSettings.kMaxStringSizeBits - 1}");
 
             this.logger = logger;
             if (logSettings.LogDevice == null)
@@ -2088,15 +2090,17 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + RecordDataHeader.MinHeaderBytes)
+            if (currentLength >= RecordInfo.Size + RecordDataHeader.Size)
             {
                 var ptr = ctx.record.GetValidPointer();
                 var recordInfo = *(RecordInfo*)ptr;
                 var dataHeader = new RecordDataHeader(ptr + RecordInfo.Size);
-                var (numKeyLengthBytes, numRecordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var headerLength);
+                var headerLength = RecordDataHeader.Size;
 
-                // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
-                var recordLength = dataHeader.GetRecordLength(numRecordLengthBytes);
+                // Derive a CONSERVATIVE record length from the header fields alone. For non-revivified records this is the exact allocated
+                // size; for revivified records (where the filler is large and stored as an int after the optionals), this is a lower bound,
+                // and the caller will re-issue IO to read more bytes if needed.
+                var recordLength = dataHeader.GetRecordLengthEstimate(recordInfo);
                 if (currentLength <= headerLength)
                 {
                     prevLengthToRead = recordLength;
@@ -2109,12 +2113,12 @@ namespace Tsavorite.core
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
 
-                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart(headerLength);
+                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart();
 
                 // If the length is up to offsetToKeyStart, we can read the full lengths. If not, we'll fall through to reread the current record.
                 if (currentLength >= offsetToKeyStart)
                 {
-                    var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+                    var keyLength = dataHeader.GetKeyLength();
                     var keyStartPtr = ptr + offsetToKeyStart;
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.

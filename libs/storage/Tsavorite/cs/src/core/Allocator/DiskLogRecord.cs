@@ -91,12 +91,14 @@ namespace Tsavorite.core
         /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
         internal static DiskLogRecord CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
         {
-            // Allocate from ActualSize roundup here because the value may have been shrunk.
-            var allocatedSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
+            // Allocate and copy the FULL allocated size (not just ActualSize), so the filler region — which holds the explicit filler-length
+            // int for records with filler >= 4 bytes — is preserved on the disk copy. Without this, downstream paths that derive recordLength
+            // from the filler int (e.g., GetAllocatedRecordSize on the disk record) would mis-compute the record extent.
+            var allocatedSize = logRecord.AllocatedSize;
             var recordBuffer = bufferPool.Get(allocatedSize);
 
-            // Copy the inline portion of the logRecord.
-            logRecord.RecordSpan.CopyTo(recordBuffer.RequiredValidSpan);
+            // Copy the full inline portion of the logRecord, including the filler bytes (and the filler-length int, if any).
+            new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress, allocatedSize).CopyTo(recordBuffer.RequiredValidSpan);
 
             return new DiskLogRecord(recordBuffer, transientObjectIdMap,
                 logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow : default,

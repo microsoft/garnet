@@ -26,7 +26,7 @@ namespace Tsavorite.test.LogRecordTests
 #pragma warning disable IDE1006 // Naming Styles
         const int initialKeyLen = 10;
         const int initialValueLen = 40;
-        const int initialVarbyteSize = RecordDataHeader.MinHeaderBytes;
+        const int initialVarbyteSize = RecordDataHeader.Size;   // Fixed 8-byte header
         const int initialOptionalSize = sizeof(long) * 2;
 
         const int maxInlineKeySize = 64;
@@ -69,7 +69,7 @@ namespace Tsavorite.test.LogRecordTests
             if (valueSize > 0)
                 sizeInfo.FieldInfo.ValueSize = valueSize;
 
-            // Clear packed word since we are re-evaluating; CalculateSizes will set KeyLengthBytes/RecordLengthBytes.
+            // Clear packed word since we are re-evaluating.
             sizeInfo.word = 0;
 
             // Key
@@ -91,62 +91,36 @@ namespace Tsavorite.test.LogRecordTests
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
         public unsafe void InlineHeaderTests()
         {
+            // Test fixed-size header invariants: header is always RecordDataHeader.Size (8 bytes), KeyLength is fixed 2 bytes, ValueLength is fixed 3 bytes.
             const int maxRecordAllocation = (1 << 25) + (1 << 20);
             nativePointer = (long)NativeMemory.AlignedAlloc(maxRecordAllocation, Constants.kCacheLineBytes);
 
-            Assert.That(RecordDataHeader.GetByteCount(0), Is.EqualTo(1));
+            // 1-byte key length boundary (small key/value)
+            InitializeKeyAndValue(inputKeyLength: 16, inputValueLength: 200, exNameSpaceLength: 0);
 
-            int inputKeyLength = 16;
-            var inputValueLength = 1 << 8 - 1;
+            // Larger key/value within first kilobyte
+            InitializeKeyAndValue(inputKeyLength: 16, inputValueLength: 1 << 8, exNameSpaceLength: 2);
 
-            // Test 1- and 2-byte valueLengthByte boundary with 1-keyLengthByte key
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(1));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 0, out int keyLengthBytes, out int recordLengthBytes);
-            Assert.That(keyLengthBytes, Is.EqualTo(1));
-            Assert.That(recordLengthBytes, Is.EqualTo(1));
+            // Key at 16-bit boundary minus 1, value sized to fit (smaller because we no longer have separate KeyLength/RecordLength byte counts)
+            InitializeKeyAndValue(inputKeyLength: (1 << 16) - 2, inputValueLength: 256, exNameSpaceLength: 4);
 
-            inputValueLength = 1 << 8;
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(2));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 2, out _ /*keyLengthBytes*/, out recordLengthBytes);
-            Assert.That(recordLengthBytes, Is.EqualTo(2));
+            // Value larger than 16-bit, fits in 24-bit ValueLength
+            InitializeKeyAndValue(inputKeyLength: 64, inputValueLength: 1 << 16, exNameSpaceLength: 7);
 
-            // Test 2- and 3-byte valueLengthByte boundary with 2-keyLengthByte key
-            inputKeyLength = inputValueLength = (1 << 16) - 1;
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(2));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 4, out keyLengthBytes, out recordLengthBytes);
-            Assert.That(keyLengthBytes, Is.EqualTo(2));
-            Assert.That(recordLengthBytes, Is.EqualTo(3));  // We need an extra byte now
+            // Value close to 24-bit max
+            InitializeKeyAndValue(inputKeyLength: 256, inputValueLength: (1 << 24) - 1024, exNameSpaceLength: 0);
 
-            inputValueLength = 1 << 16;
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(3));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 7, out _ /*keyLengthBytes*/, out recordLengthBytes);
-            Assert.That(recordLengthBytes, Is.EqualTo(3));
-
-            // Test 3-byte valueLengthByte boundary with 3-keyLengthByte key, but the combination of keyLength and valueLength mean we need 4 bytes for recordLength.
-            inputKeyLength = inputValueLength = (1 << 24) - 1024;
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(3));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 0, out keyLengthBytes, out recordLengthBytes);
-            Assert.That(keyLengthBytes, Is.EqualTo(3));
-            Assert.That(recordLengthBytes, Is.EqualTo(4));  // Need an additional byte in recordLength
-
-            // Test 4-byte valueLengthByte boundary with 4-keyLengthByte key, making the recordLength also 4 bytes
-            inputKeyLength = inputValueLength = 1 << 24;
-            Assert.That(RecordDataHeader.GetByteCount(inputValueLength), Is.EqualTo(4));
-            InitializeKeyAndValue(inputKeyLength, inputValueLength, exNameSpaceLength: 0, out keyLengthBytes, out recordLengthBytes);
-            Assert.That(keyLengthBytes, Is.EqualTo(4));
-            Assert.That(recordLengthBytes, Is.EqualTo(4));
-
-            void InitializeKeyAndValue(int keyLength, int valueLength, int exNameSpaceLength, out int keyLengthBytes, out int recordLengthBytes)
+            void InitializeKeyAndValue(int inputKeyLength, int inputValueLength, int exNameSpaceLength)
             {
                 // 8*3 is for optionals, including ETag and Expiration and ObjectLogPosition. And some extra buffer just to be safe for the test.
-                Assert.That(keyLength + valueLength + exNameSpaceLength + RecordDataHeader.MaxHeaderBytes + 8 * 3 + 1024, Is.LessThanOrEqualTo(maxRecordAllocation));
+                Assert.That(inputKeyLength + inputValueLength + exNameSpaceLength + RecordDataHeader.Size + 8 * 3 + 1024, Is.LessThanOrEqualTo(maxRecordAllocation));
 
                 var sizeInfo = new RecordSizeInfo()
                 {
                     FieldInfo = new RecordFieldInfo()
                     {
-                        KeySize = keyLength,
-                        ValueSize = valueLength,
+                        KeySize = inputKeyLength,
+                        ValueSize = inputValueLength,
                         ExtendedNamespaceSize = exNameSpaceLength
                     },
                     MaxInlineValueSize = 1 << LogSettings.kMaxStringSizeBits
@@ -158,16 +132,14 @@ namespace Tsavorite.test.LogRecordTests
                 var dataHeader = new RecordDataHeader((byte*)nativePointer);
                 var recordInfo = RecordInfo.InitialValid;
                 var headerLength = dataHeader.Initialize(ref recordInfo, in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress);
-                (keyLengthBytes, recordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var deconstructHeaderLength);
-                Assert.That(headerLength, Is.EqualTo(RecordDataHeader.NumIndicatorBytes + keyLengthBytes + recordLengthBytes));
-                Assert.That(deconstructHeaderLength, Is.EqualTo(headerLength));
-                Assert.That(keyAddress, Is.EqualTo((long)nativePointer + headerLength + exNameSpaceLength));
-                Assert.That(valueAddress, Is.EqualTo(keyAddress + keyLength));
+                Assert.That(headerLength, Is.EqualTo(RecordDataHeader.Size));
+                Assert.That(keyAddress, Is.EqualTo((long)nativePointer + RecordDataHeader.Size + exNameSpaceLength));
+                Assert.That(valueAddress, Is.EqualTo(keyAddress + inputKeyLength));
                 var (keyLengthBack, keyAddressBack) = dataHeader.GetKeyFieldInfo();
-                Assert.That(keyLengthBack, Is.EqualTo(keyLength));
+                Assert.That(keyLengthBack, Is.EqualTo(inputKeyLength));
                 Assert.That(keyAddressBack, Is.EqualTo(keyAddress));
                 var (valueLengthBack, valueAddressBack) = dataHeader.GetValueFieldInfo(recordInfo);
-                Assert.That(valueLengthBack, Is.EqualTo(valueLength));
+                Assert.That(valueLengthBack, Is.EqualTo(inputValueLength));
                 Assert.That(valueAddressBack, Is.EqualTo(valueAddress));
 
                 // TODO: Will need to change for variable length namespaces

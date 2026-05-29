@@ -144,14 +144,16 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
-        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators, in bytes.
+        /// Must be between <see cref="LogSettings.MinMaxInlineSize"/> (64) and <see cref="LogSettings.MaxInlineKeySizeLimit"/> (0xFFFE).
         /// </summary>
-        public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+        public int MaxInlineKeySize = LogSettings.DefaultMaxInlineKeySize;
 
         /// <summary>
-        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>, in bytes.
+        /// Must be between <see cref="LogSettings.MinMaxInlineSize"/> (64) and <see cref="LogSettings.MaxInlineValueSizeLimit"/> (0xFFFFFE).
         /// </summary>
-        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
+        public int MaxInlineValueSize = LogSettings.DefaultMaxInlineValueSize;
 
         /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
@@ -227,7 +229,13 @@ namespace Tsavorite.core
             => cacheLines * 64;
 
         internal LogSettings GetLogSettings()
-            => new()
+        {
+            if (MaxInlineKeySize < LogSettings.MinMaxInlineSize || MaxInlineKeySize > LogSettings.MaxInlineKeySizeLimit)
+                throw new TsavoriteException($"{nameof(MaxInlineKeySize)} ({MaxInlineKeySize}) must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineKeySizeLimit} (0x{LogSettings.MaxInlineKeySizeLimit:X})");
+            if (MaxInlineValueSize < LogSettings.MinMaxInlineSize || MaxInlineValueSize > LogSettings.MaxInlineValueSizeLimit)
+                throw new TsavoriteException($"{nameof(MaxInlineValueSize)} ({MaxInlineValueSize}) must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineValueSizeLimit} (0x{LogSettings.MaxInlineValueSizeLimit:X})");
+
+            return new()
             {
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
@@ -240,9 +248,10 @@ namespace Tsavorite.core
                 MutableFraction = MutableFraction,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings(),
-                MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
-                MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
+                MaxInlineKeySize = MaxInlineKeySize,
+                MaxInlineValueSize = MaxInlineValueSize
             };
+        }
 
         private ReadCacheSettings GetReadCacheSettings()
             => ReadCacheEnabled ?

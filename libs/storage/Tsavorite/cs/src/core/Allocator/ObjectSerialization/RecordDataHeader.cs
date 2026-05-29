@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -11,99 +10,68 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// The header describing the data layout of the record. The record must be pinned.
-    /// The layout is:
+    /// The layout is a fixed 8 bytes:
     /// <list type="bullet">
-    ///     <item>Length indicator byte: flag bits and the number of bytes in KeyLength and RecordLength (3 bits, for 0-4). The layout of this indicator byte is:
-    ///     <list type="bullet">
-    ///         <item>Indicator bits: 2 bits for any flags we want to add.</item>
-    ///         <item>Number of bytes in Filler: 2 bits. This indicates the extra space available in the record if the used record length does not take the full allocated
-    ///             space, either on initial creation or due to later value shriking or removal of Optional fields. These two bits are ignored unless RecordInfo.HasFiller
-    ///             is set, in which case the value in these two bits must be nonzero, from 1-4. The 2 bits covers 0-3 and are offset by 1, as  they must be nonzero
-    ///             if RecordInfo.HasFiller is set, so there are 1-4 Filler length bytes possible. These 1-4 values are interpreted as:
-    ///                 <list type="bullet">
-    ///                     <item>1-3: this is the number of bytes in the Filler, as there is not enough Filler space for a full int.</item>
-    ///                     <item>4: there are enough extra bytes to hold an int, and that int contains the actual number of Filler bytes. This int is the last 4 bytes
-    ///                         of the RecordLength; i.e. the last int before <see cref="Constants.kRecordAlignment"/>.</item>
-    ///                 </list>
-    ///             </item>
-    ///         <item>Number of bytes in KeyLength: 2 bits. May be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow. The 2 bits covers 0-3 and
-    ///             is offset by 1, as there must always be at least one key byte, so there are 1-4 KeyLength bytes possible. KeyLength is immutable for the life of
-    ///             a record, but may be changed by revivification.</item>
-    ///         <item>Number of bytes in RecordLength: 2 bits. Includes Key and Value length (and other attributes such as optionals) so is nonzero. The 2 bits covers 0-3 and
-    ///             is offset by 1, as there must always be one byte. RecordLength is immutable for the life of the log page, including record revivification; even though
-    ///             namespace and key lengths and optionals may change, the record length does not.</item>
-    ///         </list>
-    ///     </item>
-    ///     <item>Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede the Key data bytes).</item>
-    ///     <item>Record type byte; interpreted by caller</item>
-    ///     <item>RecordLength. The entire allocated record size, from the start of the RecordInfo to the end of the allocation; rounded up to Constants.kRecordAlignment.
-    ///         It must precede KeyLength so it never has to change location, e.g. if Revivification changes the number of KeyLenght bytes.</item>
-    ///     <item>KeyLength. The length of the key</item>
-    ///     <item>Namespace extra data, if any</item>
-    ///     <item>Key data bytes</item>
-    ///     <item>Content, consisting of:
+    ///     <item>Byte 0 (IndicatorByte):
     ///         <list type="bullet">
-    ///             <item>Value bytes, if any; there may be none, e.g. creating a Key to server as a Tombstone or as a lock.</item>
-    ///             <item>Optional fields, consisting of:</item>
-    ///             <list type="bullet">
-    ///                 <item>ETag, if present</item>
-    ///                 <item>Expiration, if present</item>
-    ///                 <item>ObjectLog position, if the Key is Overflow or the Value is Overflow or Object</item>
-    ///             </list>
-    ///             <item>Filler, if present</item>
+    ///             <item>Bits 0-1: FillerLength encoding. Interpreted only if <see cref="RecordInfo.HasFiller"/> is set. Values 0-2 mean
+    ///                 1-3 filler bytes (the indicator alone encodes the length). Value 3 means the actual filler length is stored as an
+    ///                 int at the start of the filler region (at <c>recordBase + nonFiller</c>, where <c>nonFiller</c> is the sum of all
+    ///                 non-filler components).</item>
+    ///             <item>Bits 2-7: Unused (reserved for future use).</item>
     ///         </list>
-    ///         We do not store ValueLength explicitly; it is derived from RecordLength minus the sizes of Namespace extra bytes if any, Key, Optionals if any, and Filler.
     ///     </item>
+    ///     <item>Byte 1 (Namespace): single-byte namespace value, or an indicator that ExtendedNamespace bytes precede the key data.
+    ///         Bit 7 is <see cref="ExtendedNamespaceIndicatorBit"/>; if set, bits 0-6 give the number of ExtendedNamespace bytes.</item>
+    ///     <item>Byte 2 (RecordType): caller-defined record type byte.</item>
+    ///     <item>Bytes 3-4 (KeyLength): fixed 16-bit little-endian unsigned integer.
+    ///         Max valid value <see cref="LogSettings.MaxInlineKeySizeLimit"/> (0xFFFE); 0xFFFF reserved as a future sentinel slot
+    ///         (no sentinel logic in this iteration). For overflow keys, this stores <see cref="ObjectIdMap.ObjectIdSize"/>; the
+    ///         object holds the true key length.</item>
+    ///     <item>Bytes 5-7 (ValueLength): fixed 24-bit little-endian unsigned integer.
+    ///         Max valid value <see cref="LogSettings.MaxInlineValueSizeLimit"/> (0xFFFFFE); 0xFFFFFF reserved as a future sentinel
+    ///         slot (no sentinel logic in this iteration). For overflow/object values, this stores <see cref="ObjectIdMap.ObjectIdSize"/>;
+    ///         the object holds the true value length.</item>
     /// </list>
+    /// The full record layout (from the start of the <see cref="RecordInfo"/>) is:
+    /// <list type="bullet">
+    ///     <item><see cref="RecordInfo"/> (8 bytes)</item>
+    ///     <item>RecordDataHeader (8 bytes)</item>
+    ///     <item>Namespace extra data, if any (length <see cref="ExtendedNamespaceLength"/>)</item>
+    ///     <item>Key data bytes (length <see cref="GetKeyLength"/>)</item>
+    ///     <item>Value data bytes (length <see cref="GetValueLength"/>); for overflow/object values this is <see cref="ObjectIdMap.ObjectIdSize"/></item>
+    ///     <item>Optional fields, in this order if present: ETag, Expiration, ObjectLogPosition</item>
+    ///     <item>Filler, if any (size encoded as described above). For the explicit-int encoding the int sits at the start of the filler region.</item>
+    /// </list>
+    /// Total record length is not stored in this header; it is derived from the components.
     ///</summary>
     public unsafe struct RecordDataHeader : IKey
     {
-#pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        // When assigning these bits, use the highest # in kReservedBitMask#
-        const ulong kReservedBitMask1 = 0 << 7;           // Reserved bit
-        const ulong kReservedBitMask2 = 0 << 6;           // Reserved bit
+        /// <summary>The total size of the RecordDataHeader, in bytes.</summary>
+        public const int Size = 8;
 
-        // The bottom 6 bits are length bytecounts
-        /// <summary>
-        /// 2 bits (4, 5) for the number of bytes for the Filler Length. There must always be a filler, so we can store the filler size indicator as 2 bits
-        /// which when offset by 1 allows for 1-4 bytes. If the value is 4, then there are enough bytes to hold an int, and that int is the last 4
-        /// bytes of the record and contains the actual filler length. Otherwise, the value is between 1-3 and is the actual filler length.
-        /// </summary>
-        const int kFillerLengthIndicatorBitMask = (1 << kFillerLengthIndicatorBits) - 1;
-        const int kFillerLengthIndicatorBits = 2;
-        const int kFillerLengthIndicatorShift = kRecordLengthIndicatorBits + kKeyLengthBits;
+        /// <summary>Offset of the IndicatorByte (FillerLength + unused bits).</summary>
+        internal const int IndicatorByteOffset = 0;
 
-        /// <summary>
-        /// 2 bits (2, 3) for the number of bytes for the RecordLength. This must always be nonzero up to 1 &lt;&lt; <see cref="LogSettings.PageSizeBits"/>), which is
-        /// in 4 bytes, and 2 bits covers 0-3 which when adding 1 allows for 1-4 bytes.
-        /// </summary>
-        const int kRecordLengthIndicatorBitMask = (1 << kRecordLengthIndicatorBits) - 1;
-        const int kRecordLengthIndicatorBits = 2;
-        const int kRecordLengthIndicatorShift = kKeyLengthBits;     // Shift bits in the indicator byte
-        const int kRecordLengthShiftInHeader = NumIndicatorBytes * 8; // Shift bytes when storing or retrieving the actual length
+        /// <summary>Offset of the Namespace byte.</summary>
+        internal const int NamespaceOffsetInHeader = 1;
 
-        /// <summary>
-        /// 2 bits (0, 1) for the number of bytes for the KeyLength. There must always be a key, so we can store the max key size (which is limited by 1 &lt;&lt;
-        /// <see cref="kRecordLengthIndicatorBits"/> and thus allows 4 bytes), and 2 bits covers 0-3 which when adding 1 allows for 1-4 bytes.
-        /// </summary>
-        const int kKeyLengthIndicatorBitMask = (1 << kKeyLengthBits) - 1;
-        const int kKeyLengthBits = 2;
-        const int kKeyLengthIndicatorShift = 0;
-        // keyLengthShiftInHeader is calculated in the code, as it relies on kRecordLengthShiftInHeader
-#pragma warning restore IDE1006 // Naming Styles
+        /// <summary>Offset of the RecordType byte.</summary>
+        internal const int RecordTypeOffsetInHeader = 2;
 
-        /// <summary>The maximum number of key length bytes; <see cref="kKeyLengthBits"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxKeyLengthBytes = 1 << kKeyLengthBits;
+        /// <summary>Offset of the 16-bit KeyLength field (bytes 3-4).</summary>
+        internal const int KeyLengthOffset = 3;
 
-        /// <summary>The maximum number of value length bytes; see <see cref="kRecordLengthIndicatorBits"/>.</summary>
-        internal const int MaxRecordLengthBytes = 1 << kRecordLengthIndicatorBits;
+        /// <summary>Offset of the 24-bit ValueLength field (bytes 5-7).</summary>
+        internal const int ValueLengthOffset = 5;
 
-        /// <summary>The minimum number of total data header bytes--NumIndicatorBytes, 1 byte KeyLength, 1 byte RecordLength</summary>
-        public const int MinHeaderBytes = NumIndicatorBytes + 2;
-        /// <summary>The maximum number of total data header bytes--NumIndicatorBytes, 4 bytes KeyLength, 4 bytes RecordLength</summary>
-        internal const int MaxHeaderBytes = NumIndicatorBytes + 8;
-        /// <summary>The number of data header indicator bytes; currently 3 for the length indicator, Namespace, RecordType.</summary>
-        internal const int NumIndicatorBytes = 3;
+        /// <summary>Mask for the 24-bit ValueLength field (used when reading/writing as a 32-bit word).</summary>
+        internal const uint ValueLengthMask = 0x00FFFFFFu;
+
+        // FillerLength encoding occupies bits 0-1 of the IndicatorByte.
+        internal const int kFillerLengthIndicatorBits = 2;
+        internal const int kFillerLengthIndicatorBitMask = (1 << kFillerLengthIndicatorBits) - 1;   // = 0x3
+        internal const int kFillerLengthIndicatorShift = 0;
 
         /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
         /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
@@ -112,12 +80,7 @@ namespace Tsavorite.core
         /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
         internal const byte NamespaceIndicatorMask = ExtendedNamespaceIndicatorBit - 1;
 
-        /// <summary>Offset of the nameSpace byte in the header.</summary>
-        internal const byte NamespaceOffsetInHeader = 1;
-        /// <summary>Offset of the recordType byte in the header.</summary>
-        internal const byte RecordTypeOffsetInHeader = 2;
-
-        /// <summary>Pointer to the first byte of the header, which is the length indicator byte.</summary>
+        /// <summary>Pointer to the first byte of the header (the IndicatorByte).</summary>
         internal byte* HeaderPtr;
 
         /// <inheritdoc/>
@@ -127,25 +90,23 @@ namespace Tsavorite.core
         {
             if (HeaderPtr == null)
                 return "<empty>";
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-            var recordLength = GetRecordLength();
-            var fillerLength = GetFillerLength(recordLength);
-            var (keyLength, keyAddress) = GetKeyFieldInfo();
-            var (valueLength, valueAdress) = GetValueFieldInfo(*RecordInfoPtr, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-            var fillerLenStr = (*RecordInfoPtr).HasFiller ? fillerLength.ToString() : "na";
+            var recordInfo = *RecordInfoPtr;
+            var keyLength = GetKeyLength();
+            var valueLength = GetValueLength();
+            var keyAddress = (long)HeaderPtr + Size + ExtendedNamespaceLength;
+            var valueAddress = keyAddress + keyLength;
+            var fillerLength = GetFillerLength(recordInfo, out var recordLength);
+            var fillerLenStr = recordInfo.HasFiller ? fillerLength.ToString() : "na";
 
-            return $"rec b:{numRecordLengthBytes}/o:na/l:{recordLength}"
-                 + $" | key b:{numKeyLengthBytes}/o:{keyAddress - (long)RecordInfoPtr}/l:{keyLength} {keyString}"
-                 + $" | val b:na/o:{valueAdress - (long)RecordInfoPtr}/l:{valueLength}, {valueString}"
+            return $"rec l:{recordLength}"
+                 + $" | key o:{keyAddress - (long)RecordInfoPtr}/l:{keyLength} {keyString}"
+                 + $" | val o:{valueAddress - (long)RecordInfoPtr}/l:{valueLength}, {valueString}"
                  + $" | filLen {fillerLenStr} Namespace b:{NamespaceByte}/x:{ExtendedNamespaceLength}, RecordType {RecordType}";
         }
 
         internal RecordDataHeader(byte* indicatorPtr) => HeaderPtr = indicatorPtr;
 
         private readonly RecordInfo* RecordInfoPtr => (RecordInfo*)(HeaderPtr - RecordInfo.Size);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetByteCount(long value) => ((sizeof(long) * 8) - BitOperations.LeadingZeroCount((ulong)(value | 1)) + 7) / 8;
 
         internal readonly int ExtendedNamespaceLength
         {
@@ -157,28 +118,31 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Get or set the RecordType byte. Throws an exception if out of range or if there is a conflicting specification for extended-length nameSpace.</summary>
+        /// <summary>Get or set the Namespace byte. Throws an exception if out of range or if there is a conflicting specification for extended-length nameSpace.</summary>
         public readonly byte NamespaceByte
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
                 if ((nameSpace & ExtendedNamespaceIndicatorBit) != 0)
-                    throw new TsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
+                    ThrowTsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
                 return nameSpace;
             }
             set
             {
                 if (value > sbyte.MaxValue)
-                    throw new TsavoriteException($"NamespaceByte value {value} exceeds max allowable {sbyte.MaxValue}");
+                    ThrowTsavoriteException($"NamespaceByte value {value} exceeds max allowable {sbyte.MaxValue}");
                 *(HeaderPtr + NamespaceOffsetInHeader) = value;
             }
         }
 
-        /// <summary>Get or set the RecordType byte</summary>
+        /// <summary>Get or set the RecordType byte.</summary>
         public readonly byte RecordType
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => *(HeaderPtr + RecordTypeOffsetInHeader);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set => *(HeaderPtr + RecordTypeOffsetInHeader) = value;
         }
 
@@ -193,14 +157,7 @@ namespace Tsavorite.core
             get
             {
                 var ptr = HeaderPtr - RecordInfo.Size;
-
-                var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-                var offsetToKeyStart = GetOffsetToKeyStart(headerLength);
-
-                var keyStartPtr = ptr + offsetToKeyStart;
-                var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-
-                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
+                return new ReadOnlySpan<byte>(ptr + GetOffsetToKeyStart(), GetKeyLength());
             }
         }
 
@@ -209,7 +166,6 @@ namespace Tsavorite.core
         {
             get
             {
-                // True if non-0 OR ExtendedNamespaceIndicatorBit is et
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
                 return nameSpace != 0;
             }
@@ -231,73 +187,62 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    throw new TsavoriteException($"Extended namespaces not yet implemented");
+                    ThrowTsavoriteException($"Extended namespaces not yet implemented");
+                    return default;
                 }
             }
         }
 
         #endregion
 
+        /// <summary>
+        /// Initialize the RecordDataHeader for a newly allocated (or revivified) record.
+        /// Writes the indicator byte, namespace, record type, KeyLength, ValueLength, and filler.
+        /// </summary>
+        /// <returns>The data-header size (constant <see cref="Size"/>).</returns>
         internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, out long keyAddress, out long namespaceAddress, out long valueAddress)
         {
-            // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
             var valueLength = sizeInfo.InlineValueSize;
             var recordLength = sizeInfo.AllocatedInlineRecordSize;
-            var numRecordLengthBytes = sizeInfo.RecordLengthBytes;
-            Debug.Assert(numRecordLengthBytes == GetByteCount(recordLength), "RecordLengthBytes does not match RecordLength");
-            var numKeyLengthBytes = sizeInfo.KeyLengthBytes;
-            Debug.Assert(numKeyLengthBytes == GetByteCount(keyLength), "KeyLengthBytes does not match KeyLength");
 
-            // If this was from revivification, we should have <= keyLengthBytes and == recordLengthBytes. Don't change keyLengthBytes, as that would move the RecordLength
-            // field in the header and that might not be an atomic update if it crosses a ulong boundary.
-            if (sizeInfo.IsRevivifiedRecord)
-            {
-                var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
-                if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
-                    ThrowTsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
-                numKeyLengthBytes = revivKeyLenBytes;
-            }
+            Debug.Assert(keyLength <= LogSettings.MaxInlineKeySizeLimit, $"keyLength {keyLength} exceeds {LogSettings.MaxInlineKeySizeLimit}");
+            Debug.Assert(valueLength <= LogSettings.MaxInlineValueSizeLimit, $"valueLength {valueLength} exceeds {LogSettings.MaxInlineValueSizeLimit}");
 
-            // Fill in the indicator byte.
-            *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) << kKeyLengthIndicatorShift));
+            // Zero the IndicatorByte; SetFillerLength below sets the filler bits.
+            *HeaderPtr = 0;
 
-            // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
-            // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
-            // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
+            // Namespace byte: single byte value, or indicator + length for extended.
             var extendedNamespaceSize = sizeInfo.FieldInfo.ExtendedNamespaceSize;
             namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
             *(byte*)namespaceAddress = (byte)(extendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (extendedNamespaceSize & NamespaceIndicatorMask)) : 0);
+
+            // RecordType byte.
             *(HeaderPtr + RecordTypeOffsetInHeader) = sizeInfo.FieldInfo.RecordType;
 
-            // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
-            // If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet and thus not in optionals, but we need to reserve the
-            // ObjectLogPosition space and not let it be part of FillerLength. Do this here after we have initialized the nameSpace byte.
-            var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - extendedNamespaceSize - keyLength - valueLength - sizeInfo.ObjectLogPositionSize);
+            // KeyLength: 16-bit at offset 3.
+            *(ushort*)(HeaderPtr + KeyLengthOffset) = (ushort)keyLength;
 
-            // Set RecordLength into the header. Header format is (low->high): <Indicator byte><Namespace byte><RecordType byte><RecordLength><KeyLength (may overflow ulong)>.
-            // RecordLength will always fit in the header word. Zero out bits before we assign them in case we have non-zeroinitialized space.
-            var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
-            *(ulong*)HeaderPtr = (*(ulong*)HeaderPtr & ~(recordLengthMask << kRecordLengthShiftInHeader)) | (((ulong)recordLength & recordLengthMask) << kRecordLengthShiftInHeader);
+            // ValueLength: 24-bit at offset 5. Writing 4 bytes here would overflow into byte 8 (past RDH), so RMW-preserve byte 8.
+            var vlPtr = (uint*)(HeaderPtr + ValueLengthOffset);
+            *vlPtr = (*vlPtr & ~ValueLengthMask) | ((uint)valueLength & ValueLengthMask);
 
-            // Set KeyLength into the header. The key length actual bytes may fit along with everything else in the header into a single ulong; otherwise the key length bytes
-            // overflow the ulong. To access they key length, offset IndicatorPtr to align to point to the bytes of a ulong with the KeyLength space as high bytes (remembering
-            // that in little endian, the high bytes are the "rightmost" bytes of a byte*). If the entire header (including key length) fits in a ulong this will back up into
-            // the RecordInfo space; otherwise, we will subtract the negative adjustment and thus "advance" IndicatorPtr. (We don't advance to make KeyLength the low bits,
-            // because that could encounter end-of-record if length is zero). Zero out bits before we assign them in case we have non-zeroinitialized space.
-            var keyLengthMask = (1UL << (numKeyLengthBytes * 8)) - 1;
-            var ptrBackup = sizeof(ulong) - NumIndicatorBytes - numRecordLengthBytes - numKeyLengthBytes;   // If negative, the pointer advances
-            var keyLenPtr = (ulong*)(HeaderPtr - ptrBackup);
-            var keyLengthShiftInHeader = (sizeof(ulong) - numKeyLengthBytes) * 8;
-            *keyLenPtr = (*keyLenPtr & ~(keyLengthMask << keyLengthShiftInHeader)) | (((ulong)keyLength & keyLengthMask) << keyLengthShiftInHeader);
+            // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in
+            // the initialization process. If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet
+            // and thus not in optionals, but we need to reserve the ObjectLogPosition space and not let it be part of FillerLength.
+            var nonFillerAtInit = RecordInfo.Size + Size + extendedNamespaceSize + keyLength + valueLength + sizeInfo.ObjectLogPositionSize;
+            SetFillerLengthAtNonFiller(ref recordInfo, nonFiller: nonFillerAtInit, fillerLength: recordLength - nonFillerAtInit);
 
-            keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
+            keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart();
             valueAddress = keyAddress + keyLength;
 
-            return headerLength;
+            return Size;
         }
 
+        /// <summary>
+        /// Initialize a record retrieved from revivification. Clears optionals and filler indicator, resets namespace/recordType to 0,
+        /// and updates <paramref name="sizeInfo"/> to reflect the previously-allocated record length.
+        /// </summary>
         internal readonly void InitializeForRevivification(ref RecordInfo recordInfo, ref RecordSizeInfo sizeInfo)
         {
             Debug.Assert(recordInfo.Invalid, "Expected record to be Invalid in InitializeForRevivification");
@@ -305,73 +250,95 @@ namespace Tsavorite.core
             Debug.Assert(recordInfo.ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
             Debug.Assert(!recordInfo.HasETag && !recordInfo.HasExpiration, "Expected no optionals in InitializeForRevivification");
 
-            // See Initialize() for formatting notes.
-            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, any movement
-            // of RecordLength might not be atomic if it crosses the ulong boundary, so we just don't allow it).
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            Debug.Assert(GetByteCount(sizeInfo.InlineKeySize) <= numKeyLengthBytes, "Cannot exceed previous Key size bytes in InitializeForRevivification");
-            var recordLength = GetRecordLength(numRecordLengthBytes);
+            var recordLength = GetAllocatedRecordSize();
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
-            // We have no optionals, so just set up with key length and recordLength; no filler.
+            // No optionals; clear filler indicator (it will be set correctly when the record is re-initialized).
             recordInfo.ClearHasFiller();
-            *HeaderPtr = (byte)(*HeaderPtr & ~(kFillerLengthIndicatorBitMask << kFillerLengthIndicatorShift));
+            *HeaderPtr = 0;
 
             *(HeaderPtr + NamespaceOffsetInHeader) = 0;
             *(HeaderPtr + RecordTypeOffsetInHeader) = 0;
 
-            // RecordLength is already set and we don't set key here; we wait for Revivification to do that. But we must update the sizeInfo
-            // to ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called.
+            // Preserve previously-allocated record length so LogRecord.InitializeRecord reuses the same span.
             sizeInfo.AllocatedInlineRecordSize = recordLength;
             sizeInfo.SetIsRevivifiedRecord();
         }
 
-        /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
-        /// <param name="newRecordLength"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetRecordLength(int newRecordLength)
-        {
-            // This might leave extra bytes in the record length field if the new length uses fewer bytes than the previous length but this is only
-            // temporary so it is acceptable.
-            var recordLengthMask = (1UL << (DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes * 8)) - 1;
-            *(ulong*)HeaderPtr = (*(ulong*)HeaderPtr & ~(recordLengthMask << kRecordLengthShiftInHeader)) | (((ulong)newRecordLength & recordLengthMask) << kRecordLengthShiftInHeader);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int numKeyLengthBytes, int numRecordLengthBytes) DeconstructKVByteLengths(out int headerLength)
-        {
-            var indicator = *HeaderPtr;
-            var numRecordLengthBytes = ((indicator >> kRecordLengthIndicatorShift) & kRecordLengthIndicatorBitMask) + 1;    // RecordLength does not allow zero, so add 1
-            var numKeyLengthBytes = ((indicator >> kKeyLengthIndicatorShift) & kKeyLengthIndicatorBitMask) + 1;             // KeyLength does not allow zero, so add 1
-            headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            return (numKeyLengthBytes, numRecordLengthBytes);
-        }
-
         /// <summary>Get the offset of the key, relative to the <see cref="RecordInfo"/> start.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetOffsetToKeyStart(int headerLength) => RecordInfo.Size + headerLength + ExtendedNamespaceLength;
+        internal readonly int GetOffsetToKeyStart() => RecordInfo.Size + Size + ExtendedNamespaceLength;
 
+        /// <summary>Get the inline KeyLength stored in the header.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength(RecordInfo recordInfo, int recordLength)
-            => recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
+        internal readonly int GetKeyLength() => *(ushort*)(HeaderPtr + KeyLengthOffset);
 
+        /// <summary>Get the inline ValueLength stored in the header (24-bit, masked to <see cref="ValueLengthMask"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetValueLength() => (int)(*(uint*)(HeaderPtr + ValueLengthOffset) & ValueLengthMask);
+
+        /// <summary>
+        /// Set the inline ValueLength stored in the header (24-bit). Preserves byte 8 (the byte past the end of the header).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void SetValueLength(int valueLength)
+        {
+            Debug.Assert(valueLength >= 0 && valueLength <= LogSettings.MaxInlineValueSizeLimit,
+                $"valueLength {valueLength} out of range [0, {LogSettings.MaxInlineValueSizeLimit}]");
+            var vlPtr = (uint*)(HeaderPtr + ValueLengthOffset);
+            *vlPtr = (*vlPtr & ~ValueLengthMask) | ((uint)valueLength & ValueLengthMask);
+        }
+
+        /// <summary>Compute the non-filler component sum (everything except filler bytes), from the current header state. The caller must ensure
+        /// the header fields and <paramref name="recordInfo"/> are in their post-update state (e.g., HasETag set if ETag was just added).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetNonFillerSize(RecordInfo recordInfo)
+            => RecordInfo.Size + Size + ExtendedNamespaceLength + GetKeyLength() + GetValueLength() + recordInfo.GetOptionalSize();
+
+        /// <summary>Get the filler length given a precomputed <paramref name="nonFiller"/> total. The caller is responsible for
+        /// ensuring <see cref="RecordInfo.HasFiller"/> is set when calling this; otherwise the result is undefined.</summary>
+        /// <remarks>For the explicit-int encoding the int sits at <c>recordBase + nonFiller</c> (the start of the filler region).</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly int GetExplicitOrInlineFiller(int nonFiller)
+        {
+            var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
+            return fillerLen < 3 ? fillerLen + 1 : *(int*)((long)RecordInfoPtr + nonFiller);
+        }
+
+        /// <summary>Get the current filler length encoded in the header. Returns 0 if no filler is set.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetFillerLength(RecordInfo recordInfo)
+            => recordInfo.HasFiller ? GetExplicitOrInlineFiller(GetNonFillerSize(recordInfo)) : 0;
+
+        /// <summary>Get the filler length and the derived total record length in one pass.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetFillerLength(RecordInfo recordInfo, out int recordLength)
         {
-            recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-            return recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
+            var nonFiller = GetNonFillerSize(recordInfo);
+            if (!recordInfo.HasFiller)
+            {
+                recordLength = nonFiller;
+                return 0;
+            }
+            var filler = GetExplicitOrInlineFiller(nonFiller);
+            recordLength = nonFiller + filler;
+            return filler;
         }
 
+        /// <summary>
+        /// Set the filler length. Computes the non-filler component sum from the current header state; the caller must ensure
+        /// the header (KeyLength, ValueLength, optionals) reflects the post-update state. For the explicit-int encoding the int
+        /// is written at <c>recordBase + nonFiller</c> (the start of the filler region).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly int GetFillerLength(int recordLength)
-        {
-            var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
-            return fillerLen < 3 ? fillerLen + 1 : *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
-        }
+        internal readonly void SetFillerLength(ref RecordInfo recordInfo, int fillerLength)
+            => SetFillerLengthAtNonFiller(ref recordInfo, GetNonFillerSize(recordInfo), fillerLength);
 
+        /// <summary>
+        /// Set the filler length, with a caller-provided non-filler component sum (an optimization when the caller has already computed it).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetFillerLength(ref RecordInfo recordInfo, int recordLength, int fillerLength)
+        internal readonly void SetFillerLengthAtNonFiller(ref RecordInfo recordInfo, int nonFiller, int fillerLength)
         {
             Debug.Assert(fillerLength >= 0, $"Filler length {fillerLength} must be nonnegative");
 
@@ -385,9 +352,10 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Store the indicator bits as 3, and the filler length in the int at the end of the record. 3 is "all bits set" in the filler space, so we don't need to mask out previous bits there.
+                    // Store the indicator bits as 3, and the filler length in the int at recordBase + nonFiller (start of filler region).
+                    // 3 is "all bits set" in the filler space, so no need to mask out previous bits there.
                     *HeaderPtr |= 3 << kFillerLengthIndicatorShift;
-                    *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize) = fillerLength;
+                    *(int*)((long)RecordInfoPtr + nonFiller) = fillerLength;
                 }
             }
             else
@@ -397,65 +365,58 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Compute a CONSERVATIVE estimate of the record's allocated size, derived from the header fields without reading the filler int.
+        /// For non-revivified records where filler &lt; <see cref="Constants.kRecordAlignment"/>, this equals the actual allocated size.
+        /// For records with larger filler (e.g., reserved-space records during initialization or revivified records), this is a lower bound;
+        /// callers that need the exact size on such records must use <see cref="GetAllocatedRecordSize"/> on a fully-loaded buffer.
+        /// </summary>
+        /// <remarks>This is intended for partial-load scenarios (e.g., disk reads where the filler int might not yet be in the buffer).</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
+        internal readonly int GetRecordLengthEstimate(RecordInfo recordInfo)
+            => RoundUp(GetNonFillerSize(recordInfo), Constants.kRecordAlignment);
 
+        /// <summary>Get the derived total record length.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength(int numRecordLengthBytes)
+        internal readonly int GetRecordLength()
         {
-            // See notes in Initialize() about layout of RecordLength in header and for the "set" side of this--keep them in sync.
-            var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
-            return (int)((*(ulong*)HeaderPtr >> kRecordLengthShiftInHeader) & recordLengthMask);
+            _ = GetFillerLength(*RecordInfoPtr, out var recordLength);
+            return recordLength;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetKeyLength(int numKeyLengthBytes, int numRecordLengthBytes)
-        {
-            var keyLengthMask = (1UL << (numKeyLengthBytes * 8)) - 1;
-            var ptrBackup = sizeof(ulong) - NumIndicatorBytes - numRecordLengthBytes - numKeyLengthBytes;   // If negative, the pointer advances
-            var keyLenPtr = (ulong*)(HeaderPtr - ptrBackup);
-            var keyLengthShiftInHeader = (sizeof(ulong) - numKeyLengthBytes) * 8;
-            return (int)((*keyLenPtr >> keyLengthShiftInHeader) & keyLengthMask);
-        }
-
+        /// <summary>Returns the inline key length and value length stored in the header.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo)
-            => GetKVLengths(recordInfo, out _ /* recordLength */, out _ /* eTagLen */, out _ /* expirationLen */, out _ /* objectLogPositionLen */, out _ /* fillerLen */, out _ /*valueAddress*/);
+            => (GetKeyLength(), GetValueLength());
 
+        /// <summary>
+        /// Get the inline key/value lengths along with the optional sizes, filler length, derived total record length,
+        /// and value address, in a single pass.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen, out long valueAddress)
         {
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-
-            // Include changeable fields that are set or cleared by the caller, and the objectLogPosition which is indirectly set by the caller when changing
-            // the state of recordInfo.RecordIsInline. Namespace is not included; immutable and conceptually part of the key, it is not part of the record content.
-            // Returning these is useful for length-change calculations, and we must retrieve them anyway to determine object size.
             eTagLen = recordInfo.HasETag ? LogRecord.ETagSize : 0;
             expirationLen = recordInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
             objectLogPositionLen = recordInfo.RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
 
-            // See note in Initialize about layout of lengths in header
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            recordLength = GetRecordLength(numRecordLengthBytes);
-            fillerLen = GetFillerLength(recordInfo, recordLength);
+            var keyLength = GetKeyLength();
+            var valueLength = GetValueLength();
+            var extendedNsLen = ExtendedNamespaceLength;
 
-            // The value length is the recordLength minus everything other than the value. To get valueAddress, back up the HeaderPtr to the start of the RecordInfo then add key offset and size.
-            var keyOffset = RecordInfo.Size + headerLength + ExtendedNamespaceLength;
-            valueAddress = (long)HeaderPtr - RecordInfo.Size + keyOffset + keyLength;
-            return (keyLength, recordLength - keyOffset - keyLength - recordInfo.GetOptionalSize() - fillerLen);
+            var nonFiller = RecordInfo.Size + Size + extendedNsLen + keyLength + valueLength + eTagLen + expirationLen + objectLogPositionLen;
+            fillerLen = recordInfo.HasFiller ? GetExplicitOrInlineFiller(nonFiller) : 0;
+            recordLength = nonFiller + fillerLen;
+
+            valueAddress = (long)RecordInfoPtr + RecordInfo.Size + Size + extendedNsLen + keyLength;
+            return (keyLength, valueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo() => GetKeyFieldInfo(out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo(out int numKeyLengthBytes, out int numRecordLengthBytes)
+        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo()
         {
-            (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-
-            // See note in Initialize about layout of lengths in header
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            var keyAddress = (long)(HeaderPtr + headerLength + ExtendedNamespaceLength);
+            var keyLength = GetKeyLength();
+            var keyAddress = (long)(HeaderPtr + Size + ExtendedNamespaceLength);
             return (keyLength, keyAddress);
         }
 
@@ -464,33 +425,32 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo)
-            => GetValueFieldInfo(recordInfo, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-
-        /// <summary>
-        /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo, out int keyLength, out int numKeyLengthBytes, out int numRecordLengthBytes)
         {
-            (keyLength, var keyAddress) = GetKeyFieldInfo(out numKeyLengthBytes, out numRecordLengthBytes);
-            var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-
-            var recordLength = GetRecordLength(numRecordLengthBytes);
-            var fillerLength = GetFillerLength(recordInfo, recordLength);
-
-            // The value length is the recordLength minus everything other than the value.
-            var valueLength = recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - recordInfo.GetOptionalSize() - fillerLength;
-
-            // Move past the key and value length bytes and the key data to the start of the value data
-            return (valueLength, keyAddress + keyLength);
+            var (keyLength, keyAddress) = GetKeyFieldInfo();
+            return (GetValueLength(), keyAddress + keyLength);
         }
 
-        internal readonly int GetAllocatedRecordSize() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
+        /// <summary>
+        /// Gets the value field information returning <paramref name="keyLength"/> as well.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo, out int keyLength)
+        {
+            long keyAddress;
+            (keyLength, keyAddress) = GetKeyFieldInfo();
+            return (GetValueLength(), keyAddress + keyLength);
+        }
 
+        /// <summary>Get the full allocated record size (the total record extent, including any filler).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetAllocatedRecordSize() => GetRecordLength();
+
+        /// <summary>Get the actual (used) record size: total record size minus any filler.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetActualRecordSize(RecordInfo recordInfo)
         {
-            var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-            return recordLength - GetFillerLength(recordInfo, recordLength);
+            var fillerLen = GetFillerLength(recordInfo, out var recordLength);
+            return recordLength - fillerLen;
         }
     }
 }
