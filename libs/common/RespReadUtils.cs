@@ -140,7 +140,7 @@ namespace Garnet.common
         /// <param name="value">If parsing was successful, contains the parsed long value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
         /// <param name="signRead">True if +/- sign was read during parsing</param>
-        /// <param name="overflow">True if overflow occured during parsing</param>
+        /// <param name="overflow">True if overflow occurred during parsing</param>
         /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
         /// <returns>
         /// True if a long was successfully parsed, false if the input string did not start with
@@ -240,7 +240,7 @@ namespace Garnet.common
         /// <param name="value">If parsing was successful, contains the parsed int value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
         /// <param name="signRead">True if +/- sign was read during parsing</param>
-        /// <param name="overflow">True if overflow occured during parsing</param>
+        /// <param name="overflow">True if overflow occurred during parsing</param>
         /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
         /// <returns>
         /// True if an int was successfully parsed, false if the input string did not start with
