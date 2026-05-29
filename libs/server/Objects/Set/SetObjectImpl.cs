@@ -15,6 +15,8 @@ namespace Garnet.server
     {
         private void SetAdd(ref ObjectInput input, ref ObjectOutput output)
         {
+            var added = 0;
+
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -25,10 +27,12 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    output.result1++;
+                    added++;
                     UpdateSize(member);
                 }
             }
+
+            output.result1 = added;
         }
 
         private void SetMembers(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -37,11 +41,15 @@ namespace Garnet.server
 
             writer.WriteSetLength(Set.Count);
 
+            var written = 0;
+
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.result1++;
+                written++;
             }
+
+            output.result1 = written;
         }
 
         private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -80,6 +88,8 @@ namespace Garnet.server
 
         private void SetRemove(ref ObjectInput input, ref ObjectOutput output)
         {
+            var removed = 0;
+
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var field = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -90,10 +100,12 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    output.result1++;
+                    removed++;
                     UpdateSize(field, false);
                 }
             }
+
+            output.result1 = removed;
         }
 
         private void SetLength(ref ObjectOutput output)
