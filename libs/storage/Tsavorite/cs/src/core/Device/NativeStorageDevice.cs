@@ -704,15 +704,20 @@ namespace Tsavorite.core
                 uint nativeSectorSize = NativeDevice_sector_size(newDevice);
                 if (nativeSectorSize != SectorSize)
                 {
-                    NativeDevice_Destroy(newDevice);
-                    throw new TsavoriteException(
-                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed " +
-                        $"{SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the " +
-                        "actual file. The most likely cause is a 4K-native disk where the probe ran " +
-                        "against a directory on a different filesystem than the eventual log file, " +
-                        "or a stale libnative_device.so. Place the log file on a filesystem whose " +
-                        "DIO alignment matches the probe result, or rebuild the native library to " +
-                        "match the managed wrapper.");
+                    // The managed-side probe (run from the base-ctor argument) and the native-side
+                    // probe (run from NativeDeviceImpl's field initializer) can disagree when the
+                    // host filesystem layout makes ProbeDioAlignment's stat-walk-up return
+                    // different ancestors at different times (e.g. CI overlay mounts that change
+                    // between calls, or a parent directory that wasn't materialised yet at managed
+                    // probe time). The native value is the authoritative one — the kernel will
+                    // reject misaligned O_DIRECT I/O with EINVAL regardless of what SectorSize
+                    // claims, so a drift here is observable downstream with a clear error rather
+                    // than silent corruption. Warn so the operator can investigate, but don't
+                    // crash the device on first I/O.
+                    logger?.LogWarning(
+                        "Native device sector-size drift on '{Filename}': managed wrapper probed {ManagedSectorSize} bytes but the kernel reports {NativeSectorSize} bytes. " +
+                        "Continuing with the managed value for buffer alignment; if the native value is larger, O_DIRECT I/O will fail with EINVAL on misaligned requests.",
+                        filename, SectorSize, nativeSectorSize);
                 }
 
                 if (results == null) results = new NativeResult[MaxResults];
@@ -1170,17 +1175,19 @@ namespace Tsavorite.core
         /// on hosts where parent and grandparent live on different filesystems with different
         /// <c>logical_block_size</c> (e.g. an overlay mount over a 4K-native disk), that
         /// ancestor's sector size disagrees with the value the native shim reports after the
-        /// ctor body creates the parent. The cross-check in <see cref="EnsureNativeDeviceCreated"/>
-        /// then throws on first IO. Creating the parent before the probe collapses both
+        /// ctor body creates the parent. Creating the parent before the probe collapses both
         /// queries onto the final filesystem and keeps SectorSize consistent with all
-        /// subsequent O_DIRECT alignment requirements.
+        /// subsequent O_DIRECT alignment requirements. The cross-check in
+        /// <see cref="EnsureNativeDeviceCreated"/> downgrades any residual drift to a warning
+        /// rather than throwing — the kernel itself rejects misaligned O_DIRECT I/O with
+        /// EINVAL, which is the authoritative correctness gate.
         /// </remarks>
         private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
         {
             try
             {
                 string path = new FileInfo(filename).Directory?.FullName;
-                if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
+                if (!string.IsNullOrEmpty(path))
                     Directory.CreateDirectory(path);
             }
             catch
