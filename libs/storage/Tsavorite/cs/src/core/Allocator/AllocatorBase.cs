@@ -425,8 +425,15 @@ namespace Tsavorite.core
         /// </summary>
         protected virtual void FreeAllAllocatedPages() { }
 
-        /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>.</summary>
-        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() => TruncateUntilAddressBlocking(toAddress));
+        /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>; fires
+        /// <see cref="IRecordTriggers.OnTruncate(long)"/> AFTER the device truncation completes when
+        /// <see cref="IStoreFunctions.CallOnTruncate"/> is true.</summary>
+        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() =>
+        {
+            TruncateUntilAddressBlocking(toAddress);
+            if (storeFunctions.CallOnTruncate)
+                storeFunctions.OnTruncate(toAddress);
+        });
 
         /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
@@ -703,7 +710,10 @@ namespace Tsavorite.core
             if (trimLog)
             {
                 logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
-                TruncateUntilAddressBlocking(GetStartLogicalAddressOfSegment(firstValidSegment));
+                var toAddress = GetStartLogicalAddressOfSegment(firstValidSegment);
+                TruncateUntilAddressBlocking(toAddress);
+                if (storeFunctions.CallOnTruncate)
+                    storeFunctions.OnTruncate(toAddress);
 
                 for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
                 {
@@ -1210,12 +1220,33 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
+            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
+            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
+            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
+            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
+            int spins = 0;
+            var localFlushEvent = flushEvent;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
                 // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
-                _ = Thread.Yield();
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    _ = Thread.Yield();
+                    continue;
+                }
+                try
+                {
+                    epoch.Suspend();
+                    _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
+                localFlushEvent = flushEvent;
+                spins = 0;
             }
 
             // 0: RETRY_LATER
@@ -1643,6 +1674,20 @@ namespace Tsavorite.core
             alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
+
+            // Records never span page boundaries (HandlePageOverflow guarantees this), but the
+            // sector-aligned read window above can over-extend past the page-end on records near
+            // the end of a page. When the device segment size is a multiple of the page size
+            // (e.g. 4MB pages, 1GB segments — the Garnet default), an over-extended read at the
+            // last page of a segment also crosses the device's segment boundary; native devices
+            // that implement segmented files (FileSystemSegmentedFile in NativeStorageDevice)
+            // reject such reads with IOError and the engine spins retrying the same address
+            // forever. Clamp the read length so it never crosses page-end. pageEnd is
+            // sector-aligned (PageSizeBits >= SectorSize), so the clamped length stays
+            // sector-aligned.
+            var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
+            if (alignedFileOffset + alignedReadLength > pageEndInFile)
+                alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);

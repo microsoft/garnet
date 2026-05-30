@@ -221,6 +221,37 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
+
+    public sealed class CustomNotFoundFactory : CustomObjectFactory
+    {
+        public override CustomObjectBase Create(byte type) => null;
+        public override CustomObjectBase Deserialize(byte type, BinaryReader reader) => null;
+    }
+
+    public sealed class CustomNotFoundFunctions : CustomObjectFunctions
+    {
+        public override void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        {
+            writer.WriteBulkString(Encoding.UTF8.GetBytes($"Did not find: {Encoding.UTF8.GetString(key)}"));
+        }
+    }
+
+    public sealed class CustomNotFoundStringFunctions : CustomRawStringFunctions
+    {
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public override int GetInitialLength(ref StringInput input) => throw new NotImplementedException();
+        public override int GetLength(ReadOnlySpan<byte> value, ref StringInput input) => throw new NotImplementedException();
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref int valueLength, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+
+        public override bool Reader(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo) => throw new NotImplementedException();
+
+        public override void NotFound(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        {
+            writer.WriteBulkString(Encoding.UTF8.GetBytes($"Did not find: {Encoding.UTF8.GetString(key)}"));
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests : TestBase
     {
@@ -1492,6 +1523,48 @@ namespace Garnet.test
             {
                 ClassicAssert.Fail(rse.Message);
             }
+        }
+
+        [Test]
+        public void CustomNotFoundResponseTest()
+        {
+            _ = server.Register.NewCommand("CUSTNF", CommandType.Read, new CustomNotFoundFactory(), new CustomNotFoundFunctions(), new RespCommandsInfo { Arity = 2 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var resp0 = (string)db.Execute("CUSTNF", "short string");
+            ClassicAssert.AreEqual("Did not find: short string", resp0);
+
+            var veryLongStringBytes = new byte[128 * 1024];
+            for (var i = 0; i < veryLongStringBytes.Length; i++)
+            {
+                veryLongStringBytes[i] = (byte)('a' + (i % 26));
+            }
+
+            var resp1 = (string)db.Execute("CUSTNF", veryLongStringBytes);
+            ClassicAssert.AreEqual($"Did not find: {Encoding.UTF8.GetString(veryLongStringBytes)}", resp1);
+        }
+
+        [Test]
+        public void CustomNotFoundStringResponseTest()
+        {
+            _ = server.Register.NewCommand("CUSTSNF", CommandType.Read, new CustomNotFoundStringFunctions(), new RespCommandsInfo { Arity = 2 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var resp0 = (string)db.Execute("CUSTSNF", "short string");
+            ClassicAssert.AreEqual("Did not find: short string", resp0);
+
+            var veryLongStringBytes = new byte[128 * 1024];
+            for (var i = 0; i < veryLongStringBytes.Length; i++)
+            {
+                veryLongStringBytes[i] = (byte)('a' + (i % 26));
+            }
+
+            var resp1 = (string)db.Execute("CUSTSNF", veryLongStringBytes);
+            ClassicAssert.AreEqual($"Did not find: {Encoding.UTF8.GetString(veryLongStringBytes)}", resp1);
         }
     }
 }

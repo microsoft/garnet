@@ -38,6 +38,11 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
+        /// <summary>
+        /// Cluster mode manages checkpoint cleanup externally via CheckpointStore with reader-safety checks.
+        /// </summary>
+        public override bool PerformAutomaticCleanup => false;
+
         public override void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftStart?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
 
@@ -71,15 +76,13 @@ namespace Garnet.cluster
             // Try to parse new format where cookie is embedded inside the HybridLogRecoveryInfo
             try
             {
-                using (StreamReader s = new(new MemoryStream(checkpointMetadata)))
-                {
-                    recoveryInfo.Initialize(s);
-                }
+                using var s = new StreamReader(new MemoryStream(checkpointMetadata));
+                recoveryInfo.Initialize(s);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Best effort read of checkpoint metadata failed");
-                throw ex.InnerException;
+                throw;
             }
 
             return recoveryInfo;

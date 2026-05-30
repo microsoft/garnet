@@ -233,10 +233,27 @@ class ThreadPoolIoHandler {
     : threadpool_{ max_threads } {
   }
 
+  /// 2-arg overload accepted for cross-platform symmetry with QueueIoHandler/UringIoHandler.
+  /// Windows uses IOCP per-file; sharding makes no sense and num_contexts is silently
+  /// ignored (always 1 effective context).
+  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/)
+    : threadpool_{ max_threads } {
+  }
+
   /// Move constructor.
   ThreadPoolIoHandler(ThreadPoolIoHandler&& other)
     : threadpool_{ std::move(other.threadpool_) } {
   }
+
+  /// Cross-platform symmetry with QueueIoHandler / UringIoHandler. The Windows
+  /// ThreadPool API does not have a separable "init" step that can fail like
+  /// libaio's io_setup or io_uring's io_uring_queue_init; the threadpool is
+  /// created (or fails to be created) inside our threadpool_'s constructor and
+  /// is always treated as ready here, so both return their "no failure" values
+  /// unconditionally. NativeDeviceImpl gates on these to decide whether to
+  /// surface an actionable error message before attempting log_.Open.
+  int init_errno() const { return 0; }
+  bool initialized() const { return true; }
 
   /// Invoked whenever an asynchronous IO completes; needed because Windows asynchronous IOs are
   /// tied to a specific TP_IO object. As a result, we allocate pointers for a per-operation
@@ -272,9 +289,27 @@ class ThreadPoolIoHandler {
   inline static constexpr bool TryComplete() {
     return false;
   }
+
+  inline static constexpr bool TryCompleteFor(int /*idx*/) {
+    return false;
+  }
     
-  inline static constexpr int QueueRun(int timeout_secs) {
+  inline static constexpr int QueueRun(int /*timeout_secs*/) {
       return -1; // disable queue IO
+  }
+
+  inline static constexpr int QueueRunFor(int /*idx*/, int /*timeout_secs*/) {
+      return -1; // disable queue IO (sharding not applicable on Windows IOCP)
+  }
+
+  /// Windows IOCP path does not run dedicated completion drainer threads (callbacks
+  /// fire on threadpool threads instead), so there is nothing to wake. Always returns 0.
+  inline static constexpr int Wake(int /*idx*/) {
+      return 0;
+  }
+
+  inline static constexpr int num_contexts() {
+      return 1; // single IOCP per-device; sharding not applicable
   }
 
  private:
@@ -337,6 +372,10 @@ class QueueIoHandler {
 
   bool TryComplete();
   int QueueRun(int timeout_secs);
+  /// Stub for cross-backend Wake API on Windows. The Windows QueueIoHandler completion port
+  /// is currently unused (callers route to ThreadPoolIoHandler instead), so there is no
+  /// blocked drainer to unblock. Returns 0 unconditionally.
+  inline int Wake(int /*idx*/) { return 0; }
 
  private:
   /// The completion port to whose queue completions are added.

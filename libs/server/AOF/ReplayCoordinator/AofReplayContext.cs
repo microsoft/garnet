@@ -69,8 +69,9 @@ namespace Garnet.server
         /// <param name="sessionID"></param>
         /// <param name="sublogIdx"></param>
         /// <param name="logAccessBitmap"></param>
-        public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap)
-            => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap);
+        /// <param name="startSequenceNumber">Sequence number or entry address of the TxnStart entry</param>
+        public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap, long startSequenceNumber = 0)
+            => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap, startSequenceNumber);
 
         /// <summary>
         /// Add transaction group to fuzzy region buffer

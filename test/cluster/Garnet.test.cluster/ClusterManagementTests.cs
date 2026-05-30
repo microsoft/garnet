@@ -885,7 +885,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("127.0.0.1", primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleAddress - 1].ToString(), "Failed to match replica address");
                 // Port
                 ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RolePort - 1].ToString(), out parsed), "Failed to match replica port");
-                ClassicAssert.AreEqual(7000 + replicaIndex, parsed);
+                ClassicAssert.AreEqual(ClusterTestContext.Port + replicaIndex, parsed);
                 // ReplicationOffset
                 ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleReplicationOffset - 2].ToString(), out parsed), "Failed to match replica replication offset");
                 ClassicAssert.AreEqual(64, parsed);
@@ -904,7 +904,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("127.0.0.1", replicaResult[(int)RoleCommandReplicaFormat.RoleAddress].ToString());
                 // Replica Port
                 ClassicAssert.True(int.TryParse(replicaResult[(int)RoleCommandReplicaFormat.RolePort].ToString(), out parsed));
-                ClassicAssert.AreEqual(7000, parsed);
+                ClassicAssert.AreEqual(ClusterTestContext.Port, parsed);
                 // Connection State
                 ClassicAssert.AreEqual("connected", replicaResult[(int)RoleCommandReplicaFormat.RoleState].ToString());
                 // ReplicationOffset
@@ -1255,7 +1255,6 @@ namespace Garnet.test.cluster
                 metricsSamplingFrequency: 1,
                 loggingFrequencySecs: 10,
                 checkpointThrottleFlushDelayMs: 0,
-                FastCommit: true,
                 FastAofTruncate: true,
                 OnDemandCheckpoint: true,
                 useTLS: true,

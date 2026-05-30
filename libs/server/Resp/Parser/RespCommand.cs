@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -411,6 +412,7 @@ namespace Garnet.server
         CLUSTER_SHARDS,
         CLUSTER_SLOTS,
         CLUSTER_SLOTSTATE,
+        CLUSTER_SNAPSHOT_DATA,
         CLUSTER_SYNC, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
         // Don't require AUTH (if auth is enabled)
@@ -706,6 +708,12 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// Maximum number of arguments (excluding the command name) allowed in a single RESP command.
+        /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
+        /// </summary>
+        const int MaxRespArrayLength = 1 << 20; // 1,048,576
+
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
@@ -2393,6 +2401,10 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.snapshot_data))
+                {
+                    return RespCommand.CLUSTER_SNAPSHOT_DATA;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.mlog_key_time))
                 {
                     return RespCommand.CLUSTER_MLOG_KEY_TIME;
@@ -2924,6 +2936,11 @@ namespace Garnet.server
             {
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
+            }
+
+            if (count > MaxRespArrayLength)
+            {
+                RespParsingException.ThrowExcessiveArgumentCount(count, MaxRespArrayLength);
             }
 
             // Set up parse state

@@ -25,7 +25,7 @@ namespace Garnet.test
 
         public StringBuilder OutputLog { get; }
 
-        internal GarnetServerTestProcess(Dictionary<string, string> env, int port = 7000)
+        internal GarnetServerTestProcess(Dictionary<string, string> env, int port)
         {
             var a = Assembly.GetAssembly(typeof(Program));
             var name = a.Location;

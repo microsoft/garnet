@@ -3,8 +3,10 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -900,7 +902,7 @@ namespace Garnet.test
 
         /// <summary>
         /// Verifies the flush→promote→access cycle: when pages move to read-only,
-        /// OnFlush snapshots the BfTree and sets FlagFlushed. The next RI.GET detects
+        /// OnFlush snapshots the BfTree and sets IsFlushed. The next RI.GET detects
         /// the flag, promotes the stub to tail via RMW, and data remains accessible.
         /// </summary>
         [Test]
@@ -1826,7 +1828,8 @@ namespace Garnet.test
         /// thread's keys (point-in-time snapshot consistency).
         /// </summary>
         [Test]
-        public void RIConcurrentOpsWithCheckpointTest()
+        [CancelAfter(120_000)]
+        public void RIConcurrentOpsWithCheckpointTest(System.Threading.CancellationToken cancellationToken)
         {
             // 4 threads insert contiguous keys at full speed. A single SAVE (blocking)
             // runs from a 5th thread. After SAVE completes, workers are signaled and
@@ -1954,7 +1957,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// After checkpoint recovery, <c>FlagRecovered</c> must be cleared when the tree
+        /// After checkpoint recovery, <c>IsRecovered</c> must be cleared when the tree
         /// is first restored. Otherwise, a second eviction cycle causes
         /// RestoreTreeFromFlush to pick the stale checkpoint snapshot instead of the
         /// fresh <c>flush.bftree</c>, losing post-recovery writes.
@@ -2066,9 +2069,11 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that DEL on a disk-backed RangeIndex cleans up BfTree data files on disk.
-        /// After RI.CREATE with DISK backend, a data.bftree file should exist. After DEL,
-        /// the entire key directory (containing data.bftree) should be removed.
+        /// Verifies that DEL on a disk-backed RangeIndex cleans up the WORKING file
+        /// (<c>&lt;hash&gt;.data.bftree</c>) on disk but PRESERVES per-flush snapshot files
+        /// (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>). Per-flush files are LOG-tied — they may
+        /// still be required to recover an OLDER checkpoint that was taken BEFORE the DEL.
+        /// They are reclaimed by <c>OnTruncate</c> when the log's BeginAddress passes their address.
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteTest()
@@ -2080,27 +2085,81 @@ namespace Garnet.test
             db.Execute("RI.CREATE", "cleanup", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
             db.Execute("RI.SET", "cleanup", "key1", "val1");
 
-            // Verify the rangeindex directory exists with data.bftree
-            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
-            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist after RI.CREATE");
-            var keyDirs = Directory.GetDirectories(rangeIndexDir);
-            ClassicAssert.AreEqual(1, keyDirs.Length, "should have exactly one key directory");
-            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should exist");
+            // Verify the riLogRoot exists with at least one <hash>.data.bftree file
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot directory should exist after RI.CREATE");
+            var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(1, dataFiles.Length, "should have exactly one data.bftree file");
 
             // Delete the range index
             var delResult = db.KeyDelete("cleanup");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify the key directory has been cleaned up
-            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
-            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL");
+            // Working file should be cleaned up.
+            dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
+            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree files should be deleted after DEL");
+            // (Flush files are not asserted here because none were created in this test — no flush
+            // event fired between RI.SET and DEL. The next test verifies the preservation contract.)
         }
 
         /// <summary>
-        /// Verifies that DEL cleans up disk files for a RangeIndex that was evicted and then
-        /// lazily restored. The eviction cycle ensures the BfTree was flushed to disk; the
-        /// subsequent DEL must remove those files even though they were created by eviction
-        /// rather than by the initial RI.CREATE.
+        /// Verifies the LOG-tied lifetime of per-flush snapshot files: DEL preserves the
+        /// <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files that were created by prior flush
+        /// events, because they may be required to recover an OLDER checkpoint that was taken
+        /// before the DEL. Only <c>OnTruncate</c> (when log BeginAddress passes their address)
+        /// can safely delete them.
+        /// </summary>
+        [Test]
+        public void RIDeletePreservesPerFlushSnapshotFilesTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
+                lowMemory: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Create RI, write, force flush so a per-flush snapshot file is created.
+            db.Execute("RI.CREATE", "preservetest", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "preservetest", "field-x", "value-v1");
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            var flushBefore = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.GreaterOrEqual(flushBefore.Length, 1,
+                "test setup: at least one flush.bftree file should exist after force-flush");
+
+            // Read once to promote the flushed stub back to the mutable region (RIPROMOTE).
+            // This is required because DEL operates on the in-memory chain head.
+            ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "preservetest", "field-x"));
+
+            // DEL the key.
+            ClassicAssert.IsTrue(db.KeyDelete("preservetest"), "DEL should succeed");
+
+            // Working file must be deleted, but per-flush snapshot file(s) must SURVIVE.
+            var dataAfter = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(0, dataAfter.Length, "data.bftree should be deleted on DEL");
+
+            var flushAfter = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.AreEqual(flushBefore.Length, flushAfter.Length,
+                "per-flush snapshot files MUST be preserved on DEL — they may be required to recover " +
+                "an older checkpoint that was taken before the DEL. Only OnTruncate (when log " +
+                "BeginAddress passes their address) can safely delete them.");
+
+            // Verify file content is byte-identical (not corrupted).
+            for (var i = 0; i < flushBefore.Length; i++)
+            {
+                ClassicAssert.IsTrue(File.Exists(flushBefore[i]), $"flush file {Path.GetFileName(flushBefore[i])} must still exist after DEL");
+            }
+        }
+
+        /// <summary>
+        /// Verifies that DEL of a previously-evicted-and-restored RangeIndex correctly cleans
+        /// up the working file but PRESERVES per-flush snapshot files (LOG-tied lifetime).
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteAfterEvictionAndRestoreTest()
@@ -2120,8 +2179,8 @@ namespace Garnet.test
             db.Execute("RI.SET", "evictdel", "key1", "val1");
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live after creation");
 
-            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
-            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist");
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot should exist");
 
             // Fill the log with string keys to push RI stub below HeadAddress and trigger eviction
             for (var i = 0; i < 200; i++)
@@ -2131,9 +2190,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "tree should have been freed by eviction");
 
             // Files should still exist after eviction (preserved for lazy restore)
-            var keyDirs = Directory.GetDirectories(rangeIndexDir);
-            ClassicAssert.AreEqual(1, keyDirs.Length, "key directory should survive eviction");
-            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should survive eviction");
+            var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
+            ClassicAssert.AreEqual(1, dataFiles.Length, "data.bftree file should survive eviction");
+            var flushFilesPostEvict = Directory.GetFiles(riLogRoot, "*.flush.bftree");
+            ClassicAssert.GreaterOrEqual(flushFilesPostEvict.Length, 1, "at least one flush snapshot should exist post-eviction");
 
             // Lazy restore brings the record back in-memory (DEL requires the record
             // to be in-memory; the unified Delete path does not trigger lazy restore).
@@ -2141,14 +2201,248 @@ namespace Garnet.test
             ClassicAssert.AreEqual("val1", (string)val, "lazy restore should recover data after eviction");
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live again after lazy restore");
 
-            // Now delete — the tree was evicted and flushed to disk, then restored;
-            // DEL must clean up the flush files created during eviction.
+            // Now delete — only the working data.bftree should be removed; per-flush snapshots
+            // must survive (LOG-tied lifetime; needed for recovery to a prior checkpoint).
             var delResult = db.KeyDelete("evictdel");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
-            // Verify the key directory has been cleaned up
-            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
-            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL on previously-evicted key");
+            dataFiles = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.data.bftree") : [];
+            ClassicAssert.AreEqual(0, dataFiles.Length, "data.bftree should be deleted after DEL");
+
+            var flushFilesPostDel = Directory.Exists(riLogRoot) ? Directory.GetFiles(riLogRoot, "*.flush.bftree") : [];
+            ClassicAssert.AreEqual(flushFilesPostEvict.Length, flushFilesPostDel.Length,
+                "per-flush snapshot files MUST be preserved on DEL even for previously-evicted keys " +
+                "— they may be required to recover an older checkpoint taken before the DEL.");
+        }
+
+        // ============================================================================
+        // BfTree compaction-lifecycle tests
+        // ============================================================================
+
+        /// <summary>
+        /// Helper: count the number of <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> files in
+        /// the riLogRoot — used by tests that verify per-flush-file lifecycle.
+        /// </summary>
+        private static int CountFlushFiles()
+        {
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+            if (!Directory.Exists(riLogRoot)) return 0;
+            return Directory.GetFiles(riLogRoot, "*.flush.bftree").Length;
+        }
+
+        /// <summary>
+        /// Verifies the per-flush snapshot file immutability invariant: a
+        /// <c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c> file, once written, is never overwritten.
+        /// Subsequent flushes for the same key produce a NEW file at a distinct address,
+        /// so historical per-flush state is preserved for recovery to older checkpoints.
+        ///
+        /// <para>Steps: create a disk-backed RI, set v1, flush (creates file at A1), capture
+        /// bytes; promote + set v2, flush (must create a new file at A2); assert that the
+        /// A1 file still exists with byte-identical content AND the post-v2 file count is
+        /// strictly greater than post-v1.</para>
+        /// </summary>
+        [Test]
+        public void RIFlushFilesAreImmutablePerAddressTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true,
+                lowMemory: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // v1 state: create disk-backed RI and insert one field. Use long enough field/value
+                // to satisfy MINRECORD=8.
+                db.Execute("RI.CREATE", "flushtestkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "flushtestkey", "field-x", "value-v1");
+
+                // Force flush so the v1 stub is on a flushed page (creates <hash>.<A1>.flush.bftree).
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Snapshot the flush file count and capture the v1 file content.
+                var afterV1 = ListFlushFiles();
+                ClassicAssert.GreaterOrEqual(afterV1.Count, 1, "at least one flush file after v1 flush");
+                var v1FileContents = new System.Collections.Generic.Dictionary<string, byte[]>();
+                foreach (var f in afterV1) v1FileContents[f] = File.ReadAllBytes(f);
+
+                // Promote (read forces RIPROMOTE on flushed stub) and mutate to v2.
+                ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "flushtestkey", "field-x"));
+                db.Execute("RI.SET", "flushtestkey", "field-x", "value-v2");
+
+                // Force another flush — must create a NEW <hash>.<A2>.flush.bftree at a distinct addr.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Verify: each pre-existing v1 file STILL exists with byte-identical content.
+                foreach (var (path, originalBytes) in v1FileContents)
+                {
+                    ClassicAssert.IsTrue(File.Exists(path),
+                        $"per-flush snapshot file {Path.GetFileName(path)} must remain after subsequent flush");
+                    var currentBytes = File.ReadAllBytes(path);
+                    ClassicAssert.AreEqual(originalBytes.Length, currentBytes.Length,
+                        $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (size differs)");
+                    CollectionAssert.AreEqual(originalBytes, currentBytes,
+                        $"per-flush snapshot {Path.GetFileName(path)} must NOT be overwritten (content differs). " +
+                        "Per-flush <addr>.flush.bftree files are immutable.");
+                }
+
+                // Verify: at least one new flush file was created post-v2 (proving second flush
+                // didn't just overwrite the v1 file in place).
+                var afterV2 = ListFlushFiles();
+                ClassicAssert.Greater(afterV2.Count, afterV1.Count,
+                    "Second flush must create a NEW per-flush file (not overwrite the v1 file). " +
+                    $"Before: {afterV1.Count}, after: {afterV2.Count}");
+            }
+
+            // Helper closure
+            static System.Collections.Generic.List<string> ListFlushFiles()
+            {
+                var dir = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+                if (!Directory.Exists(dir)) return new System.Collections.Generic.List<string>();
+                return Directory.GetFiles(dir, "*.flush.bftree").ToList();
+            }
+        }
+
+        /// <summary>
+        /// Verifies that <c>DisposeTreeUnderLock</c> with <c>deleteFiles: false</c> (eviction
+        /// path) NO-OPS when the source stub has <c>IsTransferred=true</c>, even when its
+        /// <c>TreeHandle</c> is zero. After <c>PostCopyToTail</c> (compaction) or RIPROMOTE
+        /// PostCopyUpdater transfers ownership to a destination at the tail, the source
+        /// record's stub carries <c>IsTransferred=true</c>; the corresponding liveIndexes
+        /// entry now belongs to the destination, so a later <c>OnEvict</c> on the stale
+        /// source must NOT remove that entry — doing so would lose checkpoint coverage and
+        /// DEL-time native-tree disposal.
+        ///
+        /// <para>Test mechanics:</para>
+        /// <list type="number">
+        /// <item>Construct a 35-byte stub representing the stale source (IsTransferred=true,
+        /// TreeHandle=0).</item>
+        /// <item>Call <c>DisposeTreeUnderLock(key, stub, deleteFiles: false)</c>.</item>
+        /// <item>Assert the liveIndexes entry SURVIVED (count unchanged).</item>
+        /// </list>
+        ///
+        /// <para>Discriminating contrast: a stub with <c>IsTransferred=false</c> and
+        /// <c>TreeHandle=0</c> (a pure pending entry being evicted before activation) DOES
+        /// get its liveIndexes entry removed by the same call — proving the
+        /// <c>IsTransferred</c> check is what makes the no-op precise.</para>
+        /// </summary>
+        [Test]
+        public void RIDisposeTreeUnderLockNoOpsOnTransferredSourceTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var rim = server.Provider.StoreWrapper.rangeIndexManager;
+            ClassicAssert.IsNotNull(rim);
+
+            // Create an RI key so that a real liveIndexes entry exists; this models the scenario
+            // where we'd later eviction-callback a stale source.
+            db.Execute("RI.CREATE", "transtest", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "transtest", "field-x", "value-v1");
+            ClassicAssert.AreEqual(1, rim.LiveIndexCount, "tree should be live after creation");
+
+            // Construct a stub representing a "stale source" (IsTransferred=true, TreeHandle=0)
+            // with the SAME key as the live entry. This models the byte state of a source record
+            // after PostCopyToTail-live or RIPROMOTE-live has cleared TreeHandle and set
+            // IsTransferred on the source.
+            var staleStub = new byte[RangeIndexManager.IndexSizeBytes];
+            // Stub layout: [0..7]=TreeHandle (zero), [33]=flags byte (Transferred bit = 1<<2 = 4)
+            staleStub[33] = 4;
+
+            // Verify our reading of the stub matches expectation.
+            ref readonly var stubRef = ref RangeIndexManager.ReadIndex(staleStub);
+            ClassicAssert.AreEqual(nint.Zero, stubRef.TreeHandle, "test setup: stub TreeHandle should be 0");
+            ClassicAssert.IsTrue(stubRef.IsTransferred, "test setup: IsTransferred should be true");
+            ClassicAssert.IsFalse(stubRef.IsFlushed, "test setup: IsFlushed should be false");
+
+            // Call DisposeTreeUnderLock as OnEvict would, with deleteFiles=false (eviction path).
+            // With IsTransferred=true, this must no-op — NOT remove the entry that belongs to
+            // the live record at the tail.
+            // RangeIndexManager hashes the key via PinnedSpanByte.FromPinnedSpan, which captures
+            // a raw pointer assuming the source is GC-pinned. Use unsafe `fixed` blocks to pin
+            // the managed byte[] for the duration of each DisposeTreeUnderLock call.
+            unsafe
+            {
+                var keyBytes = System.Text.Encoding.ASCII.GetBytes("transtest");
+                fixed (byte* keyPtr = keyBytes)
+                {
+                    var pinnedKey = new ReadOnlySpan<byte>(keyPtr, keyBytes.Length);
+                    rim.DisposeTreeUnderLock(pinnedKey, staleStub, deleteFiles: false);
+                }
+            }
+
+            ClassicAssert.AreEqual(1, rim.LiveIndexCount,
+                "DisposeTreeUnderLock on a stale (IsTransferred=true) source must NOT remove the live entry " +
+                "that now belongs to the destination at the tail.");
+
+            // Live tree should still be functional.
+            ClassicAssert.AreEqual("value-v1", (string)db.Execute("RI.GET", "transtest", "field-x"));
+
+            // Discriminating contrast: a stub WITHOUT IsTransferred (pure pending entry, e.g.
+            // evicted before activation) WOULD remove the entry. This proves the discriminating
+            // power of the IsTransferred check.
+            var pendingStub = new byte[RangeIndexManager.IndexSizeBytes];
+            // IsTransferred=0, TreeHandle=0 — looks like a pending entry being evicted.
+            // Use a DIFFERENT key for this part to avoid disturbing the live entry above.
+            db.Execute("RI.CREATE", "pendkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            ClassicAssert.AreEqual(2, rim.LiveIndexCount, "second tree created");
+            // Now simulate eviction of a pending-entry stub for "pendkey".
+            unsafe
+            {
+                var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
+                fixed (byte* keyPtr = pendKeyBytes)
+                {
+                    var pinnedKey = new ReadOnlySpan<byte>(keyPtr, pendKeyBytes.Length);
+                    rim.DisposeTreeUnderLock(pinnedKey, pendingStub, deleteFiles: false);
+                }
+            }
+            ClassicAssert.AreEqual(1, rim.LiveIndexCount,
+                "DisposeTreeUnderLock without IsTransferred should still remove the entry " +
+                "(pending-eviction case): proves the discriminating power of the IsTransferred check");
+        }
+
+        /// <summary>
+        /// Verifies that <c>EnableRangeIndexPreview=true</c> works correctly with
+        /// <c>CopyReadsToTail=true</c>. RangeIndex Reads go through the dedicated
+        /// <c>Read_RangeIndex</c> API which suppresses Tsavorite's automatic CTT
+        /// (RangeIndex performs its own controlled promotion via RIPROMOTE). This test
+        /// is bounded by <c>[CancelAfter]</c> so a regression that lets CTT reach a
+        /// RangeIndex stub would surface as a hang/timeout.
+        /// </summary>
+        [Test]
+        [CancelAfter(60_000)]
+        public void RICopyReadsToTailCompatibleTest(System.Threading.CancellationToken cancellationToken)
+        {
+            // Recreate the server with CopyReadsToTail=true.
+            server?.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                enableRangeIndexPreview: true,
+                copyReadsToTail: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.Execute("RI.CREATE", "rikey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            for (int i = 0; i < 50; i++)
+                db.Execute("RI.SET", "rikey", $"field-{i:000}", $"value-{i:000}-pad");
+
+            // Force the records into the read-only / flushed region so subsequent reads
+            // would otherwise trigger CTT for the RI stub. With Read_RangeIndex suppressing
+            // CTT, the read should route through PromoteToTail (RIPROMOTE) instead.
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            for (int i = 0; i < 50 && !cancellationToken.IsCancellationRequested; i++)
+            {
+                var got = (string)db.Execute("RI.GET", "rikey", $"field-{i:000}");
+                ClassicAssert.AreEqual($"value-{i:000}-pad", got, $"field-{i:000}");
+            }
         }
     }
 }

@@ -39,7 +39,7 @@
     <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
     <ProjectReference Include="..\Garnet.test.cluster\Garnet.test.cluster.csproj" />
     <ProjectReference Include="..\Garnet.test.cluster.replication\Garnet.test.cluster.replication.csproj" />
-    <ProjectReference Include="..\Garnet.test.cluster.replication.disklesssync\Garnet.test.cluster.replication.disklesssync.csproj" />
+
   </ItemGroup>
 
   <PropertyGroup>

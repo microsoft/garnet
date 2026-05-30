@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each main-log page in bytes (rounds down to power of 2).
         /// </summary>
-        public string PageSize = "32m";
+        public string PageSize = "16m";
 
         /// <summary>
         /// Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than <see cref="LogMemorySize"/> divided by <see cref="PageSize"/>

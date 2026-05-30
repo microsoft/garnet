@@ -36,14 +36,6 @@ namespace Garnet.test.cluster
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(false, true)), "ClusterSRPrimaryCheckpointAsync(false, true)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, false)), "ClusterSRPrimaryCheckpointAsync(true, false)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, true)), "ClusterSRPrimaryCheckpointAsync(true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)"),
@@ -142,8 +134,9 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
-            if (useTLS)
-                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
+            // Disable excessive logging; Leave for future debugging
+            //if (useTLS)
+            //    context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
 
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -211,8 +204,9 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public async Task ClusterSRPrimaryCheckpointAsync([Values] bool performRMW, [Values] bool disableObjects)
         {
-            if (useTLS)
-                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
+            // Disable excessive logging; Leave for future debugging
+            //if (useTLS)
+            //    context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
 
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -820,7 +814,7 @@ namespace Garnet.test.cluster
         [Test, Order(16)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
-            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
+            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false);
 
         [Test, Order(17)]
         [Category("REPLICATION")]
@@ -830,8 +824,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: false,
-                fastCommit: false);
+                mainMemoryReplication: false);
 
         [Test, Order(18)]
         [Category("REPLICATION")]
@@ -841,8 +834,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence,
                 multiCheckpointAfterDivergence: false,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(19)]
         [Category("REPLICATION")]
@@ -852,8 +844,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(20)]
         [Category("REPLICATION")]
@@ -863,24 +854,21 @@ namespace Garnet.test.cluster
                 disableObjects: disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: mainMemoryReplication,
-                fastCommit: true);
+                mainMemoryReplication: mainMemoryReplication);
 
-        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication, bool fastCommit)
+        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication)
         {
             var set = false;
             var replica_count = 2;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            fastCommit = sublogCount > 1;
             context.CreateInstances(
                 nodes_count,
                 disableObjects: disableObjects,
                 FastAofTruncate: mainMemoryReplication,
                 CommitFrequencyMs: mainMemoryReplication ? -1 : 0,
                 OnDemandCheckpoint: mainMemoryReplication,
-                FastCommit: fastCommit,
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
@@ -1038,6 +1026,11 @@ namespace Garnet.test.cluster
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex, addCount);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            var primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
+            var replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
+            ClassicAssert.AreEqual("1", primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+
             for (var i = 0; i < 5; i++)
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryNodeIndex, logger: context.logger);
@@ -1046,12 +1039,12 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitCheckpoint(primaryNodeIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaNodeIndex, replicaLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
-            }
 
-            var primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            var replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            ClassicAssert.AreEqual("6", primaryVersion);
-            ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+                primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
+                replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
+                ClassicAssert.AreEqual($"{i + 2}", primaryVersion); // +2 because version started at 1 and our loop index is zero-based
+                ClassicAssert.AreEqual(primaryVersion, replicaVersion);
+            }
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
 
@@ -1715,6 +1708,57 @@ namespace Garnet.test.cluster
             var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
             var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
+        }
+
+        [Test, Order(32)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationHlogSegmentCleanupTest([Values] bool performRMW, [Values] bool disableObjects)
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var replica_count = 1;
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count,
+                tryRecover: true,
+                disableObjects: disableObjects,
+                lowMemory: true,
+                segmentSize: "4k",
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                deviceType: Tsavorite.core.DeviceType.Native,
+                sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            context.SimplePrimaryReplicaSetup();
+
+            var cconfig = context.clusterTestUtils.ClusterNodes(primaryIndex, context.logger);
+            var myself = cconfig.Nodes.First();
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+
+            var shards = context.clusterTestUtils.ClusterShards(primaryIndex, context.logger);
+            ClassicAssert.AreEqual(2, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+
+            context.kvPairs = [];
+            context.kvPairsObj = [];
+
+            // Populate with more iterations to accumulate multiple hlog segments and trigger segment cleanup
+            context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true, iter: 10));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSyncAsync(primaryIndex, primary_count, replica_count, disableObjects));
+
+            var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(timeout)))
+                Assert.Fail($"Task timeout - checkpointTask: {context.checkpointTask.Status}, attachReplicaTask: {attachReplicaTask.Status}");
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
+            context.SimpleValidateDB(disableObjects, replicaIndex);
         }
     }
 }

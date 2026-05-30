@@ -20,7 +20,8 @@ namespace Garnet.server
                 ValueSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
                 ValueIsObject = srcLogRecord.Info.ValueIsObject,
                 HasETag = !srcLogRecord.Info.ValueIsObject && srcLogRecord.Info.HasETag,
-                HasExpiration = srcLogRecord.Info.HasExpiration
+                HasExpiration = srcLogRecord.Info.HasExpiration,
+                RecordType = srcLogRecord.RecordType,
             };
 
             if (input.header.cmd != RespCommand.NONE)

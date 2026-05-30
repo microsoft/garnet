@@ -290,55 +290,19 @@ namespace Garnet.server
                 if (input.Callback == 0)
                 {
                     Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+                    Debug.Assert(key.Length == 0, "Shouldn't have a non-zero key, expected to working on ContextMetadata");
 
-                    if (key.Length == 0)
+                    // Operating on ContextMetadata
+
+                    PinnedSpanByte newMetadataValue;
+                    unsafe
                     {
-                        // Operating on ContextMetadata
-
-                        PinnedSpanByte newMetadataValue;
-                        unsafe
-                        {
-                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
-                        }
-
-                        newMetadataValue.CopyTo(alignedValue);
-
-                        return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
                     }
-                    else
-                    {
-                        // Operating on InProgressDeletes
-                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                        Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
 
-                        Span<byte> inProgressDeleteUpdateData;
-                        bool adding;
+                    newMetadataValue.CopyTo(alignedValue);
 
-                        unsafe
-                        {
-                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                            adding = len > 0;
-                            if (!adding)
-                            {
-                                len = -len;
-                            }
-
-                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
-                        }
-
-                        if (!adding)
-                        {
-                            // We may be recovering and doing some optimistic deletes, but since we're creating... just ignore the op, it does nothing
-                            rmwInfo.Action = RMWAction.CancelOperation;
-                            return false;
-                        }
-
-                        var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
-                        Debug.Assert(fits, "Initial size of record should have been correct for in progress deletes");
-
-                        return true;
-                    }
+                    return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                 }
                 else
                 {
@@ -392,61 +356,31 @@ namespace Garnet.server
                     // We're doing a Metadata or InProgressDelete update
 
                     Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
+                    Debug.Assert(key.Length == 0, "Shouldn't have a non-zero key, expected to working on ContextMetadata");
 
-                    if (key.Length == 0)
+                    // Doing a Metadata update
+                    Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                    Debug.Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+
+                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(oldValueAligned)[0];
+
+                    PinnedSpanByte newMetadataValue;
+                    unsafe
                     {
-                        // Doing a Metadata update
-                        Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                        Debug.Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-
-                        ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(oldValueAligned)[0];
-
-                        PinnedSpanByte newMetadataValue;
-                        unsafe
-                        {
-                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
-                        }
-
-                        ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
-
-                        if (newMetadata.Version < oldMetadata.Version)
-                        {
-                            rmwInfo.Action = RMWAction.CancelOperation;
-                            return false;
-                        }
-
-                        newMetadataValue.CopyTo(newValueAligned);
-                        return dstLogRecord.TrySetContentLengths(srcLogRecord.ValueSpan.Length, in sizeInfo);
+                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
                     }
-                    else
+
+                    ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
+
+                    if (newMetadata.Version < oldMetadata.Version)
                     {
-                        // Doing an InProgressDelete update
-                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
-
-                        Span<byte> inProgressDeleteUpdateData;
-                        bool adding;
-
-                        oldValueAligned.CopyTo(newValueAligned);
-
-                        unsafe
-                        {
-                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                            adding = len > 0;
-                            if (!adding)
-                            {
-                                len = -len;
-                            }
-
-                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
-                        }
-
-                        var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref dstLogRecord, in sizeInfo);
-                        Debug.Assert(fits, "Copy update should have allocated enough space for in progress deletes");
-
-                        return true;
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
                     }
+
+                    newMetadataValue.CopyTo(newValueAligned);
+                    return dstLogRecord.TrySetContentLengths(srcLogRecord.ValueSpan.Length, in sizeInfo);
                 }
                 else
                 {

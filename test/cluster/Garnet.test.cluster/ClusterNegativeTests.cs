@@ -81,7 +81,8 @@ namespace Garnet.test.cluster
         [TestCase("APPENDLOG", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("INITIATE_REPLICA_SYNC", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("SEND_CKPT_METADATA", new int[] { 0, 1, 2, 4, 5, 6 })]
-        [TestCase("SEND_CKPT_FILE_SEGMENT", new int[] { 0, 1, 2, 3, 4, 6 })]
+        [TestCase("SEND_CKPT_FILE_SEGMENT", new int[] { 0, 1, 2, 3, 5, 6 })]
+        [TestCase("SNAPSHOT_DATA", new int[] { 0, 1, 2, 3, 5, 6 })]
         [TestCase("BEGIN_REPLICA_RECOVER", new int[] { 0, 1, 2, 3, 4, 5, 6, 8, 9 })]
         [TestCase("FAILSTOPWRITES", new int[] { 0, 2, 3, 4 })]
         [TestCase("FAILREPLICATIONOFFSET", new int[] { 0, 2, 3, 4 })]
@@ -91,7 +92,7 @@ namespace Garnet.test.cluster
 
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
-            socket.Connect(IPAddress.Loopback, 7000);
+            socket.Connect(IPAddress.Loopback, ClusterTestContext.Port);
 
             var clusterCMD = $"$7\r\ncluster\r\n${subcommand.Length}\r\n{subcommand}\r\n";
             var errorCmd = $"cluster|{subcommand.ToLowerInvariant()}";
@@ -126,7 +127,7 @@ namespace Garnet.test.cluster
             context.CreateInstances(1);
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
-            socket.Connect(IPAddress.Loopback, 7000);
+            socket.Connect(IPAddress.Loopback, ClusterTestContext.Port);
 
             var slots = Enumerable.Range(0, 8192).ToList();
             var packet = $"*{2 + slots.Count}\r\n$7\r\ncluster\r\n$8\r\naddslots\r\n";

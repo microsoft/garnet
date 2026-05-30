@@ -48,8 +48,15 @@ namespace Tsavorite.core
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
 
-            /// <summary>The logical address of the original record for conditional scan push. <see cref="logicalAddress"/> must be the one we pass to request; this retains
-            /// the address of the record we will push to the caller if it is not found later in the log.</summary>
+            /// <summary>The logical address of the original record. Used by:
+            /// <list type="bullet">
+            /// <item>ConditionalScanPush — retains the address of the record we will push to the caller
+            ///     if it is not found later in the log; <see cref="logicalAddress"/> must be the one we
+            ///     pass to request.</item>
+            /// <item>TryCopyToTail's PostCopyToTail trigger — when the source record is from disk
+            ///     (HasMainLogSrc=false), this field carries the source logical address from the
+            ///     compaction / CopyReadsToTail / ContinuePending caller.</item>
+            /// </list></summary>
             internal long originalAddress;
 
             /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>

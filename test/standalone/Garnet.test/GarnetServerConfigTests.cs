@@ -114,7 +114,7 @@ namespace Garnet.test
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out var optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("32m", options.PageSize);
+            ClassicAssert.AreEqual("16m", options.PageSize);
             ClassicAssert.AreEqual("16g", options.LogMemorySize);
             var nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
             ClassicAssert.IsEmpty(nonDefaultOptions);
@@ -125,11 +125,11 @@ namespace Garnet.test
             var binPaths = new[] { GetFullExtensionBinPath(Path.Combine("standalone", "Garnet.test")), GetFullExtensionBinPath(Path.Combine("cluster", "Garnet.test.cluster")) };
             var modules = new[] { Assembly.GetExecutingAssembly().Location };
 
-            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
+            var args = new[] { "--config-export-path", configPath, "-p", "8m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("4m", options.PageSize);
+            ClassicAssert.AreEqual("8m", options.PageSize);
             ClassicAssert.AreEqual("128m", options.LogMemorySize);
             ClassicAssert.AreEqual("2g", options.SegmentSize);
             ClassicAssert.AreEqual(53, options.Port);
@@ -144,7 +144,7 @@ namespace Garnet.test
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
             ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
-            ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
+            ClassicAssert.AreEqual("8m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
             ClassicAssert.AreEqual(53, ((JsonElement)nonDefaultOptions[nameof(Options.Port)]).GetInt32());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivifiableFraction)));
@@ -166,7 +166,7 @@ namespace Garnet.test
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.PageSize == "8m");
             ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
@@ -176,7 +176,7 @@ namespace Garnet.test
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
             ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
-            ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
+            ClassicAssert.AreEqual("8m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
@@ -310,17 +310,17 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.IsTrue(options.PageSize == "32m");
+            ClassicAssert.IsTrue(options.PageSize == "16m");
             ClassicAssert.IsTrue(options.LogMemorySize == "16g");
             ClassicAssert.IsNull(options.AzureStorageServiceUri);
             ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
             ClassicAssert.AreNotEqual(DeviceType.AzureStorage, options.GetDeviceType());
 
-            var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
+            var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "8m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.PageSize == "8m");
             ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
             ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
@@ -329,7 +329,7 @@ namespace Garnet.test
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.PageSize == "8m");
             ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
             ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
@@ -1391,16 +1391,16 @@ namespace Garnet.test
         [Test]
         public void ValueOverflowThresholdParsing()
         {
-            // Default value from defaults.conf is "4k"
+            // Default value from defaults.conf is "16k"
             {
                 var args = Array.Empty<string>();
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual("4k", options.ValueOverflowThreshold);
+                ClassicAssert.AreEqual("16k", options.ValueOverflowThreshold);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual("4k", serverOptions.ValueOverflowThreshold);
-                ClassicAssert.AreEqual(4096, serverOptions.ValueOverflowThresholdBytes());
+                ClassicAssert.AreEqual("16k", serverOptions.ValueOverflowThreshold);
+                ClassicAssert.AreEqual(16384, serverOptions.ValueOverflowThresholdBytes());
             }
 
             // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (256m) passes the cross-property fit check.

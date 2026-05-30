@@ -42,7 +42,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             TestUtils.OnTearDown();
         }
 
@@ -280,10 +280,13 @@ namespace Garnet.test
         [TestCase("DOTNET_EnableHWIntrinsic", "0")]
         public void BitmapSimpleBitCountTest(string arg, string val)
         {
-            using var server = new GarnetServerTestProcess(new() { [arg] = val });
+            // Dispose the [SetUp] server to free the port for the external GarnetServerTestProcess
+            server.Dispose();
+            server = null;
+            using var testProcess = new GarnetServerTestProcess(new() { [arg] = val }, TestUtils.TestPort);
             try
             {
-                using var redis = ConnectionMultiplexer.Connect(server.Options);
+                using var redis = ConnectionMultiplexer.Connect(testProcess.Options);
 
                 var db = redis.GetDatabase(0);
                 var maxBitmapLen = 1 << 12;
@@ -303,7 +306,7 @@ namespace Garnet.test
             }
             catch
             {
-                server.RecordTestOutput();
+                testProcess.RecordTestOutput();
                 throw;
             }
         }
@@ -488,7 +491,6 @@ namespace Garnet.test
 
         [Test, Order(10)]
         [Category("BITCOUNT")]
-        [Explicit("Temporary: expected 2049 actual 1734")]
         public void BitmapBitCountTest_LTM()
         {
             int bitmapBytes = 512;
@@ -853,15 +855,17 @@ namespace Garnet.test
                 args[environment[i]] = environment[i + 1];
             }
 
-            using var server = new GarnetServerTestProcess(args);
+            // Dispose the [SetUp] server to free the port for the external GarnetServerTestProcess
+            server.Dispose();
+            server = null;
+            using var testProcess = new GarnetServerTestProcess(args, TestUtils.TestPort);
             try
             {
-                BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+                BitOp_Binary_SameSize(testProcess.Options, op, bitmapSize, keys);
             }
             catch
             {
-                server.RecordTestOutput();
-
+                testProcess.RecordTestOutput();
                 throw;
             }
         }

@@ -389,9 +389,6 @@ namespace Garnet
         [Option("checkpoint-throttle-delay", Required = false, HelpText = "Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync")]
         public int CheckpointThrottleFlushDelayMs { get; set; }
 
-        [OptionValidation]
-        [Option("fast-commit", Required = false, HelpText = "Use FastCommit when writing AOF.")]
-        public bool? EnableFastCommit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("fast-commit-throttle", Required = false, HelpText = "Throttle FastCommit to write metadata once every K commits.")]
@@ -483,6 +480,13 @@ namespace Garnet
 
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
+
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). The shipped native library is built with -DUSE_URING=ON and requires liburing.so.2 at load time for all backends; a -DUSE_URING=OFF rebuild only needs libaio.")]
+        public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
+        public int? DeviceCompletionThreads { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
@@ -792,8 +796,6 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
-            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
-                throw new Exception("Cannot use sharded-log without FastCommit!");
 
             if (!EnableAOF.GetValueOrDefault())
             {
@@ -867,7 +869,6 @@ namespace Garnet
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
-                EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
@@ -895,7 +896,11 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(
+                        deviceType: deviceType,
+                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -911,6 +916,8 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
+                DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
