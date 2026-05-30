@@ -6,7 +6,9 @@ This directory contains projects for benchmarking Garnet.
 
 **Garnet** project contains a Benchmark tool for running RESP benchmarking using different clients, different workloads and different strategies for measuring throughput, performance and latency.
 
-Please visit our website documentation about how to use it in the following link: [The Resp.benchmark tool](https://microsoft.github.io/garnet/docs/benchmarking/resp-bench)
+See [`Resp.benchmark/README.md`](Resp.benchmark/README.md) for a copy-paste cookbook covering the **offline** (throughput) and **online** (latency-histogram) modes, plus a recipe for running an end-to-end disk-bound benchmark that lines up with the lower-layer [KV.benchmark](../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md) and [Device.benchmark](Device.benchmark/README.md) recipes.
+
+You can also visit the website documentation here: [The Resp.benchmark tool](https://microsoft.github.io/garnet/docs/benchmarking/resp-bench).
 
 ## BDN.benchmark
 
