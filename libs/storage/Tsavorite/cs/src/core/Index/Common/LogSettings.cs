@@ -56,15 +56,9 @@ namespace Tsavorite.core
         /// (The 12-bit field can hold values 0..0xFFF; 0xFFF is reserved as the sentinel <see cref="KeyLengthSentinel"/>.)</summary>
         public const int MaxInlineKeySizeLimit = 0xFFE;
 
-        /// <summary>Headroom reserved at the top of the 24-bit ValueLength field for optionals (ETag + Expiration + ObjectLogPosition = 24 bytes today; rounded up to 64
-        /// for future expansion). The dummy DataHeader used during atomic record-resize operations (see <see cref="LogRecord"/> TrySetContentLengthsAndPrepareOptionals)
-        /// absorbs the optional + filler bytes into a virtual inline ValueLength, and that virtual length must fit in the 24-bit field. This headroom keeps the worst-case
-        /// real inline value (at <see cref="MaxInlineValueSizeLimit"/>) plus its optionals + filler under the 24-bit field max.</summary>
-        internal const int OptionalsReservedBytes = 64;
-
-        /// <summary>Maximum value size that fits in the 24-bit ValueLength field of RecordDataHeader, with <see cref="OptionalsReservedBytes"/> of headroom at the top
-        /// for the dummy-DataHeader transition during record-resize ops. Values larger than this become overflow.</summary>
-        public const int MaxInlineValueSizeLimit = (1 << 24) - 1 - OptionalsReservedBytes;
+        /// <summary>Maximum value size that fits in the 22-bit ValueLength field of RecordDataHeader. Values larger than this become overflow.
+        /// (The 22-bit field can hold values 0..0x3FFFFF; 0x3FFFFF is reserved as the sentinel <see cref="ValueLengthSentinel"/>.)</summary>
+        public const int MaxInlineValueSizeLimit = (1 << 22) - 2;       // 0x3FFFFE
 
         /// <summary>Minimum allowed <see cref="MaxInlineKeySize"/> / <see cref="MaxInlineValueSize"/>.</summary>
         public const int MinMaxInlineSize = 1 << 6;                                     // 64B
@@ -74,9 +68,8 @@ namespace Tsavorite.core
         internal const int KeyLengthSentinel = 0xFFF;
 
         /// <summary>Sentinel value written to <see cref="RecordDataHeader"/> ValueLength when actual value length exceeds <see cref="MaxInlineValueSizeLimit"/>.
-        /// (The 24-bit field max value, distinct from <see cref="MaxInlineValueSizeLimit"/>; do not assume any arithmetic relationship between them — there is a
-        /// <see cref="OptionalsReservedBytes"/> headroom gap so the dummy-DataHeader transition can use the field for optionals + filler bytes.)</summary>
-        internal const int ValueLengthSentinel = (1 << 24) - 1;
+        /// (The 22-bit field max value, distinct from <see cref="MaxInlineValueSizeLimit"/>; do not assume any arithmetic relationship between them.)</summary>
+        internal const int ValueLengthSentinel = (1 << 22) - 1;         // 0x3FFFFF
 
         /// <summary>Size of the int prefix written to the object log for overflow keys whose length exceeds <see cref="MaxInlineKeySizeLimit"/>.</summary>
         internal const int KeyOverflowPrefixSize = sizeof(int);                         // 4
@@ -88,7 +81,7 @@ namespace Tsavorite.core
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool KeySizeExceedsHeaderLimit(int size) => size > MaxInlineKeySizeLimit;
 
-        /// <summary>Whether the given value size exceeds the 24-bit header limit and requires a length prefix in the object stream.</summary>
+        /// <summary>Whether the given value size exceeds the 22-bit header limit and requires a length prefix in the object stream.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool ValueSizeExceedsHeaderLimit(long size) => size > MaxInlineValueSizeLimit;
 

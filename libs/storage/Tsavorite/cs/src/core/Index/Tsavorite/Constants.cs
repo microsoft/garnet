@@ -13,6 +13,9 @@ namespace Tsavorite.core
         // RecordInfo has a long field, so it should be aligned to 8-bytes
         public const int kRecordAlignment = 8;
         public const int kRecordAlignmentMask = kRecordAlignment - 1;
+        /// <summary>Bit-shift equivalent of <see cref="kRecordAlignment"/> (i.e., <c>1 &lt;&lt; kRecordAlignmentShift == kRecordAlignment</c>).
+        /// Use this when converting between word counts and byte counts (e.g., FillerWords &lt;&lt; kRecordAlignmentShift = filler bytes).</summary>
+        public const int kRecordAlignmentShift = 3;
 
         /// Number of entries per bucket (assuming 8-byte entries to fill a cacheline)
         /// Number of bits per bucket (assuming 8-byte entries to fill a cacheline)

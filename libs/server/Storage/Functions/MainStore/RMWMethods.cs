@@ -284,7 +284,7 @@ namespace Garnet.server
 
                         stubSpan.CopyTo(logRecord.ValueSpan);
 
-                        var dataHeader = logRecord.RecordDataHeader;
+                        var dataHeader = logRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
                     }
                     break;
@@ -1382,7 +1382,7 @@ namespace Garnet.server
                         RangeIndexManager.ClearFlushedFlag(dstLogRecord.ValueSpan);
 
                         // Preserve the RecordType
-                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
 
                         // NOTE: Source TreeHandle is cleared in PostCopyUpdater (after CAS success)
@@ -1398,7 +1398,7 @@ namespace Garnet.server
                         srcValue.CopyTo(dstLogRecord.ValueSpan);
                         RangeIndexManager.RecreateIndex((nint)input.arg1, dstLogRecord.ValueSpan);
 
-                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
                     }
                     break;

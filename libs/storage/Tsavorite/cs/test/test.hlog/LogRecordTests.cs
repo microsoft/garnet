@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -87,8 +87,7 @@ namespace Tsavorite.test.LogRecordTests
             sizeInfo.CalculateSizes(keySize, valueSize);
         }
 
-        static int GetTotalFillerLength(in LogRecord logRecord)
-            => logRecord.RecordDataHeader.GetTotalFillerLength(logRecord.DataHeaderAddress - RecordInfo.Size);
+        static int GetTotalFillerLength(in LogRecord logRecord) => logRecord.DataHeader.GetTotalFillerLength();
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]

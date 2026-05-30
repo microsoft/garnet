@@ -12,87 +12,99 @@ namespace Tsavorite.core
     /// <summary>
     /// Fixed 8-byte header describing the data layout of the record. Atomic assignment is guaranteed on 64-bit systems because
     /// the entire header fits in a single aligned <see cref="ulong"/>.
-    /// <para>Layout (byte 0 is lowest address, little-endian):</para>
+    /// <para>Layout (low bit to high bit):</para>
     /// <list type="bullet">
-    ///     <item>Byte 0: IndicatorByte — bit flags: [Unused5:7][Unused4:6][HasFiller:5][HasETag:4][HasExpiration:3][ValueIsObject:2][ValueIsInline:1][KeyIsInline:0]</item>
-    ///     <item>Bits 8–11: Unused0..Unused3 (4 unused bits between IndicatorByte and KeyLength). Together with Unused4..Unused5 at bits 6–7, all 6 unused bits form a contiguous group at bits 6–11.</item>
-    ///     <item>Bits 12–23: KeyLength (12 bits). The <see cref="KeyLength"/> property returns this raw
-    ///         value for inline keys; for overflow keys it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray
+    ///     <item>Bit 0: <see cref="KeyIsInline"/></item>
+    ///     <item>Bit 1: <see cref="ValueIsInline"/></item>
+    ///     <item>Bit 2: <see cref="ValueIsObject"/></item>
+    ///     <item>Bit 3: <see cref="HasExpiration"/></item>
+    ///     <item>Bit 4: <see cref="HasETag"/></item>
+    ///     <item>Bit 5: Unused1 (reserved for future use, e.g. version toggle).</item>
+    ///     <item>Bits 6–13: <see cref="FillerWords"/> (8-bit count of 8-byte filler words AFTER the implicit alignment padding).
+    ///         The total explicit filler in bytes is <c>FillerWords &lt;&lt; Constants.kRecordAlignmentShift</c>; the filler bytes themselves live at
+    ///         <c>recordBase + alignedSum .. recordBase + alignedSum + (FillerWords &lt;&lt; Constants.kRecordAlignmentShift)</c> and are never read.
+    ///         Maximum representable explicit filler is <see cref="MaxFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 2040 bytes. Records that need more
+    ///         filler are <i>split</i>: the original record retains <see cref="RecordSplitRetainFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 512 bytes
+    ///         of filler and the excess is placed in a new invalid record (see <see cref="SetFiller"/>).</item>
+    ///     <item>Bits 14–25: <see cref="KeyLength"/> (12 bits). The property returns this raw value for inline keys; for overflow keys
+    ///         it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray already carries the length, so mirroring it
+    ///         in the header would be extra work with no consumer.</item>
+    ///     <item>Bits 26–47: <see cref="ValueLength"/> (22 bits). The property returns this raw value for inline values; for
+    ///         overflow/object values it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray / IHeapObject
     ///         already carries the length, so mirroring it in the header would be extra work with no consumer.</item>
-    ///     <item>Bits 24–47: ValueLength (24 bits, byte-aligned). The <see cref="ValueLength"/> property returns this raw value for inline
-    ///         values; for overflow/object values it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray /
-    ///         IHeapObject already carries the length, so mirroring it in the header would be extra work with no consumer.</item>
-    ///     <item>Bits 48–55: RecordType byte; interpreted by caller.</item>
-    ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede the Key data bytes).</item>
+    ///     <item>Bits 48–55: <see cref="RecordType"/> byte; interpreted by caller. (Byte-aligned at byte 6.)</item>
+    ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
+    ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) temporarily write the actual length (or the
-    /// sentinel — <see cref="LogSettings.KeyLengthSentinel"/> = 0xFFF / <see cref="LogSettings.ValueLengthSentinel"/> = 0xFFFFFF) into the
-    /// KeyLength/ValueLength field before flushing. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) we reset those fields
-    /// to ObjectIdSize so the in-memory invariant holds.</para>
-    /// <para>RecordLength is no longer stored; it is derived: <c>AlignedSum = RoundUp(RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>.
-    /// If <see cref="HasFiller"/>, an explicit filler int is stored at <c>record_base + AlignedSum</c>.</para>
+    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) temporarily write the actual length
+    /// (or the sentinel — <see cref="LogSettings.KeyLengthSentinel"/> = 0xFFF / <see cref="LogSettings.ValueLengthSentinel"/> = 0x3FFFFF)
+    /// into the KeyLength/ValueLength field before flushing. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) we reset
+    /// those fields to ObjectIdSize so the in-memory invariant holds.</para>
+    /// <para>RecordLength is no longer stored; it is derived from the header alone:
+    /// <c>alignedSum = RoundUp(RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
+    /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
+    /// word, a single atomic write to <c>word</c> publishes a fully-consistent new record layout.</para>
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordDataHeader : IKey
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
 
-        // ── IndicatorByte bit layout (byte 0) ──────────────────────────────────────
+        // ── Indicator bits (bits 0-5) ──────────────────────────────────────────────
         const int kKeyIsInlineBit = 0;
         const int kValueIsInlineBit = 1;
         const int kValueIsObjectBit = 2;
         const int kHasExpirationBit = 3;
         const int kHasETagBit = 4;
-        const int kHasFillerBit = 5;
-        const int kUnused4Bit = 6;
-        const int kUnused5Bit = 7;
+        const int kUnused1Bit = 5;
 
-        // Unused0..Unused3 sit just above the IndicatorByte, so all 6 unused bits (Unused0..Unused5) are contiguous at bits 6–11.
-        const int kUnused0Bit = 8;
-        const int kUnused1Bit = 9;
-        const int kUnused2Bit = 10;
-        const int kUnused3Bit = 11;
-
-        const ulong kHasFillerMask = 1UL << kHasFillerBit;
-        const ulong kHasETagMask = 1UL << kHasETagBit;
-        const ulong kHasExpirationMask = 1UL << kHasExpirationBit;
-        const ulong kValueIsObjectMask = 1UL << kValueIsObjectBit;
-        const ulong kValueIsInlineMask = 1UL << kValueIsInlineBit;
         const ulong kKeyIsInlineMask = 1UL << kKeyIsInlineBit;
-
-        const ulong kUnused0Mask = 1UL << kUnused0Bit;
+        const ulong kValueIsInlineMask = 1UL << kValueIsInlineBit;
+        const ulong kValueIsObjectMask = 1UL << kValueIsObjectBit;
+        const ulong kHasExpirationMask = 1UL << kHasExpirationBit;
+        const ulong kHasETagMask = 1UL << kHasETagBit;
         const ulong kUnused1Mask = 1UL << kUnused1Bit;
-        const ulong kUnused2Mask = 1UL << kUnused2Bit;
-        const ulong kUnused3Mask = 1UL << kUnused3Bit;
-        const ulong kUnused4Mask = 1UL << kUnused4Bit;
-        const ulong kUnused5Mask = 1UL << kUnused5Bit;
 
-        // ── Field positions within the 8-byte word ─────────────────────────────────
-        // IndicatorByte:  bits  0–7   (byte 0; bits 6–7 are Unused4/Unused5)
-        // Unused0..3:     bits  8–11  (just above IndicatorByte; contiguous with Unused4/5 above for one 6-bit unused group at bits 6–11)
-        // KeyLength:      bits 12–23  (12 bits)
-        // ValueLength:    bits 24–47  (24 bits, byte-aligned at byte 3)
-        // RecordType:     bits 48–55  (byte 6)
-        // Namespace:      bits 56–63  (byte 7)
-        const int kKeyLengthShift = 12;
-        const int kValueLengthShift = 24;
+        // ── FillerWords field (bits 6-13, 8 bits) ──────────────────────────────────
+        const int kFillerWordsShift = 6;
+        const int kFillerWordsBits = 8;
+        const ulong kFillerWordsValueMask = (1UL << kFillerWordsBits) - 1;        // 0xFF
+        const ulong kFillerWordsMask = kFillerWordsValueMask << kFillerWordsShift;
+
+        /// <summary>Maximum value of the <see cref="FillerWords"/> field — represents up to <c>MaxFillerWords * Constants.kRecordAlignment</c> = 2040 bytes
+        /// of explicit filler. Records that need more filler are split (see <see cref="SetFiller"/>).</summary>
+        internal const int MaxFillerWords = (1 << kFillerWordsBits) - 1;          // 255
+
+        /// <summary>Number of bits in the <see cref="RecordSplitRetainFillerWords"/> constant (chosen so the retained filler stays well under
+        /// <see cref="MaxFillerWords"/> but is still a meaningful amount of in-place headroom for future re-growth).</summary>
+        const int kRecordSplitRetainFillerWordsBits = 6;
+
+        /// <summary>When splitting an over-filled record, the original record retains this many filler words
+        /// (= <c>RecordSplitRetainFillerWords * Constants.kRecordAlignment</c> = 512 bytes). The remainder becomes a new invalid record.</summary>
+        internal const int RecordSplitRetainFillerWords = 1 << kRecordSplitRetainFillerWordsBits;     // 64
+
+        // ── KeyLength field (bits 14-25, 12 bits) ──────────────────────────────────
+        const int kKeyLengthShift = 14;
+        const int kKeyLengthBits = 12;
+        const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;            // 0xFFF
+        const ulong kKeyLengthMask = kKeyLengthValueMask << kKeyLengthShift;
+
+        // ── ValueLength field (bits 26-47, 22 bits) ────────────────────────────────
+        const int kValueLengthShift = 26;
+        const int kValueLengthBits = 22;
+        const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1;        // 0x3FFFFF
+        const ulong kValueLengthMask = kValueLengthValueMask << kValueLengthShift;
+
+        // ── RecordType byte (bits 48-55, byte 6) ───────────────────────────────────
         const int kRecordTypeShift = 48;
-        const int kNamespaceShift = 56;
-
-        const ulong kKeyLengthMask = 0xFFFUL << kKeyLengthShift;       // 12 bits
-        const ulong kValueLengthMask = 0xFFFFFFUL << kValueLengthShift; // 24 bits
         const ulong kRecordTypeMask = 0xFFUL << kRecordTypeShift;
+
+        // ── Namespace byte (bits 56-63, byte 7) ────────────────────────────────────
+        const int kNamespaceShift = 56;
         const ulong kNamespaceMask = 0xFFUL << kNamespaceShift;
-        const ulong kIndicatorByteMask = 0xFFUL;
 
         /// <summary>Mask for extracting a single byte from the word.</summary>
         const ulong ByteMask = 0xFFUL;
-
-        /// <summary>Mask for extracting the 12-bit KeyLength value (before shifting).</summary>
-        const ulong kKeyLengthValueMask = 0xFFFUL;
-
-        /// <summary>Mask for extracting the 24-bit ValueLength value (before shifting).</summary>
-        const ulong kValueLengthValueMask = 0xFFFFFFUL;
 
 #pragma warning restore IDE1006 // Naming Styles
 
@@ -118,14 +130,7 @@ namespace Tsavorite.core
         [FieldOffset(0)]
         internal ulong word;
 
-        // ── IndicatorByte bit accessors ────────────────────────────────────────────
-
-        /// <summary>Whether the record has an explicit filler region (int stored at record_base + AlignedSum).</summary>
-        public readonly bool HasFiller => (word & kHasFillerMask) != 0;
-        /// <summary>Set the HasFiller bit.</summary>
-        public void SetHasFiller() => word |= kHasFillerMask;
-        /// <summary>Clear the HasFiller bit.</summary>
-        public void ClearHasFiller() => word &= ~kHasFillerMask;
+        // ── Indicator-bit accessors ────────────────────────────────────────────────
 
         /// <summary>Whether the record has an ETag optional field.</summary>
         public readonly bool HasETag => (word & kHasETagMask) != 0;
@@ -169,13 +174,8 @@ namespace Tsavorite.core
         /// <summary>Set the value to overflow (clear both ValueIsInline and ValueIsObject).</summary>
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineMask | kValueIsObjectMask);
 
-        // Unused0..Unused5 are placeholder bits with no semantic meaning yet; exposed only for diagnostic ToString output.
-        internal readonly bool Unused0 => (word & kUnused0Mask) != 0;
+        /// <summary>Unused future-toggle bit. Exposed only for diagnostic ToString output.</summary>
         internal readonly bool Unused1 => (word & kUnused1Mask) != 0;
-        internal readonly bool Unused2 => (word & kUnused2Mask) != 0;
-        internal readonly bool Unused3 => (word & kUnused3Mask) != 0;
-        internal readonly bool Unused4 => (word & kUnused4Mask) != 0;
-        internal readonly bool Unused5 => (word & kUnused5Mask) != 0;
 
         /// <summary>Set both key and value to inline.</summary>
         public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectMask) | kKeyIsInlineMask | kValueIsInlineMask;
@@ -191,6 +191,28 @@ namespace Tsavorite.core
 
         /// <summary>Whether the record has optional fields or requires ObjectLogPosition (i.e., is not fully inline).</summary>
         public readonly bool HasOptionalOrObjectFields => (word & (kKeyIsInlineMask | kValueIsInlineMask | kHasETagMask | kHasExpirationMask)) != (kKeyIsInlineMask | kValueIsInlineMask);
+
+        // ── FillerWords accessor ───────────────────────────────────────────────────
+
+        /// <summary>The number of 8-byte filler words BEYOND the implicit-alignment padding. The number of explicit filler bytes is
+        /// <c>FillerWords &lt;&lt; 3</c>; total filler is <c>implicitFiller + (FillerWords &lt;&lt; 3)</c>.</summary>
+        internal int FillerWords
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => (int)((word >> kFillerWordsShift) & kFillerWordsValueMask);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                Debug.Assert((uint)value <= MaxFillerWords, $"FillerWords {value} exceeds {MaxFillerWords}");
+                word = (word & ~kFillerWordsMask) | (((ulong)value & kFillerWordsValueMask) << kFillerWordsShift);
+            }
+        }
+
+        /// <summary>Whether the record has any explicit filler beyond alignment padding (i.e., <see cref="FillerWords"/> != 0).
+        /// Provided for diagnostic and back-compat use; most callers should read <see cref="FillerWords"/> directly.</summary>
+        public readonly bool HasFiller => (word & kFillerWordsMask) != 0;
+
+        // ── Optional/object size helper ────────────────────────────────────────────
 
         /// <summary>Get the total size of optional fields (ETag + Expiration + ObjectLogPosition if applicable).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -215,7 +237,7 @@ namespace Tsavorite.core
         // ── Field accessors via ulong word bit manipulation ────────────────────────
 
         /// <summary>The effective KeyLength for record-length calculations.
-        /// <para>For inline keys, returns the raw 12-bit value at bits 8–19. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// <para>For inline keys, returns the raw 12-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
         /// in the in-memory path).</para>
         /// <para>The setter always writes the raw 12-bit value. The disk-write path uses it to temporarily store the actual length or sentinel
@@ -239,10 +261,10 @@ namespace Tsavorite.core
         internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthValueMask);
 
         /// <summary>The effective ValueLength for record-length calculations.
-        /// <para>For inline values, returns the raw 24-bit value at bits 20–43. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// <para>For inline values, returns the raw 22-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
         /// consumer in the in-memory path).</para>
-        /// <para>The setter always writes the raw 24-bit value. The disk-write path uses it to temporarily store the actual length or sentinel
+        /// <para>The setter always writes the raw 22-bit value. The disk-write path uses it to temporarily store the actual length or sentinel
         /// (<see cref="LogSettings.ValueLengthSentinel"/>) for serialization; <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize on read-back.</para>
         /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
         internal int ValueLength
@@ -252,12 +274,12 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds 24-bit max");
+                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds 22-bit max");
                 word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthValueMask) << kValueLengthShift);
             }
         }
 
-        /// <summary>Read the raw 24-bit value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
+        /// <summary>Read the raw 22-bit value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
         /// where the field may hold a sentinel or actual length (not the effective <see cref="ValueLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthValueMask);
@@ -272,23 +294,16 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Get or set the Namespace byte. Throws an exception if out of range or if there is a conflicting specification for extended-length nameSpace.</summary>
-        public byte NamespaceByte
+        /// <summary>Get or the Namespace byte. Set is not implemented as this is immutable after construction; see <see cref="SetNamespaceByteRaw"/>.</summary>
+        public readonly byte NamespaceByte
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get
+            get
             {
                 var nameSpace = (byte)((word >> kNamespaceShift) & ByteMask);
                 if ((nameSpace & (1 << ExtendedNamespaceIndicatorBit)) != 0)
                     ThrowTsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
                 return nameSpace;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                if (value > sbyte.MaxValue)
-                    ThrowTsavoriteException($"NamespaceByte value {value} exceeds max allowable {sbyte.MaxValue}");
-                word = (word & ~kNamespaceMask) | ((ulong)value << kNamespaceShift);
             }
         }
 
@@ -311,9 +326,12 @@ namespace Tsavorite.core
         // ── RecordLength derivation (no longer stored) ─────────────────────────────
         //
         // For perf, callers that need multiple of {unalignedSum, alignedSum, totalFiller, recordLength} should call
-        // GetRecordLengths(recordBaseAddress, out ...) once instead of calling the individual getters multiple times,
-        // because each individual getter recomputes the unaligned/aligned sum. The unaligned/aligned/filler/record-length
-        // chain depends on multiple header fields, so the redundant work compounds quickly when called in a loop.
+        // GetRecordLengths(out ...) once instead of calling the individual getters multiple times, because each individual
+        // getter recomputes the unaligned/aligned sum. The unaligned/aligned/filler/record-length chain depends on multiple
+        // header fields, so the redundant work compounds quickly when called in a loop.
+        //
+        // Note: with FillerWords stored in the header word itself, NONE of these helpers need a recordBaseAddress argument
+        // — the explicit filler length is read directly from the FillerWords field, not from a stored int in the record body.
 
         /// <summary>The unaligned sum of all record components: RecordInfo + DataHeader + ExtendedNamespace + Key + Value + Optionals.
         /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need aligned sum, filler, or record length —
@@ -331,76 +349,130 @@ namespace Tsavorite.core
         /// Compute all record-length derivations in a single pass. Prefer this over multiple individual getters when you need
         /// more than one of {unalignedSum, alignedSum, implicitFiller, explicitFiller, recordLength}.
         /// </summary>
-        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo.</param>
         /// <param name="unalignedSum">Sum of all record components (no alignment padding).</param>
         /// <param name="alignedSum">Aligned sum (= recordLength if there is no explicit filler).</param>
         /// <param name="implicitFiller">Bytes of padding from alignment alone (0..kRecordAlignment-1).</param>
-        /// <param name="explicitFiller">Bytes of padding stored as an int at <c>recordBase + alignedSum</c> (only if <see cref="HasFiller"/>; multiple of kRecordAlignment).</param>
+        /// <param name="explicitFiller">Bytes of padding read from the <see cref="FillerWords"/> field (always a multiple of 8).</param>
         /// <returns>The total allocated record length (alignedSum + explicitFiller).</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe int GetRecordLengths(long recordBaseAddress, out int unalignedSum, out int alignedSum, out int implicitFiller, out int explicitFiller)
+        internal readonly int GetRecordLengths(out int unalignedSum, out int alignedSum, out int implicitFiller, out int explicitFiller)
         {
             unalignedSum = RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
             alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
             implicitFiller = alignedSum - unalignedSum;
-            explicitFiller = HasFiller ? *(int*)(recordBaseAddress + alignedSum) : 0;
+            explicitFiller = FillerWords << Constants.kRecordAlignmentShift;
             return alignedSum + explicitFiller;
         }
 
         /// <summary>Get the total allocated record length, including any filler.
         /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe int GetRecordLength(long recordBaseAddress)
-        {
-            var alignedSum = GetAlignedComponentSum();
-            return HasFiller ? alignedSum + *(int*)(recordBaseAddress + alignedSum) : alignedSum;
-        }
+        internal readonly int GetRecordLength() => GetAlignedComponentSum() + (FillerWords << Constants.kRecordAlignmentShift);
 
         // ── Filler helpers ─────────────────────────────────────────────────────────
 
-        /// <summary>Get the explicit filler length. Zero if HasFiller is not set.
-        /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
+        /// <summary>Get the explicit filler length in bytes (= <c>FillerWords &lt;&lt; 3</c>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe int GetExplicitFillerLength(long recordBaseAddress)
-            => HasFiller ? *(int*)(recordBaseAddress + GetAlignedComponentSum()) : 0;
+        internal readonly int GetExplicitFillerLength() => FillerWords << Constants.kRecordAlignmentShift;
 
         /// <summary>Get the total filler length (implicit + explicit).
         /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe int GetTotalFillerLength(long recordBaseAddress)
+        internal readonly int GetTotalFillerLength()
         {
             var unalignedSum = GetUnalignedComponentSum();
             var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
-            var explicitFiller = HasFiller ? *(int*)(recordBaseAddress + alignedSum) : 0;
-
-            Debug.Assert(explicitFiller % Constants.kRecordAlignment == 0, $"Reading Explicit filler: {explicitFiller} is not a multiple of kRecordAlignment");
-            return alignedSum - unalignedSum + explicitFiller;
+            return alignedSum - unalignedSum + (FillerWords << Constants.kRecordAlignmentShift);
         }
 
         /// <summary>Set the filler for a record given the total filler bytes available (allocatedRecordLength - unalignedSum).
-        /// Computes implicit and explicit portions, writes the explicit int if needed, and sets/clears HasFiller.</summary>
-        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo.</param>
+        /// Computes implicit and explicit portions and writes <see cref="FillerWords"/>.
+        /// <para>If the computed FillerWords value exceeds <see cref="MaxFillerWords"/> (255), the record is split: this RDH retains
+        /// <see cref="RecordSplitRetainFillerWords"/> (64) filler words and the excess becomes a new invalid record placed at
+        /// <c>recordBase + alignedSum + (RecordSplitRetainFillerWords &lt;&lt; Constants.kRecordAlignmentShift)</c>. The new record's RecordInfo (with Invalid set)
+        /// and RDH (inline keys/values, no optionals) are written BEFORE this RDH's FillerWords is updated; this ordering ensures a
+        /// concurrent scanner that reads our OLD RDH will jump over the new (invalid) record (effectively as part of the old record's
+        /// allocated extent), while a scanner that reads our NEW RDH will see the new invalid record as its own next-record entry and
+        /// will properly skip it (because Invalid is set).</para>
+        /// <para>This record splitting is safe to do without any kind of additional locking, because it is still part of the current
+        /// record that we have locked. To make this splitting safe for concurrent scanners, the newly split-off record's RecordInfo
+        /// and RecordDataHeader must be set before the original record's RDH is updated; this ensures that a concurrent scanner will
+        /// see a valid record if it reads the new RDH, and if it still has the old RDH, it will just jump to the end of the original
+        /// record, which effectively just jumps over the new invalid record.</para>
+        /// <para>TODO: REVIVIFICATION — if revivification is active when a split occurs, the newly split-off record should be sent to
+        /// <c>TryTransferToFreeList</c> so the free-record pool can absorb it.</para>
+        /// </summary>
+        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo (only used when a split is required).</param>
         /// <param name="totalFiller">Total filler bytes = allocatedRecordLength - unalignedSum. Must be non-negative.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetFiller(long recordBaseAddress, int totalFiller)
         {
             Debug.Assert(totalFiller >= 0, $"Total filler {totalFiller} must be non-negative");
 
-            // Compute implicit filler inline (avoid double-computing GetAlignedComponentSum via the helper methods).
+            // Compute implicit/explicit split inline (avoid double-computing GetAlignedComponentSum via the helper methods).
             var unalignedSum = GetUnalignedComponentSum();
             var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
             var implicitFiller = alignedSum - unalignedSum;
             var explicitFiller = totalFiller - implicitFiller;
             Debug.Assert(explicitFiller >= 0, $"Explicit filler {explicitFiller} must be non-negative");
+            Debug.Assert((explicitFiller & (Constants.kRecordAlignment - 1)) == 0, $"Explicit filler {explicitFiller} must be a multiple of kRecordAlignment");
 
-            if (explicitFiller > 0)
+            var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
+            if (fillerWords > MaxFillerWords)
             {
-                Debug.Assert(explicitFiller % Constants.kRecordAlignment == 0, $"Explicit filler {explicitFiller} must be a multiple of kRecordAlignment");
-                SetHasFiller();
-                *(int*)(recordBaseAddress + alignedSum) = explicitFiller;
+                fillerWords = SplitOverflowingFiller(recordBaseAddress, alignedSum, explicitFiller);
             }
-            else
-                ClearHasFiller();
+
+            word = (word & ~kFillerWordsMask) | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift);
+        }
+
+        /// <summary>
+        /// Handle the case where computed <see cref="FillerWords"/> would exceed <see cref="MaxFillerWords"/>: split off the excess into a
+        /// new invalid record placed AFTER this record's retained filler. Returns the <see cref="RecordSplitRetainFillerWords"/> value that
+        /// the caller should write into this record's <see cref="FillerWords"/> field.
+        /// <para>The new split-off record's RecordInfo and RDH are written here, BEFORE the caller updates this record's <see cref="FillerWords"/>.
+        /// This ordering is critical for concurrent-scanner safety: a scanner that reads our OLD (pre-split) RDH will treat the entire
+        /// pre-split extent as one record and step over the new invalid record without inspecting it; a scanner that reads our NEW
+        /// (post-split) RDH will encounter the new invalid record as a separate entry and will properly skip it (because Invalid is set).</para>
+        /// </summary>
+        private static unsafe int SplitOverflowingFiller(long recordBaseAddress, int alignedSum, int explicitFiller)
+        {
+            var retainedExplicitFiller = RecordSplitRetainFillerWords << Constants.kRecordAlignmentShift;        // 512 bytes
+            var newRecordBytes = explicitFiller - retainedExplicitFiller;          // must be > 0 since fillerWords > MaxFillerWords > RecordSplitRetainFillerWords
+            Debug.Assert(newRecordBytes >= RecordInfo.Size + Size, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({RecordInfo.Size + Size})");
+            Debug.Assert((newRecordBytes & (Constants.kRecordAlignment - 1)) == 0, $"Split-off region {newRecordBytes} must be a multiple of kRecordAlignment");
+
+            var newRecordAddress = recordBaseAddress + alignedSum + retainedExplicitFiller;
+
+            // The new record holds: RecordInfo + RDH + (the rest as inline "value" bytes; no key, no optionals).
+            // If the rest doesn't fit in 22-bit ValueLength + 8-bit FillerWords*8, recursively split via SetFiller.
+            var newInnerBytes = newRecordBytes - RecordInfo.Size - Size;           // bytes available for value + filler
+            int newValueLength = newInnerBytes <= LogSettings.MaxInlineValueSizeLimit ? newInnerBytes : LogSettings.MaxInlineValueSizeLimit;
+            var newRemainingFiller = newInnerBytes - newValueLength;
+
+            // Step 1: Write the new record's RecordInfo (Invalid set) FIRST.
+            var newRecInfo = RecordInfo.InitialValid;
+            newRecInfo.SetInvalid();
+            *(RecordInfo*)newRecordAddress = newRecInfo;
+
+            // Step 2: Build and write the new record's RDH (inline keys/values, no optionals, KeyLength=0, ValueLength as computed).
+            //   Then, if there's leftover filler, recursively call SetFiller on the new record's RDH.
+            var newRDH = new RecordDataHeader
+            {
+                word = kKeyIsInlineMask | kValueIsInlineMask
+                     | (((ulong)newValueLength & kValueLengthValueMask) << kValueLengthShift)
+            };
+            // If there's still leftover filler after maxing out ValueLength, set it (this may itself trigger another split).
+            if (newRemainingFiller > 0)
+                newRDH.SetFiller(newRecordAddress, newRemainingFiller);
+
+            *(RecordDataHeader*)(newRecordAddress + RecordInfo.Size) = newRDH;
+
+            // TODO: REVIVIFICATION — if revivification is active, send this newly split-off record to TryTransferToFreeList so
+            // the free-record pool can absorb it.
+
+            // Step 3: Caller writes RecordSplitRetainFillerWords into this record's FillerWords (atomic update of the original RDH).
+            return RecordSplitRetainFillerWords;
         }
 
         // ── Key and Value field info ───────────────────────────────────────────────
@@ -429,13 +501,11 @@ namespace Tsavorite.core
 
             var keyLength = KeyLength;
             var valueLength = ValueLength;
-            fillerLen = GetTotalFillerLength(recordBaseAddress);
+            fillerLen = GetTotalFillerLength();
 
             valueAddress = recordBaseAddress + GetOffsetToKeyStart() + keyLength;
             return (keyLength, valueLength);
         }
-
-        // ── Create a temp intermediate version for  ───────────────────────────────────────────────
 
         // ── Initialize ─────────────────────────────────────────────────────────────
 
@@ -460,7 +530,7 @@ namespace Tsavorite.core
             var recordType = sizeInfo.FieldInfo.RecordType;
 
             // Single atomic write of the non-filler fields. Set the default inline bits (KeyIsInline + ValueIsInline);
-            // clear the other indicator bits (HasETag/HasExpiration/HasFiller/ValueIsObject/Unused); then set KeyLength,
+            // clear the other indicator bits (HasETag/HasExpiration/ValueIsObject/Unused/FillerWords); then set KeyLength,
             // ValueLength, Namespace, RecordType. Caller transitions inline bits to overflow/object as needed.
             word = kKeyIsInlineMask | kValueIsInlineMask
                  | (((ulong)keyLength & kKeyLengthValueMask) << kKeyLengthShift)
@@ -471,7 +541,7 @@ namespace Tsavorite.core
             // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
             // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
 
-            // Calculate and set filler (separate update because explicit filler is also written to recordBaseAddress + alignedSum).
+            // Calculate and set filler (may write FillerWords and, on overflow, split a new invalid record).
             var unalignedSum = RecordInfo.Size + Size + extendedNamespaceSize + keyLength + valueLength + sizeInfo.ObjectLogPositionSize;
             var totalFiller = sizeInfo.AllocatedInlineRecordSize - unalignedSum;
             if (totalFiller > 0)
@@ -491,11 +561,11 @@ namespace Tsavorite.core
             Debug.Assert(ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
             Debug.Assert(!HasETag && !HasExpiration, "Expected no optionals in InitializeForRevivification");
 
-            var recordLength = GetRecordLength(recordBaseAddress);
+            var recordLength = GetRecordLength();
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
             // Clear filler, namespace, recordType; keep inline bits and key/value lengths
-            ClearHasFiller();
+            FillerWords = 0;
             SetNamespaceByteRaw(0);
             RecordType = 0;
 
@@ -558,38 +628,31 @@ namespace Tsavorite.core
         // ── ToString ───────────────────────────────────────────────────────────────
 
         /// <inheritdoc/>
-        public override readonly string ToString() => ToString("na", "na", 0);
+        public override readonly string ToString() => ToString("na", "na");
 
-        internal readonly string ToString(string keyString, string valueString, long recordBaseAddress)
+        internal readonly string ToString(string keyString, string valueString)
         {
             if (word == 0)
                 return "<empty>";
             static string bstr(bool value) => value ? "T" : "F";
             static string bstr01(bool value) => value ? "1" : "0";
+
             var keyLength = KeyLength;
             var valueLength = ValueLength;
 
-            string recordLenStr = "na", fillerLenStr = "na";
-            if (recordBaseAddress != 0)
-            {
-                var recordLen = GetRecordLengths(recordBaseAddress, out var unalignedSum, out var alignedSum, out var implicitFiller, out var explicitFiller);
-                recordLenStr = $"act: {alignedSum}, all: {recordLen}";
-                if (HasFiller)
-                    fillerLenStr = $"[i:{implicitFiller} + e:{explicitFiller} = {implicitFiller + explicitFiller}]";
-            }
+            var recordLen = GetRecordLengths(out var unalignedSum, out var alignedSum, out var implicitFiller, out var explicitFiller);
+            var recordLenStr = $"act: {alignedSum}, all: {recordLen}";
+            var fillerLenStr = $"[i:{implicitFiller} + e:{explicitFiller}({FillerWords}w) = {implicitFiller + explicitFiller}]";
 
             var keyStr = KeyIsInline ? "inl" : "ovf";
             var valStr = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
-
-            // Unused0..Unused5 printed in declared order (Unused0 leftmost), no separator since only 6 bits.
-            var unusedStr = $"{bstr01(Unused0)}{bstr01(Unused1)}{bstr01(Unused2)}{bstr01(Unused3)}{bstr01(Unused4)}{bstr01(Unused5)}";
 
             return $"rec l:{recordLenStr}"
                  + $" | key {keyStr}/l:{keyLength} {keyString}"
                  + $" | val {valStr}/l:{valueLength}, {valueString}"
                  + $" | ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}"
                  + $" | fil {fillerLenStr} Ns:{(byte)((word >> kNamespaceShift) & ByteMask)}/x:{ExtendedNamespaceLength}, RT:{RecordType}"
-                 + $" | Unused0-5 {unusedStr}";
+                 + $" | Unused1 {bstr01(Unused1)}";
         }
     }
 }

@@ -69,13 +69,13 @@ namespace Garnet.server
             if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Free BfTree and delete data files on key deletion.
-                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
                 }
 
                 // Request Vector Set cleanup when the index key is deleted.
-                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
                     vectorManager?.RequestDeletion(logRecord.ValueSpan);
                 }
@@ -87,7 +87,7 @@ namespace Garnet.server
         {
             if (rangeIndexManager is null
                 || logRecord.DataHeader.ValueIsObject
-                || logRecord.RecordDataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
+                || logRecord.DataHeader.RecordType != RangeIndexManager.RangeIndexRecordType)
                 return;
 
             rangeIndexManager.SnapshotTreeForFlush(logRecord.Key, logRecord.ValueSpan, logicalAddress);
@@ -99,13 +99,13 @@ namespace Garnet.server
             if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Free BfTree on page eviction under exclusive lock.
-                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                if (logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
                 }
 
                 // Drop DiskANN side of index
-                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
                     vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
                 }
@@ -119,13 +119,13 @@ namespace Garnet.server
             {
                 // Invalidate stale TreeHandle bytes on records loaded from disk.
                 // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
-                if (logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                if (logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
                 }
 
                 // Clear DiskANN index pointer so we'll recreate it on first touch
-                if (logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
                     VectorManager.ClearIndexPointer(logRecord.ValueSpan);
                 }
@@ -146,14 +146,14 @@ namespace Garnet.server
                 // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
                 // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
                 // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
-                if (rangeIndexManager is not null && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
+                if (rangeIndexManager is not null && logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
                     rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
                 }
 
                 // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
-                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.RecordDataHeader.RecordType == VectorManager.RecordType)
+                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
                     vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
                 }
@@ -206,7 +206,7 @@ namespace Garnet.server
             // Propagate RecordType from src onto dst (CTT does not do this for us).
             // RecordDataHeader is a wrapper struct over the header pointer, so the setter
             // writes through to the underlying memory even on this struct value.
-            var dstHeader = dstLogRecord.RecordDataHeader;
+            var dstHeader = dstLogRecord.DataHeader;
             dstHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
 
             var srcSpan = srcLogRecord.ValueSpan;

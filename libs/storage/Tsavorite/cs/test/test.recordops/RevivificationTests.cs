@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1974,7 +1974,7 @@ namespace Tsavorite.test.Revivification
 
                 var dataHeader = *(RecordDataHeader*)(&recordPtr->headerWord);
                 Assert.That(dataHeader.GetAlignedComponentSum(), Is.EqualTo(sizeInfo.ActualInlineRecordSize));
-                Assert.That(dataHeader.GetRecordLength((long)recordPtr), Is.EqualTo(sizeInfo.AllocatedInlineRecordSize));
+                Assert.That(dataHeader.GetRecordLength(), Is.EqualTo(sizeInfo.AllocatedInlineRecordSize));
             }
         }
 

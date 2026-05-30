@@ -2061,7 +2061,7 @@ namespace Tsavorite.core
                 var headerLength = RecordDataHeader.Size;
 
                 // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
-                var recordLength = dataHeader.GetRecordLength((long)ptr);
+                var recordLength = dataHeader.GetRecordLength();
                 if (currentLength <= headerLength)
                 {
                     prevLengthToRead = recordLength;
