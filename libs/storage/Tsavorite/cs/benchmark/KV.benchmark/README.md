@@ -99,24 +99,23 @@ roughly **0.125 %** of the dataset is in memory at any time. Every read
 becomes a 4 KB random disk fetch, making the result a direct measurement of
 the device backend under contention. With 6 thread counts × 3 devices
 (RandomAccess, native + libaio, native + io_uring), each invocation does one
-load (~35 s for 100 M keys at ~3 M ops/sec) and then sweeps the six
-thread-count cells at warmup 5 s + run 15 s each. Total wall-clock per device
-≈ 35 + 6 × 20 = ~2.5 min. **Use a 100 M dataset (not 10 M)**: a smaller
-dataset fills only the first ~1.3 GB of LBA range, which lands on a smaller
-subset of NAND dies and serializes per-die — observed ~18 % higher per-IO
-service time at the device (1.08 ms vs 0.91 ms on a P5600, identical queue
-depth) and therefore ~17 % lower IOPS. 100 M is the smallest dataset that
-spreads writes across enough dies to see the device's full random-read
-ceiling. Compare against the disk's `fio` ceiling
-(`fio --rw=randread --bs=4k --direct=1 --ioengine=libaio --iodepth=64
---numjobs=8 --runtime=15 --time_based --group_reporting --filename=/mnt/nvme/...`)
-to know what fraction of the device each backend is leaving on the table.
-**`--device-throttle 512` is required to reach peak IOPS**; the default of
-120 leaves ~30 % of the device on the table. Native + libaio with
-throttle 512 plateaus at the single-`io_context_` cap (~565 K IOPS on a
-P5600); RandomAccess is capped by the BCL's `RandomAccess.ReadAsync`
-managed-async dispatch (~120 K IOPS); native + io_uring currently sits
-between the two — see the `Linux native I/O backends` section below.
+load (~35 s for 100 M keys) and then sweeps the six thread-count cells at
+warmup 5 s + run 15 s each (≈ 2.5 min wall-clock per device).
+
+Use a **100 M dataset** for disk-bound runs: smaller datasets fill only the
+first ~1 GB of LBA range and land on a subset of NAND dies, raising per-IO
+service time at the device even at identical queue depth and IO size, and
+therefore understating IOPS. **`--device-throttle 512` is required to reach
+peak IOPS** — the default of 120 leaves a large fraction of the device
+unused. Native + libaio with throttle 512 plateaus at the
+single-`io_context_` cap; RandomAccess is capped by the BCL's
+`RandomAccess.ReadAsync` managed-async dispatch; native + io_uring sits
+between the two. See the `Linux native I/O backends` section below for
+backend-specific tuning.
+
+Compare against the disk's `fio` ceiling:
+`fio --rw=randread --bs=4k --direct=1 --ioengine=libaio --iodepth=64
+--numjobs=8 --runtime=15 --time_based --group_reporting --filename=/mnt/nvme/...`
 
 ### Detailed examples
 

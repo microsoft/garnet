@@ -226,13 +226,13 @@ Resp.benchmark (this)    e.g., ??? IOPS    (full Garnet RESP stack)
 ```
 
 All four layers must use the **same dataset size, throttle, log shape,
-and backend** to be directly comparable. The reference numbers above are
-on a Dell P5600 with **100 M × 100 B records, 16 MB log, native + libaio,
-throttle = 512, NUMA node 0**. Using 10 M instead of 100 M understates
-the upper-layer ceilings by ≈ 17 % because the smaller dataset only
-spans ~1.3 GB of LBA range and lands on a subset of NAND dies — observed
-1.08 ms vs 0.91 ms per-IO at the device, identical queue depth, identical
-IO size. Always benchmark with 100 M when comparing across layers.
+and backend** to be directly comparable. The numbers above are
+illustrative — actual values depend on the device. A **100 M × 100 B**
+dataset is the minimum at which a fast NVMe reaches its random-read
+ceiling: smaller datasets fill only the first ~1 GB of LBA range and
+land on a subset of NAND dies, raising per-IO service time at the device
+even though queue depth and IO size are unchanged. Always benchmark
+disk-bound recipes with at least 100 M records.
 
 If `Resp.benchmark` drops well below `KV.benchmark` on the same hardware, the
 gap is in the Garnet server path (RESP parse, command dispatch, pending-IO
@@ -266,15 +266,14 @@ SERVER_PID=$!
 ```
 
 Notes:
-* **`--sg-get true` is critical for disk-bound GET throughput.** It enables
+* **`--sg-get true` is required for disk-bound GET throughput.** It enables
   scatter-gather libaio submissions, batching contiguous pending GETs from a
   pipelined RESP connection into a single vectored IO. Without it, the
   server processes pending GETs one at a time per connection and the device
-  starves at `aqu-sz ≈ 6-8` even with 8 client threads. Measured impact on
-  this hardware (100 M × 100 B, 16 MB log, libaio): t=1 jumps from **16 K →
-  146 K ops/s (8.9×)**, t=8 from **104 K → 404 K ops/s (3.9×)**, and device
-  queue depth from 6.8 → 109. If you forget this flag the disk will appear
-  100 % busy at a fraction of its IOPS ceiling.
+  queue depth stays below 10 even with multiple client threads — the disk
+  reports 100 % busy at a small fraction of its IOPS ceiling. Enabling the
+  flag typically yields a several-fold throughput increase at low thread
+  counts and 3–4× at higher thread counts.
 * `--memory 16m --page 4m` → 4 pages, just enough that records spill into
   read-only and then to disk. (KV.benchmark uses the same shape.)
 * `--index 4g` → 4 GB hash index = 64 M buckets = 8 entries/bucket × 64 M ÷
@@ -293,9 +292,9 @@ Notes:
 * `numactl --cpunodebind=0 --membind=0` keeps the server pinned to one NUMA
   node. The same wrapper on the client side is recommended (next steps).
 
-**Step 2 — load 100 M × 100 B records once** (≈ 3 min wall-clock on this
-configuration; ~140 s of client-side request-batch generation + ~33 s of
-actual server load at ~3 M ops/s):
+**Step 2 — load 100 M × 100 B records once** (a few minutes wall-clock; the
+client spends most of it generating request batches, with the actual
+server-side load running at multi-MOPS):
 
 ```bash
 numactl --cpunodebind=0 --membind=0 dotnet $RB \
@@ -329,15 +328,13 @@ concurrency. Throughput should plateau at the lower of (a) the server's
 network/RESP processing ceiling and (b) the Tsavorite pending-read path
 ceiling measured by KV.benchmark with the equivalent disk-bound recipe.
 
-**Batch-size tuning**: `-b 1024` is a safe default. Empirically the
-disk-bound 8-thread sweet spot is `-b 2048` (≈ +3 %); going higher
-(`-b 4096`+) hurts because the client spends too much wall time generating
-each batch and the server-side response buffer fragments more.
-Run the same sweep at `-b 2048` if you're chasing the absolute peak.
-**Discard the first per-cell measurement** of the sweep — Resp.benchmark
-has no built-in warmup flag, so the first run includes ramp-up; re-run a
-second time for steady-state numbers (matches how KV.benchmark uses
-`--warmup-sec 5`).
+**Batch-size tuning**: `-b 1024` is a safe default and reaches near-peak
+disk-bound throughput at 8 threads; `-b 2048` typically gives a small
+additional gain. Higher values (`-b 4096`+) regress because client-side
+batch generation dominates wall time and server-side response buffers
+fragment more. Resp.benchmark has no built-in warmup flag, so the first
+per-cell measurement of each sweep includes ramp-up — re-run a second
+time and use the steady-state numbers.
 
 **Step 4 — compare to the layers below**:
 
@@ -352,9 +349,9 @@ dotnet benchmark/Device.benchmark/bin/Release/net10.0/Device.benchmark.dll \
     --sector-size 4096 --batch-size 4096 \
     --threads 16 --throttle-limit 512 --runtime 8
 
-# Layer 2: full KV (Tsavorite pending-read)
-# Note: same throttle (512), log shape (16m/4m/1g), backend (libaio), and
-# thread sweep as Step 1/3 above, so the three layers are directly comparable.
+# Layer 2: full KV (Tsavorite pending-read).
+# Throttle, log shape, backend, and thread sweep match Step 1/3 so the
+# three layers are directly comparable.
 KV=libs/storage/Tsavorite/cs/benchmark/KV.benchmark/bin/Release/net10.0/KV.benchmark.dll
 numactl --cpunodebind=0 --membind=0 dotnet $KV \
     -n 100000000 -v 100 --device native --device-io-backend libaio \

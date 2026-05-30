@@ -55,17 +55,15 @@ COMMON="--file-name $FILE --file-size 17179869184 --sector-size 4096 \
         --segment-size 1073741824 --batch-size 4096 --runtime 8 \
         --throttle-limit 512 --device-type Native"
 
-# libaio: kernel io_context capacity is 128 slots wide per context. As of the
-# sharded-libaio change, --completion-threads N creates N independent kernel
-# io_contexts (each with its own /dev/null wake-up fd and its own 128-slot
-# kernel ring) and assigns submitters to contexts via per-thread affinity (same
-# pick_context() shape as uring's pick_ring()). Empirical: on this hardware
-# sharding gives at most ~1% over CT=1 because the single io_context mutex is
-# already efficient at all tested loads — the per-thread affinity in pick_context
-# only matters when many submitter threads simultaneously call io_submit on the
-# same context. CT=1 is the recommended default; bump CT only if you measure
-# kernel-side io_submit contention on your specific hardware/workload. 16 worker
-# threads is the sweet spot on this hardware; 32 is noise.
+# libaio: kernel io_context capacity is 128 slots per context. With
+# --completion-threads N, N independent kernel io_contexts are created
+# (each with its own wake-up fd and 128-slot kernel ring); submitter
+# threads are assigned to contexts via per-thread affinity (same
+# pick_context() shape as uring's pick_ring()). CT=1 is the recommended
+# default — sharding only helps when many submitter threads contend on a
+# single io_context's mutex inside the kernel. Use a higher CT only if
+# io_submit contention is observable on the target hardware/workload.
+# 16 worker threads is typically the sweet spot; 32 rarely adds throughput.
 numactl --membind=0 --cpunodebind=0 dotnet bin/Release/net10.0/Device.benchmark.dll \
   $COMMON --io-backend libaio --completion-threads 1 --threads 16
 # → ~750K ops/sec
