@@ -573,7 +573,7 @@ namespace Tsavorite.core
                                       int numCompletionThreads = 1,
                                       IoBackend ioBackend = IoBackend.Default,
                                       ILogger logger = null)
-                : base(filename, GetSectorSize(filename), capacity)
+                : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
 
@@ -603,10 +603,6 @@ namespace Tsavorite.core
 
             ThrottleLimit = 120;
             _callbackDelegate = _callback;
-
-            string path = new FileInfo(filename).Directory.FullName;
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
         }
 
         /// <inheritdoc />
@@ -1161,6 +1157,39 @@ namespace Tsavorite.core
             catch (DllNotFoundException) { }
             catch (EntryPointNotFoundException) { }
             return MinSectorSize;
+        }
+
+        /// <summary>
+        /// Materializes the parent directory of <paramref name="filename"/> (if missing) and
+        /// then probes the kernel's required direct-I/O alignment for the target file. Must
+        /// run from the base-ctor argument so the same filesystem that will later own the
+        /// data file is queried for SectorSize.
+        /// </summary>
+        /// <remarks>
+        /// Without the up-front mkdir, the probe walks up to the nearest existing ancestor;
+        /// on hosts where parent and grandparent live on different filesystems with different
+        /// <c>logical_block_size</c> (e.g. an overlay mount over a 4K-native disk), that
+        /// ancestor's sector size disagrees with the value the native shim reports after the
+        /// ctor body creates the parent. The cross-check in <see cref="EnsureNativeDeviceCreated"/>
+        /// then throws on first IO. Creating the parent before the probe collapses both
+        /// queries onto the final filesystem and keeps SectorSize consistent with all
+        /// subsequent O_DIRECT alignment requirements.
+        /// </remarks>
+        private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
+        {
+            try
+            {
+                string path = new FileInfo(filename).Directory?.FullName;
+                if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
+                    Directory.CreateDirectory(path);
+            }
+            catch
+            {
+                // Mkdir failures (permissions, race with concurrent create, etc.) are not
+                // fatal here — they will surface with a clearer error when the device tries
+                // to open the file. The probe still runs against the best ancestor we have.
+            }
+            return GetSectorSize(filename);
         }
 
         /// <summary>
