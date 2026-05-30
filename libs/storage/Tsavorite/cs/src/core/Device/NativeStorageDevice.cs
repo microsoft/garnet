@@ -704,20 +704,20 @@ namespace Tsavorite.core
                 uint nativeSectorSize = NativeDevice_sector_size(newDevice);
                 if (nativeSectorSize != SectorSize)
                 {
-                    // The managed-side probe (run from the base-ctor argument) and the native-side
-                    // probe (run from NativeDeviceImpl's field initializer) can disagree when the
-                    // host filesystem layout makes ProbeDioAlignment's stat-walk-up return
-                    // different ancestors at different times (e.g. CI overlay mounts that change
-                    // between calls, or a parent directory that wasn't materialised yet at managed
-                    // probe time). The native value is the authoritative one — the kernel will
-                    // reject misaligned O_DIRECT I/O with EINVAL regardless of what SectorSize
-                    // claims, so a drift here is observable downstream with a clear error rather
-                    // than silent corruption. Warn so the operator can investigate, but don't
-                    // crash the device on first I/O.
-                    logger?.LogWarning(
-                        "Native device sector-size drift on '{Filename}': managed wrapper probed {ManagedSectorSize} bytes but the kernel reports {NativeSectorSize} bytes. " +
-                        "Continuing with the managed value for buffer alignment; if the native value is larger, O_DIRECT I/O will fail with EINVAL on misaligned requests.",
-                        filename, SectorSize, nativeSectorSize);
+                    // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
+                    // native probe in NativeDeviceImpl's field initializer) go through the
+                    // same ProbeDioAlignment routine on the same filename with the parent
+                    // directory pre-materialised, so the two values are guaranteed to agree
+                    // on every well-formed host. A drift here is a real ABI / loaded-library
+                    // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
+                    // different branch than the managed wrapper, or the host kernel changed
+                    // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
+                    // caught at the first I/O rather than silently mis-aligning every write.
+                    NativeDevice_Destroy(newDevice);
+                    throw new TsavoriteException(
+                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
+                        "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
+                        "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
                 }
 
                 if (results == null) results = new NativeResult[MaxResults];
@@ -1166,37 +1166,48 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Materializes the parent directory of <paramref name="filename"/> (if missing) and
-        /// then probes the kernel's required direct-I/O alignment for the target file. Must
-        /// run from the base-ctor argument so the same filesystem that will later own the
-        /// data file is queried for SectorSize.
+        /// then probes the kernel's required direct-I/O alignment for the eventual data
+        /// file. Returns the value once and for all — the result is passed to the
+        /// <see cref="StorageDeviceBase"/> ctor argument and the resulting
+        /// <see cref="IDevice.SectorSize"/> is immutable for the lifetime of the device.
         /// </summary>
         /// <remarks>
-        /// Without the up-front mkdir, the probe walks up to the nearest existing ancestor;
-        /// on hosts where parent and grandparent live on different filesystems with different
-        /// <c>logical_block_size</c> (e.g. an overlay mount over a 4K-native disk), that
-        /// ancestor's sector size disagrees with the value the native shim reports after the
-        /// ctor body creates the parent. Creating the parent before the probe collapses both
-        /// queries onto the final filesystem and keeps SectorSize consistent with all
-        /// subsequent O_DIRECT alignment requirements. The cross-check in
-        /// <see cref="EnsureNativeDeviceCreated"/> downgrades any residual drift to a warning
-        /// rather than throwing — the kernel itself rejects misaligned O_DIRECT I/O with
-        /// EINVAL, which is the authoritative correctness gate.
+        /// The probe is deterministic by construction:
+        ///   1. <see cref="Directory.CreateDirectory(string)"/> ensures the parent exists on
+        ///      the target filesystem before the probe runs.
+        ///   2. The probe call is given the parent directory's path (not the not-yet-existing
+        ///      data file), so <c>stat()</c> succeeds on the first try and never walks up to
+        ///      a grandparent on a different filesystem.
+        /// Together these collapse both the managed-side probe and the later native-side
+        /// probe (run from the <c>NativeDeviceImpl</c> field initializer with the same
+        /// parent dir present) onto the same kernel STATX_DIOALIGN / sysfs queue-block-size
+        /// value, so the cross-check in <see cref="EnsureNativeDeviceCreated"/> is a real
+        /// ABI / loaded-library drift detector with no path-resolution false positives.
         /// </remarks>
         private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
         {
+            string parent = null;
             try
             {
-                string path = new FileInfo(filename).Directory?.FullName;
-                if (!string.IsNullOrEmpty(path))
-                    Directory.CreateDirectory(path);
+                parent = new FileInfo(filename).Directory?.FullName;
+                if (!string.IsNullOrEmpty(parent))
+                    Directory.CreateDirectory(parent);
             }
             catch
             {
                 // Mkdir failures (permissions, race with concurrent create, etc.) are not
                 // fatal here — they will surface with a clearer error when the device tries
                 // to open the file. The probe still runs against the best ancestor we have.
+                parent = null;
             }
-            return GetSectorSize(filename);
+            // Probe the materialized parent dir directly when we have one — this removes any
+            // dependency on whether the file itself exists and prevents the probe from
+            // walking up to a different filesystem when the lazy file create has not yet
+            // run. Fall back to the original filename path when we couldn't determine /
+            // materialize a parent (the probe's own stat-walk-up will still produce a
+            // best-effort value).
+            string probePath = !string.IsNullOrEmpty(parent) ? parent : filename;
+            return GetSectorSize(probePath);
         }
 
         /// <summary>

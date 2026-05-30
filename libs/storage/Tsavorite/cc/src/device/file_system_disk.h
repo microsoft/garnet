@@ -141,12 +141,22 @@ class FileSystemSegmentBundle {
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
     , omit_segment_id_{ omit_segment_id }
-    , owner_{ true } {
+    , owner_{ true }
+    , open_status_{ core::Status::Ok } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      // The assert is compiled out in Release, so capture the first non-Ok status so the
+      // caller (FileSystemSegmentedFile::OpenSegment) can detect a partially-opened
+      // bundle and refuse to commit it to files_. Without this guard a chmod-0 parent
+      // directory produced a bundle with fd_=-1, which the subsequent WriteAsync would
+      // submit to io_submit with aio_fildes=-1 — empirically hanging inside libaio on
+      // some kernels instead of returning -EBADF synchronously.
+      if (result != core::Status::Ok && open_status_ == core::Status::Ok) {
+        open_status_ = result;
+      }
     }
   }
 
@@ -157,7 +167,8 @@ class FileSystemSegmentBundle {
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
     , omit_segment_id_{ other.omit_segment_id_ }
-    , owner_{ true } {
+    , owner_{ true }
+    , open_status_{ core::Status::Ok } {
     assert(end_segment >= other.end_segment);
 
     uint64_t begin_new = begin_segment;
@@ -170,6 +181,9 @@ class FileSystemSegmentBundle {
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      if (result != core::Status::Ok && open_status_ == core::Status::Ok) {
+        open_status_ = result;
+      }
     }
     for(uint64_t idx = begin_copy; idx < end_copy; ++idx) {
       // Move file handles for segments already opened.
@@ -180,6 +194,9 @@ class FileSystemSegmentBundle {
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      if (result != core::Status::Ok && open_status_ == core::Status::Ok) {
+        open_status_ = result;
+      }
     }
 
     other.owner_ = false;
@@ -234,6 +251,16 @@ class FileSystemSegmentBundle {
     return sizeof(bundle_t) + num_segments * sizeof(file_t);
   }
 
+  /// Returns the first non-Ok status captured during bundle construction (i.e., the first
+  /// per-segment file.Open() that returned an error). Status::Ok means every segment
+  /// opened successfully and the bundle is safe to commit to files_. OpenSegment must
+  /// check this before publishing a freshly-constructed bundle: committing a bundle that
+  /// contains an unopened (fd_=-1) file would later route an io_submit to an invalid
+  /// descriptor.
+  core::Status open_status() const {
+    return open_status_;
+  }
+
   /// Build the on-disk filename for `segment`. With `omit_segment_id_` false (the default),
   /// segments are named `<base>.<segmentId>` so multiple segments live side-by-side. With
   /// `omit_segment_id_` true, all writes go to the bare `<base>` filename — only meaningful
@@ -250,6 +277,10 @@ class FileSystemSegmentBundle {
   environment::FileOptions file_options_;
   bool omit_segment_id_;
   bool owner_;
+  /// First non-Ok status returned by any per-segment file.Open() during ctor. Status::Ok
+  /// while every Open succeeded; sticky after the first failure so the caller can refuse
+  /// to commit a partially-opened bundle to files_.
+  core::Status open_status_;
 };
 
 template <class H>
@@ -418,6 +449,19 @@ class FileSystemSegmentedFile {
       void* buffer = std::malloc(bundle_t::size(1));
       bundle_t* new_files = new(buffer) bundle_t{ filename_, file_options_, handler_,
           segment, segment + 1, omit_segment_id_ };
+      // If any per-segment file.Open() inside the bundle ctor failed (e.g. EACCES on a
+      // chmod-0 parent directory) the bundle holds at least one file with fd_=-1.
+      // Submitting an io_submit with aio_fildes=-1 historically hangs inside libaio on
+      // some kernels rather than returning -EBADF synchronously, which crashes the test
+      // host and surfaces in production as a silently-stuck WriteAsync. Refuse to commit
+      // the broken bundle to files_; the caller's WriteAsync returns Status::IOError
+      // immediately, which routes through the AsyncIOCallback contract.
+      if (new_files->open_status() != core::Status::Ok) {
+        core::Status open_err = new_files->open_status();
+        new_files->~bundle_t();
+        std::free(buffer);
+        return open_err;
+      }
       files_.store(new_files);
       return core::Status::Ok;
     }
@@ -428,6 +472,18 @@ class FileSystemSegmentedFile {
     void* buffer = std::malloc(bundle_t::size(new_end_segment - new_begin_segment));
     bundle_t* new_files = new(buffer) bundle_t{ handler_, new_begin_segment, new_end_segment,
         *files };
+    // Same guard as the single-segment path above. The expand-bundle ctor opens
+    // newly-added segments via file.Open(); reject the bundle if any of those failed.
+    // Note: a failed expand bundle still moved file handles out of the previous bundle
+    // (`other.owner_ = false` was set unconditionally inside the ctor). We must not free
+    // `files` here — the existing files_ entry still references the post-move bundle
+    // shell, which is fine because owner_ tracking suppresses its dtor's close calls.
+    if (new_files->open_status() != core::Status::Ok) {
+      core::Status open_err = new_files->open_status();
+      new_files->~bundle_t();
+      std::free(buffer);
+      return open_err;
+    }
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
     Context context{ files };

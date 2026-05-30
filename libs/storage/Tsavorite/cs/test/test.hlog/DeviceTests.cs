@@ -933,15 +933,6 @@ namespace Tsavorite.test
             if (Environment.UserName == "root") Assert.Ignore("Running as root bypasses POSIX permission checks.");
             if (!OperatingSystem.IsLinux()) Assert.Ignore("chmod-based permission test is Linux-only.");
 
-            // TODO: NativeStorageDevice does not currently route EACCES open failures through the
-            // WriteAsync completion callback. On EACCES the C++ FileSystemSegmentBundle ctor stores
-            // a bundle with fd=-1 (the assert is compiled out in Release) and the subsequent
-            // io_submit hangs inside the P/Invoke instead of returning -EBADF synchronously, which
-            // crashes the test host. RandomAccess and ManagedLocal still validate the callback
-            // contract. Fixing the native error path requires refactoring FileSystemSegmentBundle
-            // and rebuilding the shipped .so binaries.
-            if (kind == DeviceKind.Native) Assert.Ignore("NativeStorageDevice EACCES error routing through WriteAsync callback is not yet implemented (see TODO).");
-
             var dir = TestUtils.MethodTestDir;
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, "test.log");

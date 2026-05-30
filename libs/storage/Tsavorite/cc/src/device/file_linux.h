@@ -110,6 +110,16 @@ class File {
     return (result == 0) ? stat_buffer.st_size : 0;
   }
 
+  /// True iff the underlying file descriptor is currently valid (Open succeeded and Close
+  /// has not run). Used by FileSystemSegmentBundle / OpenSegment to detect bundles whose
+  /// per-segment Open() returned an error (e.g. EACCES on a chmod-0 parent directory) so
+  /// the broken bundle is discarded instead of being committed to files_ and later
+  /// submitted to io_submit with aio_fildes=-1 (which historically hung the test host
+  /// instead of returning -EBADF synchronously).
+  bool is_open() const {
+    return fd_ != -1;
+  }
+
   size_t device_alignment() const {
     return device_alignment_;
   }

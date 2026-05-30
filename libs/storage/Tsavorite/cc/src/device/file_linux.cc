@@ -318,6 +318,17 @@ Status QueueFile::Write(size_t offset, uint32_t length, const uint8_t* buffer,
 Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* buffer,
                                     size_t offset, uint32_t length, IAsyncContext& context,
                                     AsyncIOCallback callback) {
+  // Defense-in-depth: refuse to submit to io_submit with an invalid fd. The
+  // FileSystemSegmentBundle/OpenSegment fix in file_system_disk.h prevents a partially-
+  // opened bundle from being committed to files_, so in well-behaved flows fd_ is always
+  // valid here. This guard catches any future regression that re-introduces fd_=-1 on
+  // the submit path — empirically, io_submit with aio_fildes=-1 has been observed to
+  // hang inside libaio on some kernels instead of returning -EBADF synchronously, which
+  // crashes the calling process.
+  if (fd_ < 0) {
+    return Status::IOError;
+  }
+
   auto io_context = core::alloc_context<QueueIoHandler::IoCallbackContext>(sizeof(
                       QueueIoHandler::IoCallbackContext));
   if(!io_context.get()) return Status::OutOfMemory;
