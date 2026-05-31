@@ -80,16 +80,18 @@ namespace Tsavorite.core
                 }
                 else if (isInline)
                 {
+                    // Inline layout matches Tsavorite's on-disk RecordDataHeader: namespace
+                    // bytes (if any) precede the key bytes. Key starts at offset namespaceLen.
                     // Span points into the receiver's own inline storage. Lifetime is the
                     // receiver's lifetime; callers MUST consume the span before letting the
                     // receiver go out of scope (same contract as the pinned-pointer mode).
                     return MemoryMarshal.CreateReadOnlySpan(
-                        ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))),
+                        ref Unsafe.Add(ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))), namespaceLen),
                         keyLen);
                 }
                 else if (keyAndNamespaceMem != null)
                 {
-                    return keyAndNamespaceMem.TotalValidSpan[..keyLen];
+                    return keyAndNamespaceMem.TotalValidSpan.Slice(namespaceLen, keyLen);
                 }
                 else
                 {
@@ -114,14 +116,15 @@ namespace Tsavorite.core
                 }
                 else if (isInline)
                 {
-                    // Namespace bytes follow the key bytes in the inline buffer.
+                    // Namespace bytes are stored before the key bytes in the inline buffer
+                    // (matches Tsavorite's on-disk RecordDataHeader extended-NS layout).
                     return MemoryMarshal.CreateReadOnlySpan(
-                        ref Unsafe.Add(ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))), keyLen),
+                        ref Unsafe.AsRef(in Unsafe.As<InlineBuf, byte>(ref Unsafe.AsRef(in inlineBuf))),
                         namespaceLen);
                 }
                 else if (keyAndNamespaceMem != null)
                 {
-                    return keyAndNamespaceMem.TotalValidSpan.Slice(keyLen, namespaceLen);
+                    return keyAndNamespaceMem.TotalValidSpan[..namespaceLen];
                 }
                 else
                 {
@@ -259,7 +262,8 @@ namespace Tsavorite.core
                 // Inline-storage fast path: copy small keys directly into the struct so the
                 // pending-read path doesn't burn a SectorAlignedMemory.Get + Return + Array.Clear
                 // cycle on every IO. Total budget is InlineCapacity bytes shared between key
-                // and namespace.
+                // and namespace. Layout matches Tsavorite's on-disk RecordDataHeader: namespace
+                // bytes first, then key bytes.
                 if (key.HasNamespace)
                 {
                     var namespaceBytes = key.NamespaceBytes;
@@ -272,14 +276,14 @@ namespace Tsavorite.core
                         result.namespaceLen = namespaceBytes.Length;
                         result.isInline = true;
                         Span<byte> dst = result.inlineBuf;
-                        keyBytes.CopyTo(dst);
-                        namespaceBytes.CopyTo(dst[keyBytes.Length..]);
+                        namespaceBytes.CopyTo(dst);
+                        keyBytes.CopyTo(dst[namespaceBytes.Length..]);
                         return result;
                     }
 
                     var mem = bufferPool.Get(totalLen);
-                    keyBytes.CopyTo(mem.TotalValidSpan);
-                    namespaceBytes.CopyTo(mem.TotalValidSpan[keyBytes.Length..]);
+                    namespaceBytes.CopyTo(mem.TotalValidSpan);
+                    keyBytes.CopyTo(mem.TotalValidSpan[namespaceBytes.Length..]);
 
                     return new(mem, keyBytes.Length, namespaceBytes.Length);
                 }
