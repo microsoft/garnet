@@ -2238,19 +2238,17 @@ namespace Tsavorite.core
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
                 else
-                {
-                    // Return the wrapper before the throw so a failing callback doesn't leak it.
-                    result.context = default;
-                    if (poolReturn)
-                        asyncGetFromDiskResultPool.Enqueue(result);
-                    poolReturn = false;
                     throw;
-                }
             }
             finally
             {
+                // Single return point for the wrapper. ReturnAsyncGetFromDiskResult clears
+                // result.context before enqueueing, keeping pooled wrappers free of stale
+                // SectorAlignedMemory / DiskLogRecord refs (not a functional bug — the next
+                // rental overwrites context before any read — but matches the explicit clears
+                // on the success paths and on the throw arm of the catch).
                 if (poolReturn)
-                    asyncGetFromDiskResultPool.Enqueue(result);
+                    ReturnAsyncGetFromDiskResult(result);
             }
         }
 
