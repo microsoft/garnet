@@ -73,7 +73,7 @@ spec:
           {{- end }}
           {{- if or .Values.config.garnetConf .Values.config.existingSecret }}
           - name: config-volume
-            mountPath: /config
+            mountPath: /config/garnet.conf
             subPath: garnet.conf
             readOnly: true
           {{- end }}
