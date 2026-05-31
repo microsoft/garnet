@@ -58,6 +58,21 @@ namespace Tsavorite.core
         public void Enqueue(T item)
         {
             queue.Enqueue(item);
+            // Full StoreLoad fence between the enqueue and the waiterCount load.
+            // ConcurrentQueue.Enqueue publishes the slot sequence number via a
+            // release-store AFTER its full-fence Tail CAS. Without an explicit
+            // barrier here, an acquire-only Volatile.Read of waiterCount can be
+            // reordered ahead of that release-store on weak memory models (ARM):
+            // a producer would then skip Release while a concurrent consumer in
+            // DequeueAsync, having already incremented waiterCount, fails its
+            // TryDequeue recheck (which reads the slot sequence number) and
+            // sleeps on the semaphore forever. The full fence guarantees either
+            // (a) the producer sees the consumer's waiterCount increment and
+            // wakes it, or (b) the consumer's TryDequeue sees the published
+            // slot. WaitForEntry/WaitForEntryAsync rechecks queue.Count, which
+            // is bumped by the same full-fence Tail CAS and so is safe with or
+            // without this barrier; we add it once for all consumers.
+            Interlocked.MemoryBarrier();
             // Skip the semaphore release when nobody is waiting (the common polling-path
             // case). The check is racy by design: a waiter that increments waiterCount
             // after this read still re-checks the queue Count on its own side and returns
