@@ -235,8 +235,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => logRecord.Info;
         /// <inheritdoc/>
-        public ref RecordDataHeader DataHeaderRef => ref logRecord.DataHeaderRef;
-        /// <inheritdoc/>
         public readonly RecordDataHeader DataHeader => logRecord.DataHeader;
 
         /// <inheritdoc/>
@@ -412,7 +410,7 @@ namespace Tsavorite.core
                 *(int*)outPtr = alignedInlineRecordSize;
                 outPtr += sizeof(int);
                 Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
-                new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
+                new LogRecord((long)outPtr).SetFillerLength(newFillerLength);
             }
             else
             {
@@ -420,7 +418,7 @@ namespace Tsavorite.core
                 fixed (byte* outPtr = output.MemorySpan)
                 {
                     Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
-                    new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
+                    new LogRecord((long)outPtr).SetFillerLength(newFillerLength);
                 }
             }
         }

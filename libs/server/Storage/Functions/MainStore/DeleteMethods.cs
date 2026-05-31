@@ -13,7 +13,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            logRecord.DataHeaderRef.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
         }

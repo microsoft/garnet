@@ -18,9 +18,6 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         RecordInfo Info { get; }
 
-        /// <summary>A ref to the record data header</summary>
-        ref RecordDataHeader DataHeaderRef { get; }
-
         /// <summary>Fast access returning a copy of the record data header</summary>
         RecordDataHeader DataHeader { get; }
 

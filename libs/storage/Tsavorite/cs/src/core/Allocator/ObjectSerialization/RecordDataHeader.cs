@@ -41,7 +41,7 @@ namespace Tsavorite.core
     /// into the KeyLength/ValueLength field before flushing. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) we reset
     /// those fields to ObjectIdSize so the in-memory invariant holds.</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
-    /// <c>alignedSum = RoundUp(RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
+    /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
     /// word, a single atomic write to <c>word</c> publishes a fully-consistent new record layout.</para>
     /// </summary>
@@ -226,13 +226,15 @@ namespace Tsavorite.core
             return size;
         }
 
-        /// <summary>Initialize the DataHeader for a new record: sets KeyIsInline and ValueIsInline; zeroes everything else.</summary>
+        /// <summary>Initialize the DataHeader for a new record: currently, do nothing. Callers must subsequently invoke
+        /// <see cref="Initialize"/> to publish the full record state (lengths, inline/overflow/object bits, filler).
+        /// <para>Between <c>InitializeForNewRecord</c> and <c>Initialize</c>, the RDH is either zero already from log
+        /// allocation, or has been retrieved from a prior allocation (revivification or retry of failed CAS) and thus must
+        /// retain the original length information, as the record content may not be zero-initialized. If RDH is zero then
+        /// scanner length-walks see a min-length record (<see cref="Constants.FixedHeaderSize"/> = 16 bytes) so they advance
+        /// safely past the partially-allocated slot. See <see cref="GetRecordLength"/> for the zero-RDH guard.</para></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeForNewRecord()
-        {
-            // Zero everything except the inline bits.
-            word = kKeyIsInlineMask | kValueIsInlineMask;
-        }
+        public void InitializeForNewRecord() { }
 
         // ── Field accessors via ulong word bit manipulation ────────────────────────
 
@@ -338,7 +340,7 @@ namespace Tsavorite.core
         /// it computes everything in one pass.</para></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetUnalignedComponentSum()
-            => RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
+            => Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
 
         /// <summary>Aligned sum (rounded up to kRecordAlignment). See perf note on <see cref="GetUnalignedComponentSum"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -357,7 +359,21 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetRecordLengths(out int unalignedSum, out int alignedSum, out int implicitFiller, out int explicitFiller)
         {
-            unalignedSum = RecordInfo.Size + Size + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
+            // Zero-RDH guard: a freshly-allocated record that has not yet been Initialize()d has word == 0
+            // (no indicator bits, no lengths, no filler, no namespace, no recordType). Scanner length-walks must step past
+            // it as a min-length record (Constants.FixedHeaderSize = 16 bytes) until Initialize publishes the real layout.
+            // We test the full word (not just the key/value-length bitfields) so a degenerate but valid record
+            // with KeyLength=0+ValueLength=0+nonzero indicator/filler/optional/namespace bits is NOT mistaken for unInitialized.
+            if (word == 0)
+            {
+                unalignedSum = Constants.FixedHeaderSize;
+                alignedSum = unalignedSum;
+                implicitFiller = 0;
+                explicitFiller = 0;
+                return alignedSum;
+            }
+
+            unalignedSum = Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
             alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
             implicitFiller = alignedSum - unalignedSum;
             explicitFiller = FillerWords << Constants.kRecordAlignmentShift;
@@ -367,7 +383,11 @@ namespace Tsavorite.core
         /// <summary>Get the total allocated record length, including any filler.
         /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength() => GetAlignedComponentSum() + (FillerWords << Constants.kRecordAlignmentShift);
+        internal readonly int GetRecordLength()
+        {
+            // Zero-RDH guard: see comment in GetRecordLengths. Full-word test rejects degenerate-but-valid records with zero K/V lengths.
+            return word == 0 ? Constants.FixedHeaderSize : GetAlignedComponentSum() + (FillerWords << Constants.kRecordAlignmentShift);
+        }
 
         // ── Filler helpers ─────────────────────────────────────────────────────────
 
@@ -405,11 +425,30 @@ namespace Tsavorite.core
         /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo (only used when a split is required).</param>
         /// <param name="totalFiller">Total filler bytes = allocatedRecordLength - unalignedSum. Must be non-negative.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetFiller(long recordBaseAddress, int totalFiller)
+        internal void SetFiller(long recordBaseAddress, int totalFiller)
+        {
+            var fillerWords = ComputeFillerWordsOrSplit(recordBaseAddress, totalFiller);
+            word = (word & ~kFillerWordsMask) | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift);
+        }
+
+        /// <summary>Compute the <see cref="FillerWords"/> value for a given total filler size, performing record-splitting
+        /// if the explicit filler would exceed <see cref="MaxFillerWords"/>.
+        /// <para>Does NOT mutate <see cref="word"/> — returns the computed FillerWords value for the caller to fold into a
+        /// larger atomic word write (e.g. <see cref="Initialize"/> publishes indicator bits, lengths, namespace, recordType,
+        /// AND filler in a single 8-byte word write).</para>
+        /// <para>May write to memory at <c>recordBaseAddress + alignedSum + retainedExplicitFiller</c> if a split occurs,
+        /// publishing the new invalid record's RecordInfo + RDH before returning. The caller MUST then perform its own
+        /// publish of this RDH (typically as part of the surrounding atomic word write) so concurrent scanners see the
+        /// split-off record as either part of this extent (old RDH) or as a separate invalid entry (new RDH).</para>
+        /// </summary>
+        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo (only used if a split is required).</param>
+        /// <param name="totalFiller">Total filler bytes = allocatedRecordLength - unalignedSum. Must be non-negative.</param>
+        /// <returns>The FillerWords value (0..MaxFillerWords) for the caller to encode into the RDH word.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int ComputeFillerWordsOrSplit(long recordBaseAddress, int totalFiller)
         {
             Debug.Assert(totalFiller >= 0, $"Total filler {totalFiller} must be non-negative");
 
-            // Compute implicit/explicit split inline (avoid double-computing GetAlignedComponentSum via the helper methods).
             var unalignedSum = GetUnalignedComponentSum();
             var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
             var implicitFiller = alignedSum - unalignedSum;
@@ -419,11 +458,8 @@ namespace Tsavorite.core
 
             var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
             if (fillerWords > MaxFillerWords)
-            {
                 fillerWords = SplitOverflowingFiller(recordBaseAddress, alignedSum, explicitFiller);
-            }
-
-            word = (word & ~kFillerWordsMask) | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift);
+            return fillerWords;
         }
 
         /// <summary>
@@ -439,14 +475,14 @@ namespace Tsavorite.core
         {
             var retainedExplicitFiller = RecordSplitRetainFillerWords << Constants.kRecordAlignmentShift;        // 512 bytes
             var newRecordBytes = explicitFiller - retainedExplicitFiller;          // must be > 0 since fillerWords > MaxFillerWords > RecordSplitRetainFillerWords
-            Debug.Assert(newRecordBytes >= RecordInfo.Size + Size, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({RecordInfo.Size + Size})");
+            Debug.Assert(newRecordBytes >= Constants.FixedHeaderSize, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({Constants.FixedHeaderSize})");
             Debug.Assert((newRecordBytes & (Constants.kRecordAlignment - 1)) == 0, $"Split-off region {newRecordBytes} must be a multiple of kRecordAlignment");
 
             var newRecordAddress = recordBaseAddress + alignedSum + retainedExplicitFiller;
 
             // The new record holds: RecordInfo + RDH + (the rest as inline "value" bytes; no key, no optionals).
             // If the rest doesn't fit in 22-bit ValueLength + 8-bit FillerWords*8, recursively split via SetFiller.
-            var newInnerBytes = newRecordBytes - RecordInfo.Size - Size;           // bytes available for value + filler
+            var newInnerBytes = newRecordBytes - Constants.FixedHeaderSize;        // bytes available for value + filler
             int newValueLength = newInnerBytes <= LogSettings.MaxInlineValueSizeLimit ? newInnerBytes : LogSettings.MaxInlineValueSizeLimit;
             var newRemainingFiller = newInnerBytes - newValueLength;
 
@@ -479,7 +515,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the offset of the key data, relative to the RecordInfo start.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetOffsetToKeyStart() => RecordInfo.Size + Size + ExtendedNamespaceLength;
+        internal readonly int GetOffsetToKeyStart() => Constants.FixedHeaderSize + ExtendedNamespaceLength;
 
         /// <summary>Get the key length and key data address.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -509,12 +545,14 @@ namespace Tsavorite.core
 
         // ── Initialize ─────────────────────────────────────────────────────────────
 
-        /// <summary>Initialize the DataHeader for a new or revivified record. Sets the field lengths, namespace, recordType, filler,
-        /// and the default inline bits (<see cref="KeyIsInline"/> + <see cref="ValueIsInline"/>).
-        /// <para>NOTE: Setting the inline bits here is the default for new records. The caller may then transition to
-        /// <see cref="KeyIsOverflow"/> / <see cref="ValueIsOverflow"/> / <see cref="ValueIsObject"/> as appropriate based on <paramref name="sizeInfo"/>
-        /// (via the <c>SetXxx</c> methods on the DataHeader). RDH owns the inline bits — callers that previously initialized them
-        /// by assigning <c>RecordInfo.InitialValid</c> no longer touch those bits, so this method has to provide the default state.</para></summary>
+        /// <summary>Initialize the DataHeader for a new or revivified record. Sets the field lengths, namespace, recordType,
+        /// the indicator bits (KeyIsInline/Overflow and ValueIsInline/Overflow/Object based on <paramref name="sizeInfo"/>),
+        /// and the FillerWords field — all in a SINGLE atomic 8-byte word write so a concurrent scanner observes either the
+        /// pre-Initialize zero RDH or the fully-formed post-Initialize state, never a partial intermediate.
+        /// <para>The inline/overflow/object decision flows directly from <paramref name="sizeInfo"/> — callers must NOT
+        /// subsequently call <see cref="SetKeyIsInline"/>/<see cref="SetKeyIsOverflow"/>/<see cref="SetValueIsInline"/>/
+        /// <see cref="SetValueIsOverflow"/>/<see cref="SetValueIsObject"/> on the RDH (each of those would be a separate
+        /// word write, breaking atomicity).</para></summary>
         /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo.</param>
         /// <param name="sizeInfo">Record size information.</param>
         /// <param name="keyAddress">Output: physical address of key data.</param>
@@ -529,32 +567,50 @@ namespace Tsavorite.core
             var namespaceByte = (byte)(extendedNamespaceSize > 0 ? ((1 << ExtendedNamespaceIndicatorBit) | (extendedNamespaceSize & NamespaceIndicatorMask)) : 0);
             var recordType = sizeInfo.FieldInfo.RecordType;
 
-            // Single atomic write of the non-filler fields. Set the default inline bits (KeyIsInline + ValueIsInline);
-            // clear the other indicator bits (HasETag/HasExpiration/ValueIsObject/Unused/FillerWords); then set KeyLength,
-            // ValueLength, Namespace, RecordType. Caller transitions inline bits to overflow/object as needed.
-            word = kKeyIsInlineMask | kValueIsInlineMask
+            // Build indicator bits from sizeInfo so Initialize is the single source of truth for inline/overflow/object.
+            ulong indicatorBits = 0;
+            if (sizeInfo.KeyIsInline) indicatorBits |= kKeyIsInlineMask;
+            if (sizeInfo.ValueIsInline)
+                indicatorBits |= kValueIsInlineMask;
+            else if (sizeInfo.ValueIsObject)
+                indicatorBits |= kValueIsObjectMask;
+            // (else: ValueIsOverflow — both ValueIsInline and ValueIsObject left clear)
+
+            // Compute filler. We have all the values locally, so compute unalignedSum/alignedSum directly (without
+            // calling helpers that depend on the RDH word being populated).
+            var unalignedSum = Constants.FixedHeaderSize + extendedNamespaceSize + keyLength + valueLength + sizeInfo.ObjectLogPositionSize;
+            var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
+            var totalFiller = sizeInfo.AllocatedInlineRecordSize - unalignedSum;
+            var implicitFiller = alignedSum - unalignedSum;
+            var explicitFiller = totalFiller > implicitFiller ? totalFiller - implicitFiller : 0;
+            var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
+            if (fillerWords > MaxFillerWords)
+                fillerWords = SplitOverflowingFiller(recordBaseAddress, alignedSum, explicitFiller);
+
+            // Note: We do not set HasETag or HasExpiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
+            // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
+
+            // SINGLE atomic 8-byte word write: indicator bits + FillerWords + KeyLength + ValueLength + Namespace + RecordType.
+            // A concurrent scanner sees either the prior zero RDH (which routes through the GetRecordLength zero-RDH guard
+            // to a 16-byte advance) or this fully-formed post-Initialize state.
+            word = indicatorBits
+                 | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift)
                  | (((ulong)keyLength & kKeyLengthValueMask) << kKeyLengthShift)
                  | (((ulong)valueLength & kValueLengthValueMask) << kValueLengthShift)
                  | ((ulong)namespaceByte << kNamespaceShift)
                  | ((ulong)recordType << kRecordTypeShift);
 
-            // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
-            // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
-
-            // Calculate and set filler (may write FillerWords and, on overflow, split a new invalid record).
-            var unalignedSum = RecordInfo.Size + Size + extendedNamespaceSize + keyLength + valueLength + sizeInfo.ObjectLogPositionSize;
-            var totalFiller = sizeInfo.AllocatedInlineRecordSize - unalignedSum;
-            if (totalFiller > 0)
-                SetFiller(recordBaseAddress, totalFiller);
-
             namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
-            keyAddress = recordBaseAddress + RecordInfo.Size + Size + extendedNamespaceSize;
+            keyAddress = recordBaseAddress + Constants.FixedHeaderSize + extendedNamespaceSize;
             valueAddress = keyAddress + keyLength;
 
             return Size;
         }
 
-        /// <summary>Prepare the header for revivification: clear filler, namespace, and recordType; preserve record length via sizeInfo update.</summary>
+        /// <summary>Prepare the header for revivification: clear filler, namespace, and recordType; preserve inline bits and lengths.
+        /// This is called only when an existing allocation is being reused (revivification or retry on CAS failure), so preserves length info.
+        /// <para>Atomicity: builds the cleaned RDH in a local then publishes via a single 8-byte word write (<c>word = local.word</c>).
+        /// Concurrent scanners observe either the pre-revivification or post-revivification state, never an intermediate.</para></summary>
         internal void InitializeForRevivification(ref RecordSizeInfo sizeInfo, long recordBaseAddress)
         {
             Debug.Assert(KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
@@ -564,10 +620,14 @@ namespace Tsavorite.core
             var recordLength = GetRecordLength();
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
-            // Clear filler, namespace, recordType; keep inline bits and key/value lengths
-            FillerWords = 0;
-            SetNamespaceByteRaw(0);
-            RecordType = 0;
+            // Build the cleaned RDH in a local: clear FillerWords + Namespace + RecordType bytes; preserve inline bits + lengths.
+            var localDataHeader = this;
+            localDataHeader.FillerWords = 0;
+            localDataHeader.SetNamespaceByteRaw(0);
+            localDataHeader.RecordType = 0;
+
+            // Single atomic publish via word assignment through `ref this`.
+            word = localDataHeader.word;
 
             // Ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called
             sizeInfo.AllocatedInlineRecordSize = recordLength;

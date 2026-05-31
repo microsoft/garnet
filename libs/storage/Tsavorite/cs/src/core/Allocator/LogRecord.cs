@@ -69,7 +69,19 @@ namespace Tsavorite.core
         public readonly RecordDataHeader DataHeader => *(RecordDataHeader*)DataHeaderAddress;
 
         /// <summary>Returns a ref to the in-memory <see cref="core.RecordDataHeader"/> for mutations.</summary>
-        public readonly ref RecordDataHeader DataHeaderRef => ref *(RecordDataHeader*)DataHeaderAddress;
+        /// <remarks>Private as of R9: external callers (and even most LogRecord methods) must not assign directly through
+        /// this ref. Build multi-field mutations on a local <see cref="RecordDataHeader"/> snapshot, then publish via
+        /// <see cref="SetDataHeader"/>, which guarantees a single atomic 8-byte word write that scanners cannot observe
+        /// in a half-updated state.</remarks>
+        private readonly ref RecordDataHeader DataHeaderRef => ref *(RecordDataHeader*)DataHeaderAddress;
+
+        /// <summary>
+        /// Atomically publish a new <see cref="core.RecordDataHeader"/> via a single 8-byte word write to
+        /// <see cref="DataHeaderAddress"/>. This is the supported way to update an RDH after composing multiple
+        /// field changes on a local copy; concurrent scanners never observe a half-updated header.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void SetDataHeader(RecordDataHeader newHeader) => *(RecordDataHeader*)DataHeaderAddress = newHeader;
 
         /// <summary>
         /// Initialize both the RecordInfo and the RecordDataHeader for a newly-allocated record. This is the single entry point for resetting
@@ -207,6 +219,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        /// <remarks>The setter restores <see cref="RecordDataHeader.KeyLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if needed
+        /// (e.g. when called on a deserialized record whose KeyLength holds the actual overflow length or sentinel from the disk image).
+        /// The restoration uses a local + <see cref="SetDataHeader"/> for atomicity. No-op for the common in-memory case where
+        /// the raw KeyLength field is already <see cref="ObjectIdMap.ObjectIdSize"/>.</remarks>
         public readonly OverflowByteArray KeyOverflow
         {
             get
@@ -222,6 +238,16 @@ namespace Tsavorite.core
                 if (!DataHeader.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     ThrowTsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
+
+                // Restore KeyLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
+                // No-op when already ObjectIdSize (the common in-memory path); only writes when called on a deserialized record
+                // whose KeyLength held the actual overflow length or sentinel from the disk image.
+                var localDataHeader = DataHeader;
+                if (localDataHeader.GetKeyLengthRaw() != ObjectIdMap.ObjectIdSize)
+                {
+                    localDataHeader.KeyLength = ObjectIdMap.ObjectIdSize;
+                    SetDataHeader(localDataHeader);
+                }
             }
         }
 
@@ -289,6 +315,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="heapObject">The deserialized object</param>
         /// <param name="deserializedLength">The deserialized length of the object</param>
+        /// <remarks>Also restores <see cref="RecordDataHeader.ValueLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if the raw stored
+        /// length is not already ObjectIdSize (deserialization-time invariant restoration; atomic via local + <see cref="SetDataHeader"/>).</remarks>
         internal readonly void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
         {
             var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
@@ -302,6 +330,14 @@ namespace Tsavorite.core
             // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
             *objectLogPositionPtr = deserializedLength;
+
+            // Restore raw ValueLength to ObjectIdSize for the in-memory invariant if needed (atomic via local + SetDataHeader).
+            var localDataHeader = DataHeader;
+            if (localDataHeader.GetValueLengthRaw() != ObjectIdMap.ObjectIdSize)
+            {
+                localDataHeader.ValueLength = ObjectIdMap.ObjectIdSize;
+                SetDataHeader(localDataHeader);
+            }
         }
 
         /// <summary>The span of the entire record, including the ObjectId space if the record has objects.</summary>
@@ -339,6 +375,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        /// <remarks>The setter restores <see cref="RecordDataHeader.ValueLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if needed
+        /// (e.g. when called on a deserialized record whose ValueLength holds the actual overflow length or sentinel from the disk image).
+        /// The restoration uses a local + <see cref="SetDataHeader"/> for atomicity. No-op for the common in-memory case where
+        /// the raw ValueLength field is already <see cref="ObjectIdMap.ObjectIdSize"/>.</remarks>
         public readonly OverflowByteArray ValueOverflow
         {
             get
@@ -354,6 +394,16 @@ namespace Tsavorite.core
                 if (!DataHeader.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     ThrowTsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
+
+                // Restore ValueLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
+                // No-op when already ObjectIdSize (the common in-memory path); only writes when called on a deserialized record
+                // whose ValueLength held the actual overflow length or sentinel from the disk image.
+                var localDataHeader = DataHeader;
+                if (localDataHeader.GetValueLengthRaw() != ObjectIdMap.ObjectIdSize)
+                {
+                    localDataHeader.ValueLength = ObjectIdMap.ObjectIdSize;
+                    SetDataHeader(localDataHeader);
+                }
             }
         }
 
@@ -428,7 +478,10 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
-        internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
+        /// <summary>Set the filler length on the RDH for a record. Used only by <see cref="DiskLogRecord.DirectCopyInlinePortionOfRecord"/>
+        /// when constructing a LogRecord over a transient output buffer (NOT a live log record), so no concurrent scanner exists.
+        /// <see cref="RecordDataHeader.SetFiller"/> performs its own atomic word update.</summary>
+        internal readonly void SetFillerLength(int newFillerLen)
         {
             DataHeaderRef.SetFiller(physicalAddress, newFillerLen);
         }
@@ -436,6 +489,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Initialize record for <see cref="ObjectAllocator{TStoreFunctions}"/>--includes Overflow option for Key and Overflow and Object option for Value
         /// </summary>
+        /// <remarks>
+        /// Atomicity: builds the new RDH in a local via <see cref="RecordDataHeader.Initialize"/>, performs all data writes
+        /// (key copy, namespace copy, overflow allocation, object slot init) into the record body, then publishes the RDH
+        /// via <see cref="SetDataHeader"/> in a single atomic 8-byte word write. A concurrent scanner sees either the
+        /// pre-Initialize zero RDH (16-byte min-record advance via the <see cref="RecordDataHeader.GetRecordLength"/> guard)
+        /// or the fully-formed post-Initialize state.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
             where TKey : IKey
@@ -443,17 +503,20 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            _ = DataHeaderRef.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress, physicalAddress);   // TODO: Pass in (possibly) namespace span
+            // Build the full RDH in a local (Initialize folds indicator bits + lengths + namespace + recordType + FillerWords
+            // into a SINGLE atomic word write at the end). We pass `physicalAddress` so any record-split work for
+            // over-large filler writes the new invalid record before this RDH is published.
+            var localDataHeader = default(RecordDataHeader);
+            _ = localDataHeader.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress, physicalAddress);
 
-            // Serialize Key
+            // Serialize Key into record body BEFORE publishing the RDH.
             if (sizeInfo.KeyIsInline)
             {
-                DataHeaderRef.SetKeyIsInline();
+                Debug.Assert(key.KeyBytes.Length == sizeInfo.InlineKeySize, $"Key length {key.KeyBytes.Length} != sizeInfo.InlineKeySize {sizeInfo.InlineKeySize}");
                 key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
             }
             else
             {
-                DataHeaderRef.SetKeyIsOverflow();
                 var overflow = new OverflowByteArray(key.KeyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                 key.KeyBytes.CopyTo(overflow.Span);
 
@@ -473,18 +536,12 @@ namespace Tsavorite.core
                 namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
 
-            // Initialize Value metadata (but we don't have the value here to set yet; that's done in ISessionFunctions).
-            if (sizeInfo.ValueIsInline)
-            {
-                DataHeaderRef.SetValueIsInline();
-            }
-            else
+            // Initialize Value metadata (no value data yet; that's done in ISessionFunctions).
+            if (!sizeInfo.ValueIsInline)
             {
                 if (!sizeInfo.ValueIsObject)
                 {
-                    // We must have the space allocated for Overflow just like we do for inline, so we set the Overflow allocation and objectId here.
-                    // We have no value data to copy yet.
-                    DataHeaderRef.SetValueIsOverflow();
+                    // Overflow: allocate the OverflowByteArray slot now (no value data yet).
                     var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
 
                     // This is record initialization so no object has been allocated for this field yet.
@@ -498,14 +555,20 @@ namespace Tsavorite.core
 
                     // Unlike for Keys and Overflow values, we do not set the objectId here; we wait for the UMD operation to do that.
                     *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
-                    DataHeaderRef.SetValueIsObject();
                 }
             }
+
+            // Publish the RDH atomically — single 8-byte write makes the fully-formed record visible to scanners.
+            SetDataHeader(localDataHeader);
         }
 
         /// <summary>
         /// Initialize record for <see cref="SpanByteAllocator{TStoreFunctions}"/>--does not include Overflow/Object options so is streamlined
         /// </summary>
+        /// <remarks>
+        /// Atomicity: same pattern as the ObjectAllocator overload — build RDH in a local, write key/namespace data,
+        /// then publish via <see cref="SetDataHeader"/>.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo)
             where TKey : IKey
@@ -513,9 +576,10 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            _ = DataHeaderRef.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/, physicalAddress);
-
-            DataHeaderRef.SetKeyAndValueInline();
+            // Build the full RDH in a local; SpanByteAllocator records are always inline keys + inline values, so
+            // sizeInfo.KeyIsInline and sizeInfo.ValueIsInline must both be true (Initialize encodes both).
+            var localDataHeader = default(RecordDataHeader);
+            _ = localDataHeader.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/, physicalAddress);
 
             // Serialize Key. Do nothing for the value; we've set it inline and the actual value setting is done in ISessionFunctions).
             key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
@@ -529,6 +593,9 @@ namespace Tsavorite.core
                 Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
                 namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
+
+            // Publish the RDH atomically.
+            SetDataHeader(localDataHeader);
         }
 
         /// <summary>A ref to the record header</summary>
@@ -725,7 +792,7 @@ namespace Tsavorite.core
             // This is the moment at which all the changes (ValueLength, optional flags, FillerWords, inline/object/overflow bits) become visible
             // to concurrent readers. The new RDH is self-consistent (its KeyLength + ValueLength + optionals + filler all sum to the same allocated
             // record length the old RDH represented), so a scanner reading either the pre- or post-install RDH gets a consistent record extent.
-            DataHeaderRef = localDataHeader;
+            SetDataHeader(localDataHeader);
 
             Debug.Assert(localDataHeader.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
             Debug.Assert(!localDataHeader.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
@@ -792,7 +859,7 @@ namespace Tsavorite.core
             localDataHeader.SetFiller(physicalAddress, oldFillerLen - inlineValueGrowth);
 
             // Atomic install of the real DataHeader.
-            DataHeaderRef = localDataHeader;
+            SetDataHeader(localDataHeader);
 
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // So the only things that change are FillerLength and ValueLength.
@@ -839,16 +906,29 @@ namespace Tsavorite.core
 
         internal readonly bool TryReinitializeValueLength(in RecordSizeInfo sizeInfo)
         {
-            // This is called when reinitializing a record for InitialUpdater or InitialWriter; we don't want to them to see initial state with optionals set.
+            // This is called when reinitializing a record for InitialUpdater or InitialWriter; we don't want them to see initial state with optionals set.
             // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
-            ClearOptionals();
-            var dataHeader = DataHeader;
-            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            //
+            // Atomicity: snapshot DataHeader into a local; compute new layout (clear ETag/Expiration flags, set ValueLength, set FillerWords);
+            // publish the full new RDH via SetDataHeader in a single 8-byte word write.
+            var localDataHeader = DataHeader;
+
+            // Compute new value address using the current key/namespace layout (which is unchanged).
+            var (_ /*oldValueLength*/, valueAddress) = localDataHeader.GetValueFieldInfo(physicalAddress);
+            var recordLength = localDataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
             if (fillerLength < 0)
                 return false;
-            DataHeaderRef.SetFiller(physicalAddress, fillerLength);
+
+            // Clear optional flags + update ValueLength on the local; SetFiller computes FillerWords from the local's new
+            // unalignedSum and writes them into the local's word.
+            localDataHeader.ClearHasETag();
+            localDataHeader.ClearHasExpiration();
+            localDataHeader.ValueLength = sizeInfo.InlineValueSize;
+            localDataHeader.SetFiller(physicalAddress, fillerLength);
+
+            // Single atomic publish.
+            SetDataHeader(localDataHeader);
             return true;
         }
 
@@ -966,7 +1046,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Set the ETag, checking for space for optionals.
         /// </summary>
-        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
+        /// <para>Atomicity: snapshot DataHeader into a local; shift in-record optional data BEFORE mutating the local; mutate
+        /// the local (SetHasETag + SetFiller); publish via SetDataHeader. The in-record data shifting must precede the RDH
+        /// publish so a concurrent scanner that observes the new RDH (HasETag set) sees consistent ETag bytes.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetETag(long eTag)
         {
@@ -977,11 +1060,11 @@ namespace Tsavorite.core
                 return true;
             }
 
-            var dataHeader = DataHeader;
-            var recordLength = dataHeader.GetRecordLength();
+            var localDataHeader = DataHeader;
+            var recordLength = localDataHeader.GetRecordLength();
 
             // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetTotalFillerLength();
+            var fillerLen = localDataHeader.GetTotalFillerLength();
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ETagSize;
@@ -989,58 +1072,62 @@ namespace Tsavorite.core
                 return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 address -= ObjectLogPositionSize;
 
             // Preserve Expiration if present; set ETag; re-enter Expiration if present
             var expiration = 0L;
-            if (DataHeader.HasExpiration)
+            if (localDataHeader.HasExpiration)
             {
                 address -= ExpirationSize;
                 expiration = *(long*)address;
             }
 
-            // Set the eTag
+            // Set the eTag in-record (BEFORE publishing the new RDH).
             *(long*)address = eTag;
-            DataHeaderRef.SetHasETag();
             address += ETagSize;
 
             // Restore expiration, if any
-            if (DataHeader.HasExpiration)
+            if (localDataHeader.HasExpiration)
             {
                 *(long*)address = expiration;   // will be 0 or a valid expiration
                 address += ExpirationSize;      // repositions to ObjectLogPosition address
             }
 
             // ObjectLogPosition is not preserved (it's only for serialization) so set it to NotSet.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
+            // Mutate the local (SetHasETag + SetFiller), then publish atomically.
+            localDataHeader.SetHasETag();
+            localDataHeader.SetFiller(physicalAddress, fillerLen);
+            SetDataHeader(localDataHeader);
             return true;
         }
 
         /// <summary>
         /// Remove the ETag.
         /// </summary>
-        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
+        /// <para>Atomicity: snapshot DataHeader into a local; shift in-record optional data first; mutate the local
+        /// (ClearHasETag + SetFiller); publish via SetDataHeader.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool RemoveETag()
         {
             if (!DataHeader.HasETag)
                 return true;
 
-            var dataHeader = DataHeader;
-            var recordLength = dataHeader.GetRecordLength();
+            var localDataHeader = DataHeader;
+            var recordLength = localDataHeader.GetRecordLength();
 
-            // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetTotalFillerLength();
+            // We're removing an ETag.
+            var fillerLen = localDataHeader.GetTotalFillerLength();
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ETagSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
             {
                 address -= ObjectLogPositionSize;
                 *(ulong*)address = 0;
@@ -1049,7 +1136,7 @@ namespace Tsavorite.core
             // Move Expiration, if present, up to cover ETag; then clear the ETag bit
             var expiration = 0L;
             var expirationSize = 0;
-            if (DataHeader.HasExpiration)
+            if (localDataHeader.HasExpiration)
             {
                 expirationSize = ExpirationSize;
                 address -= expirationSize;
@@ -1057,24 +1144,28 @@ namespace Tsavorite.core
                 *(long*)address = 0L;  // To ensure zero-init
             }
 
-            // Expiration will be either zero or a valid expiration, and we have not changed the dataHeader.HasExpiration flag
+            // Expiration will be either zero or a valid expiration, and we have not changed the localDataHeader.HasExpiration flag
             address -= ETagSize;
             *(long*)address = expiration;       // will be 0 or a valid expiration
             address += expirationSize;          // repositions to fillerAddress if expirationSize is nonzero
-            DataHeaderRef.ClearHasETag();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
+            // Mutate the local (ClearHasETag + SetFiller), then publish atomically.
+            localDataHeader.ClearHasETag();
+            localDataHeader.SetFiller(physicalAddress, fillerLen);
+            SetDataHeader(localDataHeader);
             return true;
         }
 
         /// <summary>
         /// Set the Expiration, checking for space for optionals.
         /// </summary>
-        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
+        /// <para>Atomicity: snapshot DataHeader into a local; shift in-record optional data first; mutate the local
+        /// (SetHasExpiration + SetFiller); publish via SetDataHeader.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetExpiration(long expiration)
         {
@@ -1088,11 +1179,11 @@ namespace Tsavorite.core
                 return true;
             }
 
-            var dataHeader = DataHeader;
-            var recordLength = dataHeader.GetRecordLength();
+            var localDataHeader = DataHeader;
+            var recordLength = localDataHeader.GetRecordLength();
 
             // We're adding an Expiration where there wasn't one before.
-            var fillerLen = dataHeader.GetTotalFillerLength();
+            var fillerLen = localDataHeader.GetTotalFillerLength();
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ExpirationSize;
@@ -1100,58 +1191,64 @@ namespace Tsavorite.core
                 return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 address -= ObjectLogPositionSize;
 
-            // Set the Expiration
-            DataHeaderRef.SetHasExpiration();
+            // Set the Expiration in-record (BEFORE publishing the new RDH).
             *(long*)address = expiration;
             address += ExpirationSize;
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
+            // Mutate the local (SetHasExpiration + SetFiller), then publish atomically.
+            localDataHeader.SetHasExpiration();
+            localDataHeader.SetFiller(physicalAddress, fillerLen);
+            SetDataHeader(localDataHeader);
             return true;
         }
 
         /// <summary>
         /// Remove the expiration
         /// </summary>
-        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
+        /// <para>Atomicity: snapshot DataHeader into a local; shift in-record optional data first; mutate the local
+        /// (ClearHasExpiration + SetFiller); publish via SetDataHeader.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool RemoveExpiration()
         {
             if (!DataHeader.HasExpiration)
                 return true;
 
-            var dataHeader = DataHeader;
-            var recordLength = dataHeader.GetRecordLength();
+            var localDataHeader = DataHeader;
+            var recordLength = localDataHeader.GetRecordLength();
 
-            // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetTotalFillerLength();
+            // We're removing an Expiration.
+            var fillerLen = localDataHeader.GetTotalFillerLength();
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen += ExpirationSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
             {
                 address -= ObjectLogPositionSize;
                 *(ulong*)address = 0;
             }
 
-            // Remove Expiration and clear the Expiration bit; this will be the new fillerLenAddress
+            // Remove Expiration; this will be the new fillerLenAddress
             address -= ExpirationSize;
             *(long*)address = 0;
-            DataHeaderRef.ClearHasExpiration();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to NotSet.
-            if (DataHeader.RecordHasObjects)
+            if (localDataHeader.RecordHasObjects)
                 *(ulong*)address = ObjectLogFilePositionInfo.NotSet;
 
-            DataHeaderRef.SetFiller(physicalAddress, fillerLen);
+            // Mutate the local (ClearHasExpiration + SetFiller), then publish atomically.
+            localDataHeader.ClearHasExpiration();
+            localDataHeader.SetFiller(physicalAddress, fillerLen);
+            SetDataHeader(localDataHeader);
             return true;
         }
 
@@ -1297,6 +1394,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Clears any heap-allocated Value: Object or Overflow. Does not clear key (if it is Overflow).
         /// </summary>
+        /// <remarks>Atomicity: snapshot DataHeader into a local; pass ref to LogField helpers that mutate the local;
+        /// publish via SetDataHeader.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void ClearValueIfHeap()
         {
@@ -1306,9 +1405,10 @@ namespace Tsavorite.core
             // If the key is Heap and we're not clearing it then we don't want to to change ObjectLogPosition and Filler, so just clear the value and return.
             if (!DataHeader.KeyIsInline)
             {
-                var dataHeader = DataHeader;
-                var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
+                var localDataHeader = DataHeader;
+                var (_ /*valueLength*/, valueAddress) = localDataHeader.GetValueFieldInfo(physicalAddress);
+                LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, valueAddress, objectIdMap, isKey: false);
+                SetDataHeader(localDataHeader);
                 return;
             }
 
@@ -1320,35 +1420,39 @@ namespace Tsavorite.core
         /// Clears any heap-allocated field, Object or Overflow, in the Value and optionally the Key. If we go from 
         /// <see cref="RecordDataHeader.RecordIsInline"/> being false to true, then we need to adjust filler as well.
         /// </summary>
+        /// <remarks>Atomicity: snapshot DataHeader into a local; pass ref to LogField helpers that mutate the local;
+        /// adjust filler on the local for ObjectLogPosition removal; publish via SetDataHeader.</remarks>
         public readonly void ClearHeapFields(bool clearKey)
         {
             if (DataHeader.RecordIsInline)
                 return;
 
-            var dataHeader = DataHeader;
-            var fillerLen = dataHeader.GetTotalFillerLength();
+            var localDataHeader = DataHeader;
+            var fillerLen = localDataHeader.GetTotalFillerLength();
 
-            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+            var (keyLength, keyAddress) = localDataHeader.GetKeyFieldInfo(physicalAddress);
             var valueAddress = keyAddress + keyLength;
 
             // If the key is Heap and we're not clearing it then we don't want to to change ObjectLogPosition and Filler, so just clear the value and return.
-            if (!clearKey && !DataHeader.KeyIsInline)
+            if (!clearKey && !localDataHeader.KeyIsInline)
             {
-                if (!DataHeader.ValueIsInline)
-                    LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
+                if (!localDataHeader.ValueIsInline)
+                    LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, valueAddress, objectIdMap, isKey: false);
+                SetDataHeader(localDataHeader);
                 return;
             }
 
             // If we're here and the key is overflow we're clearing it.
-            if (!DataHeader.KeyIsInline)
+            if (!localDataHeader.KeyIsInline)
             {
-                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, keyAddress, objectIdMap, isKey: true);
+                LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, keyAddress, objectIdMap, isKey: true);
             }
-            if (!DataHeader.ValueIsInline)
-                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
+            if (!localDataHeader.ValueIsInline)
+                LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, valueAddress, objectIdMap, isKey: false);
 
-            // Now update filler to account for removal of ObjectLogPosition
-            DataHeaderRef.SetFiller(physicalAddress, fillerLen + ObjectLogPositionSize);
+            // Now update filler to account for removal of ObjectLogPosition (mutates local; published below).
+            localDataHeader.SetFiller(physicalAddress, fillerLen + ObjectLogPositionSize);
+            SetDataHeader(localDataHeader);
         }
 
         /// <summary>
@@ -1410,8 +1514,8 @@ namespace Tsavorite.core
                     : (int)valueObjectLength);
             }
 
-            // Atomic write back
-            DataHeaderRef = dataHeader;
+            // Atomic publish via SetDataHeader.
+            SetDataHeader(dataHeader);
         }
 
         /// <summary>
@@ -1506,54 +1610,50 @@ namespace Tsavorite.core
                     : (int)valueObjectLength);
             }
 
-            // Atomic write back
-            DataHeaderRef = dataHeader;
+            // Atomic publish via SetDataHeader.
+            SetDataHeader(dataHeader);
             return objectLengths;
         }
 
         /// <summary>
         /// Called after <see cref="ObjectLogReader{TStoreFunctions}"/> completes deserialization of a record's objects.
-        /// Resets non-inline length fields in <see cref="RecordDataHeader"/> back to <see cref="ObjectIdMap.ObjectIdSize"/>
-        /// so that in-memory record length calculations work correctly.
+        /// Currently a no-op: as of R9, the per-field length restoration that previously lived here is now done atomically
+        /// inside the <see cref="KeyOverflow"/> / <see cref="ValueOverflow"/> setters and <see cref="SetDeserializedValueObject"/>,
+        /// each of which restores its respective raw length field to <see cref="ObjectIdMap.ObjectIdSize"/> via local +
+        /// <see cref="SetDataHeader"/>. Retained as a hook for future deserialization post-processing.
         /// </summary>
         internal readonly void OnObjectReadComplete()
         {
-            var dataHeader = DataHeader;
-            var modified = false;
-            if (!dataHeader.KeyIsInline)
-            {
-                dataHeader.KeyLength = (ObjectIdMap.ObjectIdSize);
-                modified = true;
-            }
-            if (!dataHeader.ValueIsInline)
-            {
-                dataHeader.ValueLength = (ObjectIdMap.ObjectIdSize);
-                modified = true;
-            }
-            if (modified)
-                DataHeaderRef = dataHeader;
         }
 
         internal readonly void OnDeserializationError(bool keyWasSet)
         {
             // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
             // This is a transient logRecord, so it is no problem to clear these fields.
-            var dataHeader = DataHeader;
-            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+            //
+            // Atomicity: snapshot DataHeader, mutate local (LogField.ClearObjectIdAndConvertToInline updates local;
+            // SetKeyIsInline updates local), then SetDataHeader publishes the new RDH in a single 8-byte write.
+            var localDataHeader = DataHeader;
+            var (keyLength, keyAddress) = localDataHeader.GetKeyFieldInfo(physicalAddress);
+
             if (keyWasSet)
-                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, keyAddress, objectIdMap, isKey: true);
-            else if (!DataHeader.KeyIsInline)
             {
-                DataHeaderRef.SetKeyIsInline();
+                LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, keyAddress, objectIdMap, isKey: true);
+            }
+            else if (!localDataHeader.KeyIsInline)
+            {
+                localDataHeader.SetKeyIsInline();
             }
 
             // Value length may not be ObjectIdSize.
-            if (!DataHeader.ValueIsInline)
+            if (!localDataHeader.ValueIsInline)
             {
                 var valueAddress = keyAddress + keyLength;
                 *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
-                LogField.ClearObjectIdAndConvertToInline(ref DataHeaderRef, valueAddress, objectIdMap, isKey: false);
+                LogField.ClearObjectIdAndConvertToInline(ref localDataHeader, valueAddress, objectIdMap, isKey: false);
             }
+
+            SetDataHeader(localDataHeader);
         }
 
         /// <summary>

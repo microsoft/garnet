@@ -209,6 +209,8 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var sizeInfo = hlog.GetDeleteRecordSize(key);
+            Debug.Assert(!sizeInfo.FieldInfo.HasETag && !sizeInfo.FieldInfo.HasExpiration, $"Delete new-record sizeInfo should not have HasETag {sizeInfo.FieldInfo.HasETag} or HasExpiration {sizeInfo.FieldInfo.HasExpiration}");
+
             AllocateOptions allocOptions = new()
             {
                 recycle = true,

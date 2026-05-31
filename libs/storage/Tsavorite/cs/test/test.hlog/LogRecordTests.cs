@@ -143,7 +143,7 @@ namespace Tsavorite.test.LogRecordTests
                 ref var dataHeader = ref *(RecordDataHeader*)(recordBaseAddress + RecordInfo.Size);
                 var headerLength = dataHeader.Initialize(in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress, recordBaseAddress);
                 Assert.That(headerLength, Is.EqualTo(RecordDataHeader.Size));
-                Assert.That(keyAddress, Is.EqualTo(recordBaseAddress + RecordInfo.Size + RecordDataHeader.Size + exNameSpaceLength));
+                Assert.That(keyAddress, Is.EqualTo(recordBaseAddress + Constants.FixedHeaderSize + exNameSpaceLength));
                 Assert.That(valueAddress, Is.EqualTo(keyAddress + keyLength));
                 var (keyLengthBack, keyAddressBack) = dataHeader.GetKeyFieldInfo(recordBaseAddress);
                 Assert.That(keyLengthBack, Is.EqualTo(keyLength));

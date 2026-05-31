@@ -2053,7 +2053,7 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + RecordDataHeader.Size)
+            if (currentLength >= Constants.FixedHeaderSize)
             {
                 var ptr = ctx.record.GetValidPointer();
                 var recordInfo = *(RecordInfo*)ptr;

@@ -17,6 +17,11 @@ namespace Tsavorite.core
         /// Use this when converting between word counts and byte counts (e.g., FillerWords &lt;&lt; kRecordAlignmentShift = filler bytes).</summary>
         public const int kRecordAlignmentShift = 3;
 
+        /// <summary>Combined fixed-size header of every log record: <see cref="RecordInfo.Size"/> (8) + <see cref="RecordDataHeader.Size"/> (8) = 16 bytes.
+        /// This is the offset from the record base address to the namespace byte / extended-namespace bytes / key data,
+        /// and the minimum number of bytes a scanner length-walks past when the RDH has not yet been Initialized (word == 0).</summary>
+        public const int FixedHeaderSize = RecordInfo.Size + RecordDataHeader.Size;
+
         /// Number of entries per bucket (assuming 8-byte entries to fill a cacheline)
         /// Number of bits per bucket (assuming 8-byte entries to fill a cacheline)
         public const int kBitsPerBucket = 3;

@@ -118,7 +118,7 @@ namespace Tsavorite.core
                 ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) must be less than {1 << RecordDataHeader.ExtendedNamespaceIndicatorBit}");
 
             // With fixed-size RecordDataHeader (8 bytes containing KeyLength and ValueLength), the calculation is straightforward.
-            ActualInlineRecordSize = RecordInfo.Size + RecordDataHeader.Size + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
+            ActualInlineRecordSize = Constants.FixedHeaderSize + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
