@@ -556,13 +556,9 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="numCompletionThreads">Number of IO completion threads (drainers).
-        /// Each completion thread drains CQEs from one or more io_context shards. The number
-        /// of underlying io_context shards (rings) is derived automatically from the backend
-        /// and numCompletionThreads — uring uses <c>max(4, numCompletionThreads)</c> to escape
-        /// per-ring sq_lock contention even with a single drainer (the single drainer covers
-        /// all rings via the legacy <c>QueueRun</c> compat scanner); libaio uses
-        /// numCompletionThreads directly (the kernel-side per-context mutex is already
-        /// efficient and extra rings don't help). Ignored on Windows (IOCP). When &lt; 1,
+        /// Each drainer is bound 1:1 to its own io_context (libaio) or io_uring ring; the
+        /// number of rings equals numCompletionThreads on both backends. Submitters distribute
+        /// across rings via per-thread affinity. Ignored on Windows (IOCP). When &lt; 1,
         /// treated as 1.</param>
         /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
@@ -586,17 +582,13 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
-            // rings always tracks numCompletionThreads (1:1 drainer-to-ring binding). An earlier
-            // experiment used min 4 rings for uring even at ct=1 (single drainer scans all
-            // rings via QueueRun) to escape per-ring sq_lock contention without forcing the
-            // caller to allocate multiple drainer threads. That mode is fundamentally broken:
-            // with per-thread submit affinity (pick_ring's thread_local index), submitters
-            // assigned to ring N>0 never get their completions drained because the single
-            // drainer blocks on ring 0 with a 1s timeout in QueueRun and only briefly polls
-            // the other rings between wake-ups. The result is ~50x throughput degradation on
-            // workloads where submitters land on rings != 0. For uring perf scaling, users
-            // should set numCompletionThreads >= expected_submitter_concurrency; the rings
-            // are then 1:1 with drainers and each ring's completions are continuously drained.
+            // rings always track numCompletionThreads (1:1 drainer-to-ring binding). Each
+            // drainer blocks on its own ring inside QueueRunFor with a timeout, so a single
+            // drainer cannot cover multiple rings without starving any ring whose submitters
+            // produce completions while the drainer is parked on another ring. With per-thread
+            // submit affinity (pick_ring's thread_local index), every ring eventually receives
+            // submissions, so each ring must have its own drainer. For throughput scaling,
+            // callers should set numCompletionThreads >= expected submitter concurrency.
             this.numIoContextsConfig = this.numCompletionThreadsConfig;
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
