@@ -92,12 +92,22 @@ namespace Tsavorite.core
             // wrapper to the allocator's pool so it can be reused for the next IO.
             while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncGetFromDiskResult<AsyncIOContext> result))
             {
-                // Pass result.context by ref directly so we avoid two struct copies (the
-                // dequeue itself only moved the wrapper reference; passing ref keeps the
-                // ~112-byte AsyncIOContext in place inside the heap-allocated wrapper
-                // while InternalCompletePendingRequest reads its fields).
-                InternalCompletePendingRequest(sessionFunctions, ref result.context, completedOutputs);
-                hlogBase.ReturnAsyncGetFromDiskResult(result);
+                // try/finally ensures the pooled wrapper is returned even if the user
+                // callback inside InternalCompletePendingRequest throws — otherwise a
+                // throwing callback would leak the wrapper forever and degrade pool
+                // hit rate over time.
+                try
+                {
+                    // Pass result.context by ref directly so we avoid two struct copies (the
+                    // dequeue itself only moved the wrapper reference; passing ref keeps the
+                    // ~112-byte AsyncIOContext in place inside the heap-allocated wrapper
+                    // while InternalCompletePendingRequest reads its fields).
+                    InternalCompletePendingRequest(sessionFunctions, ref result.context, completedOutputs);
+                }
+                finally
+                {
+                    hlogBase.ReturnAsyncGetFromDiskResult(result);
+                }
             }
         }
 

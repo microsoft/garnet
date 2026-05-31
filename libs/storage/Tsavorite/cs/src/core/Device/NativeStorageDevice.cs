@@ -657,11 +657,18 @@ namespace Tsavorite.core
         /// </summary>
         void EnsureNativeDeviceCreated()
         {
-            if (nativeDevice != IntPtr.Zero) return;
+            // Pair Volatile.Read here with Volatile.Write below (line ~764). The fast path
+            // skips the lock; without an acquire barrier on ARM the reader can observe a
+            // non-null nativeDevice while still seeing a stale `results` array reference or
+            // partially-initialised completion-thread state. Volatile.Read on weak-memory
+            // hosts costs a single ldar instruction, no cost on x86 (plain mov).
+            if (Volatile.Read(ref nativeDevice) != IntPtr.Zero) return;
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             lock (nativeCreateLock)
             {
+                // Inside the lock the acquire fence guarantees we see writes from the prior
+                // owner, so a plain field read is safe here.
                 if (nativeDevice != IntPtr.Zero) return;
                 if (Volatile.Read(ref disposedFlag) != 0)
                     throw new ObjectDisposedException(nameof(NativeStorageDevice));
