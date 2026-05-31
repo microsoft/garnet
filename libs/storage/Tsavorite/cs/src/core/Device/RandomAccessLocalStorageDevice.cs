@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -88,6 +89,16 @@ namespace Tsavorite.core
         private readonly ILogger logger;
         private readonly SafeConcurrentDictionary<int, SegmentHandles> logHandles;
         private readonly SectorAlignedBufferPool pool;
+
+        // Lock-free pool of UnmanagedMemoryManager<byte> wrappers reused across IOs.
+        // Each in-flight RandomAccess.ReadAsync/WriteAsync needs a Memory<byte> over its
+        // raw destination/source pointer; the wrapper carries the pointer + length and
+        // can be rebound via SetDestination. Rent on submission, return in the finally
+        // of the IO continuation. Bounded in steady state by ThrottleLimit (typically
+        // ~120 entries = ~4 KB). ConcurrentQueue is allocation-free in steady state
+        // (one CAS per enqueue/dequeue) and has no Monitor/SemaphoreSlim — the exact
+        // anti-pattern we eliminated when removing the per-segment AsyncPool.
+        private readonly ConcurrentQueue<UnmanagedMemoryManager<byte>> ummPool = new();
 
         /// <summary>
         /// Number of pending reads on device
@@ -216,18 +227,14 @@ namespace Tsavorite.core
 
             _ = Interlocked.Increment(ref numPending);
 
+            UnmanagedMemoryManager<byte> memoryManager = null;
             try
             {
                 var readHandle = GetOrAddHandle(segmentId).ReadHandle;
 
-                // Fresh per-IO memory manager wrapper over the destination pointer. This is the
-                // same pattern used by ManagedLocalStorageDevice; the alternative (a pooled
-                // wrapper) requires a SemaphoreSlim or ConcurrentQueue that becomes the new
-                // bottleneck on the hot path under high concurrency.
-                UnmanagedMemoryManager<byte> memoryManager;
                 unsafe
                 {
-                    memoryManager = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
+                    memoryManager = RentUmm((byte*)destinationAddress, (int)readLength);
                 }
                 numBytes = (uint)await RandomAccess.ReadAsync(readHandle, memoryManager.Memory, (long)sourceAddress).ConfigureAwait(false);
             }
@@ -242,6 +249,8 @@ namespace Tsavorite.core
             }
             finally
             {
+                if (memoryManager is not null)
+                    ummPool.Enqueue(memoryManager);
                 _ = Interlocked.Decrement(ref numPending);
                 // Issue user callback
                 callback(errorCode, numBytes, context);
@@ -274,14 +283,14 @@ namespace Tsavorite.core
 
             _ = Interlocked.Increment(ref numPending);
 
+            UnmanagedMemoryManager<byte> memoryManager = null;
             try
             {
                 var writeHandle = GetOrAddHandle(segmentId).WriteHandle;
 
-                UnmanagedMemoryManager<byte> memoryManager;
                 unsafe
                 {
-                    memoryManager = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
+                    memoryManager = RentUmm((byte*)sourceAddress, (int)numBytesToWrite);
                 }
                 await RandomAccess.WriteAsync(writeHandle, memoryManager.Memory, (long)destinationAddress).ConfigureAwait(false);
             }
@@ -297,10 +306,28 @@ namespace Tsavorite.core
             }
             finally
             {
+                if (memoryManager is not null)
+                    ummPool.Enqueue(memoryManager);
                 _ = Interlocked.Decrement(ref numPending);
                 // Issue user callback
                 callback(errorCode, numBytesToWrite, context);
             }
+        }
+
+        /// <summary>
+        /// Rent a wrapper from <see cref="ummPool"/> (or allocate one if the pool is empty)
+        /// and bind it to the given unmanaged buffer. Caller must <c>Enqueue</c> back to
+        /// <see cref="ummPool"/> in the finally block of the IO continuation. Wrappers are
+        /// only handed out one-IO-at-a-time, so concurrent <see cref="UnmanagedMemoryManager{T}.SetDestination"/>
+        /// on the same wrapper cannot occur.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe UnmanagedMemoryManager<byte> RentUmm(byte* pointer, int length)
+        {
+            if (!ummPool.TryDequeue(out var memoryManager))
+                memoryManager = new UnmanagedMemoryManager<byte>();
+            memoryManager.SetDestination(pointer, length);
+            return memoryManager;
         }
 
         /// <summary>
