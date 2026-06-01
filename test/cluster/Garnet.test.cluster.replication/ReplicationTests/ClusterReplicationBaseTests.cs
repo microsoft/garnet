@@ -814,7 +814,7 @@ namespace Garnet.test.cluster
         [Test, Order(16)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
-            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
+            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false);
 
         [Test, Order(17)]
         [Category("REPLICATION")]
@@ -824,8 +824,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: false,
-                fastCommit: false);
+                mainMemoryReplication: false);
 
         [Test, Order(18)]
         [Category("REPLICATION")]
@@ -835,8 +834,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence,
                 multiCheckpointAfterDivergence: false,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(19)]
         [Category("REPLICATION")]
@@ -846,8 +844,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(20)]
         [Category("REPLICATION")]
@@ -857,24 +854,21 @@ namespace Garnet.test.cluster
                 disableObjects: disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: mainMemoryReplication,
-                fastCommit: true);
+                mainMemoryReplication: mainMemoryReplication);
 
-        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication, bool fastCommit)
+        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication)
         {
             var set = false;
             var replica_count = 2;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            fastCommit = sublogCount > 1;
             context.CreateInstances(
                 nodes_count,
                 disableObjects: disableObjects,
                 FastAofTruncate: mainMemoryReplication,
                 CommitFrequencyMs: mainMemoryReplication ? -1 : 0,
                 OnDemandCheckpoint: mainMemoryReplication,
-                FastCommit: fastCommit,
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,

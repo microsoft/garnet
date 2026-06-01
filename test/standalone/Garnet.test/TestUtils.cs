@@ -532,7 +532,6 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -567,7 +566,8 @@ namespace Garnet.test
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -601,7 +601,6 @@ namespace Garnet.test
                     commitFrequencyMs: CommitFrequencyMs,
                     useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
-                    fastCommit: FastCommit,
                     authUsername: authUsername,
                     authPassword: authPassword,
                     useAcl: useAcl,
@@ -635,7 +634,8 @@ namespace Garnet.test
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                    enableRangeIndexPreview: enableRangeIndexPreview);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -679,7 +679,6 @@ namespace Garnet.test
             int commitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool disableStorageTier = false,
-            bool fastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -785,7 +784,6 @@ namespace Garnet.test
                 EnableAOF = enableAOF,
                 LogMemorySize = "1g",
                 GossipDelay = gossipDelay,
-                EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
                 TlsOptions = useTLS ? new GarnetTlsOptions(
                     certFileName: certFile,

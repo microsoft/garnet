@@ -94,5 +94,6 @@
     <Project Path="test/cluster/Garnet.test.cluster.replication.disklesssync/Garnet.test.cluster.replication.disklesssync.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster.replication.tls/Garnet.test.cluster.replication.tls.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication.rangeindex/Garnet.test.cluster.replication.rangeindex.csproj" />
   </Folder>
 </Solution>

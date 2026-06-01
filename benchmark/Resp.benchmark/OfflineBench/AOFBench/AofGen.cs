@@ -231,7 +231,6 @@ namespace Resp.benchmark
                 AofMemorySize = options.AofMemorySize,
                 AofPageSize = options.AofPageSize,
                 UseAofNullDevice = true,
-                EnableFastCommit = true,
                 CommitFrequencyMs = -1,
                 FastAofTruncate = true,
                 EnableCluster = true,

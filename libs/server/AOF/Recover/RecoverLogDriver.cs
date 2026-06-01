@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -100,11 +99,6 @@ namespace Garnet.server
                     }
                     else if (payloadLength < 0)
                     {
-                        if (!serverOptions.EnableFastCommit)
-                        {
-                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-                        }
-
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                         physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
@@ -213,9 +207,6 @@ namespace Garnet.server
                             }
                             else if (payloadLength < 0)
                             {
-                                if (!serverOptions.EnableFastCommit)
-                                    throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-
                                 // Only a single thread should commit metadata
                                 if (replayTaskIdx == 0)
                                 {

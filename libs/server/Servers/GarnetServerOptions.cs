@@ -289,10 +289,6 @@ namespace Garnet.server
         /// </summary>
         public int CheckpointThrottleFlushDelayMs = 0;
 
-        /// <summary>
-        /// Enable FastCommit mode for TsavoriteAof
-        /// </summary>
-        public bool EnableFastCommit = true;
 
         /// <summary>
         /// Throttle FastCommit to write metadata once every K commits
@@ -364,6 +360,19 @@ namespace Garnet.server
         /// Use specified device type
         /// </summary>
         public DeviceType DeviceType = DeviceType.Default;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: which IO backend to use (libaio or io_uring).
+        /// Ignored for other device types or platforms. io_uring requires the native library
+        /// to be built with -DUSE_URING=ON.
+        /// </summary>
+        public NativeStorageDevice.IoBackend DeviceIoBackend = NativeStorageDevice.IoBackend.Default;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: number of background IO completion drain threads.
+        /// Has a strong effect on io_uring throughput; default of 1 is usually enough for libaio.
+        /// </summary>
+        public int DeviceCompletionThreads = 1;
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
@@ -663,8 +672,15 @@ namespace Garnet.server
 
             if (DeviceType == DeviceType.Default)
                 DeviceType = Devices.GetDefaultDeviceType();
-            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
-            logger?.LogInformation("Using device type {deviceType}", DeviceType);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(
+                deviceType: DeviceType,
+                ioBackend: DeviceIoBackend,
+                numCompletionThreads: DeviceCompletionThreads,
+                logger: logger);
+            if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct})", DeviceType, DeviceIoBackend, DeviceCompletionThreads);
+            else
+                logger?.LogInformation("Using device type {deviceType}", DeviceType);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -874,7 +890,7 @@ namespace Garnet.server
                     SegmentSizeBits = segmentSizeBits,
                     LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
-                    FastCommitMode = EnableFastCommit,
+                    FastCommitMode = true,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
                     Epoch = null
@@ -886,7 +902,7 @@ namespace Garnet.server
                     FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(aofDir, AofPhysicalSublogCount == 1 ? -1 : i),
                         removeOutdated: true,
-                        fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+                        fastCommitThrottleFreq: FastCommitThrottleFreq);
             }
         }
 

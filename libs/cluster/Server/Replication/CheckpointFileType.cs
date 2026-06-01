@@ -33,5 +33,13 @@ namespace Garnet.cluster
         /// Store Snapshot - Object
         /// </summary>
         STORE_SNAPSHOT_OBJ = 6,
+        /// <summary>
+        /// RangeIndex per-flush snapshot file (flush.bftree)
+        /// </summary>
+        STORE_RANGEINDEX_FLUSH = 7,
+        /// <summary>
+        /// RangeIndex per-checkpoint snapshot file (checkpoint .bftree)
+        /// </summary>
+        STORE_RANGEINDEX_SNAPSHOT = 8,
     }
 }

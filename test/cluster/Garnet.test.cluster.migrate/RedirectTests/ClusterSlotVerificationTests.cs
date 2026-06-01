@@ -152,6 +152,10 @@ namespace Garnet.test.cluster
                 new HCOLLECT(),
                 new CLUSTERGETPROC(),
                 new CLUSTERSETPROC(),
+                new CLUSTERTESTRAWCMD(),
+                new CLUSTERTESTOBJCMD(),
+                new CLUSTERTESTRAWREADCMD(),
+                new CLUSTERTESTOBJREADCMD(),
                 new WATCH(),
                 new WATCHMS(),
                 new WATCHOS(),
@@ -229,6 +233,38 @@ namespace Garnet.test.cluster
                 "CLUSTERSETPROC",
                 () => new TestClusterReadWriteCustomTxn(),
                 new RespCommandsInfo { Arity = TestClusterReadWriteCustomTxn.Arity });
+
+            // Register write and read variants of CustomRawStringCmd and CustomObjCmd so the
+            // readOnly=true and readOnly=false branches of CanServeSlot are exercised by the
+            // standard CLUSTERDOWN/OK/MOVED/ASK tests
+            foreach (var node in context.nodes)
+            {
+                _ = node.Register.NewCommand(
+                    "CLUSTERTESTRAWCMD",
+                    CommandType.ReadModifyWrite,
+                    new TestClusterRawStringCmd(),
+                    new RespCommandsInfo { Arity = 3 });
+
+                _ = node.Register.NewCommand(
+                    "CLUSTERTESTOBJCMD",
+                    CommandType.ReadModifyWrite,
+                    new TestClusterObjFactory(),
+                    new TestClusterObjSet(),
+                    new RespCommandsInfo { Arity = 3 });
+
+                _ = node.Register.NewCommand(
+                    "CLUSTERTESTRAWREADCMD",
+                    CommandType.Read,
+                    new TestClusterRawStringReadCmd(),
+                    new RespCommandsInfo { Arity = 2 });
+
+                _ = node.Register.NewCommand(
+                    "CLUSTERTESTOBJREADCMD",
+                    CommandType.Read,
+                    new TestClusterObjFactory(),
+                    new TestClusterObjGet(),
+                    new RespCommandsInfo { Arity = 2 });
+            }
 
             context.CreateConnection();
 

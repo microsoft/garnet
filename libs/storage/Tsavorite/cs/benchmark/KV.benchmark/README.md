@@ -76,6 +76,11 @@ and use 32-byte aligned NUMA pinning. Pick the row matching your scenario:
 | large (100 M × 100 B) | constrained (2 GB) | zipf θ=0.99 | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device randomaccess --log-memory 2g --rumd 100,0,0,0 -d zipf --zipf-theta 0.99 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
 | 4.6 M | fits | 50/40/5/5 RUMD | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 16 -n 4600000 -v 100 --device null --rumd 50,40,5,5 --runsec 15 --warmup-sec 5 -i 3` |
 | 100 M | fits | thread sweep (1→32) | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device null --rumd 100,0,0,0 --load-threads 32 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 -i 3` |
+| 100 M | constrained (2 GB) — **native + libaio** | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device native --device-io-backend libaio --log-memory 2g --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| 100 M | constrained (2 GB) — **native + io_uring** | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device native --device-io-backend uring --log-memory 2g --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
+| 100 M | **mostly on disk** (16 MB log, ~0.125 % in memory) — disk-IO thread-scale sweep, **RandomAccess** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device randomaccess --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
+| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + libaio** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend libaio --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
+| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + io_uring** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend uring --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
 
 **Knobs that affect the in-memory vs out-of-memory mix**:
 - `--log-memory` (default: auto-sized to fit dataset at 90 % mutable). Set
@@ -83,10 +88,27 @@ and use 32-byte aligned NUMA pinning. Pick the row matching your scenario:
   from disk on lookup. Use units: `512m`, `1g`, `16g`.
 - `--device`: `null` skips all I/O (pure engine ceiling), `randomaccess`
   uses `RandomAccessLocalStorageDevice` (Linux default), `native` uses
-  `NativeStorageDevice` (libaio on Linux), `filestream` is the slowest
-  managed device.
+  `NativeStorageDevice` (libaio or io_uring on Linux — selected via
+  `--device-io-backend`), `filestream` is the slowest managed device.
 - `--max-inline-value-size` (default 16 KB): values larger than this overflow
   to a heap-allocated buffer (slower path).
+
+**Disk-IO thread-scale sweep — what to look for**: the last three rows above
+load 100 M × 100 B records (≈ 12.8 GB on disk) with a 16 MB log so that
+roughly **0.125 %** of the dataset is in memory at any time. Every read
+becomes a 4 KB random disk fetch, making the result a direct measurement of
+the device backend under contention. With 6 thread counts × 3 devices
+(RandomAccess, native + libaio, native + io_uring), each invocation does one
+load (~35 s for 100 M keys at ~3 M ops/sec) and then sweeps the six
+thread-count cells at 15 s each. Total wall-clock per device ≈ 35 + 6 × 15 =
+~2 min. Compare against the disk's `fio` ceiling
+(`fio --rw=randread --bs=4k --direct=1 --ioengine=libaio --iodepth=64
+--numjobs=8 --runtime=15 --time_based --group_reporting --filename=/mnt/nvme/...`)
+to know what fraction of the device each backend is leaving on the table.
+Native + libaio plateaus at the single-`io_context_` cap (~400–500 K IOPS on
+a P5600); RandomAccess is capped by the BCL's `RandomAccess.ReadAsync`
+managed-async dispatch (~120 K IOPS); native + io_uring currently sits
+between the two — see the `Linux native I/O backends` section below.
 
 ### Detailed examples
 
@@ -202,6 +224,21 @@ done
 column -t -s , /tmp/kv-sweep.csv | head
 ```
 
+For `native` you additionally choose the Linux async I/O backend
+(`libaio` or `uring`):
+
+```bash
+for backend in libaio uring; do
+  rm -rf /mnt/nvme/kv-sweep/*
+  numactl --membind=0 --cpunodebind=0 \
+    dotnet KV.benchmark.dll -t 64 -n 50000000 -v 100 \
+      --device native --device-io-backend $backend --rumd 100,0,0,0 \
+      --runsec 5 --warmup-sec 2 --report-interval-sec 0 -i 3 \
+      --data-path /mnt/nvme/kv-sweep \
+      --csv-output /tmp/kv-sweep-native.csv --quiet
+done
+```
+
 #### 9. Run-thread scalability sweep (single load → multiple thread counts)
 
 ```bash
@@ -270,7 +307,7 @@ smallest thread count:
 | --- | --- | --- |
 | `--device` | `default` | `native`, `randomaccess`, `filestream`, `null`, `default`. |
 | `--device-throttle` | `0` | Max in-flight IOs. `0` = device default (`120` for every Tsavorite device). |
-| `--device-io-backend` | `default` | Linux native backend: `libaio`, `default` (→ libaio). |
+| `--device-io-backend` | `default` | Linux native backend: `libaio`, `uring` (io_uring), `default` (→ libaio). Ignored on Windows. |
 | `--device-completion-threads` | `0` | Native completion thread count. `0` → 1. |
 | `--data-path` | OS temp | Where hlog files live. A unique `<data-path>/kv-run-<ts>-<pid>/` child directory is created per run and removed on exit. |
 
@@ -435,10 +472,45 @@ with larger test harnesses that keep the process alive afterward).
 | `--device` | Linux | Windows | Notes |
 | --- | --- | --- | --- |
 | `default` | `RandomAccessLocalStorageDevice` | `LocalStorageDevice` (IOCP) | Platform default. |
-| `native` | `NativeStorageDevice` (libaio) | `LocalStorageDevice` | Linux uses libaio via the shipped `libnative_device.so`. |
+| `native` | `NativeStorageDevice` (libaio or io_uring) | `LocalStorageDevice` | Linux uses libaio or io_uring via the shipped `libnative_device.so`. Backend selected with `--device-io-backend`. |
 | `randomaccess` | `RandomAccessLocalStorageDevice` | same | Pure .NET `RandomAccess` API; no native deps. |
 | `filestream` | `ManagedLocalStorageDevice` | same | Pure .NET `FileStream`; lowest performance, no native deps. |
 | `null` | `NullDevice` | `NullDevice` | No I/O; for measuring engine-only throughput. |
+
+### Linux native I/O backends (`--device-io-backend`)
+
+Only meaningful when `--device native` is selected on Linux.
+
+| `--device-io-backend` | Backend | Notes |
+| --- | --- | --- |
+| `default` | libaio | Same as `libaio`. |
+| `libaio` | Linux `io_submit` / `io_getevents` | Mature; per-`io_context_t` ceiling ≈ 400 K 4 KB IOPS. |
+| `uring` (aliases: `io_uring`, `iouring`) | Linux `io_uring` | Newer, lower per-syscall overhead. Requires Linux ≥ 5.6 and the shipped `libnative_device.so` to have been built with `FASTER_URING` (cmake `-DUSE_URING=ON`, the default). |
+
+The shipped `libnative_device.so` has a load-time dependency on **both**
+`libaio.so.1` (or `.1t64` on Ubuntu 24.04+) **and** `liburing.so.2`,
+regardless of which backend you select at runtime. Install them on the
+host before using `--device native`:
+
+```sh
+# Debian / Ubuntu 24.04+:
+sudo apt-get install -y libaio1t64 liburing2
+# Debian / Ubuntu (older):
+sudo apt-get install -y libaio1 liburing2
+# Fedora / RHEL / AzureLinux:
+sudo dnf install -y libaio liburing
+# Alpine:
+sudo apk add libaio liburing
+```
+
+If `ldd <bin>/runtimes/linux-x64/native/libnative_device.so` reports
+`liburing.so.2 => not found`, install the package above. See the
+[Tsavorite Native Device README](../../cc/README.md#runtime-dependencies-end-users)
+for full details, including how to build a no-liburing variant.
+
+If the native library was built with `-DUSE_URING=OFF`, the `uring`
+value is rejected at device construction and `libaio` / `default`
+remain available.
 
 `--device-throttle 0` resolves to the device default of 120 in-flight IOs.
 `--device-completion-threads 0` resolves to 1.

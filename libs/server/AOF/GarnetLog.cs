@@ -47,7 +47,6 @@ namespace Garnet.server
         /// <param name="logger">Optional logger for recording events.</param>
         public GarnetLog(GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
         {
-            Debug.Assert(serverOptions.EnableFastCommit || serverOptions.AofPhysicalSublogCount == 1, "Cannot use sharded-log without FastCommit!");
             this.appendOnlyFile = appendOnlyFile;
             this.cookieGeneratorCallback = () =>
             {

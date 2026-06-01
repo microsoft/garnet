@@ -241,7 +241,6 @@ namespace Garnet.test.cluster
         /// <param name="CommitFrequencyMs"></param>
         /// <param name="useAofNullDevice"></param>
         /// <param name="DisableStorageTier"></param>
-        /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
@@ -292,7 +291,6 @@ namespace Garnet.test.cluster
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool FastCommit = true,
             int timeout = -1,
             bool useTLS = false,
             bool useAcl = false,
@@ -326,7 +324,8 @@ namespace Garnet.test.cluster
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -354,7 +353,6 @@ namespace Garnet.test.cluster
                 useAofNullDevice: useAofNullDevice,
                 DisableStorageTier: DisableStorageTier,
                 OnDemandCheckpoint: OnDemandCheckpoint,
-                FastCommit: FastCommit,
                 useAcl: useAcl,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
@@ -386,7 +384,8 @@ namespace Garnet.test.cluster
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             foreach (var node in nodes)
                 node.Start();
@@ -413,7 +412,6 @@ namespace Garnet.test.cluster
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
         /// <param name="DisableStorageTier"></param>
-        /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="gossipDelay"></param>
         /// <param name="useTLS"></param>
@@ -443,7 +441,6 @@ namespace Garnet.test.cluster
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
-            bool FastCommit = true,
             int timeout = -1,
             int gossipDelay = 5,
             bool useTLS = false,
@@ -455,9 +452,9 @@ namespace Garnet.test.cluster
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
-
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
@@ -481,7 +478,6 @@ namespace Garnet.test.cluster
                 commitFrequencyMs: CommitFrequencyMs,
                 disableStorageTier: DisableStorageTier,
                 onDemandCheckpoint: OnDemandCheckpoint,
-                fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
                 sublogCount: sublogCount,
@@ -492,7 +488,8 @@ namespace Garnet.test.cluster
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             return new GarnetServer(opts, loggerFactory);
         }
