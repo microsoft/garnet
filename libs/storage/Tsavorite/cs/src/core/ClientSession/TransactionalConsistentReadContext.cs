@@ -121,7 +121,8 @@ namespace Tsavorite.core
         {
             var hash = GetKeyHash(key);
             Session.functions.PreSingleKeyConsistentRead(hash);
-            var status = TransactionalContext.Read(key, ref input, ref output, userContext);
+            var readOptions = new ReadOptions() { KeyHash = hash };
+            var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, userContext);
             Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
@@ -169,7 +170,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            var hash = GetKeyHash(key);
+            var hash = readOptions.KeyHash ?? GetKeyHash(key);
             Session.functions.PreSingleKeyConsistentRead(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             Session.functions.PostSingleKeyConsistentReadCallback();
