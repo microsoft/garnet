@@ -811,20 +811,15 @@ namespace Garnet.server
                 case RespCommand.VADD:
                     // Adding to an existing VectorSet is modeled as a read operations
                     //
-                    // However, we do synthesize some (pointless) writes to implement replication
-                    // and a "make me delete=able"-update during drop.
+                    // However, we do synthesize some (pointless) writes to implement replication (which we ignore here).
                     //
                     // Another "not quite write" is the recreate an index write operation
                     // that occurs if we're adding to an index that was restored from disk 
                     // or a primary node.
 
-                    // Handle "make me delete-able"
-                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        logRecord.ValueSpan.Clear();
-                    }
-                    else if (input.arg1 == VectorManager.RecreateIndexArg)
-                    {
+                        // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
@@ -1326,18 +1321,19 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    // Handle "make me delete-able"
-                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        dstLogRecord.ValueSpan.Clear();
-                    }
-                    else if (input.arg1 == VectorManager.RecreateIndexArg)
-                    {
+                        // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         oldValue.CopyTo(dstLogRecord.ValueSpan);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
+                    }
+                    else if (input.arg1 == VectorManager.VADDAppendLogArg)
+                    {
+                        // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
+                        oldValue.CopyTo(dstLogRecord.ValueSpan);
                     }
 
                     break;
