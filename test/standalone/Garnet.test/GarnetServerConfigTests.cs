@@ -1404,7 +1404,7 @@ namespace Garnet.test
             }
 
             // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (256m) passes the cross-property fit check.
-            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("256m", 1 << 28) })
+            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("2m", 1 << 21) })
             {
                 var args = new[] { "--page", "1g", "--value-overflow-threshold", input };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
@@ -1477,13 +1477,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(64, options.GetServerOptions().ValueOverflowThresholdBytes());
             }
 
-            // Accept exactly the maximum (256m = 1<<28). Use a 1g PageSize so the cross-property fit check passes.
+            // Accept exactly the maximum (2m = 1<<21). Use a 1g PageSize so the cross-property fit check passes.
             {
-                var args = new[] { "--page", "1g", "--value-overflow-threshold", "256m" };
+                var args = new[] { "--page", "1g", "--value-overflow-threshold", "2m" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual(1 << 28, options.GetServerOptions().ValueOverflowThresholdBytes());
+                ClassicAssert.AreEqual(1 << 21, options.GetServerOptions().ValueOverflowThresholdBytes());
             }
 
             // JSON: reject invalid format

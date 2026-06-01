@@ -52,46 +52,30 @@ namespace Tsavorite.core
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;                   // 64B
 
-        /// <summary>Maximum key size that fits in the 12-bit KeyLength field of RecordDataHeader. Keys larger than this become overflow.
-        /// (The 12-bit field can hold values 0..0xFFF; 0xFFF is reserved as the sentinel <see cref="KeyLengthSentinel"/>.)</summary>
+        /// <summary>Maximum inline key size that fits in the 12-bit RDH KeyLength field.
+        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; 12) - 1 = 0xFFF`), so inline keys occupy 0..0xFFE
+        /// (the 4096 - 1 = 4095 distinct values used inline). For overflow keys (R11), the low 12 bits of the on-disk length
+        /// are stored in the RDH field and can be any value 0..0xFFF; the dependency `MaxInlineKeySizeLimit == fieldMask - 1`
+        /// ensures the masked-low-N-bits encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
         public const int MaxInlineKeySizeLimit = 0xFFE;
 
-        /// <summary>Maximum value size that fits in the 22-bit ValueLength field of RecordDataHeader. Values larger than this become overflow.
-        /// (The 22-bit field can hold values 0..0x3FFFFF; 0x3FFFFF is reserved as the sentinel <see cref="ValueLengthSentinel"/>.)</summary>
+        /// <summary>Maximum inline value size that fits in the 22-bit RDH ValueLength field.
+        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; 22) - 1 = 0x3FFFFF`), so inline values occupy 0..0x3FFFFE.
+        /// For overflow / object values (R11), the low 22 bits of the on-disk length are stored in the RDH field and can be
+        /// any value 0..0x3FFFFF; the dependency `MaxInlineValueSizeLimit == fieldMask - 1` ensures the masked-low-N-bits
+        /// encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
         public const int MaxInlineValueSizeLimit = (1 << 22) - 2;       // 0x3FFFFE
 
         /// <summary>Minimum allowed <see cref="MaxInlineKeySize"/> / <see cref="MaxInlineValueSize"/>.</summary>
         public const int MinMaxInlineSize = 1 << 6;                                     // 64B
 
-        /// <summary>Sentinel value written to <see cref="RecordDataHeader"/> KeyLength when actual key length exceeds <see cref="MaxInlineKeySizeLimit"/>.
-        /// (The 12-bit field max value, distinct from <see cref="MaxInlineKeySizeLimit"/>; do not assume any arithmetic relationship between them.)</summary>
-        internal const int KeyLengthSentinel = 0xFFF;
-
-        /// <summary>Sentinel value written to <see cref="RecordDataHeader"/> ValueLength when actual value length exceeds <see cref="MaxInlineValueSizeLimit"/>.
-        /// (The 22-bit field max value, distinct from <see cref="MaxInlineValueSizeLimit"/>; do not assume any arithmetic relationship between them.)</summary>
-        internal const int ValueLengthSentinel = (1 << 22) - 1;         // 0x3FFFFF
-
-        /// <summary>Size of the int prefix written to the object log for overflow keys whose length exceeds <see cref="MaxInlineKeySizeLimit"/>.</summary>
-        internal const int KeyOverflowPrefixSize = sizeof(int);                         // 4
-
-        /// <summary>Size of the long prefix written to the object log for overflow values whose length exceeds <see cref="MaxInlineValueSizeLimit"/>.</summary>
-        internal const int ValueOverflowPrefixSize = sizeof(long);                      // 8
-
-        /// <summary>Whether the given key size exceeds the 12-bit header limit and requires a length prefix in the object stream.</summary>
+        /// <summary>Whether the given key size exceeds the 12-bit RDH KeyLength inline limit and requires overflow encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool KeySizeExceedsHeaderLimit(int size) => size > MaxInlineKeySizeLimit;
 
-        /// <summary>Whether the given value size exceeds the 22-bit header limit and requires a length prefix in the object stream.</summary>
+        /// <summary>Whether the given value size exceeds the 22-bit RDH ValueLength inline limit and requires overflow encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool ValueSizeExceedsHeaderLimit(long size) => size > MaxInlineValueSizeLimit;
-
-        /// <summary>Returns true if the key length field value is the sentinel, indicating actual length is stored as a prefix in the object stream.</summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal static bool IsKeyLengthSentinel(int fieldValue) => fieldValue == KeyLengthSentinel;
-
-        /// <summary>Returns true if the value length field value is the sentinel, indicating actual length is stored as a prefix in the object stream.</summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal static bool IsValueLengthSentinel(int fieldValue) => fieldValue == ValueLengthSentinel;
 
         /// <summary>
         /// Device used for main hybrid log

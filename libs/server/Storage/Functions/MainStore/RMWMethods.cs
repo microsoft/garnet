@@ -286,6 +286,7 @@ namespace Garnet.server
 
                         var dataHeader = logRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        logRecord.SetDataHeader(dataHeader);
                     }
                     break;
                 case RespCommand.VADD:
@@ -1384,6 +1385,7 @@ namespace Garnet.server
                         // Preserve the RecordType
                         var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        dstLogRecord.SetDataHeader(dataHeader);
 
                         // NOTE: Source TreeHandle is cleared in PostCopyUpdater (after CAS success)
                         // to avoid orphaning the tree if the CAS fails.
@@ -1400,6 +1402,7 @@ namespace Garnet.server
 
                         var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        dstLogRecord.SetDataHeader(dataHeader);
                     }
                     break;
             }

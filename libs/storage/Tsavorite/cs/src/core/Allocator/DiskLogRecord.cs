@@ -539,6 +539,9 @@ namespace Tsavorite.core
                     serializedLogRecord.ValueObject = valueObject;
                     valueObjectSerializer.EndDeserialize();
                 }
+
+                // Restore raw RDH KeyLength/ValueLength fields to ObjectIdSize for in-memory invariant (R11.5).
+                serializedLogRecord.OnObjectReadComplete();
                 return new(serializedLogRecord);
             }
             catch

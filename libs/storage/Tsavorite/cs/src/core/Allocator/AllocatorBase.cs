@@ -2084,8 +2084,17 @@ namespace Tsavorite.core
                     if ((offsetToKeyStart + keyLength) <= currentLength)
                     {
                         // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                        if (!ctx.requestKey.IsEmpty && dataHeader.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, dataHeader))
-                        return false;
+                        //
+                        // IMPORTANT: cannot use the local `dataHeader` struct copy as the IKey argument here — RecordDataHeader.KeyBytes
+                        // uses `Unsafe.AsPointer(ref Unsafe.AsRef(in this))` to derive recordBase, which returns the STACK address of a
+                        // copied struct (yielding garbage key bytes). Wrap `ptr` in a LogRecord, which holds physicalAddress as a field
+                        // and whose Key getter computes addresses against that field.
+                        if (!ctx.requestKey.IsEmpty && dataHeader.KeyIsInline)
+                        {
+                            var diskLogRecord = new LogRecord((long)ptr);
+                            if (!storeFunctions.KeysEqual(ctx.requestKey, diskLogRecord))
+                                return false;
+                        }
 
                         // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
                         if (currentLength >= recordLength)

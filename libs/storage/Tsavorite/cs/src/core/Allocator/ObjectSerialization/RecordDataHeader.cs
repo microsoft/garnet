@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -36,17 +35,17 @@ namespace Tsavorite.core
     ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
     ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) temporarily write the actual length
-    /// (or the sentinel — <see cref="LogSettings.KeyLengthSentinel"/> = 0xFFF / <see cref="LogSettings.ValueLengthSentinel"/> = 0x3FFFFF)
-    /// into the KeyLength/ValueLength field before flushing. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) we reset
-    /// those fields to ObjectIdSize so the in-memory invariant holds.</para>
+    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the LOW 12/22 bits of the
+    /// on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next 32 bits stored in the objectId slot
+    /// at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) the raw RDH fields are restored
+    /// to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns ObjectIdSize" invariant holds.</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
     /// word, a single atomic write to <c>word</c> publishes a fully-consistent new record layout.</para>
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct RecordDataHeader : IKey
+    public struct RecordDataHeader
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
 
@@ -85,14 +84,14 @@ namespace Tsavorite.core
 
         // ── KeyLength field (bits 14-25, 12 bits) ──────────────────────────────────
         const int kKeyLengthShift = 14;
-        const int kKeyLengthBits = 12;
-        const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;            // 0xFFF
+        internal const int kKeyLengthBits = 12;
+        internal const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;   // 0xFFF
         const ulong kKeyLengthMask = kKeyLengthValueMask << kKeyLengthShift;
 
         // ── ValueLength field (bits 26-47, 22 bits) ────────────────────────────────
         const int kValueLengthShift = 26;
-        const int kValueLengthBits = 22;
-        const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1;        // 0x3FFFFF
+        internal const int kValueLengthBits = 22;
+        internal const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1; // 0x3FFFFF
         const ulong kValueLengthMask = kValueLengthValueMask << kValueLengthShift;
 
         // ── RecordType byte (bits 48-55, byte 6) ───────────────────────────────────
@@ -242,8 +241,9 @@ namespace Tsavorite.core
         /// <para>For inline keys, returns the raw 12-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
         /// in the in-memory path).</para>
-        /// <para>The setter always writes the raw 12-bit value. The disk-write path uses it to temporarily store the actual length or sentinel
-        /// (<see cref="LogSettings.KeyLengthSentinel"/>) for serialization; <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize on read-back.</para>
+        /// <para>The setter always writes the raw 12-bit value. The disk-write path uses it to temporarily store the LOW 12 bits of
+        /// the on-disk overflow key length (the next 32 bits live in the objectId slot at keyAddress); after read-back,
+        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
         /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetKeyLengthRaw"/>.</para></summary>
         internal int KeyLength
         {
@@ -258,7 +258,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read the raw 12-bit value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold a sentinel or actual length (not the effective <see cref="KeyLength"/>).</summary>
+        /// where the field may hold the low 12 bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthValueMask);
 
@@ -266,8 +266,9 @@ namespace Tsavorite.core
         /// <para>For inline values, returns the raw 22-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
         /// consumer in the in-memory path).</para>
-        /// <para>The setter always writes the raw 22-bit value. The disk-write path uses it to temporarily store the actual length or sentinel
-        /// (<see cref="LogSettings.ValueLengthSentinel"/>) for serialization; <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize on read-back.</para>
+        /// <para>The setter always writes the raw 22-bit value. The disk-write path uses it to temporarily store the LOW 22 bits of
+        /// the on-disk overflow/object value length (the next 32 bits live in the objectId slot at valueAddress); after read-back,
+        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
         /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
         internal int ValueLength
         {
@@ -282,7 +283,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read the raw 22-bit value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold a sentinel or actual length (not the effective <see cref="ValueLength"/>).</summary>
+        /// where the field may hold the low 22 bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthValueMask);
 
@@ -574,7 +575,7 @@ namespace Tsavorite.core
                 indicatorBits |= kValueIsInlineMask;
             else if (sizeInfo.ValueIsObject)
                 indicatorBits |= kValueIsObjectMask;
-            // (else: ValueIsOverflow — both ValueIsInline and ValueIsObject left clear)
+            // (else: ValueIsOverflow, so both ValueIsInline and ValueIsObject are left clear)
 
             // Compute filler. We have all the values locally, so compute unalignedSum/alignedSum directly (without
             // calling helpers that depend on the RDH word being populated).
@@ -633,57 +634,6 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = recordLength;
             sizeInfo.SetIsRevivifiedRecord();
         }
-
-        // ── IKey implementation ────────────────────────────────────────────────────
-
-        #region IKey
-
-        /// <inheritdoc/>
-        public readonly bool IsPinned => true;
-
-        /// <inheritdoc/>
-        public readonly unsafe ReadOnlySpan<byte> KeyBytes
-        {
-            get
-            {
-                // The struct IS the header; it starts at DataHeaderAddress = recordBase + RecordInfo.Size.
-                var recordBase = (long)Unsafe.AsPointer(ref Unsafe.AsRef(in this)) - RecordInfo.Size;
-                var keyLength = KeyLength;
-                var keyStartPtr = (byte*)(recordBase + GetOffsetToKeyStart());
-                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
-            }
-        }
-
-        /// <inheritdoc/>
-        public readonly bool HasNamespace
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => (byte)((word >> kNamespaceShift) & ByteMask) != 0;
-        }
-
-        /// <inheritdoc/>
-        public readonly unsafe ReadOnlySpan<byte> NamespaceBytes
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                Debug.Assert(HasNamespace, "Should not call if !HasNamespace");
-                var nameSpace = (byte)((word >> kNamespaceShift) & ByteMask);
-                if ((nameSpace & (1 << ExtendedNamespaceIndicatorBit)) == 0)
-                {
-                    // Single byte namespace — return a span over the namespace byte in the word
-                    var ptr = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in this)) + NamespaceOffsetInHeader;
-                    return new ReadOnlySpan<byte>(ptr, 1);
-                }
-                else
-                {
-                    ThrowTsavoriteException("Extended namespaces not yet implemented");
-                    return default;
-                }
-            }
-        }
-
-        #endregion
 
         // ── ToString ───────────────────────────────────────────────────────────────
 
