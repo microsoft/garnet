@@ -114,12 +114,23 @@ namespace Garnet.server
 
                 var readCmd = input.header.cmd;
 
+                var takeExclusiveLock = false;
+
                 while (true)
                 {
                     input.header.cmd = readCmd;
                     input.arg1 = 0;
 
-                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                    var exclusiveLockToken = 0;
+                    var sharedLockToken = 0;
+                    if (takeExclusiveLock)
+                    {
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out exclusiveLockToken);
+                    }
+                    else
+                    {
+                        vectorSetLocks.AcquireSharedLock(keyHash, out sharedLockToken);
+                    }
 
                     GarnetStatus readRes;
                     try
@@ -129,7 +140,14 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        if (takeExclusiveLock)
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        }
+                        else
+                        {
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        }
 
                         throw;
                     }
@@ -152,14 +170,32 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
+                    if (takeExclusiveLock && !needsRecreate)
+                    {
+                        // Raised to recreate, lower to shared and retry immediately
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                        sharedLockToken = exclusiveLockToken = 0;
+                        takeExclusiveLock = false;
+
+                        continue;
+                    }
+
                     if (needsRecreate)
                     {
-                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        if (!takeExclusiveLock)
                         {
-                            // Release the SHARED lock if we can't promote and try again
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            // Try to promote
+                            if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out exclusiveLockToken))
+                            {
+                                // Release the SHARED lock if we can't promote and try again - but this time DEMAND an exclusive lock
+                                vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                            continue;
+                                sharedLockToken = exclusiveLockToken = 0;
+                                takeExclusiveLock = true;
+
+                                continue;
+                            }
                         }
 
                         ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
@@ -212,6 +248,10 @@ namespace Garnet.server
                         {
                             // Try again so we don't hold an exclusive lock while performing a search
                             vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            sharedLockToken = exclusiveLockToken = 0;
+                            takeExclusiveLock = false;
+
                             continue;
                         }
                         else
@@ -268,11 +308,23 @@ namespace Garnet.server
 
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
 
+                var takeExclusiveLock = false;
+
                 while (true)
                 {
                     input.arg1 = 0;
 
-                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                    var sharedLockToken = 0;
+                    var exclusiveLockToken = 0;
+
+                    if (takeExclusiveLock)
+                    {
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out exclusiveLockToken);
+                    }
+                    else
+                    {
+                        vectorSetLocks.AcquireSharedLock(keyHash, out sharedLockToken);
+                    }
 
                     GarnetStatus readRes;
                     try
@@ -305,14 +357,30 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
+                    // Don't need the exclusive lock, lower to shared immediately
+                    if (takeExclusiveLock && !(readRes == GarnetStatus.NOTFOUND || needsRecreate))
+                    {
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                        sharedLockToken = exclusiveLockToken = 0;
+                        takeExclusiveLock = false;
+                        continue;
+                    }
+
                     if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                     {
-                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        if (!takeExclusiveLock)
                         {
-                            // Release the SHARED lock if we can't promote and try again
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out exclusiveLockToken))
+                            {
+                                // Release the SHARED lock if we can't promote and try again but DEMAND exclusive this time
+                                vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                            continue;
+                                sharedLockToken = exclusiveLockToken = 0;
+                                takeExclusiveLock = true;
+
+                                continue;
+                            }
                         }
 
                         ulong indexContext;
@@ -419,6 +487,8 @@ namespace Garnet.server
                         {
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+
+                            takeExclusiveLock = false;
                             continue;
                         }
                         else
