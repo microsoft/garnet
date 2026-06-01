@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -10,6 +11,19 @@ namespace Garnet.server.ACL
     class ACLParser
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
+        /// <summary>
+        /// Maximum length (in chars) of a custom command name accepted in an ACL rule.
+        /// </summary>
+        internal const int MaxCustomCommandNameLength = 64;
+
+        // Allowed characters for custom command names. First char must be alphanumeric;
+        // subsequent chars additionally permit '.', '_', '-', and '|'.
+        // '|' is permitted so custom names can mirror built-in subcommand notation (e.g. CLIENT|GETNAME).
+        private static readonly SearchValues<char> LegalFirstChars = SearchValues.Create(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+        private static readonly SearchValues<char> LegalRestChars = SearchValues.Create(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-|");
 
         private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>(StringComparer.OrdinalIgnoreCase)
         {
@@ -323,11 +337,6 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Maximum length (in chars) of a custom command name accepted in an ACL rule.
-        /// </summary>
-        internal const int MaxCustomCommandNameLength = 64;
-
-        /// <summary>
         /// Returns true if <paramref name="name"/> is a syntactically valid custom command name.
         /// Strict validation prevents the unknown-name fallback from accepting RESP-meta bytes
         /// or whitespace-bearing junk. Allowed: ASCII letters/digits and '.', '_', '-', '|';
@@ -340,29 +349,8 @@ namespace Garnet.server.ACL
                 return false;
             }
 
-            char first = name[0];
-            bool firstOk = (first >= 'A' && first <= 'Z')
-                        || (first >= 'a' && first <= 'z')
-                        || (first >= '0' && first <= '9');
-            if (!firstOk)
-            {
-                return false;
-            }
-
-            foreach (char c in name)
-            {
-                bool ok = (c >= 'A' && c <= 'Z')
-                       || (c >= 'a' && c <= 'z')
-                       || (c >= '0' && c <= '9')
-                       // '|' is permitted so custom names can mirror built-in subcommand notation (e.g. CLIENT|GETNAME).
-                       || c == '.' || c == '_' || c == '-' || c == '|';
-                if (!ok)
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            var nameSpan = name.AsSpan();
+            return LegalFirstChars.Contains(nameSpan[0]) && !nameSpan[1..].ContainsAnyExcept(LegalRestChars);
         }
 
         /// <summary>

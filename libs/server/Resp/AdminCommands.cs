@@ -127,29 +127,14 @@ namespace Garnet.server
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_userHandle != null));
 
-            // Custom (extension) commands: per-name allow/deny can override the generic bitmap bit,
-            // so route them through CanAccessCustomCommand. The switch arms match by name, which
-            // keeps the dispatch independent of RespCommand enum value ordering.
-            if (_authenticator.IsAuthenticated)
+            // Custom (extension) commands need per-name allow/deny on top of the bitmap check.
+            // Route them through a separate method so the built-in command hot path stays branch-free.
+            if (cmd is RespCommand.CustomRawStringCmd
+                or RespCommand.CustomObjCmd
+                or RespCommand.CustomTxn
+                or RespCommand.CustomProcedure)
             {
-                string customName = cmd switch
-                {
-                    RespCommand.CustomRawStringCmd => currentCustomRawStringCommand?.NameStr,
-                    RespCommand.CustomObjCmd => currentCustomObjectCommand?.NameStr,
-                    RespCommand.CustomTxn => currentCustomTransaction?.NameStr,
-                    RespCommand.CustomProcedure => currentCustomProcedure?.NameStr,
-                    _ => null,
-                };
-
-                if (customName != null)
-                {
-                    if (!_userHandle.User.CanAccessCustomCommand(cmd, customName))
-                    {
-                        OnACLOrNoScriptFailure(this, cmd);
-                        return false;
-                    }
-                    return true;
-                }
+                return CheckACLPermissionsForCustomCommand(cmd);
             }
 
             // Authentication and authorization checks must be performed against the effective user.
@@ -159,6 +144,43 @@ namespace Garnet.server
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Performs permission checks for custom (extension) commands by name.
+        /// </summary>
+        /// <param name="cmd">One of CustomRawStringCmd, CustomObjCmd, CustomTxn, CustomProcedure.</param>
+        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
+        private bool CheckACLPermissionsForCustomCommand(RespCommand cmd)
+        {
+            if (!_authenticator.IsAuthenticated)
+            {
+                OnACLOrNoScriptFailure(this, cmd);
+                return false;
+            }
+
+            string customName = cmd switch
+            {
+                RespCommand.CustomRawStringCmd => currentCustomRawStringCommand?.NameStr,
+                RespCommand.CustomObjCmd => currentCustomObjectCommand?.NameStr,
+                RespCommand.CustomTxn => currentCustomTransaction?.NameStr,
+                RespCommand.CustomProcedure => currentCustomProcedure?.NameStr,
+                _ => null,
+            };
+
+            // If the dispatcher has not populated the current-command field (should not happen in
+            // normal flow), fall back to the generic bitmap check so a known +@custom rule still
+            // grants access without leaking a NRE to the client.
+            bool allowed = customName != null
+                ? _userHandle.User.CanAccessCustomCommand(cmd, customName)
+                : _userHandle.User.CanAccessCommand(cmd);
+
+            if (!allowed)
+            {
+                OnACLOrNoScriptFailure(this, cmd);
+                return false;
+            }
             return true;
         }
 

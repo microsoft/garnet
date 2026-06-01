@@ -356,7 +356,8 @@ namespace Garnet
             {
                 // Strict mode: fail closed so operators can't accidentally ship an ACL with typos
                 // that would silently match no command (and therefore deny by default at dispatch).
-                throw new GarnetException($"ACL strict mode: {unresolved.Count} unresolved (user, custom-command) entries in ACL rules. Disable acl-strict-custom-commands or load the appropriate module(s).");
+                var entries = string.Join(", ", unresolved.Select(t => $"({t.user},{t.name})"));
+                throw new GarnetException($"ACL strict mode: {unresolved.Count} unresolved (user, custom-command) entries in ACL rules: {entries}. Disable acl-strict-custom-commands or load the appropriate module(s).");
             }
         }
 

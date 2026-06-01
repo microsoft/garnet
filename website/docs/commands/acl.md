@@ -143,9 +143,9 @@ Manipulate Garnet ACL users interactively. If the username does not exist, the c
 
 #### Custom (extension) command rules
 
-In addition to built-in commands and `@category` rules, individual custom command names can be used directly as rules. For example, `+json.set` grants access to `JSON.SET` and `-json.get` denies access to `JSON.GET`. An explicit per-name deny takes precedence over a category-level allow, so `+@custom -json.set` allows every custom command except `JSON.SET`. Name matching is case-insensitive.
+In addition to built-in commands and `@category` rules, individual custom command names can be used directly as rules. For example, `+json.set` grants access to `JSON.SET` and `-json.get` denies access to `JSON.GET`. An explicit per-name deny takes precedence over a category-level allow, so `+@custom -json.set` allows every custom command except `JSON.SET`. Name matching is case-insensitive. Built-in command names take precedence: if a name is recognized as a built-in command (or `command|subcommand`), the rule applies to that built-in, even when a module registers a custom command with the same name.
 
-`ACL SETUSER` is strict at runtime: a `+name`/`-name` rule whose name is not registered with any loaded module is rejected. ACL file load is lenient by default so files are not brittle to module load order; set `acl-strict-custom-commands` to `true` if you want startup to fail when an ACL file references an unresolved custom command name.
+`ACL SETUSER` is strict at runtime: a `+name`/`-name` rule whose name is not registered with any loaded module is rejected. Names that already exist on the user (for example, names loose-loaded from an ACL file before modules registered) may be toggled between allow and deny without re-validation. ACL file load is strict by default - startup fails when the file references a custom command name no loaded module has registered. Set `acl-strict-custom-commands` to `false` if you need lenient load order (unresolved names are kept and logged as warnings).
 
 #### Resp Reply
 

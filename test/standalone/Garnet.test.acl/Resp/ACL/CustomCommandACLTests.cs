@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -53,7 +54,7 @@ namespace Garnet.test.Resp.ACL
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             TestUtils.OnTearDown();
         }
 
@@ -210,82 +211,6 @@ namespace Garnet.test.Resp.ACL
             CollectionAssert.Contains(u2.CustomCommandsDenied, "SETWPIFPGT");
         }
 
-        // ----- Per-user cap (unit) -------------------------------------------------------------
-
-        [Test]
-        public void User_EnforcesMaxCustomCommandsPerUserCap()
-        {
-            // Adding up to the cap should succeed; the (cap+1)th distinct entry must throw.
-            var user = new User("alice");
-            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
-            {
-                user.AddCustomCommand($"cmd_{i}");
-            }
-
-            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
-
-            var ex = Assert.Throws<ACLException>(() => user.AddCustomCommand("overflow_cmd"));
-            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
-        }
-
-        [Test]
-        public void User_CapIgnoresIdempotentReAdds()
-        {
-            // Re-adding an existing entry must not consume cap budget.
-            var user = new User("alice");
-            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
-            {
-                user.AddCustomCommand($"cmd_{i}");
-            }
-            // Re-adding any name already present should be a no-op even at the cap.
-            Assert.DoesNotThrow(() => user.AddCustomCommand("cmd_0"));
-            Assert.DoesNotThrow(() => user.AddCustomCommand("CMD_0")); // case-insensitive
-        }
-
-        [Test]
-        public void User_CapAllowsSwapBetweenAllowAndDeny()
-        {
-            // At the cap, toggling an existing entry between allow and deny must succeed —
-            // the post-op total is unchanged.
-            var user = new User("alice");
-            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
-            {
-                user.AddCustomCommand($"cmd_{i}");
-            }
-            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
-            Assert.AreEqual(0, user.CustomCommandsDenied.Count);
-
-            // Move cmd_0 from allow -> deny. Net change = 0. Must not throw.
-            Assert.DoesNotThrow(() => user.RemoveCustomCommand("cmd_0"));
-            Assert.AreEqual(User.MaxCustomCommandsPerUser - 1, user.CustomCommandsAllowed.Count);
-            Assert.AreEqual(1, user.CustomCommandsDenied.Count);
-            CollectionAssert.Contains(user.CustomCommandsDenied, "CMD_0");
-
-            // Move cmd_0 back from deny -> allow. Net change = 0. Must not throw.
-            Assert.DoesNotThrow(() => user.AddCustomCommand("cmd_0"));
-            Assert.AreEqual(User.MaxCustomCommandsPerUser, user.CustomCommandsAllowed.Count);
-            Assert.AreEqual(0, user.CustomCommandsDenied.Count);
-
-            // True overflow (new name not in either set) must still throw.
-            var ex = Assert.Throws<ACLException>(() => user.AddCustomCommand("genuinely_new"));
-            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
-        }
-
-        [Test]
-        public void User_RemoveCustomCommandHonorsCapForNewNames()
-        {
-            // Regression: cap on the Remove path must still fire for genuinely new entries
-            // (the swap-allowed change must not weaken the limit for fresh deny entries).
-            var user = new User("alice");
-            for (int i = 0; i < User.MaxCustomCommandsPerUser; i++)
-            {
-                user.AddCustomCommand($"cmd_{i}");
-            }
-
-            var ex = Assert.Throws<ACLException>(() => user.RemoveCustomCommand("never_seen"));
-            StringAssert.Contains("Too many custom command ACL entries", ex.Message);
-        }
-
         [Test]
         public void User_AddCustomCommand_NullThrows()
         {
@@ -293,6 +218,60 @@ namespace Garnet.test.Resp.ACL
             var user = new User("alice");
             Assert.Throws<ArgumentNullException>(() => user.AddCustomCommand(null));
             Assert.Throws<ArgumentNullException>(() => user.RemoveCustomCommand(null));
+        }
+
+        [Test]
+        public void User_AddCustomCommand_RejectsMalformedNames()
+        {
+            // Public API must reject names ACLParser would reject; otherwise the persisted
+            // description can be poisoned (e.g. "foo +@all" re-parsing as two tokens on reload).
+            var user = new User("alice");
+
+            Assert.Throws<ACLException>(() => user.AddCustomCommand("foo bar"));
+            Assert.Throws<ACLException>(() => user.RemoveCustomCommand("foo bar"));
+            Assert.Throws<ACLException>(() => user.AddCustomCommand("foo +@all"));
+            Assert.Throws<ACLException>(() => user.RemoveCustomCommand("foo +@all"));
+            Assert.Throws<ACLException>(() => user.AddCustomCommand(""));
+            Assert.Throws<ACLException>(() => user.AddCustomCommand(".leading_dot"));
+
+            Assert.DoesNotThrow(() => user.AddCustomCommand("json.set"));
+        }
+
+        [Test]
+        public void User_AddCustomCommand_LengthBoundary()
+        {
+            // Pin the MaxCustomCommandNameLength contract so a future bump doesn't silently
+            // change what the parser will accept on reload.
+            var user = new User("alice");
+            string maxLen = new string('a', Garnet.server.ACL.ACLParser.MaxCustomCommandNameLength);
+            string tooLong = maxLen + "a";
+
+            Assert.DoesNotThrow(() => user.AddCustomCommand(maxLen));
+            Assert.Throws<ACLException>(() => user.AddCustomCommand(tooLong));
+        }
+
+        [Test]
+        public void User_DescribeUser_RoundTripsCustomAllowAndDeny()
+        {
+            // Per-name allow/deny must survive ACL save -> reload. DescribeUser produces the on-disk
+            // form; feeding it back through ParseACLRule must reconstruct the same custom sets.
+            var original = new User("alice");
+            original.IsEnabled = true;
+            original.AddCustomCommand("json.set");
+            original.AddCustomCommand("foo.bar");
+            original.RemoveCustomCommand("json.get");
+
+            string described = original.DescribeUser();
+
+            var reparsed = Garnet.server.ACL.ACLParser.ParseACLRule(described);
+
+            var allow = reparsed.CopyCommandPermissionSet().CustomAllowed;
+            var deny = reparsed.CopyCommandPermissionSet().CustomDenied;
+
+            ClassicAssert.IsTrue(allow.Contains("JSON.SET"));
+            ClassicAssert.IsTrue(allow.Contains("FOO.BAR"));
+            ClassicAssert.IsFalse(allow.Contains("JSON.GET"));
+            ClassicAssert.IsTrue(deny.Contains("JSON.GET"));
         }
 
         [Test]
@@ -621,8 +600,7 @@ namespace Garnet.test.Resp.ACL
             using var alice = await ConnectAsync("alice", "pw");
 
             var ok = await alice.ExecuteForStringResultAsync("NOOPTXN").ConfigureAwait(false);
-            // NoOp returns SUCCESS via the default txn response; we only care the call wasn't denied.
-            ClassicAssert.IsNotNull(ok);
+            ClassicAssert.AreEqual("OK", ok);
         }
 
         [Test]
@@ -650,7 +628,54 @@ namespace Garnet.test.Resp.ACL
             using var alice = await ConnectAsync("alice", "pw");
 
             var ok = await alice.ExecuteForStringResultAsync("NOOPPROC").ConfigureAwait(false);
-            ClassicAssert.IsNotNull(ok);
+            ClassicAssert.AreEqual("OK", ok);
+        }
+
+        // ----- Strict-mode startup validation (integration) ------------------------------------
+
+        [Test]
+        public void StrictMode_StartupFails_WhenAclFileReferencesUnregisteredCustomCommand()
+        {
+            // ValidateCustomCommandACLs runs in the GarnetServer constructor, so strict mode
+            // has to be set on opts before construction (the shared SetUp server isn't useful here).
+            server.Dispose();
+
+            var aclFile = Path.Join(TestUtils.MethodTestDir, "strict.acl");
+            File.WriteAllText(aclFile, "user alice on >pw +unregistered_probe\n");
+
+            var ex = Assert.Throws<GarnetException>(() =>
+            {
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                    defaultPassword: DefaultPassword, useAcl: true, aclFile: aclFile,
+                    aclStrictCustomCommands: true, enableLua: false,
+                    enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
+            });
+            StringAssert.Contains("ACL strict mode", ex.Message);
+            StringAssert.Contains("UNREGISTERED_PROBE", ex.Message.ToUpperInvariant());
+            StringAssert.Contains("ALICE", ex.Message.ToUpperInvariant());
+
+            // Constructor threw before assignment; let TearDown's null-safe Dispose no-op.
+            server = null;
+        }
+
+        [Test]
+        public void LenientMode_StartupSucceeds_WhenAclFileReferencesUnregisteredCustomCommand()
+        {
+            // Default (lenient) mode must boot cleanly despite the unresolved reference.
+            server.Dispose();
+
+            var aclFile = Path.Join(TestUtils.MethodTestDir, "lenient.acl");
+            File.WriteAllText(aclFile, "user alice on >pw +unregistered_probe\n");
+
+            Assert.DoesNotThrow(() =>
+            {
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                    defaultPassword: DefaultPassword, useAcl: true, aclFile: aclFile,
+                    aclStrictCustomCommands: false, enableLua: false,
+                    enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
+            });
+
+            Assert.DoesNotThrow(() => server.Start());
         }
     }
 

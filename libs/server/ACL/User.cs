@@ -90,11 +90,6 @@ namespace Garnet.server.ACL
         => this._enabledCommands.CanRunCustomCommand(genericCmd, customName);
 
         /// <summary>
-        /// Maximum number of per-name custom command entries (allow + deny combined) per user.
-        /// </summary>
-        internal const int MaxCustomCommandsPerUser = 512;
-
-        /// <summary>
         /// Read-only snapshot of custom command names explicitly allowed for this user.
         /// </summary>
         public IReadOnlySet<string> CustomCommandsAllowed => _enabledCommands.CustomAllowed;
@@ -373,10 +368,17 @@ namespace Garnet.server.ACL
         {
             ArgumentNullException.ThrowIfNull(customName);
 
+            // Reject anything ACLParser would reject so the persisted Description can't be poisoned
+            // by callers bypassing the parser (e.g. "foo +@all" would re-parse as two tokens on reload).
+            if (!ACLParser.IsValidCustomCommandName(customName))
+            {
+                throw new ACLException($"Invalid custom command name '{customName}'");
+            }
+
             string normalized = customName.ToUpperInvariant();
 
             CommandPermissionSet prev = this._enabledCommands;
-            string descUpdate = $"+{customName.ToLowerInvariant()}";
+            string descUpdate = $"+{normalized.ToLowerInvariant()}";
 
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
@@ -389,16 +391,6 @@ namespace Garnet.server.ACL
                     (oldPerms.CustomAllowed.Contains(normalized) && !oldPerms.CustomDenied.Contains(normalized)))
                 {
                     return;
-                }
-
-                // A swap (deny -> allow for the same name) is net-zero and must succeed even at cap;
-                // otherwise an operator at the cap couldn't toggle an existing entry.
-                bool inAllowed = oldPerms.CustomAllowed.Contains(normalized);
-                bool inDenied = oldPerms.CustomDenied.Contains(normalized);
-                bool wouldGrow = !inAllowed && !inDenied;
-                if (wouldGrow && oldPerms.CustomEntryCount >= MaxCustomCommandsPerUser)
-                {
-                    throw new ACLException($"Too many custom command ACL entries for user '{Name}' (max {MaxCustomCommandsPerUser})");
                 }
 
                 updated = oldPerms.Copy();
@@ -417,10 +409,16 @@ namespace Garnet.server.ACL
         {
             ArgumentNullException.ThrowIfNull(customName);
 
+            // See AddCustomCommand: same syntax validation, same reason.
+            if (!ACLParser.IsValidCustomCommandName(customName))
+            {
+                throw new ACLException($"Invalid custom command name '{customName}'");
+            }
+
             string normalized = customName.ToUpperInvariant();
 
             CommandPermissionSet prev = this._enabledCommands;
-            string descUpdate = $"-{customName.ToLowerInvariant()}";
+            string descUpdate = $"-{normalized.ToLowerInvariant()}";
 
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
@@ -434,17 +432,6 @@ namespace Garnet.server.ACL
                     !oldPerms.CustomAllowed.Contains(normalized))
                 {
                     return;
-                }
-
-                // A swap (allow -> deny for the same name) is net-zero; see AddCustomCommand.
-                bool inAllowed = oldPerms.CustomAllowed.Contains(normalized);
-                bool inDenied = oldPerms.CustomDenied.Contains(normalized);
-                bool wouldGrow = !inAllowed && !inDenied;
-                if (wouldGrow &&
-                    oldPerms != CommandPermissionSet.All &&
-                    oldPerms.CustomEntryCount >= MaxCustomCommandsPerUser)
-                {
-                    throw new ACLException($"Too many custom command ACL entries for user '{Name}' (max {MaxCustomCommandsPerUser})");
                 }
 
                 updated = oldPerms.Copy();

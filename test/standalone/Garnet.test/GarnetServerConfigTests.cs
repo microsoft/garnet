@@ -1194,6 +1194,71 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AclStrictCustomCommands()
+        {
+            // Command line args
+            {
+                // Default (option unset) - must apply the strict default (true).
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Explicit true is accepted.
+                {
+                    var args = new[] { "--acl-strict-custom-commands", "true" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Explicit false overrides the strict default (operator opt-out path).
+                {
+                    var args = new[] { "--acl-strict-custom-commands", "false" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AclStrictCustomCommands);
+                }
+            }
+
+            // JSON args
+            {
+                // Default (key omitted) - falls back to strict.
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // True is accepted.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // False is accepted.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Invalid value is rejected.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
         public void EnableVectorSetPreview()
         {
             // Command line args

@@ -111,7 +111,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |
 | **ClusterPassword** | ```--cluster-password``` | ```string``` |  | Password to authenticate intra-cluster communication with. |
 | **AclFile** | ```--acl-file``` | ```string``` |  | External ACL user file. |
-| **AclStrictCustomCommands** | ```--acl-strict-custom-commands``` | ```bool``` |  | If true, the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. If false (default), unresolved names are loaded as-is and logged as warnings. |
+| **AclStrictCustomCommands** | ```--acl-strict-custom-commands``` | ```bool``` |  | If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings. |
 | **AadAuthority** | ```--aad-authority``` | ```string``` |  | The authority of AAD authentication. |
 | **AadAudiences** | ```--aad-audiences``` | ```string``` |  | The audiences of AAD token for AAD authentication. Should be a comma separated string. |
 | **AadIssuers** | ```--aad-issuers``` | ```string``` |  | The issuers of AAD token for AAD authentication. Should be a comma separated string. |

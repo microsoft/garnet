@@ -26,8 +26,10 @@ namespace Garnet.server.ACL
         // Per-name allow/deny sets for custom (extension) commands. These names live outside
         // the bitmap range because custom RespCommand IDs are assigned dynamically above
         // LastValidCommand. OrdinalIgnoreCase matches CustomCommandManager's normalization.
+#pragma warning disable IDE0301 // Simplify collection initialization. The suggested '[]' has no target type for FrozenSet<T> on net8.0 (gained [CollectionBuilder] in net9.0).
         private FrozenSet<string> _customAllowed = FrozenSet<string>.Empty;
         private FrozenSet<string> _customDenied = FrozenSet<string>.Empty;
+#pragma warning restore IDE0301
 
         private CommandPermissionSet(string description)
             : this(new ulong[CommandListLength], description)
@@ -165,11 +167,6 @@ namespace Garnet.server.ACL
                 _customDenied = deniedCopy.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
             }
         }
-
-        /// <summary>
-        /// Total count of per-name custom command entries (allow + deny).
-        /// </summary>
-        internal int CustomEntryCount => _customAllowed.Count + _customDenied.Count;
 
         internal FrozenSet<string> CustomAllowed => _customAllowed;
 
