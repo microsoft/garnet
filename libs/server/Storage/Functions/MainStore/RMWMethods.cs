@@ -1330,7 +1330,7 @@ namespace Garnet.server
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
                     }
-                    else if (input.arg1 == VectorManager.VADDAppendLogArg)
+                    else if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
                     {
                         // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
                         oldValue.CopyTo(dstLogRecord.ValueSpan);

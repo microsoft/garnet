@@ -361,7 +361,7 @@ namespace Garnet.server
 
                     case RespCommand.VADD:
                     case RespCommand.VREM:
-                        if (input.arg1 == VectorManager.VADDAppendLogArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
                         {
                             // During replication we might trigger a CU, in which case... make sure there's space for the index we'll copy over
                             fieldInfo.ValueSize = VectorManager.IndexSize;
