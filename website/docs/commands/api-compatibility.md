@@ -413,3 +413,15 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [RI.EXISTS](range-index.md#riexists) | ➕ | Preview |
 |  | [RI.CONFIG](range-index.md#riconfig) | ➕ | Preview |
 |  | [RI.METRICS](range-index.md#rimetrics) | ➕ | Preview |
+| <span id="vectorset">**VECTOR SET (Preview)**</span> | [VADD](vector-sets.md#vadd) | ➕ | Preview |
+|  | [VSIM](vector-sets.md#vsim) | ➕ | Preview |
+|  | [VREM](vector-sets.md#vrem) | ➕ | Preview |
+|  | [VEMB](vector-sets.md#vemb) | ➕ | Preview (no `RAW`) |
+|  | [VDIM](vector-sets.md#vdim) | ➕ | Preview |
+|  | [VINFO](vector-sets.md#vinfo) | ➕ | Preview |
+|  | [VGETATTR](vector-sets.md#vgetattr) | ➕ | Preview |
+|  | VCARD | ➖ | Not yet implemented |
+|  | VISMEMBER | ➖ | Not yet implemented |
+|  | VLINKS | ➖ | Not yet implemented |
+|  | VRANDMEMBER | ➖ | Not yet implemented |
+|  | VSETATTR | ➖ | Not yet implemented |
