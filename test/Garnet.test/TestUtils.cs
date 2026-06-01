@@ -279,7 +279,7 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
-            string aofMemorySize = "64m",
+            string aofMemorySize = "128m",
             string aofPageSize = null
         )
         {
@@ -494,7 +494,7 @@ namespace Garnet.test
             string PageSize = default,
             string SegmentSize = "1g",
             bool FastAofTruncate = false,
-            string AofMemorySize = "64m",
+            string AofMemorySize = "128m",
             bool OnDemandCheckpoint = false,
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
@@ -639,7 +639,7 @@ namespace Garnet.test
             string pageSize = default,
             string segmentSize = "1g",
             bool fastAofTruncate = false,
-            string aofMemorySize = "64m",
+            string aofMemorySize = "128m",
             bool onDemandCheckpoint = false,
             int commitFrequencyMs = 0,
             bool useAofNullDevice = false,

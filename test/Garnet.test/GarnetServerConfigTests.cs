@@ -1374,13 +1374,77 @@ namespace Garnet.test
             }
 
             // AofPageSize > AofSegmentSize should throw.
-            args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m"];
+            args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m", "--aof-memory", "16m"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(0, invalidOptions.Count);
             serverOptions = options.GetServerOptions();
             var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, null, out _));
-            ClassicAssert.IsTrue(ex.Message.Contains("AOF Page size cannot be more than the AOF segment size."));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofSegmentSize"));
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-segment-size"));
+
+            // AofMemorySize == AofPageSize should throw with a Garnet-specific message naming both
+            // AofMemorySize and AofPageSize (regression test for misleading
+            // "MemorySize must be at least twice the page size" error surfaced in issue #1811).
+            args = ["--aof", "--aof-page-size", "64m", "--aof-memory", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofMemorySize"), $"Expected message to mention AofMemorySize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-memory"), $"Expected message to mention --aof-memory, got: {ex.Message}");
+
+            // AofMemorySize == 2 * AofPageSize should be the minimum that succeeds.
+            args = ["--aof", "--aof-page-size", "64m", "--aof-memory", "128m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, null, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1L << 26, logSettings.PageSize);
+                ClassicAssert.AreEqual(1L << 27, logSettings.MemorySize);
+            }
+            finally
+            {
+                logSettings.LogDevice?.Dispose();
+                logSettings.LogCommitManager?.Dispose();
+            }
+
+            // AofPageSize < 2 * (main-log) PageSize should throw, because an AOF entry can be as
+            // large as the underlying main-log record. Regression test for the runtime
+            // "Entry does not fit on page" surfaced in issue #1811.
+            args = ["--aof", "--aof-page-size", "8m", "--aof-memory", "32m", "--page", "16m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("PageSize"), $"Expected message to mention PageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-page-size"), $"Expected message to mention --aof-page-size, got: {ex.Message}");
+
+            // AofPageSize == 2 * (main-log) PageSize should be the minimum that succeeds against the new rule.
+            args = ["--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "16m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, null, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1L << 25, logSettings.PageSize);
+                ClassicAssert.AreEqual(1L << 26, logSettings.MemorySize);
+            }
+            finally
+            {
+                logSettings.LogDevice?.Dispose();
+                logSettings.LogCommitManager?.Dispose();
+            }
         }
     }
 }
