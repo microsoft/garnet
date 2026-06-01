@@ -52,8 +52,6 @@ namespace Tsavorite.core
             private byte _e0;
         }
 
-        private static ConditionallyHoistedKey Empty { get; } = new((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference<byte>([])), 0);
-
         private readonly byte* keyPtr;
         private int keyLen;
         private readonly byte* namespacePtr;
@@ -233,7 +231,7 @@ namespace Tsavorite.core
             if (key.IsEmpty)
             {
                 Debug.Assert(!key.HasNamespace, "Empty key should never have a namespace");
-                return Empty;
+                return default;
             }
 
             var keyBytes = key.KeyBytes;
