@@ -49,9 +49,9 @@ namespace Tsavorite.core
         public Status Read(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
+            Session.functions.PreSingleKeyConsistentRead(hash);
             var status = BasicContext.Read(key, ref input, ref output, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -99,9 +99,9 @@ namespace Tsavorite.core
         public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
+            Session.functions.PreSingleKeyConsistentRead(hash);
             var status = BasicContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -126,9 +126,9 @@ namespace Tsavorite.core
             do
             {
                 Thread.Yield();
-                Session.functions.BeforeConsistentReadKeyBatchCallback(batch.Parameters);
+                Session.functions.PreBatchKeyConsistentReadCallback(batch.Parameters);
                 BasicContext.ReadWithPrefetch(ref batch, userContext);
-            } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
+            } while (!Session.functions.PostBatchKeyConsistentReadCallback(batch.Count));
         }
 
         #endregion
@@ -139,7 +139,7 @@ namespace Tsavorite.core
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             var status = BasicContext.CompletePending(wait, spinWaitForCommit);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -147,7 +147,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             var status = BasicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -155,14 +155,14 @@ namespace Tsavorite.core
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             await BasicContext.CompletePendingAsync(waitForCommit, token).ConfigureAwait(false);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
         }
 
         /// <inheritdoc/>
         public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             var status = BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return await status.ConfigureAwait(false);
         }
 

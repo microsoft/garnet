@@ -120,9 +120,9 @@ namespace Tsavorite.core
         public Status Read(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
+            Session.functions.PreSingleKeyConsistentRead(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -170,9 +170,9 @@ namespace Tsavorite.core
         public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
+            Session.functions.PreSingleKeyConsistentRead(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -197,9 +197,9 @@ namespace Tsavorite.core
             do
             {
                 Thread.Yield();
-                Session.functions.BeforeConsistentReadKeyBatchCallback(batch.Parameters);
+                Session.functions.PreBatchKeyConsistentReadCallback(batch.Parameters);
                 TransactionalContext.ReadWithPrefetch(ref batch, userContext);
-            } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
+            } while (!Session.functions.PostBatchKeyConsistentReadCallback(batch.Count));
         }
 
         #endregion Read Methods (To be overridden with custom logic)

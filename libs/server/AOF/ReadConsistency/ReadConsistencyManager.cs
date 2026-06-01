@@ -170,7 +170,7 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="timeout"></param>
         /// <param name="ct"></param>
-        public void BeforeConsistentReadKey(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
+        public void PreSingleKeyConsistentRead(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             // Check version
             CheckConsistencyManagerVersion(ref replicaReadSessionContext);
@@ -187,7 +187,7 @@ namespace Garnet.server
         ///     we cannot be certain at prepare phase what is the actual sequence number.
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
-        public void AfterConsistentReadKey(ref ReplicaReadSessionContext replicaReadSessionContext)
+        public void PostSingleKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext)
         {
             replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(
                 replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(replicaReadSessionContext.lastHash));
@@ -201,7 +201,7 @@ namespace Garnet.server
         /// <param name="timeout"></param>
         /// <param name="ct"></param>
         /// <param name="hash"></param>
-        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, TimeSpan timeout, CancellationToken ct, out long hash)
+        public void PreBatchKeyConsistentRead(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, TimeSpan timeout, CancellationToken ct, out long hash)
         {
             // Verify key freshness
             hash = GarnetLog.HASH(key);
@@ -218,7 +218,7 @@ namespace Garnet.server
         /// <param name="hash"></param>
         /// <param name="batchReadContext"></param>
         /// <returns></returns>
-        public bool AfterConsistentReadKeyBatch(long hash, ref ReplicaReadSessionContext batchReadContext)
+        public bool PreBatchKeyConsistentRead(long hash, ref ReplicaReadSessionContext batchReadContext)
         {
             var keySequenceNumber = GetKeySequenceNumber(hash);
             var mSSN = batchReadContext.maximumSessionSequenceNumber;

@@ -122,13 +122,13 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void BeforeConsistentReadKeyCallback(long hash)
+        public void PreSingleKeyConsistentRead(long hash)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
             try
             {
-                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(hash & long.MaxValue, ref replicaReadContext, readTimeout, consistentReadCts.Token);
+                appendOnlyFile.readConsistencyManager.PreSingleKeyConsistentRead(hash & long.MaxValue, ref replicaReadContext, readTimeout, consistentReadCts.Token);
             }
             finally
             {
@@ -137,17 +137,17 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AfterConsistentReadKeyCallback()
-            => appendOnlyFile.readConsistencyManager.AfterConsistentReadKey(ref replicaReadContext);
+        public void PostSingleKeyConsistentReadCallback()
+            => appendOnlyFile.readConsistencyManager.PostSingleKeyConsistentRead(ref replicaReadContext);
 
         /// <summary>
         /// Initialize context for read key batch.
         /// </summary>
         /// <param name="parameters"></param>
-        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<PinnedSpanByte> parameters)
+        public void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
             try
             {
                 var keyCount = parameters.Length;
@@ -167,7 +167,7 @@ namespace Garnet.server
                 for (var i = 0; i < parameters.Length; i++)
                 {
                     var key = parameters[i];
-                    consistencyManager.BeforeConsistentReadKeyBatch(key.ReadOnlySpan, ref batchReadContext, readTimeout, consistentReadCts.Token, out var hash);
+                    consistencyManager.PreBatchKeyConsistentRead(key.ReadOnlySpan, ref batchReadContext, readTimeout, consistentReadCts.Token, out var hash);
                     keyHashCache[i] = hash;
                 }
             }
@@ -182,13 +182,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyCount"></param>
         /// <returns></returns>
-        public bool AfterConsistentReadKeyBatch(int keyCount)
+        public bool PostBatchKeyConsistentReadCallback(int keyCount)
         {
             var consistencyManager = appendOnlyFile.readConsistencyManager;
             for (var i = 0; i < keyCount; i++)
             {
                 var hash = keyHashCache[i];
-                if (!consistencyManager.AfterConsistentReadKeyBatch(hash, ref batchReadContext))
+                if (!consistencyManager.PreBatchKeyConsistentRead(hash, ref batchReadContext))
                     return false;
             }
 

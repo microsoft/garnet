@@ -44,12 +44,15 @@ namespace Garnet.server
             waiterHead = null;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static long GetSketchSlot(long hash) => (hash >> 32) & SketchSlotMask;
+
         /// <summary>
         /// Gets the current frontier sequence number associated with the specified hash value.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetFrontierSequenceNumber(long hash)
-            => Math.Max(Volatile.Read(ref Unsafe.AsRef(in sketch[(hash >>> 32) & SketchSlotMask])),
+            => Math.Max(Volatile.Read(ref Unsafe.AsRef(in sketch[GetSketchSlot(hash)])),
                         Volatile.Read(ref Unsafe.AsRef(in sketchMaxValue)));
 
         /// <summary>
@@ -57,7 +60,7 @@ namespace Garnet.server
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeySequenceNumber(long hash)
-            => Volatile.Read(ref Unsafe.AsRef(in sketch[(hash >>> 32) & SketchSlotMask]));
+            => Volatile.Read(ref Unsafe.AsRef(in sketch[GetSketchSlot(hash)]));
 
         /// <summary>
         /// Updates the maximum observed sequence number.
@@ -75,7 +78,7 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref sketch[(hash >>> 32) & SketchSlotMask], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref sketch[GetSketchSlot(hash)], sequenceNumber, out _);
             _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
             SignalWaiters();
         }
