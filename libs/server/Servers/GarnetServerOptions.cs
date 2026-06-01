@@ -808,7 +808,7 @@ namespace Garnet.server
         public int ValueOverflowThresholdBytes()
         {
             const long MinBytes = 64L;                  // LogSettings.MinMaxInlineSize
-            const long MaxBytes = 0xFFFFFE;             // LogSettings.MaxInlineValueSizeLimit
+            const long MaxBytes = 0x3FFFFE;             // LogSettings.MaxInlineValueSizeLimit
 
             if (string.IsNullOrEmpty(ValueOverflowThreshold))
                 throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");

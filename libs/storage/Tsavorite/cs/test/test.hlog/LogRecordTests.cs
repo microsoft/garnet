@@ -263,20 +263,157 @@ namespace Tsavorite.test.LogRecordTests
             RestoreToOriginal(value, ref sizeInfo, ref logRecord, expectedFillerLength, eTag, expiration);
         }
 
-        [Test]
-        [Category(LogRecordCategory), Category(SmokeTestCategory)]
-        [Explicit("TODO CopyDiskLogRecordToLogRecord")]
-        public void CopyDiskLogRecordToLogRecord()
+        // ── Max inline key/value size limit tests ─────────────────────────────────────
+        //
+        // These verify the boundary between inline (key/value bytes stored directly in the record) and overflow
+        // (key/value stored on the heap via OverflowByteArray; record holds only an objectId slot).
+        //   - "AtLimit" tests use a size exactly equal to LogSettings.MaxInline*SizeLimit and verify the field stays inline.
+        //   - "AboveLimit" tests use a size one byte larger and verify the field becomes overflow.
+        // The decision logic mirrors ObjectAllocatorImpl.PopulateRecordSizeInfo: KeyIsInline iff KeySize <= maxInlineKeySize.
+
+        /// <summary>Apply the inline/overflow decision (mirrors ObjectAllocatorImpl.PopulateRecordSizeInfo) for a given
+        /// max-inline-key and max-inline-value setting, then call CalculateSizes.</summary>
+        static void PopulateBoundarySizeInfo(ref RecordSizeInfo sizeInfo, int maxInlineKey, int maxInlineValue)
         {
-            Assert.Ignore("TODO CopyDiskLogRecordToLogRecord");
+            sizeInfo.word = 0;
+            if (sizeInfo.FieldInfo.KeySize <= maxInlineKey)
+                sizeInfo.SetKeyIsInline();
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
+
+            sizeInfo.MaxInlineValueSize = maxInlineValue;
+            if (!sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValue)
+                sizeInfo.SetValueIsInline();
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
+
+            sizeInfo.CalculateSizes(keySize, valueSize);
         }
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
-        [Explicit("TODO SerializeToMemoryPool")]
-        public void SerializeToMemoryPool()
+        public void MaxInlineKeyAtLimitStaysInline()
         {
-            Assert.Ignore("TODO SerializeToMemoryPool");
+            // A key of EXACTLY MaxInlineKeySizeLimit bytes must remain inline.
+            const int keyLength = LogSettings.MaxInlineKeySizeLimit;     // 0xFFE
+            const int valueLength = 32;
+
+            var sizeInfo = new RecordSizeInfo()
+            {
+                FieldInfo = new() { KeySize = keyLength, ValueSize = valueLength }
+            };
+            PopulateBoundarySizeInfo(ref sizeInfo, maxInlineKey: LogSettings.MaxInlineKeySizeLimit, maxInlineValue: LogSettings.MaxInlineValueSizeLimit);
+
+            Assert.That(sizeInfo.KeyIsInline, Is.True, "Key at MaxInlineKeySizeLimit should be inline");
+            Assert.That(sizeInfo.ValueIsInline, Is.True);
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            ref var dataHeader = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            _ = dataHeader.Initialize(in sizeInfo, out var keyAddress, out _ /*nsAddr*/, out var valueAddress, nativePointer);
+
+            // After Initialize: KeyIsInline bit set; raw KeyLength is the full keyLength; key/value addresses correct.
+            Assert.That(dataHeader.KeyIsInline, Is.True);
+            Assert.That(dataHeader.GetKeyLengthRaw(), Is.EqualTo(keyLength));
+            Assert.That(dataHeader.KeyLength, Is.EqualTo(keyLength));
+            var (keyLengthBack, keyAddressBack) = dataHeader.GetKeyFieldInfo(nativePointer);
+            Assert.That(keyLengthBack, Is.EqualTo(keyLength));
+            Assert.That(keyAddressBack, Is.EqualTo(keyAddress));
+            Assert.That(valueAddress, Is.EqualTo(keyAddress + keyLength), "ValueAddress must immediately follow the inline key bytes");
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void KeyAboveMaxInlineKeyBecomesOverflow()
+        {
+            // A key ONE BYTE ABOVE MaxInlineKeySizeLimit must become overflow.
+            const int keyLength = LogSettings.MaxInlineKeySizeLimit + 1;     // 0xFFF
+            const int valueLength = 32;
+
+            var sizeInfo = new RecordSizeInfo()
+            {
+                FieldInfo = new() { KeySize = keyLength, ValueSize = valueLength }
+            };
+            PopulateBoundarySizeInfo(ref sizeInfo, maxInlineKey: LogSettings.MaxInlineKeySizeLimit, maxInlineValue: LogSettings.MaxInlineValueSizeLimit);
+
+            Assert.That(sizeInfo.KeyIsInline, Is.False, "Key above MaxInlineKeySizeLimit must be overflow");
+            Assert.That(sizeInfo.InlineKeySize, Is.EqualTo(ObjectIdMap.ObjectIdSize), "Overflow keys occupy only an ObjectIdSize slot inline");
+            Assert.That(sizeInfo.ValueIsInline, Is.True);
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            ref var dataHeader = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            _ = dataHeader.Initialize(in sizeInfo, out var keyAddress, out _ /*nsAddr*/, out var valueAddress, nativePointer);
+
+            // After Initialize: KeyIsInline=false; KeyLength property returns ObjectIdSize for non-inline.
+            Assert.That(dataHeader.KeyIsInline, Is.False);
+            Assert.That(dataHeader.KeyIsOverflow, Is.True);
+            Assert.That(dataHeader.KeyLength, Is.EqualTo(ObjectIdMap.ObjectIdSize), "Property getter returns ObjectIdSize for non-inline keys");
+            var (keyLengthBack, keyAddressBack) = dataHeader.GetKeyFieldInfo(nativePointer);
+            Assert.That(keyLengthBack, Is.EqualTo(ObjectIdMap.ObjectIdSize));
+            Assert.That(keyAddressBack, Is.EqualTo(keyAddress));
+            Assert.That(valueAddress, Is.EqualTo(keyAddress + ObjectIdMap.ObjectIdSize), "ValueAddress must immediately follow the overflow key's objectId slot");
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void MaxInlineValueAtLimitStaysInline()
+        {
+            // A value of EXACTLY MaxInlineValueSizeLimit bytes must remain inline.
+            // This allocates ~4 MB of native memory for the record; allowable in a unit test.
+            const int keyLength = 32;
+            const int valueLength = LogSettings.MaxInlineValueSizeLimit;     // 0x3FFFFE (~4 MB)
+
+            var sizeInfo = new RecordSizeInfo()
+            {
+                FieldInfo = new() { KeySize = keyLength, ValueSize = valueLength }
+            };
+            PopulateBoundarySizeInfo(ref sizeInfo, maxInlineKey: LogSettings.MaxInlineKeySizeLimit, maxInlineValue: LogSettings.MaxInlineValueSizeLimit);
+
+            Assert.That(sizeInfo.KeyIsInline, Is.True);
+            Assert.That(sizeInfo.ValueIsInline, Is.True, "Value at MaxInlineValueSizeLimit should be inline");
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            ref var dataHeader = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            _ = dataHeader.Initialize(in sizeInfo, out var keyAddress, out _ /*nsAddr*/, out var valueAddress, nativePointer);
+
+            // After Initialize: ValueIsInline bit set; raw ValueLength is the full valueLength.
+            Assert.That(dataHeader.ValueIsInline, Is.True);
+            Assert.That(dataHeader.GetValueLengthRaw(), Is.EqualTo(valueLength));
+            Assert.That(dataHeader.ValueLength, Is.EqualTo(valueLength));
+            var (valueLengthBack, valueAddressBack) = dataHeader.GetValueFieldInfo(nativePointer);
+            Assert.That(valueLengthBack, Is.EqualTo(valueLength));
+            Assert.That(valueAddressBack, Is.EqualTo(valueAddress));
+            Assert.That(valueAddress, Is.EqualTo(keyAddress + keyLength));
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void ValueAboveMaxInlineValueBecomesOverflow()
+        {
+            // A value ONE BYTE ABOVE MaxInlineValueSizeLimit must become overflow.
+            const int keyLength = 32;
+            const int valueLength = LogSettings.MaxInlineValueSizeLimit + 1;     // 0x3FFFFF (the field's max raw value)
+
+            var sizeInfo = new RecordSizeInfo()
+            {
+                FieldInfo = new() { KeySize = keyLength, ValueSize = valueLength }
+            };
+            PopulateBoundarySizeInfo(ref sizeInfo, maxInlineKey: LogSettings.MaxInlineKeySizeLimit, maxInlineValue: LogSettings.MaxInlineValueSizeLimit);
+
+            Assert.That(sizeInfo.KeyIsInline, Is.True);
+            Assert.That(sizeInfo.ValueIsInline, Is.False, "Value above MaxInlineValueSizeLimit must be overflow");
+            Assert.That(sizeInfo.InlineValueSize, Is.EqualTo(ObjectIdMap.ObjectIdSize), "Overflow values occupy only an ObjectIdSize slot inline");
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            ref var dataHeader = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            _ = dataHeader.Initialize(in sizeInfo, out var keyAddress, out _ /*nsAddr*/, out var valueAddress, nativePointer);
+
+            // After Initialize: ValueIsInline=false; ValueIsOverflow=true; ValueLength property returns ObjectIdSize.
+            Assert.That(dataHeader.ValueIsInline, Is.False);
+            Assert.That(dataHeader.ValueIsOverflow, Is.True);
+            Assert.That(dataHeader.ValueIsObject, Is.False);
+            Assert.That(dataHeader.ValueLength, Is.EqualTo(ObjectIdMap.ObjectIdSize), "Property getter returns ObjectIdSize for non-inline values");
+            var (valueLengthBack, valueAddressBack) = dataHeader.GetValueFieldInfo(nativePointer);
+            Assert.That(valueLengthBack, Is.EqualTo(ObjectIdMap.ObjectIdSize));
+            Assert.That(valueAddressBack, Is.EqualTo(valueAddress));
+            Assert.That(valueAddress, Is.EqualTo(keyAddress + keyLength));
         }
 
         private void InitializeRecord<TKey>(TKey key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
