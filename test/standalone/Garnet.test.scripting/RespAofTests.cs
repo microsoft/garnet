@@ -1166,7 +1166,9 @@ namespace Garnet.test
 
             server.Dispose(false);
             // 4 KB AOF page so we can trigger the oversize path with a small payload.
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, aofPageSize: "4k");
+            // Also shrink main-log PageSize to 1 KB so we satisfy the AofPageSize >= 2 * PageSize
+            // startup validation introduced for https://github.com/microsoft/garnet/issues/1811.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, pageSize: "1k", aofPageSize: "4k");
             server.Start();
 
             // 1) SET with a value larger than the AOF page. The AOF Enqueue throws and StackExchange.Redis

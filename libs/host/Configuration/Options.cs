@@ -193,11 +193,11 @@ namespace Garnet
         public bool? EnableAOF { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit")]
+        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit. Must be at least twice AofPageSize.")]
         public string AofMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes (rounds down to power of 2). Must be at least twice the main-log PageSize, since an AOF entry can be as large as the underlying main-log record being written; object commands like LPUSH/HSET can push this even higher. When you raise this, also raise --aof-memory to at least 2x this value.")]
         public string AofPageSize { get; set; }
 
         [MemorySizeValidation]

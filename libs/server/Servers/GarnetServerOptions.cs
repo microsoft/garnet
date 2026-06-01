@@ -64,12 +64,12 @@ namespace Garnet.server
         /// <summary>
         /// Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.
         /// </summary>
-        public string AofMemorySize = "64m";
+        public string AofMemorySize = "128m";
 
         /// <summary>
         /// Aof page size in bytes (rounds down to power of 2).
         /// </summary>
-        public string AofPageSize = "4m";
+        public string AofPageSize = "32m";
 
         /// <summary>
         /// Size of each AOF segment (file) in bytes on disk (rounds down to power of 2).
@@ -868,16 +868,52 @@ namespace Garnet.server
             var pageSizeBits = AofPageSizeBits();
             var segmentSizeBits = AofSegmentSizeBits();
 
-            if (pageSizeBits > memorySizeBits)
+            // Tsavorite requires MemorySize >= 2 * PageSize (so at least two pages fit in memory).
+            // With power-of-two rounded sizes this means memorySizeBits >= pageSizeBits + 1.
+            // Catch this here so we can produce a Garnet-specific error that names the actual
+            // AofMemorySize / AofPageSize config options, rather than the generic Tsavorite
+            // "MemorySize must be at least twice the page size" message which does not say AOF.
+            if (memorySizeBits <= pageSizeBits)
             {
-                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+                var effectiveMemory = PrettySize(1L << memorySizeBits);
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var minMemory = PrettySize(1L << (pageSizeBits + 1));
+                var msg = $"AofMemorySize (effective {effectiveMemory} after rounding down to a power of two) " +
+                          $"must be at least twice AofPageSize (effective {effectivePage}). " +
+                          $"Increase --aof-memory to at least {minMemory}, or reduce --aof-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
             }
 
             if (pageSizeBits > segmentSizeBits)
             {
-                logger?.LogError("AOF Page size cannot be more than the AOF segment size.");
-                throw new Exception("AOF Page size cannot be more than the AOF segment size.");
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var effectiveSegment = PrettySize(1L << segmentSizeBits);
+                var msg = $"AofPageSize (effective {effectivePage} after rounding down to a power of two) " +
+                          $"cannot be larger than AofSegmentSize (effective {effectiveSegment}). " +
+                          $"Increase --aof-segment-size to at least {effectivePage}, or reduce --aof-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
+            }
+
+            // AofPageSize must be at least twice the main-log PageSize. An AOF entry mirrors a single
+            // main-log write (key + value/input + small overhead); raw-string SETs can be as large as
+            // the main-log PageSize (values above MaxInlineValueSize overflow to the heap on the main
+            // store but are still written in full to the AOF), and object commands like LPUSH/HSET can
+            // push the AOF entry even higher. Throw a clear error here so users do not hit the runtime
+            // "Entry does not fit on page" path with a stalled session.
+            var mainPageSizeBits = PageSizeBits();
+            if (pageSizeBits < mainPageSizeBits + 1)
+            {
+                var effectiveAofPage = PrettySize(1L << pageSizeBits);
+                var effectiveMainPage = PrettySize(1L << mainPageSizeBits);
+                var minAofPage = PrettySize(1L << (mainPageSizeBits + 1));
+                var msg = $"AofPageSize (effective {effectiveAofPage} after rounding down to a power of two) " +
+                          $"must be at least twice the main-log PageSize (effective {effectiveMainPage}). " +
+                          $"Increase --aof-page-size to at least {minAofPage} (and --aof-memory to at least {PrettySize(1L << (mainPageSizeBits + 2))}), " +
+                          $"or reduce --page.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
             }
 
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
