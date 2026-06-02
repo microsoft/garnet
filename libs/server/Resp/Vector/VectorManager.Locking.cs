@@ -136,7 +136,7 @@ namespace Garnet.server
 
                     if (needsRecreate)
                     {
-                        if (!takeExclusiveLock)
+                        if (!lockToken.IsExclusive)
                         {
                             // Try to promote
                             if (!vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
@@ -307,7 +307,7 @@ namespace Garnet.server
 
                     if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                     {
-                        if (!takeExclusiveLock)
+                        if (!lockToken.IsExclusive)
                         {
                             if (!vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
                             {

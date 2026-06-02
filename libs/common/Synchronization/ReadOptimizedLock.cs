@@ -99,13 +99,13 @@ namespace Garnet.common
             => new(LockType.Shared, token);
 
             /// <summary>
-            /// Create a token for an exclusive lock acquistion of a single hash.
+            /// Create a token for an exclusive lock acquisition of a single hash.
             /// </summary>
             internal static LockToken CreateExclusive(int token)
             => new(LockType.Exclusive, token);
 
             /// <summary>
-            /// Create a token for an exclusive lock acquistion of all possible hashes.
+            /// Create a token for an exclusive lock acquisition of all possible hashes.
             /// </summary>
             internal static LockToken CreateAllExclusive()
             => new(LockType.AllExclusive, -1);
@@ -271,9 +271,8 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Releaes a lock previously acquired with <see cref="TryAcquireSharedLock"/>, <see cref="AcquireSharedLock"/>, <see cref="TryAcquireExclusiveLock"/>, <see cref="AcquireExclusiveLock"/>, <see cref="TryPromoteSharedLock"/>, or <see cref="AcquireAllExclusiveLock"/>.
+        /// Releases a lock previously acquired with <see cref="TryAcquireSharedLock"/>, <see cref="AcquireSharedLock"/>, <see cref="TryAcquireExclusiveLock"/>, <see cref="AcquireExclusiveLock"/>, <see cref="TryPromoteSharedLock"/>, or <see cref="AcquireAllExclusiveLock"/>.
         /// </summary>
-        /// <param name="lockToken"></param>
         public readonly void ReleaseLock(LockToken lockToken)
         {
             if (lockToken.type == LockType.Exclusive)
