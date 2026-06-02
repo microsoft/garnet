@@ -375,6 +375,12 @@ namespace Garnet.server
         public int DeviceCompletionThreads = 1;
 
         /// <summary>
+        /// Per-device max number of in-flight IOs (<see cref="IDevice.ThrottleLimit"/>).
+        /// 0 means "use the device's built-in default" (120 for the in-box Tsavorite devices).
+        /// </summary>
+        public int DeviceThrottleLimit = 0;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -676,11 +682,12 @@ namespace Garnet.server
                 deviceType: DeviceType,
                 ioBackend: DeviceIoBackend,
                 numCompletionThreads: DeviceCompletionThreads,
+                throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
                 logger: logger);
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
-                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct})", DeviceType, DeviceIoBackend, DeviceCompletionThreads);
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
             else
-                logger?.LogInformation("Using device type {deviceType}", DeviceType);
+                logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");

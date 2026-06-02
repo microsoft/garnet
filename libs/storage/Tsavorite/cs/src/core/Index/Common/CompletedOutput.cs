@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Tsavorite.core
 {
@@ -77,7 +78,17 @@ namespace Tsavorite.core
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public readonly ConditionallyHoistedKey Key => keyContainer;
+        /// <remarks>
+        /// Returned by <c>ref readonly</c> (via <see cref="UnscopedRefAttribute"/>) because
+        /// <see cref="ConditionallyHoistedKey"/> may carry its key bytes inline; a by-value
+        /// copy would alias the temp's stack location and any
+        /// <see cref="ConditionallyHoistedKey.KeyBytes"/> span derived from it would dangle
+        /// as soon as the expression returns. The ref aliases the containing
+        /// <see cref="CompletedOutput{TInput,TOutput,TContext}"/>'s storage; the caller must
+        /// not retain the ref or any derived span past the receiver's lifetime.
+        /// </remarks>
+        [UnscopedRef]
+        public readonly ref readonly ConditionallyHoistedKey Key => ref keyContainer;
 
         /// <summary>
         /// The input for this pending operation.
