@@ -55,11 +55,15 @@ COMMON="--file-name $FILE --file-size 17179869184 --sector-size 4096 \
         --segment-size 1073741824 --batch-size 4096 --runtime 8 \
         --throttle-limit 512 --device-type Native"
 
-# libaio: a single kernel io_context is enough. The --completion-threads hint
-# is honoured by uring but ignored by libaio in this build (sharding the libaio
-# io_context was tested and empirically did nothing — kernel mutex is efficient
-# at all tested loads), so pass 1 explicitly for clarity. 16 worker threads is
-# the sweet spot; 32 is noise on this hardware.
+# libaio: kernel io_context capacity is 128 slots per context. With
+# --completion-threads N, N independent kernel io_contexts are created
+# (each with its own wake-up fd and 128-slot kernel ring); submitter
+# threads are assigned to contexts via per-thread affinity (same
+# pick_context() shape as uring's pick_ring()). CT=1 is the recommended
+# default — sharding only helps when many submitter threads contend on a
+# single io_context's mutex inside the kernel. Use a higher CT only if
+# io_submit contention is observable on the target hardware/workload.
+# 16 worker threads is typically the sweet spot; 32 rarely adds throughput.
 numactl --membind=0 --cpunodebind=0 dotnet bin/Release/net10.0/Device.benchmark.dll \
   $COMMON --io-backend libaio --completion-threads 1 --threads 16
 # → ~750K ops/sec

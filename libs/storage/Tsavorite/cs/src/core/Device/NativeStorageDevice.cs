@@ -556,13 +556,9 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="numCompletionThreads">Number of IO completion threads (drainers).
-        /// Each completion thread drains CQEs from one or more io_context shards. The number
-        /// of underlying io_context shards (rings) is derived automatically from the backend
-        /// and numCompletionThreads — uring uses <c>max(4, numCompletionThreads)</c> to escape
-        /// per-ring sq_lock contention even with a single drainer (the single drainer covers
-        /// all rings via the legacy <c>QueueRun</c> compat scanner); libaio uses
-        /// numCompletionThreads directly (the kernel-side per-context mutex is already
-        /// efficient and extra rings don't help). Ignored on Windows (IOCP). When &lt; 1,
+        /// Each drainer is bound 1:1 to its own io_context (libaio) or io_uring ring; the
+        /// number of rings equals numCompletionThreads on both backends. Submitters distribute
+        /// across rings via per-thread affinity. Ignored on Windows (IOCP). When &lt; 1,
         /// treated as 1.</param>
         /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
@@ -573,7 +569,7 @@ namespace Tsavorite.core
                                       int numCompletionThreads = 1,
                                       IoBackend ioBackend = IoBackend.Default,
                                       ILogger logger = null)
-                : base(filename, GetSectorSize(filename), capacity)
+                : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
 
@@ -586,27 +582,19 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
-            // rings always tracks numCompletionThreads (1:1 drainer-to-ring binding). An earlier
-            // experiment used min 4 rings for uring even at ct=1 (single drainer scans all
-            // rings via QueueRun) to escape per-ring sq_lock contention without forcing the
-            // caller to allocate multiple drainer threads. That mode is fundamentally broken:
-            // with per-thread submit affinity (pick_ring's thread_local index), submitters
-            // assigned to ring N>0 never get their completions drained because the single
-            // drainer blocks on ring 0 with a 1s timeout in QueueRun and only briefly polls
-            // the other rings between wake-ups. The result is ~50x throughput degradation on
-            // workloads where submitters land on rings != 0. For uring perf scaling, users
-            // should set numCompletionThreads >= expected_submitter_concurrency; the rings
-            // are then 1:1 with drainers and each ring's completions are continuously drained.
+            // rings always track numCompletionThreads (1:1 drainer-to-ring binding). Each
+            // drainer blocks on its own ring inside QueueRunFor with a timeout, so a single
+            // drainer cannot cover multiple rings without starving any ring whose submitters
+            // produce completions while the drainer is parked on another ring. With per-thread
+            // submit affinity (pick_ring's thread_local index), every ring eventually receives
+            // submissions, so each ring must have its own drainer. For throughput scaling,
+            // callers should set numCompletionThreads >= expected submitter concurrency.
             this.numIoContextsConfig = this.numCompletionThreadsConfig;
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
 
             ThrottleLimit = 120;
             _callbackDelegate = _callback;
-
-            string path = new FileInfo(filename).Directory.FullName;
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
         }
 
         /// <inheritdoc />
@@ -661,11 +649,18 @@ namespace Tsavorite.core
         /// </summary>
         void EnsureNativeDeviceCreated()
         {
-            if (nativeDevice != IntPtr.Zero) return;
+            // Pair Volatile.Read here with Volatile.Write below (line ~764). The fast path
+            // skips the lock; without an acquire barrier on ARM the reader can observe a
+            // non-null nativeDevice while still seeing a stale `results` array reference or
+            // partially-initialised completion-thread state. Volatile.Read on weak-memory
+            // hosts costs a single ldar instruction, no cost on x86 (plain mov).
+            if (Volatile.Read(ref nativeDevice) != IntPtr.Zero) return;
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
             lock (nativeCreateLock)
             {
+                // Inside the lock the acquire fence guarantees we see writes from the prior
+                // owner, so a plain field read is safe here.
                 if (nativeDevice != IntPtr.Zero) return;
                 if (Volatile.Read(ref disposedFlag) != 0)
                     throw new ObjectDisposedException(nameof(NativeStorageDevice));
@@ -708,15 +703,20 @@ namespace Tsavorite.core
                 uint nativeSectorSize = NativeDevice_sector_size(newDevice);
                 if (nativeSectorSize != SectorSize)
                 {
+                    // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
+                    // native probe in NativeDeviceImpl's field initializer) go through the
+                    // same ProbeDioAlignment routine on the same filename with the parent
+                    // directory pre-materialised, so the two values are guaranteed to agree
+                    // on every well-formed host. A drift here is a real ABI / loaded-library
+                    // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
+                    // different branch than the managed wrapper, or the host kernel changed
+                    // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
+                    // caught at the first I/O rather than silently mis-aligning every write.
                     NativeDevice_Destroy(newDevice);
                     throw new TsavoriteException(
-                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed " +
-                        $"{SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the " +
-                        "actual file. The most likely cause is a 4K-native disk where the probe ran " +
-                        "against a directory on a different filesystem than the eventual log file, " +
-                        "or a stale libnative_device.so. Place the log file on a filesystem whose " +
-                        "DIO alignment matches the probe result, or rebuild the native library to " +
-                        "match the managed wrapper.");
+                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
+                        "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
+                        "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
                 }
 
                 if (results == null) results = new NativeResult[MaxResults];
@@ -1161,6 +1161,52 @@ namespace Tsavorite.core
             catch (DllNotFoundException) { }
             catch (EntryPointNotFoundException) { }
             return MinSectorSize;
+        }
+
+        /// <summary>
+        /// Materializes the parent directory of <paramref name="filename"/> (if missing) and
+        /// then probes the kernel's required direct-I/O alignment for the eventual data
+        /// file. Returns the value once and for all — the result is passed to the
+        /// <see cref="StorageDeviceBase"/> ctor argument and the resulting
+        /// <see cref="IDevice.SectorSize"/> is immutable for the lifetime of the device.
+        /// </summary>
+        /// <remarks>
+        /// The probe is deterministic by construction:
+        ///   1. <see cref="Directory.CreateDirectory(string)"/> ensures the parent exists on
+        ///      the target filesystem before the probe runs.
+        ///   2. The probe call is given the parent directory's path (not the not-yet-existing
+        ///      data file), so <c>stat()</c> succeeds on the first try and never walks up to
+        ///      a grandparent on a different filesystem.
+        /// Together these collapse both the managed-side probe and the later native-side
+        /// probe (run from the <c>NativeDeviceImpl</c> field initializer with the same
+        /// parent dir present) onto the same kernel STATX_DIOALIGN / sysfs queue-block-size
+        /// value, so the cross-check in <see cref="EnsureNativeDeviceCreated"/> is a real
+        /// ABI / loaded-library drift detector with no path-resolution false positives.
+        /// </remarks>
+        private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
+        {
+            string parent = null;
+            try
+            {
+                parent = new FileInfo(filename).Directory?.FullName;
+                if (!string.IsNullOrEmpty(parent))
+                    Directory.CreateDirectory(parent);
+            }
+            catch
+            {
+                // Mkdir failures (permissions, race with concurrent create, etc.) are not
+                // fatal here — they will surface with a clearer error when the device tries
+                // to open the file. The probe still runs against the best ancestor we have.
+                parent = null;
+            }
+            // Probe the materialized parent dir directly when we have one — this removes any
+            // dependency on whether the file itself exists and prevents the probe from
+            // walking up to a different filesystem when the lazy file create has not yet
+            // run. Fall back to the original filename path when we couldn't determine /
+            // materialize a parent (the probe's own stat-walk-up will still produce a
+            // best-effort value).
+            string probePath = !string.IsNullOrEmpty(parent) ? parent : filename;
+            return GetSectorSize(probePath);
         }
 
         /// <summary>

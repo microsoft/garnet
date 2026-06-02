@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -17,10 +17,10 @@ namespace Garnet.server
             var fieldInfo = new RecordFieldInfo
             {
                 KeySize = srcLogRecord.Key.Length,
-                ValueSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
-                ValueIsObject = srcLogRecord.Info.ValueIsObject,
-                HasETag = !srcLogRecord.Info.ValueIsObject && srcLogRecord.Info.HasETag,
-                HasExpiration = srcLogRecord.Info.HasExpiration,
+                ValueSize = srcLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
+                ValueIsObject = srcLogRecord.DataHeader.ValueIsObject,
+                HasETag = !srcLogRecord.DataHeader.ValueIsObject && srcLogRecord.DataHeader.HasETag,
+                HasExpiration = srcLogRecord.DataHeader.HasExpiration,
                 RecordType = srcLogRecord.RecordType,
             };
 
@@ -33,7 +33,7 @@ namespace Garnet.server
                     case RespCommand.EXPIRE:
                         {
                             // Set HasExpiration to match with EvaluateExpireInPlace.
-                            if (srcLogRecord.Info.HasExpiration)
+                            if (srcLogRecord.DataHeader.HasExpiration)
                             {
                                 // case ExpireOption.NX:                // HasExpiration is true so we will retain it
                                 // case ExpireOption.XX:
@@ -66,12 +66,12 @@ namespace Garnet.server
                             }
                         }
 
-                        if (!srcLogRecord.Info.ValueIsObject)
+                        if (!srcLogRecord.DataHeader.ValueIsObject)
                             fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
                     case RespCommand.PERSIST:
                         fieldInfo.HasExpiration = false;
-                        if (!srcLogRecord.Info.ValueIsObject)
+                        if (!srcLogRecord.DataHeader.ValueIsObject)
                             fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
                     default:
@@ -143,10 +143,10 @@ namespace Garnet.server
             return new RecordFieldInfo
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = inputLogRecord.Info.ValueIsObject,
+                ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueIsObject = inputLogRecord.DataHeader.ValueIsObject,
                 HasETag = false,
-                HasExpiration = inputLogRecord.Info.HasExpiration
+                HasExpiration = inputLogRecord.DataHeader.HasExpiration
             };
         }
     }
