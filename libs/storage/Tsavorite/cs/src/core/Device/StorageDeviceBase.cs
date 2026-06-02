@@ -14,7 +14,10 @@ namespace Tsavorite.core
     {
 
         /// <summary>
-        /// 
+        /// Required alignment (in bytes) of buffers, offsets, and lengths for this device's
+        /// direct I/O. Computed once at device construction (typically from a kernel probe of
+        /// the target filesystem's <c>logical_block_size</c> / <c>STATX_DIOALIGN</c>) and
+        /// passed to the base ctor, so the value is immutable for the lifetime of the device.
         /// </summary>
         public uint SectorSize { get; }
 

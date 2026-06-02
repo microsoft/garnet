@@ -202,6 +202,28 @@ namespace Tsavorite.core
         /// <summary>Buffer pool</summary>
         internal SectorAlignedBufferPool bufferPool;
 
+        /// <summary>
+        /// Pool of <see cref="AsyncGetFromDiskResult{TContext}"/> wrappers used by the
+        /// pending-read path (one per in-flight IO). The wrapper is the <c>object context</c>
+        /// passed to <c>IDevice.ReadAsync</c>, so pooling it removes the only
+        /// per-IO heap allocation on the steady-state read path. Bounded by
+        /// <c>device.ThrottleLimit</c> in-flight IOs, so the pool naturally settles around
+        /// that size; the underlying <c>ConcurrentQueue</c> is fine here because pool
+        /// churn is strictly bounded — no segment growth in steady state.
+        /// </summary>
+        readonly System.Collections.Concurrent.ConcurrentQueue<AsyncGetFromDiskResult<AsyncIOContext>>
+            asyncGetFromDiskResultPool = new();
+
+        /// <summary>
+        /// Cached delegate for <see cref="AsyncGetFromDiskCallback"/>. The C# compiler does
+        /// not cache method-group conversions to delegates for <em>instance</em> methods
+        /// (only for static), so without this field every <see cref="AsyncGetFromDisk"/>
+        /// call would allocate a fresh ~48 B <see cref="DeviceIOCompletionCallback"/>
+        /// delegate. Pre-binding it once in the ctor removes that per-pending-op
+        /// allocation from the disk-read hot path.
+        /// </summary>
+        readonly DeviceIOCompletionCallback asyncGetFromDiskCallbackDelegate;
+
         /// <summary>Address type for this hlog's records'</summary>
         /// <summary>Read cache eviction callback</summary>
         protected readonly Action<long, long> EvictCallback = null;
@@ -517,6 +539,10 @@ namespace Tsavorite.core
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
+            // Pre-bind the instance-method delegate once so the pending-IO hot path does
+            // not allocate a fresh DeviceIOCompletionCallback per AsyncGetFromDisk call.
+            asyncGetFromDiskCallbackDelegate = AsyncGetFromDiskCallback;
+
             this.transientObjectIdMap = transientObjectIdMap;
 
             // Validation
@@ -553,10 +579,10 @@ namespace Tsavorite.core
                     throw new TsavoriteException($"{rcs.SecondChanceFraction} must be >= 0.0 and <= 1.0");
             }
 
-            if (logSettings.MaxInlineKeySizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
-            if (logSettings.MaxInlineValueSizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
+            if (logSettings.MaxInlineKeySize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineKeySize > LogSettings.MaxInlineKeySizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySize)} must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineKeySizeLimit}");
+            if (logSettings.MaxInlineValueSize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineValueSize > LogSettings.MaxInlineValueSizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSize)} must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineValueSizeLimit}");
 
             this.logger = logger;
             if (logSettings.LogDevice == null)
@@ -1656,7 +1682,9 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            var asyncResult = new AsyncGetFromDiskResult<AsyncIOContext> { context = context };
+            if (!asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
+                asyncResult = new AsyncGetFromDiskResult<AsyncIOContext>();
+            asyncResult.context = context;
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
@@ -1689,7 +1717,12 @@ namespace Tsavorite.core
             if (alignedFileOffset + alignedReadLength > pageEndInFile)
                 alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
 
-            var record = bufferPool.Get((int)alignedReadLength);
+            // Rent the read-destination buffer with clearOnReturn=false: the device read
+            // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
+            // and downstream consumers bound their access by valid_offset / available_bytes,
+            // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
+            // bandwidth per pending read).
+            var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;
@@ -2005,7 +2038,7 @@ namespace Tsavorite.core
                 }
             }
 
-            AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
+            AsyncReadRecordToMemory(fromLogicalAddress, numBytes, asyncGetFromDiskCallbackDelegate, ref context);
         }
 
         /// <summary>
@@ -2088,15 +2121,15 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + RecordDataHeader.MinHeaderBytes)
+            if (currentLength >= Constants.FixedHeaderSize)
             {
                 var ptr = ctx.record.GetValidPointer();
                 var recordInfo = *(RecordInfo*)ptr;
-                var dataHeader = new RecordDataHeader(ptr + RecordInfo.Size);
-                var (numKeyLengthBytes, numRecordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var headerLength);
+                var dataHeader = *(RecordDataHeader*)(ptr + RecordInfo.Size);
+                var headerLength = RecordDataHeader.Size;
 
                 // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
-                var recordLength = dataHeader.GetRecordLength(numRecordLengthBytes);
+                var recordLength = dataHeader.GetRecordLength();
                 if (currentLength <= headerLength)
                 {
                     prevLengthToRead = recordLength;
@@ -2109,27 +2142,36 @@ namespace Tsavorite.core
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
 
-                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart(headerLength);
+                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart();
 
                 // If the length is up to offsetToKeyStart, we can read the full lengths. If not, we'll fall through to reread the current record.
                 if (currentLength >= offsetToKeyStart)
                 {
-                    var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-                    var keyStartPtr = ptr + offsetToKeyStart;
+                    var keyLength = dataHeader.KeyLength;
 
-                    // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, dataHeader))
-                        return false;
-
-                    // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
-                    if (currentLength >= recordLength)
+                    if ((offsetToKeyStart + keyLength) <= currentLength)
                     {
-                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
-                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
-                        if (storeFunctions.CallOnDiskRead)
-                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
-                        return true;
+                        // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
+                        if (!ctx.requestKey.IsEmpty && dataHeader.KeyIsInline)
+                        {
+                            var diskLogRecord = new LogRecord((long)ptr);
+                            if (!storeFunctions.KeysEqual(ctx.requestKey, diskLogRecord))
+                                return false;
+                        }
+
+                        // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
+                        if (currentLength >= recordLength)
+                        {
+                            ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                            ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                            if (storeFunctions.CallOnDiskRead)
+                                storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
+                            return true;
+                        }
                     }
+
+                    // We didn't have the full key so drop through to read the full record with the length we now know.
+                    prevLengthToRead = recordLength;
                 }
             }
 
@@ -2148,6 +2190,12 @@ namespace Tsavorite.core
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
             var ctx = result.context;
+            // poolReturn=true means we own this wrapper's lifetime and will return it to
+            // the pool ourselves (e.g., reread path, exception path, completion-event path).
+            // On the success+callbackQueue path we transfer ownership to the worker by
+            // enqueueing the wrapper reference; the worker returns it to the pool after
+            // it consumes result.context in InternalCompletePendingRequest.
+            var poolReturn = true;
             try
             {
                 // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
@@ -2165,6 +2213,12 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
+                        // Reread: the local ctx is a struct copy taken at line var ctx = result.context;
+                        // and carries id / requestKey / minAddress / callbackQueue forward. AsyncGetFromDisk
+                        // passes it by value to AsyncReadRecordToMemory, which rents a fresh wrapper from
+                        // asyncGetFromDiskResultPool and writes asyncResult.context = ctx — so every field
+                        // populated at RECORD_ON_DISK setup propagates into the new IO. Our (old) wrapper
+                        // is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2172,9 +2226,19 @@ namespace Tsavorite.core
 
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
+                {
+                    // completionEvent took ownership of the data via Set; finally returns the wrapper to the pool.
                     ctx.completionEvent.Set(ref ctx);
+                }
                 else
-                    ctx.callbackQueue.Enqueue(ctx);
+                {
+                    // Write modified ctx back to the wrapper and transfer ownership to the
+                    // worker via the per-session ready queue. The worker reads result.context
+                    // in InternalCompletePendingRequest and returns the wrapper to the pool.
+                    result.context = ctx;
+                    poolReturn = false;
+                    ctx.callbackQueue.Enqueue(result);
+                }
             }
             catch (Exception e)
             {
@@ -2186,6 +2250,31 @@ namespace Tsavorite.core
                 else
                     throw;
             }
+            finally
+            {
+                // Single return point for the wrapper. ReturnAsyncGetFromDiskResult clears
+                // result.context before enqueueing, keeping pooled wrappers free of stale
+                // SectorAlignedMemory / DiskLogRecord refs. The success-via-callbackQueue path
+                // opts out (poolReturn=false) because it transfers wrapper ownership to the
+                // worker, which returns it via ReturnAsyncGetFromDiskResult after consuming
+                // result.context in InternalCompletePendingRequest.
+                if (poolReturn)
+                    ReturnAsyncGetFromDiskResult(result);
+            }
+        }
+
+        /// <summary>
+        /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
+        /// pool after the worker has consumed its <c>context</c> field in
+        /// <see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ReturnAsyncGetFromDiskResult(AsyncGetFromDiskResult<AsyncIOContext> result)
+        {
+            // Clear the captured ctx so a pooled wrapper doesn't transitively retain
+            // SectorAlignedMemory / DiskLogRecord references across rentals.
+            result.context = default;
+            asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>

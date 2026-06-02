@@ -3413,7 +3413,9 @@ namespace Tsavorite.core
         private void ValidateAllocatedLength(int numSlots)
         {
             if (numSlots > allocator.PageSize)
-                throw new TsavoriteException("Entry does not fit on page");
+                throw new TsavoriteException(
+                    $"Entry does not fit on page: allocated entry size ({numSlots} bytes) exceeds log page size ({allocator.PageSize} bytes). " +
+                    "Increase the page size (and memory size to at least 2x page size) or split the entry into smaller writes.");
         }
     }
 }

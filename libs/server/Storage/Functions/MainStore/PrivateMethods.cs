@@ -292,12 +292,12 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
                     return;
 
                 case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(pttlValue, ref output.SpanByteAndMemory);
                     return;
 
@@ -310,12 +310,12 @@ namespace Garnet.server
                     CopyRespTo(value, ref output, start, end);
                     return;
                 case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(expireTime, ref output.SpanByteAndMemory);
                     return;
 
                 case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(pexpireTime, ref output.SpanByteAndMemory);
                     return;
 
@@ -329,7 +329,7 @@ namespace Garnet.server
             ref var result = ref output.AsRef<int>();
             result = 0;
 
-            if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
+            if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.DataHeader.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
                 return IPUResult.Failed;
 
             if (!expirationChanged)
@@ -341,7 +341,7 @@ namespace Garnet.server
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref StringOutput output)
         {
-            var hasExpiration = logRecord.Info.HasExpiration;
+            var hasExpiration = logRecord.DataHeader.HasExpiration;
 
             ref var result = ref output.AsRef<int>();
             result = 0;

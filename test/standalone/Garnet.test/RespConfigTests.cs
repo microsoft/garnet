@@ -411,11 +411,11 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
                 // Insert records until head address moves. We want to fit two records per page; pages are 1024 bytes so after subtracting
-                // PageHeader.Size we have 960 / 2 = 480 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
-                // more than 255, we have no optionals (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
-                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 480, so valueLength = 480-22 = 458 bytes.
+                // PageHeader.Size we have 960 / 2 = 480 bytes per record. FixedHeaderSize is 16, we have no optionals (ETag or Expiration),
+                // and we are inline so have no ObjectLogPosition, so:
+                //   FixedHeaderSize + 8 + valueLength = 480, so valueLength = 480-24 = 456 bytes.
                 // It's rounded up to kRecordAlignment (8) anyway.
-                var val = new RedisValue(new string('x', 458));
+                var val = new RedisValue(new string('x', 456));
 
                 var i = 0;
                 var prevHead = info.HeadAddress;

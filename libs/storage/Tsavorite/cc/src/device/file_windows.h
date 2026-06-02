@@ -98,6 +98,15 @@ class File {
   core::Status Close();
   core::Status Delete();
 
+  /// True iff the file is currently open (CreateFileA succeeded and Close has not run).
+  /// Mirror of the Linux File::is_open() accessor; consumed by FileSystemSegmentBundle /
+  /// OpenSegment so the cross-platform code path can detect and discard a bundle whose
+  /// per-segment Open() returned an error rather than committing an INVALID_HANDLE_VALUE
+  /// entry to files_ that would later fail every WriteFile / ReadFile.
+  bool is_open() const {
+    return file_handle_ != INVALID_HANDLE_VALUE;
+  }
+
   uint64_t size() const {
     LARGE_INTEGER file_size;
     auto result = ::GetFileSizeEx(file_handle_, &file_size);
