@@ -40,8 +40,8 @@ namespace Garnet.server
 
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
-        internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
-        internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
+        // DeleteAfterDropArg used to be here
+        internal const long RecreateIndexArg = VADDAppendLogArg + 2;
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;

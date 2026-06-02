@@ -109,11 +109,8 @@ namespace Tsavorite.kvbench
             HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
                        "completion queue. Each drainer is bound 1:1 to its own kernel io_context " +
                        "(libaio) or io_uring ring; submitters distribute across rings via per-thread " +
-                       "affinity. For io_uring, throughput scales with this value up to the available " +
-                       "submitter concurrency (and the uring backend uses min 4 rings even at value=1, " +
-                       "with the single drainer covering all rings via the legacy QueueRun compat " +
-                       "scanner). For libaio the kernel's per-context mutex is already efficient and " +
-                       "extra drainers rarely help past 1. 0 = Garnet default (1).")]
+                       "affinity. Throughput scales with this value up to the available submitter " +
+                       "concurrency. 0 = Garnet default (1).")]
         public int DeviceCompletionThreads { get; set; }
 
         [Option("data-path", Required = false, Default = null,
@@ -139,6 +136,10 @@ namespace Tsavorite.kvbench
         [Option("validate", Required = false, Default = false,
             HelpText = "After load: single-threaded readback of every key. Aborts on mismatch.")]
         public bool Validate { get; set; }
+
+        [Option("dump-distribution", Required = false, Default = false,
+            HelpText = "After load: print the hash-table bucket distribution (TsavoriteKV.DumpDistribution()).")]
+        public bool DumpDistribution { get; set; }
 
         // ===== Output =====
 

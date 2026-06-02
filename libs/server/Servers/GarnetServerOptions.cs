@@ -375,6 +375,12 @@ namespace Garnet.server
         public int DeviceCompletionThreads = 1;
 
         /// <summary>
+        /// Per-device max number of in-flight IOs (<see cref="IDevice.ThrottleLimit"/>).
+        /// 0 means "use the device's built-in default" (120 for the in-box Tsavorite devices).
+        /// </summary>
+        public int DeviceThrottleLimit = 0;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -676,11 +682,12 @@ namespace Garnet.server
                 deviceType: DeviceType,
                 ioBackend: DeviceIoBackend,
                 numCompletionThreads: DeviceCompletionThreads,
+                throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
                 logger: logger);
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
-                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct})", DeviceType, DeviceIoBackend, DeviceCompletionThreads);
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
             else
-                logger?.LogInformation("Using device type {deviceType}", DeviceType);
+                logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -813,9 +820,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
-        /// Tsavorite requires this to be at least 64 bytes (1 &lt;&lt; LogSettings.kLowestMaxInlineSizeBits)
-        /// and at most 256 MB (1 &lt;&lt; (LogSettings.kMaxStringSizeBits - 1)). The value will be rounded down to the previous power of 2.
-        /// Additionally, the effective (power-of-2) value must be strictly less than the effective PageSize
+        /// Tsavorite requires this to be at least 64 bytes and at most 0xFFFFFE (the RecordDataHeader value-length field's
+        /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
+        /// is internal to Tsavorite.core and not visible from Garnet.server).
+        /// The value will be used directly.
+        /// Additionally, the effective value must be strictly less than the effective PageSize
         /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
         /// if not, it is clamped down to the largest valid value (with a warning).
         /// </summary>
@@ -823,8 +832,8 @@ namespace Garnet.server
         /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
         public int ValueOverflowThresholdBytes()
         {
-            const long MinBytes = 64L;                  // 1 << LogSettings.kLowestMaxInlineSizeBits
-            const long MaxBytes = 1L << 28;             // 1 << (LogSettings.kMaxStringSizeBits - 1)
+            const long MinBytes = 64L;                  // LogSettings.MinMaxInlineSize
+            const long MaxBytes = 0xFFFFFE;             // LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
 
             if (string.IsNullOrEmpty(ValueOverflowThreshold))
                 throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");

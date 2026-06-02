@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -568,7 +568,7 @@ namespace Tsavorite.core
             if (success)
             {
                 // Track key overflow internally — session functions only track in-place value deltas.
-                if (newLogRecord.Info.KeyIsOverflow)
+                if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
@@ -598,7 +598,7 @@ namespace Tsavorite.core
                         // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
-                        if (srcLogRecord.Info.ValueIsObject)
+                        if (srcLogRecord.DataHeader.ValueIsObject)
                             srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord);
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
@@ -620,7 +620,7 @@ namespace Tsavorite.core
                                 // partial clear (value only, key stays) and expecting trigger implementers
                                 // to know that nuance is error-prone. The remaining key overflow (if any)
                                 // is decremented later by OnEvict when the sealed page is evicted.
-                                if (srcMemLogRecord.Info.ValueIsObject)
+                                if (srcMemLogRecord.DataHeader.ValueIsObject)
                                 {
                                     var valueObject = srcMemLogRecord.ValueObject;
                                     if (valueObject is not null)

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -240,7 +240,7 @@ namespace Garnet.cluster
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
-            return srcLogRecord.Info.ValueIsObject
+            return srcLogRecord.DataHeader.ValueIsObject
                 ? snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords)
                 : snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
         }
