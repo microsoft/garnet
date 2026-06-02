@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -33,9 +33,9 @@ namespace Tsavorite.core
         /// and that the field does not currently contain an overflow allocation.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertInlineToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, long oldValueLength, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertInlineToOverflow(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, long oldValueLength, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            Debug.Assert(recordInfo.ValueIsInline);
+            Debug.Assert(dataHeader.ValueIsInline);
 
             // First copy the data. We are converting to overflow so the length is limited to int.
             var newLength = sizeInfo.FieldInfo.ValueSize;
@@ -51,7 +51,7 @@ namespace Tsavorite.core
             var objectId = objectIdMap.Allocate();
             *(int*)valueAddress = objectId;
             objectIdMap.Set(objectId, overflow);
-            recordInfo.SetValueIsOverflow();
+            dataHeader.SetValueIsOverflow();
             return overflow.Span;
         }
 
@@ -64,16 +64,16 @@ namespace Tsavorite.core
         /// prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertValueObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertValueObjectToOverflow(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            Debug.Assert(recordInfo.ValueIsObject);
+            Debug.Assert(dataHeader.ValueIsObject);
             var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
 
             var objectId = *(int*)valueAddress;
             if (objectId == ObjectIdMap.InvalidObjectId)
                 *(int*)valueAddress = objectId = objectIdMap.Allocate();
             objectIdMap.Set(objectId, overflow);
-            recordInfo.SetValueIsOverflow();
+            dataHeader.SetValueIsOverflow();
             return overflow.Span;
         }
 
@@ -86,11 +86,11 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertInlineToValueObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertInlineToValueObject(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            Debug.Assert(recordInfo.ValueIsInline);
+            Debug.Assert(dataHeader.ValueIsInline);
             var objectId = objectIdMap.Allocate();
-            recordInfo.SetValueIsObject();
+            dataHeader.SetValueIsObject();
 
             *(int*)valueAddress = objectId;
             return objectId;
@@ -105,9 +105,9 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertOverflowToValueObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertOverflowToValueObject(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            Debug.Assert(recordInfo.ValueIsOverflow);
+            Debug.Assert(dataHeader.ValueIsOverflow);
 
             var objectId = *(int*)valueAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
@@ -115,7 +115,7 @@ namespace Tsavorite.core
             else
                 *(int*)valueAddress = objectId = objectIdMap.Allocate();
 
-            recordInfo.SetValueIsObject();
+            dataHeader.SetValueIsObject();
             return objectId;
         }
 
@@ -127,9 +127,9 @@ namespace Tsavorite.core
         /// and that the field currently contains an overflow allocation.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertOverflowToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertOverflowToInline(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            Debug.Assert(recordInfo.ValueIsOverflow);
+            Debug.Assert(dataHeader.ValueIsOverflow);
 
             // First copy the data
             var objectId = *(int*)valueAddress;
@@ -143,7 +143,7 @@ namespace Tsavorite.core
                 var oldSpan = overflow.Span;
 
                 var copyLength = oldSpan.Length < newLength ? oldSpan.Length : newLength;
-                recordInfo.SetValueIsInline();
+                dataHeader.SetValueIsInline();
                 oldSpan.Slice(0, copyLength).CopyTo(newSpan);
                 objectIdMap.Free(objectId);
             }
@@ -154,9 +154,9 @@ namespace Tsavorite.core
         /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
+        internal static void ClearObjectIdAndConvertToInline(ref RecordDataHeader dataHeader, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
         {
-            Debug.Assert(isKey ? !recordInfo.KeyIsInline : !recordInfo.ValueIsInline);
+            Debug.Assert(isKey ? !dataHeader.KeyIsInline : !dataHeader.ValueIsInline);
 
             // We don't have to adjust the filler length, since the field size here isn't changing; we'll just have int-sized "data". This method is called by record disposal, which
             // also clears the optionals, which may adjust filler length. Consistency Note: LogRecord.InitializeForReuse also sets field lengths to zero and sets the filler length.
@@ -170,9 +170,9 @@ namespace Tsavorite.core
 
             // We don't need to change the length; we'll keep the current length and just convert to inline.
             if (isKey)
-                recordInfo.SetKeyIsInline();
+                dataHeader.SetKeyIsInline();
             else
-                recordInfo.SetValueIsInline();
+                dataHeader.SetValueIsInline();
         }
 
         /// <summary>
@@ -184,7 +184,7 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertValueObjectToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertValueObjectToInline(ref RecordDataHeader dataHeader, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             var objIdPtr = (int*)valueAddress;
             var objectId = *objIdPtr;
@@ -192,7 +192,7 @@ namespace Tsavorite.core
                 objectIdMap.Free(objectId);
             *objIdPtr = 0;
 
-            recordInfo.SetValueIsInline();
+            dataHeader.SetValueIsInline();
             return new((byte*)valueAddress, sizeInfo.FieldInfo.ValueSize);
         }
 

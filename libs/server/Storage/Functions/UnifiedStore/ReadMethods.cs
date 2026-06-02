@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -46,12 +46,12 @@ namespace Garnet.server
         {
             var inlineRecordSize = srcLogRecord.AllocatedSize;
             long heapMemoryUsage = 0;
-            if (srcLogRecord.Info.KeyIsOverflow)
+            if (srcLogRecord.DataHeader.KeyIsOverflow)
                 heapMemoryUsage += srcLogRecord.Key.Length + MemoryUtils.ByteArrayOverhead;
 
-            if (srcLogRecord.Info.ValueIsOverflow)
+            if (srcLogRecord.DataHeader.ValueIsOverflow)
                 heapMemoryUsage += srcLogRecord.ValueSpan.Length + MemoryUtils.ByteArrayOverhead;
-            else if (srcLogRecord.Info.ValueIsObject)
+            else if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 heapMemoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
                               Utility.RoundUp(srcLogRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
@@ -69,7 +69,7 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
-            if (srcLogRecord.Info.ValueIsObject)
+            if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 switch (srcLogRecord.ValueObject)
                 {
@@ -103,7 +103,7 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var expiration = srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1;
+            var expiration = srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1;
             var ttlValue = milliseconds
                 ? ConvertUtils.MillisecondsFromDiffUtcNowTicks(expiration)
                 : ConvertUtils.SecondsFromDiffUtcNowTicks(expiration);
@@ -117,7 +117,7 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var expiration = srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1;
+            var expiration = srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1;
             var expireTime = milliseconds
                 ? ConvertUtils.UnixTimeInMillisecondsFromTicks(expiration)
                 : ConvertUtils.UnixTimeInSecondsFromTicks(expiration);
@@ -130,7 +130,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
-                valueObjectSerializer: srcLogRecord.Info.ValueIsObject ? functionsState.garnetObjectSerializer : null,
+                valueObjectSerializer: srcLogRecord.DataHeader.ValueIsObject ? functionsState.garnetObjectSerializer : null,
                 memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
             return true;
         }
@@ -145,7 +145,7 @@ namespace Garnet.server
             var inlineRecordSize = RoundUp(srcLogRecord.ActualSize, 8); // TODO: Constants.kRecordAlignment
             DiskLogRecord.DirectCopyInlinePortionOfRecord(in srcLogRecord, inlineRecordSize, estimatedTotalSize: inlineRecordSize, maxHeapAllocationSize: inlineRecordSize,
                 functionsState.memoryPool, ref output.SpanByteAndMemory);
-            if (srcLogRecord.Info.RecordHasObjects)
+            if (srcLogRecord.DataHeader.RecordHasObjects)
             {
                 fixed (byte* recordPtr = output.SpanByteAndMemory.Span)
                 {

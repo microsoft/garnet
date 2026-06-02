@@ -160,7 +160,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 3976;
+            var expectedResponse = 3984;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -204,7 +204,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 376;
+            var expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.GeoAdd(new RedisKey("SecondKey"), 13.361389, 38.115556, new RedisValue("Palermo"));

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -13,11 +13,10 @@ namespace Tsavorite.core
     using static LogAddress;
 
     // RecordInfo layout (64 bits total, high to low):
-    //   Unused/Reserved bits (consume from Unused5 upward, so remaining stay contiguous):
-    //      [Unused1][Unused2][Unused3][Unused4][Unused5]
+    //   Unused/Reserved bits:
+    //      [Unused1]..[Unused11]
     //   RecordInfo bits:
     //      [Sealed][Modified][InNewVersion][Valid][Tombstone]
-    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline][HasFiller]
     //   LogAddress bits (where A = address):
     //      [R][AAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
@@ -28,42 +27,43 @@ namespace Tsavorite.core
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalBits = Size * 8;
 
-        // Other marker bits. Unused* means bits not yet assigned
+        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused10
+        // (just above the high-end RecordInfo bits) so the ToString output prints them in the natural high-to-low bit order.
         const int kIsReadCacheBitOffset = kAddressBits - 1;
-        const int kHasFillerBitOffset = kIsReadCacheBitOffset + 1;
-        const int kKeyIsInlineBitOffset = kHasFillerBitOffset + 1;
-        const int kValueIsInlineBitOffset = kKeyIsInlineBitOffset + 1;
-        const int kValueIsObjectBitOffset = kValueIsInlineBitOffset + 1;
-        const int kHasETagBitOffset = kValueIsObjectBitOffset + 1;
-        const int kHasExpirationBitOffset = kHasETagBitOffset + 1;
-        const int kTombstoneBitOffset = kHasExpirationBitOffset + 1;
+        const int kTombstoneBitOffset = kIsReadCacheBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kInNewVersionBitOffset = kValidBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kSealedBitOffset = kModifiedBitOffset + 1;
-        const int kUnused5BitOffset = kSealedBitOffset + 1;
+        const int kUnused10BitOffset = kSealedBitOffset + 1;
+        const int kUnused9BitOffset = kUnused10BitOffset + 1;
+        const int kUnused8BitOffset = kUnused9BitOffset + 1;
+        const int kUnused7BitOffset = kUnused8BitOffset + 1;
+        const int kUnused6BitOffset = kUnused7BitOffset + 1;
+        const int kUnused5BitOffset = kUnused6BitOffset + 1;
         const int kUnused4BitOffset = kUnused5BitOffset + 1;
         const int kUnused3BitOffset = kUnused4BitOffset + 1;
         const int kUnused2BitOffset = kUnused3BitOffset + 1;
         const int kUnused1BitOffset = kUnused2BitOffset + 1;
+        const int kUnused0BitOffset = kUnused1BitOffset + 1;
 
         internal const long kIsReadCacheBitMask = 1L << kIsReadCacheBitOffset;
-        const long kHasFillerBitMask = 1L << kHasFillerBitOffset;
-        const long kKeyIsInlineBitMask = 1L << kKeyIsInlineBitOffset;
-        const long kValueIsInlineBitMask = 1L << kValueIsInlineBitOffset;
-        const long kValueIsObjectBitMask = 1L << kValueIsObjectBitOffset;
-        const long kHasETagBitMask = 1L << kHasETagBitOffset;
-        const long kHasExpirationBitMask = 1L << kHasExpirationBitOffset;
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
+        const long kUnused10BitMask = 1L << kUnused10BitOffset;
+        const long kUnused9BitMask = 1L << kUnused9BitOffset;
+        const long kUnused8BitMask = 1L << kUnused8BitOffset;
+        const long kUnused7BitMask = 1L << kUnused7BitOffset;
+        const long kUnused6BitMask = 1L << kUnused6BitOffset;
         const long kUnused5BitMask = 1L << kUnused5BitOffset;
         const long kUnused4BitMask = 1L << kUnused4BitOffset;
         const long kUnused3BitMask = 1L << kUnused3BitOffset;
         const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kUnused1BitMask = 1L << kUnused1BitOffset;
+        const long kUnused0BitMask = 1L << kUnused0BitOffset;
 #pragma warning restore IDE1006 // Naming Styles
 
         [FieldOffset(0)]
@@ -77,7 +77,6 @@ namespace Tsavorite.core
         public RecordInfo()
         {
             Valid = true;
-            SetKeyAndValueInline();
             PreviousAddress = kTempInvalidAddress;
         }
 
@@ -95,7 +94,7 @@ namespace Tsavorite.core
             //   Otherwise, Scan could return partial records (e.g. a checkpoint was taken that flushed midway through the record update).
             // - Revivification sets Sealed; we need to preserve it here.
             // We'll clear both on successful CAS.
-            InitializeNewRecord();
+            InitializeForNewRecord();
             PreviousAddress = previousAddress;
             if (inNewVersion)
                 SetIsInNewVersion();
@@ -106,8 +105,6 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            // Preserve Key/ValueIsInline as they are always inline for DiskLogRecord. Preserve ValueIsObject to indicate whether a value object should be deserialized
-            // or if the value should remain inline (and possibly overflow if copied to a LogRecord).
             word &= ~kSealedBitMask;
         }
 
@@ -238,10 +235,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalid() => word &= ~kValidBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeNewRecord()
+        public void InitializeForNewRecord()
         {
-            // Initialize to Sealed and Invalid (do not include kValidBitMask) and to Inline Key and Value so no Oversize or ObjectId is expected.
-            word = kSealedBitMask | kKeyIsInlineBitMask | kValueIsInlineBitMask;
+            // Initialize to Sealed and Invalid (do not include kValidBitMask).
+            word = kSealedBitMask;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -280,50 +277,16 @@ namespace Tsavorite.core
             set { word = (word & ~kAddressBitMask) | (value & kAddressBitMask); }
         }
 
-        public readonly bool HasETag => (word & kHasETagBitMask) != 0;
-        public void SetHasETag() => word |= kHasETagBitMask;
-        public void ClearHasETag() => word &= ~kHasETagBitMask;
-
-        public readonly bool HasExpiration => (word & kHasExpirationBitMask) != 0;
-        public void SetHasExpiration() => word |= kHasExpirationBitMask;
-        public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
-
-        public readonly bool HasOptionalFields => (word & (kHasETagBitMask | kHasExpirationBitMask)) != 0;
-        public readonly bool HasOptionalOrObjectFields => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask | kHasETagBitMask | kHasExpirationBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
-
-        // Note: KeyIsOveflow bit is not needed as it is the negation of KeyIsInline
-        public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
-        public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
-        public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
-        public readonly bool KeyIsOverflow => !KeyIsInline;
-        public void SetKeyIsOverflow() => word &= ~kKeyIsInlineBitMask;
-
-        // Note: a ValueIsOverflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
-        public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
-        public void SetValueIsInline() => word = (word & ~kValueIsObjectBitMask) | kValueIsInlineBitMask;
-        public void ClearValueIsInline() => word &= ~kValueIsInlineBitMask;
-
-        public readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
-        public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
-
-        public readonly bool HasFiller => (word & kHasFillerBitMask) != 0;
-        public void SetHasFiller() => word |= kHasFillerBitMask;
-        public void ClearHasFiller() => word &= ~kHasFillerBitMask;
-
-        // Value "Overflow" is determined by lack of Inline and lack of Object
-        public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
-        public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
-
-        public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectBitMask) | kKeyIsInlineBitMask | kValueIsInlineBitMask;
-
-        public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
-
-        public readonly bool RecordHasObjects => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
-
         internal bool IsReadCache
         {
             readonly get => (word & kIsReadCacheBitMask) != 0;
             set => word = value ? word | kIsReadCacheBitMask : word & ~kIsReadCacheBitMask;
+        }
+
+        internal bool Unused0
+        {
+            readonly get => (word & kUnused0BitMask) != 0;
+            set => word = value ? word | kUnused0BitMask : word & ~kUnused0BitMask;
         }
 
         internal bool Unused1
@@ -356,25 +319,47 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused5BitMask : word & ~kUnused5BitMask;
         }
 
-        internal readonly int GetOptionalSize()
+        internal bool Unused6
         {
-            var size = HasETag ? LogRecord.ETagSize : 0;
-            if (HasExpiration)
-                size += LogRecord.ExpirationSize;
-            if (!RecordIsInline)
-                size += LogRecord.ObjectLogPositionSize;
-            return size;
+            readonly get => (word & kUnused6BitMask) != 0;
+            set => word = value ? word | kUnused6BitMask : word & ~kUnused6BitMask;
+        }
+
+        internal bool Unused7
+        {
+            readonly get => (word & kUnused7BitMask) != 0;
+            set => word = value ? word | kUnused7BitMask : word & ~kUnused7BitMask;
+        }
+
+        internal bool Unused8
+        {
+            readonly get => (word & kUnused8BitMask) != 0;
+            set => word = value ? word | kUnused8BitMask : word & ~kUnused8BitMask;
+        }
+
+        internal bool Unused9
+        {
+            readonly get => (word & kUnused9BitMask) != 0;
+            set => word = value ? word | kUnused9BitMask : word & ~kUnused9BitMask;
+        }
+
+        internal bool Unused10
+        {
+            readonly get => (word & kUnused10BitMask) != 0;
+            set => word = value ? word | kUnused10BitMask : word & ~kUnused10BitMask;
         }
 
         public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            var keyString = KeyIsInline ? "inl" : "ovf";
-            var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
+            static string bstr01(bool value) => value ? "1" : "0";
+            // Unused0..Unused10 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
+            var unusedStr = $"{bstr01(Unused0)}{bstr01(Unused1)}{bstr01(Unused2)}{bstr01(Unused3)}"
+                          + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}"
+                          + $"|{bstr01(Unused8)}{bstr01(Unused9)}{bstr01(Unused10)}";
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, Key::{keyString}, Val::{valString},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Filler {bstr(HasFiller)},"
-                 + $" Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}, Un5 {bstr(Unused5)}";
+                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)},"
+                 + $" Unused0-10 {unusedStr}";
         }
     }
 }
