@@ -133,11 +133,15 @@ namespace Tsavorite.test.LogRecordTests
                         ValueSize = valueLength,
                         ExtendedNamespaceSize = exNameSpaceLength
                     },
-                    MaxInlineValueSize = 1 << LogSettings.kMaxStringSizeBits
                 };
-                sizeInfo.SetKeyIsInline();
-                sizeInfo.SetValueIsInline();
-                sizeInfo.CalculateSizes(sizeInfo.FieldInfo.KeySize, sizeInfo.FieldInfo.ValueSize);
+
+                PopulateBoundarySizeInfo(ref sizeInfo, maxInlineKey: LogSettings.MaxInlineKeySizeLimit, maxInlineValue: LogSettings.MaxInlineValueSizeLimit);
+
+                // Force these to their inline length
+                if (!sizeInfo.KeyIsInline)
+                    keyLength = ObjectIdMap.ObjectIdSize;
+                if (!sizeInfo.ValueIsInline)
+                    valueLength = ObjectIdMap.ObjectIdSize;
 
                 var recordBaseAddress = nativePointer;
                 ref var dataHeader = ref *(RecordDataHeader*)(recordBaseAddress + RecordInfo.Size);
@@ -293,7 +297,7 @@ namespace Tsavorite.test.LogRecordTests
         public void MaxInlineKeyAtLimitStaysInline()
         {
             // A key of EXACTLY MaxInlineKeySizeLimit bytes must remain inline.
-            const int keyLength = LogSettings.MaxInlineKeySizeLimit;     // 0xFFE
+            const int keyLength = LogSettings.MaxInlineKeySizeLimit;
             const int valueLength = 32;
 
             var sizeInfo = new RecordSizeInfo()
@@ -324,7 +328,7 @@ namespace Tsavorite.test.LogRecordTests
         public void KeyAboveMaxInlineKeyBecomesOverflow()
         {
             // A key ONE BYTE ABOVE MaxInlineKeySizeLimit must become overflow.
-            const int keyLength = LogSettings.MaxInlineKeySizeLimit + 1;     // 0xFFF
+            const int keyLength = LogSettings.MaxInlineKeySizeLimit + 1;
             const int valueLength = 32;
 
             var sizeInfo = new RecordSizeInfo()
@@ -356,9 +360,9 @@ namespace Tsavorite.test.LogRecordTests
         public void MaxInlineValueAtLimitStaysInline()
         {
             // A value of EXACTLY MaxInlineValueSizeLimit bytes must remain inline.
-            // This allocates ~4 MB of native memory for the record; allowable in a unit test.
+            // This allocates ~16 MB of native memory for the record (24-bit ValueLength field); allowable in a unit test.
             const int keyLength = 32;
-            const int valueLength = LogSettings.MaxInlineValueSizeLimit;     // 0x3FFFFE (~4 MB)
+            const int valueLength = LogSettings.MaxInlineValueSizeLimit;
 
             var sizeInfo = new RecordSizeInfo()
             {
@@ -389,7 +393,7 @@ namespace Tsavorite.test.LogRecordTests
         {
             // A value ONE BYTE ABOVE MaxInlineValueSizeLimit must become overflow.
             const int keyLength = 32;
-            const int valueLength = LogSettings.MaxInlineValueSizeLimit + 1;     // 0x3FFFFF (the field's max raw value)
+            const int valueLength = LogSettings.MaxInlineValueSizeLimit + 1;
 
             var sizeInfo = new RecordSizeInfo()
             {

@@ -52,28 +52,28 @@ namespace Tsavorite.core
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;                   // 64B
 
-        /// <summary>Maximum inline key size that fits in the 12-bit RDH KeyLength field.
-        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; 12) - 1 = 0xFFF`), so inline keys occupy 0..0xFFE
-        /// (the 4096 - 1 = 4095 distinct values used inline). For overflow keys (R11), the low 12 bits of the on-disk length
-        /// are stored in the RDH field and can be any value 0..0xFFF; the dependency `MaxInlineKeySizeLimit == fieldMask - 1`
+        /// <summary>Maximum inline key size that fits in the RDH KeyLength field.
+        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; <see cref="RecordDataHeader.kKeyLengthBits"/>) - 1`), so inline keys occupy
+        /// 0..MaxInlineKeySizeLimit. For overflow keys (R11), the low <see cref="RecordDataHeader.kKeyLengthBits"/> bits of the on-disk length
+        /// are stored in the RDH field and can be any value 0..fieldMask; the dependency `MaxInlineKeySizeLimit == fieldMask - 1`
         /// ensures the masked-low-N-bits encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
-        public const int MaxInlineKeySizeLimit = 0xFFE;
+        public const int MaxInlineKeySizeLimit = (1 << RecordDataHeader.kKeyLengthBits) - 2;
 
-        /// <summary>Maximum inline value size that fits in the 22-bit RDH ValueLength field.
-        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; 22) - 1 = 0x3FFFFF`), so inline values occupy 0..0x3FFFFE.
-        /// For overflow / object values (R11), the low 22 bits of the on-disk length are stored in the RDH field and can be
-        /// any value 0..0x3FFFFF; the dependency `MaxInlineValueSizeLimit == fieldMask - 1` ensures the masked-low-N-bits
-        /// encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
-        public const int MaxInlineValueSizeLimit = (1 << 22) - 2;       // 0x3FFFFE
+        /// <summary>Maximum inline value size that fits in the RDH ValueLength field.
+        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; <see cref="RecordDataHeader.kValueLengthBits"/>) - 1`), so inline values
+        /// occupy 0..MaxInlineValueSizeLimit. For overflow / object values (R11), the low <see cref="RecordDataHeader.kValueLengthBits"/> bits
+        /// of the on-disk length are stored in the RDH field and can be any value 0..fieldMask; the dependency `MaxInlineValueSizeLimit ==
+        /// fieldMask - 1` ensures the masked-low-N-bits encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
+        public const int MaxInlineValueSizeLimit = (1 << RecordDataHeader.kValueLengthBits) - 2;
 
         /// <summary>Minimum allowed <see cref="MaxInlineKeySize"/> / <see cref="MaxInlineValueSize"/>.</summary>
         public const int MinMaxInlineSize = 1 << 6;                                     // 64B
 
-        /// <summary>Whether the given key size exceeds the 12-bit RDH KeyLength inline limit and requires overflow encoding.</summary>
+        /// <summary>Whether the given key size exceeds the RDH KeyLength inline limit and requires overflow encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool KeySizeExceedsHeaderLimit(int size) => size > MaxInlineKeySizeLimit;
 
-        /// <summary>Whether the given value size exceeds the 22-bit RDH ValueLength inline limit and requires overflow encoding.</summary>
+        /// <summary>Whether the given value size exceeds the RDH ValueLength inline limit and requires overflow encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public static bool ValueSizeExceedsHeaderLimit(long size) => size > MaxInlineValueSizeLimit;
 

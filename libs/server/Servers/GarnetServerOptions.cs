@@ -813,7 +813,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
-        /// Tsavorite requires this to be at least 64 bytes and at most 0xFFFFFE (the 3-byte RecordDataHeader value length limit).
+        /// Tsavorite requires this to be at least 64 bytes and at most 0xFFFFFE (the RecordDataHeader value-length field's
+        /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
+        /// is internal to Tsavorite.core and not visible from Garnet.server).
         /// The value will be used directly.
         /// Additionally, the effective value must be strictly less than the effective PageSize
         /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
@@ -824,7 +826,7 @@ namespace Garnet.server
         public int ValueOverflowThresholdBytes()
         {
             const long MinBytes = 64L;                  // LogSettings.MinMaxInlineSize
-            const long MaxBytes = 0x3FFFFE;             // LogSettings.MaxInlineValueSizeLimit
+            const long MaxBytes = 0xFFFFFE;             // LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
 
             if (string.IsNullOrEmpty(ValueOverflowThreshold))
                 throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");

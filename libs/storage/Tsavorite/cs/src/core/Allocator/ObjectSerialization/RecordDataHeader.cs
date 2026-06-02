@@ -25,20 +25,21 @@ namespace Tsavorite.core
     ///         Maximum representable explicit filler is <see cref="MaxFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 2040 bytes. Records that need more
     ///         filler are <i>split</i>: the original record retains <see cref="RecordSplitRetainFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 512 bytes
     ///         of filler and the excess is placed in a new invalid record (see <see cref="SetFiller"/>).</item>
-    ///     <item>Bits 14–25: <see cref="KeyLength"/> (12 bits). The property returns this raw value for inline keys; for overflow keys
+    ///     <item>Bits 14–23: <see cref="KeyLength"/>. The property returns this raw value for inline keys; for overflow keys
     ///         it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray already carries the length, so mirroring it
     ///         in the header would be extra work with no consumer.</item>
-    ///     <item>Bits 26–47: <see cref="ValueLength"/> (22 bits). The property returns this raw value for inline values; for
+    ///     <item>Bits 24–47: <see cref="ValueLength"/>. The property returns this raw value for inline values; for
     ///         overflow/object values it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray / IHeapObject
     ///         already carries the length, so mirroring it in the header would be extra work with no consumer.</item>
     ///     <item>Bits 48–55: <see cref="RecordType"/> byte; interpreted by caller. (Byte-aligned at byte 6.)</item>
     ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
     ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the LOW 12/22 bits of the
-    /// on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next 32 bits stored in the objectId slot
-    /// at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>) the raw RDH fields are restored
-    /// to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns ObjectIdSize" invariant holds.</para>
+    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the low <see cref="kKeyLengthBits"/> /
+    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next
+    /// 32 bits stored in the objectId slot at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>)
+    /// the raw RDH fields are restored to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns
+    /// ObjectIdSize" invariant holds.</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
@@ -82,24 +83,24 @@ namespace Tsavorite.core
         /// (= <c>RecordSplitRetainFillerWords * Constants.kRecordAlignment</c> = 512 bytes). The remainder becomes a new invalid record.</summary>
         internal const int RecordSplitRetainFillerWords = 1 << kRecordSplitRetainFillerWordsBits;     // 64
 
-        // ── KeyLength field (bits 14-25, 12 bits) ──────────────────────────────────
+        // ── KeyLength field (low kKeyLengthBits bits after FillerWords) ─────────────
         const int kKeyLengthShift = 14;
-        internal const int kKeyLengthBits = 12;
-        internal const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;   // 0xFFF
+        internal const int kKeyLengthBits = 10;
+        internal const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;
         const ulong kKeyLengthMask = kKeyLengthValueMask << kKeyLengthShift;
 
-        // ── ValueLength field (bits 26-47, 22 bits) ────────────────────────────────
-        const int kValueLengthShift = 26;
-        internal const int kValueLengthBits = 22;
-        internal const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1; // 0x3FFFFF
+        // ── ValueLength field (low kValueLengthBits bits after KeyLength) ───────────
+        const int kValueLengthShift = kKeyLengthShift + kKeyLengthBits;
+        internal const int kValueLengthBits = 24;
+        internal const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1;
         const ulong kValueLengthMask = kValueLengthValueMask << kValueLengthShift;
 
-        // ── RecordType byte (bits 48-55, byte 6) ───────────────────────────────────
-        const int kRecordTypeShift = 48;
+        // ── RecordType byte (byte 6 of word; must be byte-aligned: requires kValueLengthShift + kValueLengthBits == 48) ─
+        const int kRecordTypeShift = kValueLengthShift + kValueLengthBits;
         const ulong kRecordTypeMask = 0xFFUL << kRecordTypeShift;
 
-        // ── Namespace byte (bits 56-63, byte 7) ────────────────────────────────────
-        const int kNamespaceShift = 56;
+        // ── Namespace byte (byte 7 of word) ────────────────────────────────────────
+        const int kNamespaceShift = kRecordTypeShift + 8;
         const ulong kNamespaceMask = 0xFFUL << kNamespaceShift;
 
         /// <summary>Mask for extracting a single byte from the word.</summary>
@@ -238,10 +239,10 @@ namespace Tsavorite.core
         // ── Field accessors via ulong word bit manipulation ────────────────────────
 
         /// <summary>The effective KeyLength for record-length calculations.
-        /// <para>For inline keys, returns the raw 12-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// <para>For inline keys, returns the raw <see cref="kKeyLengthBits"/>-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
         /// in the in-memory path).</para>
-        /// <para>The setter always writes the raw 12-bit value. The disk-write path uses it to temporarily store the LOW 12 bits of
+        /// <para>The setter always writes the raw <see cref="kKeyLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kKeyLengthBits"/> bits of
         /// the on-disk overflow key length (the next 32 bits live in the objectId slot at keyAddress); after read-back,
         /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
         /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetKeyLengthRaw"/>.</para></summary>
@@ -252,21 +253,21 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kKeyLengthValueMask, $"KeyLength {value} exceeds 12-bit max");
+                Debug.Assert((uint)value <= kKeyLengthValueMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
                 word = (word & ~kKeyLengthMask) | (((ulong)value & kKeyLengthValueMask) << kKeyLengthShift);
             }
         }
 
-        /// <summary>Read the raw 12-bit value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low 12 bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
+        /// <summary>Read the raw value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
+        /// where the field may hold the low <see cref="kKeyLengthBits"/> bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthValueMask);
 
         /// <summary>The effective ValueLength for record-length calculations.
-        /// <para>For inline values, returns the raw 22-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// <para>For inline values, returns the raw <see cref="kValueLengthBits"/>-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
         /// consumer in the in-memory path).</para>
-        /// <para>The setter always writes the raw 22-bit value. The disk-write path uses it to temporarily store the LOW 22 bits of
+        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kValueLengthBits"/> bits of
         /// the on-disk overflow/object value length (the next 32 bits live in the objectId slot at valueAddress); after read-back,
         /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
         /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
@@ -277,13 +278,13 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds 22-bit max");
+                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
                 word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthValueMask) << kValueLengthShift);
             }
         }
 
-        /// <summary>Read the raw 22-bit value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low 22 bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
+        /// <summary>Read the raw value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
+        /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthValueMask);
 
@@ -482,7 +483,7 @@ namespace Tsavorite.core
             var newRecordAddress = recordBaseAddress + alignedSum + retainedExplicitFiller;
 
             // The new record holds: RecordInfo + RDH + (the rest as inline "value" bytes; no key, no optionals).
-            // If the rest doesn't fit in 22-bit ValueLength + 8-bit FillerWords*8, recursively split via SetFiller.
+            // If the rest doesn't fit in the ValueLength field + 8-bit FillerWords*8, recursively split via SetFiller.
             var newInnerBytes = newRecordBytes - Constants.FixedHeaderSize;        // bytes available for value + filler
             int newValueLength = newInnerBytes <= LogSettings.MaxInlineValueSizeLimit ? newInnerBytes : LogSettings.MaxInlineValueSizeLimit;
             var newRemainingFiller = newInnerBytes - newValueLength;
