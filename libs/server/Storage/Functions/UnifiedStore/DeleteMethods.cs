@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Tsavorite.core;
@@ -12,18 +12,15 @@ namespace Garnet.server
     {
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!logRecord.Info.ValueIsObject)
-            {
-                logRecord.InfoRef.ClearHasETag();
+            if (!logRecord.DataHeader.ValueIsObject)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
-            }
 
             return true;
         }
 
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (logRecord.Info.ValueIsObject && !logRecord.Info.Modified)
+            if (logRecord.DataHeader.ValueIsObject && !logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
 
             if (functionsState.appendOnlyFile != null)
@@ -32,7 +29,7 @@ namespace Garnet.server
 
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
                 logRecord.ClearOptionals();
 
             if (!logRecord.Info.Modified)

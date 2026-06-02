@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
+            Debug.Assert(!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             var type = input.header.type;
             IGarnetObject value;
@@ -64,7 +64,7 @@ namespace Garnet.server
                 var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 if (result)
-                    sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+                    sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                 return result;
             }
             finally
@@ -87,7 +87,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 output.OutputFlags |= ObjectOutputFlags.WrongType;
@@ -108,7 +108,7 @@ namespace Garnet.server
         bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
             // Expired data
-            if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
@@ -165,7 +165,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
-            if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
@@ -230,7 +230,7 @@ namespace Garnet.server
                 }
             }
 
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
 
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF

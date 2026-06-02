@@ -579,10 +579,10 @@ namespace Tsavorite.core
                     throw new TsavoriteException($"{rcs.SecondChanceFraction} must be >= 0.0 and <= 1.0");
             }
 
-            if (logSettings.MaxInlineKeySizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
-            if (logSettings.MaxInlineValueSizeBits < LogSettings.kLowestMaxInlineSizeBits || logSettings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
-                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
+            if (logSettings.MaxInlineKeySize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineKeySize > LogSettings.MaxInlineKeySizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineKeySize)} must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineKeySizeLimit}");
+            if (logSettings.MaxInlineValueSize < LogSettings.MinMaxInlineSize || logSettings.MaxInlineValueSize > LogSettings.MaxInlineValueSizeLimit)
+                throw new TsavoriteException($"{nameof(logSettings.MaxInlineValueSize)} must be between {LogSettings.MinMaxInlineSize} and {LogSettings.MaxInlineValueSizeLimit}");
 
             this.logger = logger;
             if (logSettings.LogDevice == null)
@@ -2121,15 +2121,15 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + RecordDataHeader.MinHeaderBytes)
+            if (currentLength >= Constants.FixedHeaderSize)
             {
                 var ptr = ctx.record.GetValidPointer();
                 var recordInfo = *(RecordInfo*)ptr;
-                var dataHeader = new RecordDataHeader(ptr + RecordInfo.Size);
-                var (numKeyLengthBytes, numRecordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var headerLength);
+                var dataHeader = *(RecordDataHeader*)(ptr + RecordInfo.Size);
+                var headerLength = RecordDataHeader.Size;
 
                 // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
-                var recordLength = dataHeader.GetRecordLength(numRecordLengthBytes);
+                var recordLength = dataHeader.GetRecordLength();
                 if (currentLength <= headerLength)
                 {
                     prevLengthToRead = recordLength;
@@ -2142,27 +2142,36 @@ namespace Tsavorite.core
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
 
-                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart(headerLength);
+                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart();
 
                 // If the length is up to offsetToKeyStart, we can read the full lengths. If not, we'll fall through to reread the current record.
                 if (currentLength >= offsetToKeyStart)
                 {
-                    var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-                    var keyStartPtr = ptr + offsetToKeyStart;
+                    var keyLength = dataHeader.KeyLength;
 
-                    // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, dataHeader))
-                        return false;
-
-                    // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
-                    if (currentLength >= recordLength)
+                    if ((offsetToKeyStart + keyLength) <= currentLength)
                     {
-                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
-                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
-                        if (storeFunctions.CallOnDiskRead)
-                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
-                        return true;
+                        // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
+                        if (!ctx.requestKey.IsEmpty && dataHeader.KeyIsInline)
+                        {
+                            var diskLogRecord = new LogRecord((long)ptr);
+                            if (!storeFunctions.KeysEqual(ctx.requestKey, diskLogRecord))
+                                return false;
+                        }
+
+                        // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
+                        if (currentLength >= recordLength)
+                        {
+                            ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                            ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                            if (storeFunctions.CallOnDiskRead)
+                                storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
+                            return true;
+                        }
                     }
+
+                    // We didn't have the full key so drop through to read the full record with the length we now know.
+                    prevLengthToRead = recordLength;
                 }
             }
 

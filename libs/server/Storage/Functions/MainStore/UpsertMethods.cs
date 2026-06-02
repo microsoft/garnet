@@ -22,7 +22,7 @@ namespace Garnet.server
                 return false;
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
 
@@ -34,7 +34,7 @@ namespace Garnet.server
         public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, in TSourceLogRecord inputLogRecord, ref StringOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (inputLogRecord.Info.ValueIsObject)
+            if (inputLogRecord.DataHeader.ValueIsObject)
                 throw new GarnetException("String store should not be called with IHeapObject");
             return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
         }
@@ -58,7 +58,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
+                Debug.Assert(!inputLogRecord.DataHeader.ValueIsObject, "String store should not be called with IHeapObject");
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
         }
@@ -67,7 +67,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref StringInput input, ReadOnlySpan<byte> srcValue, ref StringOutput output, ref UpsertInfo upsertInfo)
         {
-            // Prevent SET from overwriting VectorSet or RangeIndex stubs – normal string records have RecordType 0; skip all checks in that common case.
+            // Prevent SET from overwriting VectorSet or RangeIndex stubs. Normal string records have RecordType 0; skip all checks in that common case.
             var recordType = logRecord.RecordType;
             if (recordType != 0 && (recordType == VectorManager.RecordType || recordType == RangeIndexManager.RangeIndexRecordType))
             {
@@ -94,7 +94,7 @@ namespace Garnet.server
         public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref StringInput input, in TSourceLogRecord inputLogRecord, ref StringOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (inputLogRecord.Info.ValueIsObject)
+            if (inputLogRecord.DataHeader.ValueIsObject)
                 GarnetException.Throw("String store should not be called with IHeapObject");
             if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;

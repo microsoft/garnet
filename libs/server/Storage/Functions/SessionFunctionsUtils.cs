@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -96,7 +96,7 @@ namespace Garnet.server
         {
             RecordSizeInfo sizeInfo;
 
-            if (logRecord.Info.ValueIsInline && (expiration == 0 || logRecord.Info.HasExpiration))
+            if (logRecord.DataHeader.ValueIsInline && (expiration == 0 || logRecord.DataHeader.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                 if (!logRecord.TrySetPinnedValueSpan(newValue, valueAddress, ref valueLength))
@@ -114,7 +114,7 @@ namespace Garnet.server
             }
 
             UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -134,7 +134,7 @@ namespace Garnet.server
                 return false;
 
             UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -154,7 +154,7 @@ namespace Garnet.server
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -169,7 +169,7 @@ namespace Garnet.server
                 if (!logRecord.TrySetExpiration(expiration))
                     Debug.Fail("Should have succeeded in setting Expiration as we should have ensured there was space there already");
             }
-            else if (logRecord.Info.HasExpiration)
+            else if (logRecord.DataHeader.HasExpiration)
                 _ = logRecord.RemoveExpiration();
         }
     }
