@@ -156,11 +156,16 @@ namespace Garnet.test.cluster
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
 
-            // Populate range indexes — low memory should trigger eviction
+            // Populate range indexes
             PopulateRangeIndex(primaryIndex, "idx1", 10);
             PopulateRangeIndex(primaryIndex, "idx2", 10);
 
-            // Verify flush.bftree files were created on the primary (confirms eviction triggered flush path)
+            // Fill the log with regular string keys to push RI records to disk (trigger flush)
+            var endpoint = (IPEndPoint)context.endpoints[primaryIndex];
+            for (var i = 0; i < 100; i++)
+                context.clusterTestUtils.Execute(endpoint, "SET", [$"filler{i:D4}", $"val{i:D4}"], logger: context.logger);
+
+            // Verify flush.bftree files were created on the primary (confirms flush path was triggered)
             var primaryRiLogRoot = GetRiLogRoot(primaryIndex);
             var primaryFlushFiles = Directory.GetFiles(primaryRiLogRoot, "*.flush.bftree");
             ClassicAssert.IsTrue(primaryFlushFiles.Length > 0,
