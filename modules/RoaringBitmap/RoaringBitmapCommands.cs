@@ -90,53 +90,18 @@ namespace GarnetRoaringBitmap
         }
     }
 
-    // Architectural note (raised by @kevin-montrose in PR #1741 review):
-    //   Registered as ReadModifyWrite so NeedInitialUpdate can fire for missing
-    //   keys and write the Redis-compatible missing-key response (0)
-    //   without creating an empty key. Garnet's CustomObjectFunctions.Reader
-    //   path is only invoked when the key exists; the RMW path is the only way
-    //   to intercept the miss with a typed response (vs. a generic nil).
-    //   Reader is implemented below to fast-path the existing-key case.
-    //   Awaiting @badrishc's input on whether a cleaner Reader+missing-key
-    //   override is planned for the framework.
-
     /// <summary>
     /// R.GETBIT key offset
     ///
     /// Returns the bit at <c>offset</c> in the Roaring bitmap. Returns 0 if the key
-    /// does not exist or the offset has never been set. Registered as
-    /// ReadModifyWrite so that missing-key handling can route through
-    /// <see cref="NeedInitialUpdate"/> without creating an empty key.
+    /// does not exist or the offset has never been set. Read-only command: existing
+    /// keys flow through <see cref="Reader"/>, while missing keys are handled by
+    /// <see cref="NotFound"/> so no key is created on a read.
     /// </summary>
     public sealed class RGetBit : CustomObjectFunctions
     {
         private static ReadOnlySpan<byte> ErrOffset => "ERR bit offset is not an unsigned 32-bit integer"u8;
 
-        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
-        {
-            // Missing key: validate args, write 0, decline to create a key.
-            var offsetArg = GetFirstArg(ref input);
-            if (!RoaringBitmapArgs.TryParseUInt32(offsetArg, out _))
-            {
-                writer.WriteError(ErrOffset);
-                return false;
-            }
-            writer.WriteInt32(0);
-            return false;
-        }
-
-        public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
-        {
-            Debug.Assert(value is RoaringBitmapObject);
-            var rb = (RoaringBitmapObject)value;
-
-            var offsetArg = GetFirstArg(ref input);
-            if (!RoaringBitmapArgs.TryParseUInt32(offsetArg, out var bitOffset))
-                return AbortWithErrorMessage(ref writer, ErrOffset);
-            writer.WriteInt32(rb.GetBit(bitOffset));
-            return true;
-        }
-
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(value is RoaringBitmapObject);
@@ -148,41 +113,26 @@ namespace GarnetRoaringBitmap
             writer.WriteInt32(rb.GetBit(bitOffset));
             return true;
         }
-    }
 
-    // Architectural note (raised by @kevin-montrose in PR #1741 review):
-    //   Registered as ReadModifyWrite so NeedInitialUpdate can fire for missing
-    //   keys and write the Redis-compatible missing-key response (0)
-    //   without creating an empty key. Garnet's CustomObjectFunctions.Reader
-    //   path is only invoked when the key exists; the RMW path is the only way
-    //   to intercept the miss with a typed response (vs. a generic nil).
-    //   Reader is implemented below to fast-path the existing-key case.
-    //   Awaiting @badrishc's input on whether a cleaner Reader+missing-key
-    //   override is planned for the framework.
+        public override void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        {
+            // Missing key: validate the offset and report 0 for the absent bit.
+            var offsetArg = GetFirstArg(ref input);
+            if (!RoaringBitmapArgs.TryParseUInt32(offsetArg, out _))
+                writer.WriteError(ErrOffset);
+            else
+                writer.WriteInt32(0);
+        }
+    }
 
     /// <summary>
     /// R.BITCOUNT key
     ///
     /// Returns the number of bits set to 1 in the Roaring bitmap. Returns 0 if the
-    /// key does not exist. Registered as ReadModifyWrite (no actual mutation) for
-    /// the same NeedInitialUpdate-on-miss reason as <see cref="RGetBit"/>.
+    /// key does not exist. Read-only command (see <see cref="RGetBit"/>).
     /// </summary>
     public sealed class RBitCount : CustomObjectFunctions
     {
-        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
-        {
-            writer.WriteInt64(0);
-            return false;
-        }
-
-        public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
-        {
-            Debug.Assert(value is RoaringBitmapObject);
-            var rb = (RoaringBitmapObject)value;
-            writer.WriteInt64(rb.BitCount());
-            return true;
-        }
-
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(value is RoaringBitmapObject);
@@ -190,43 +140,56 @@ namespace GarnetRoaringBitmap
             writer.WriteInt64(rb.BitCount());
             return true;
         }
-    }
 
-    // Architectural note (raised by @kevin-montrose in PR #1741 review):
-    //   Registered as ReadModifyWrite so NeedInitialUpdate can fire for missing
-    //   keys and write the Redis-compatible missing-key response (-1 for bit=1,
-    //   or from for bit=0) without creating an empty key. Garnet's
-    //   CustomObjectFunctions.Reader path is only invoked when the key exists;
-    //   the RMW path is the only way to intercept the miss with a typed response
-    //   (vs. a generic nil).
-    //   Reader is implemented below to fast-path the existing-key case.
-    //   Awaiting @badrishc's input on whether a cleaner Reader+missing-key
-    //   override is planned for the framework.
+        public override void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+            => writer.WriteInt64(0);
+    }
 
     /// <summary>
     /// R.BITPOS key bit [from]
     ///
     /// Returns the position of the first bit equal to <c>bit</c> (0 or 1) at or
     /// after the optional <c>from</c> offset (default 0). Returns -1 when no match
-    /// exists in the uint32 universe. Registered as ReadModifyWrite (no actual
-    /// mutation) for the same NeedInitialUpdate-on-miss reason as <see cref="RGetBit"/>.
+    /// exists in the uint32 universe. Read-only command (see <see cref="RGetBit"/>).
     /// </summary>
     public sealed class RBitPos : CustomObjectFunctions
     {
         private static ReadOnlySpan<byte> ErrBit => "ERR bit must be 0 or 1"u8;
         private static ReadOnlySpan<byte> ErrFrom => "ERR from offset is not an unsigned 32-bit integer"u8;
 
-        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
+            Debug.Assert(value is RoaringBitmapObject);
+            var rb = (RoaringBitmapObject)value;
+
+            if (!TryParseArgs(ref input, ref writer, out var bit, out var from))
+                return true;
+
+            var pos = rb.BitPos(bit ? 1 : 0, from);
+            writer.WriteInt64(pos);
+            return true;
+        }
+
+        public override void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        {
+            if (!TryParseArgs(ref input, ref writer, out var bit, out var from))
+                return;
+
+            // Missing key: bit==1 -> -1; bit==0 -> first unset is `from` (0 by default).
+            writer.WriteInt64(bit ? -1 : from);
+        }
+
+        private static bool TryParseArgs(ref ObjectInput input, ref RespMemoryWriter writer, out bool bit, out uint from)
+        {
+            from = 0;
             var offset = 0;
             var bitArg = GetNextArg(ref input, ref offset);
-            if (!RoaringBitmapArgs.TryParseBit(bitArg, out var bit))
+            if (!RoaringBitmapArgs.TryParseBit(bitArg, out bit))
             {
                 writer.WriteError(ErrBit);
                 return false;
             }
 
-            uint from = 0;
             if (input.parseState.Count > offset)
             {
                 var fromArg = GetNextArg(ref input, ref offset);
@@ -237,55 +200,6 @@ namespace GarnetRoaringBitmap
                 }
             }
 
-            // Missing key: bit==1 -> -1; bit==0 -> first unset is `from` (0 by default).
-            if (bit) writer.WriteInt64(-1);
-            else writer.WriteInt64(from);
-            return false;
-        }
-
-        public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
-        {
-            Debug.Assert(value is RoaringBitmapObject);
-            var rb = (RoaringBitmapObject)value;
-
-            var offset = 0;
-            var bitArg = GetNextArg(ref input, ref offset);
-            if (!RoaringBitmapArgs.TryParseBit(bitArg, out var bit))
-                return AbortWithErrorMessage(ref writer, ErrBit);
-
-            uint from = 0;
-            if (input.parseState.Count > offset)
-            {
-                var fromArg = GetNextArg(ref input, ref offset);
-                if (!RoaringBitmapArgs.TryParseUInt32(fromArg, out from))
-                    return AbortWithErrorMessage(ref writer, ErrFrom);
-            }
-
-            var pos = rb.BitPos(bit ? 1 : 0, from);
-            writer.WriteInt64(pos);
-            return true;
-        }
-
-        public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
-        {
-            Debug.Assert(value is RoaringBitmapObject);
-            var rb = (RoaringBitmapObject)value;
-
-            var offset = 0;
-            var bitArg = GetNextArg(ref input, ref offset);
-            if (!RoaringBitmapArgs.TryParseBit(bitArg, out var bit))
-                return AbortWithErrorMessage(ref writer, ErrBit);
-
-            uint from = 0;
-            if (input.parseState.Count > offset)
-            {
-                var fromArg = GetNextArg(ref input, ref offset);
-                if (!RoaringBitmapArgs.TryParseUInt32(fromArg, out from))
-                    return AbortWithErrorMessage(ref writer, ErrFrom);
-            }
-
-            var pos = rb.BitPos(bit ? 1 : 0, from);
-            writer.WriteInt64(pos);
             return true;
         }
     }

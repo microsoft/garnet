@@ -30,10 +30,14 @@ namespace GarnetRoaringBitmap
                 return;
             }
 
-            context.RegisterCommand("R.SETBIT", factory, new RSetBit(), CommandType.ReadModifyWrite);
-            context.RegisterCommand("R.GETBIT", factory, new RGetBit(), CommandType.ReadModifyWrite);
-            context.RegisterCommand("R.BITCOUNT", factory, new RBitCount(), CommandType.ReadModifyWrite);
-            context.RegisterCommand("R.BITPOS", factory, new RBitPos(), CommandType.ReadModifyWrite);
+            context.RegisterCommand("R.SETBIT", factory, new RSetBit(), CommandType.ReadModifyWrite,
+                new RespCommandsInfo { Arity = 4 });
+            context.RegisterCommand("R.GETBIT", factory, new RGetBit(), CommandType.Read,
+                new RespCommandsInfo { Arity = 3 });
+            context.RegisterCommand("R.BITCOUNT", factory, new RBitCount(), CommandType.Read,
+                new RespCommandsInfo { Arity = 2 });
+            context.RegisterCommand("R.BITPOS", factory, new RBitPos(), CommandType.Read,
+                new RespCommandsInfo { Arity = -3 });
         }
     }
 }

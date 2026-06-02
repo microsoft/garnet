@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Allure.NUnit;
 using GarnetRoaringBitmap.Containers;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,9 +16,8 @@ namespace Garnet.test.RoaringBitmap
     /// These tests exercise the algorithm in isolation (no RESP layer, no server)
     /// and use a HashSet&lt;uint&gt; oracle to verify behaviour.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class RoaringBitmapDataTests : AllureTestBase
+    public class RoaringBitmapDataTests : TestBase
     {
         // ---------- Basics ----------
 

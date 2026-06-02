@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.server;
 using GarnetRoaringBitmap;
 using NUnit.Framework;
@@ -18,9 +17,8 @@ namespace Garnet.test
     /// real RESP protocol via StackExchange.Redis. These complement the pure
     /// data-structure tests in <c>RoaringBitmapDataTests</c>.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class RespRoaringBitmapTests : AllureTestBase
+    public class RespRoaringBitmapTests : TestBase
     {
         private GarnetServer server;
 
@@ -45,9 +43,9 @@ namespace Garnet.test
             var factory = new RoaringBitmapFactory();
             server.Register.NewType(factory);
             server.Register.NewCommand("R.SETBIT", CommandType.ReadModifyWrite, factory, new RSetBit(), new RespCommandsInfo { Arity = 4 });
-            server.Register.NewCommand("R.GETBIT", CommandType.ReadModifyWrite, factory, new RGetBit(), new RespCommandsInfo { Arity = 3 });
-            server.Register.NewCommand("R.BITCOUNT", CommandType.ReadModifyWrite, factory, new RBitCount(), new RespCommandsInfo { Arity = 2 });
-            server.Register.NewCommand("R.BITPOS", CommandType.ReadModifyWrite, factory, new RBitPos(), new RespCommandsInfo { Arity = -3 });
+            server.Register.NewCommand("R.GETBIT", CommandType.Read, factory, new RGetBit(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewCommand("R.BITCOUNT", CommandType.Read, factory, new RBitCount(), new RespCommandsInfo { Arity = 2 });
+            server.Register.NewCommand("R.BITPOS", CommandType.Read, factory, new RBitPos(), new RespCommandsInfo { Arity = -3 });
         }
 
         [Test]
