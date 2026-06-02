@@ -2204,10 +2204,12 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
-                        // Reread rents a fresh wrapper via AsyncReadRecordToMemory. Clear our
-                        // wrapper's context (so it doesn't transitively retain freed buffers)
-                        // and return it to the pool in the finally block.
-                        result.context = default;
+                        // Reread: the local ctx is a struct copy taken at line var ctx = result.context;
+                        // and carries id / requestKey / minAddress / callbackQueue forward. AsyncGetFromDisk
+                        // passes it by value to AsyncReadRecordToMemory, which rents a fresh wrapper from
+                        // asyncGetFromDiskResultPool and writes asyncResult.context = ctx — so every field
+                        // populated at RECORD_ON_DISK setup propagates into the new IO. Our (old) wrapper
+                        // is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2216,9 +2218,8 @@ namespace Tsavorite.core
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
                 {
+                    // completionEvent took ownership of the data via Set; finally returns the wrapper to the pool.
                     ctx.completionEvent.Set(ref ctx);
-                    // completionEvent took ownership of the data via Set; clear and return wrapper.
-                    result.context = default;
                 }
                 else
                 {
@@ -2244,9 +2245,10 @@ namespace Tsavorite.core
             {
                 // Single return point for the wrapper. ReturnAsyncGetFromDiskResult clears
                 // result.context before enqueueing, keeping pooled wrappers free of stale
-                // SectorAlignedMemory / DiskLogRecord refs (not a functional bug — the next
-                // rental overwrites context before any read — but matches the explicit clears
-                // on the success paths and on the throw arm of the catch).
+                // SectorAlignedMemory / DiskLogRecord refs. The success-via-callbackQueue path
+                // opts out (poolReturn=false) because it transfers wrapper ownership to the
+                // worker, which returns it via ReturnAsyncGetFromDiskResult after consuming
+                // result.context in InternalCompletePendingRequest.
                 if (poolReturn)
                     ReturnAsyncGetFromDiskResult(result);
             }
