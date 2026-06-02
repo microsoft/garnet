@@ -120,8 +120,23 @@ namespace Garnet.common
             // Singleton; nothing to release.
         }
 
+        /// <summary>
+        /// Wrapper-recycle callback. Invoked exclusively from <see cref="PooledBuffer.Dispose"/>
+        /// after the underlying byte[] has already been returned to <see cref="ArrayPool{T}.Shared"/>
+        /// and the <c>array</c> field has been Interlocked-Exchanged to <c>null</c>. Do not call
+        /// this directly from anywhere else — wrapper lifetime is managed by <c>Dispose</c>, and
+        /// invoking it outside of that path would re-enqueue a wrapper while it is still
+        /// considered "rented" by its current owner.
+        /// </summary>
+        /// <remarks>
+        /// The cap-exceeded "drop" branch is safe: the <see cref="PooledBuffer"/> at that point
+        /// owns no native or pooled resources (<c>array == null</c>, byte[] already returned).
+        /// Letting GC reclaim the bare wrapper costs only one small managed object and avoids
+        /// unbounded growth of <see cref="globalPool"/>. The wrapper does not implement a
+        /// finalizer, so no finalization pressure is incurred either.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Return(PooledBuffer buf)
+        private void OnPooledBufferDisposed(PooledBuffer buf)
         {
             // Fast path: per-thread cache, lock-free.
             var cache = tlsCache;
@@ -139,7 +154,9 @@ namespace Garnet.common
                 return;
             }
 
-            // Slow path: global queue with hard cap.
+            // Slow path: global queue with hard cap. If we are over the cap, drop the wrapper
+            // (see remarks above — its byte[] is already back in ArrayPool, so dropping leaks
+            // nothing beyond the wrapper's own managed footprint, which the GC will reclaim).
             if (Interlocked.Increment(ref retainedCount) > MaxRetainedWrappers)
             {
                 Interlocked.Decrement(ref retainedCount);
@@ -185,7 +202,9 @@ namespace Garnet.common
                 if (local != null)
                 {
                     ArrayPool<byte>.Shared.Return(local);
-                    owner.Return(this);
+                    // Recycle the wrapper itself. Must happen after the byte[] is back in
+                    // ArrayPool so this wrapper holds no resources by the time it is enqueued.
+                    owner.OnPooledBufferDisposed(this);
                 }
             }
 
