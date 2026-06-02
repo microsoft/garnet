@@ -167,13 +167,28 @@ void QueueIoHandler::IoCompletionCallback(io_context_t ctx, struct iocb* iocb, l
 }
 
 bool QueueIoHandler::TryComplete() {
+  // Compat scanner: walk all shards. Matches UringIoHandler::TryComplete() so
+  // callers that don't know about sharding (e.g., AllocatorBase's throttle-wait
+  // loop calling device.TryComplete() opportunistically) still observe
+  // completions on shards >0.
+  bool any = false;
+  for (int i = 0; i < static_cast<int>(io_objects_.size()); ++i) {
+    if (TryCompleteFor(i)) any = true;
+  }
+  return any;
+}
+
+bool QueueIoHandler::TryCompleteFor(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) return false;
+  io_context_t ctx = io_objects_[idx];
+  if (ctx == 0) return false;
   struct timespec timeout;
   std::memset(&timeout, 0, sizeof(timeout));
   struct io_event events[1];
-  int result = ::io_getevents(io_object_, 1, 1, events, &timeout);
+  int result = ::io_getevents(ctx, 1, 1, events, &timeout);
   if(result == 1) {
     io_callback_t callback = reinterpret_cast<io_callback_t>(events[0].data);
-    callback(io_object_, events[0].obj, events[0].res, events[0].res2);
+    callback(ctx, events[0].obj, events[0].res, events[0].res2);
     return true;
   } else {
     return false;
@@ -183,6 +198,25 @@ bool QueueIoHandler::TryComplete() {
 #define IO_BATCH_EVENTS	8		/* number of events to batch up */
 
 int QueueIoHandler::QueueRun(int timeout_secs) {
+  // Compat: drain across all contexts. First context uses the full timeout; subsequent
+  // contexts poll (timeout=0). This matches the legacy single-context behaviour for
+  // num_contexts==1 (one ::io_getevents with the full timeout, batched up to
+  // IO_BATCH_EVENTS).
+  if (io_objects_.empty()) return 0;
+  int total = 0;
+  int first = QueueRunFor(0, timeout_secs);
+  if (first > 0) total += first;
+  for (int i = 1; i < static_cast<int>(io_objects_.size()); ++i) {
+    int n = QueueRunFor(i, 0);
+    if (n > 0) total += n;
+  }
+  return total > 0 ? total : first;
+}
+
+int QueueIoHandler::QueueRunFor(int idx, int timeout_secs) {
+    if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) return -1;
+    io_context_t ctx = io_objects_[idx];
+    if (ctx == 0) return -1;
     struct timespec timeout;
     timeout.tv_sec = timeout_secs;
     timeout.tv_nsec = 0;
@@ -199,12 +233,12 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
      */
     do {
         int i;
-        if ((n = ::io_getevents(io_object_, 1, IO_BATCH_EVENTS, events, &timeout)) <= 0)
+        if ((n = ::io_getevents(ctx, 1, IO_BATCH_EVENTS, events, &timeout)) <= 0)
             break;
         ret += n;
         for (ep = events, i = n; i-- > 0; ep++) {
             io_callback_t callback = reinterpret_cast<io_callback_t>(ep->data);
-            callback(io_object_, ep->obj, ep->res, ep->res2);
+            callback(ctx, ep->obj, ep->res, ep->res2);
         }
     } while (n == IO_BATCH_EVENTS);
 
@@ -222,20 +256,22 @@ void QueueWakeCompletionCallback(io_context_t, struct iocb* iocb, long /*res*/, 
 } // namespace
 
 int QueueIoHandler::Wake(int idx) {
-    if (idx != 0) return -1;
-    if (io_object_ == 0) return -1;
-    if (wake_fd_ < 0) return -1;
+    if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) return -1;
+    io_context_t ctx = io_objects_[idx];
+    if (ctx == 0) return -1;
+    int wake_fd = wake_fds_[idx];
+    if (wake_fd < 0) return -1;
     // Submit a 0-byte read on /dev/null. The kernel completes it immediately (reads on
     // /dev/null always return 0 bytes), io_getevents wakes up, dispatches the callback
     // which frees the iocb. We allocate a fresh iocb each call because Wake() runs at
-    // most once per Dispose() — the per-allocation cost is negligible vs the ~1s stall
-    // it eliminates.
+    // most once per Dispose() per context — the per-allocation cost is negligible vs the
+    // ~1s stall it eliminates.
     static thread_local char dummy_buf[8] alignas(8) = {};
     struct iocb* wake_iocb = new struct iocb();
-    ::io_prep_pread(wake_iocb, wake_fd_, dummy_buf, 0, 0);
+    ::io_prep_pread(wake_iocb, wake_fd, dummy_buf, 0, 0);
     ::io_set_callback(wake_iocb, &QueueWakeCompletionCallback);
     struct iocb* iocbs[1] = { wake_iocb };
-    int res = ::io_submit(io_object_, 1, iocbs);
+    int res = ::io_submit(ctx, 1, iocbs);
     if (res != 1) {
         delete wake_iocb;
         return -1;
@@ -254,7 +290,7 @@ Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptio
     return Status::Ok;
   }
 
-  io_object_ = handler->io_object();
+  handler_ = handler;
   return Status::Ok;
 }
 
@@ -282,6 +318,17 @@ Status QueueFile::Write(size_t offset, uint32_t length, const uint8_t* buffer,
 Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* buffer,
                                     size_t offset, uint32_t length, IAsyncContext& context,
                                     AsyncIOCallback callback) {
+  // Defense-in-depth: refuse to submit to io_submit with an invalid fd. The
+  // FileSystemSegmentBundle/OpenSegment fix in file_system_disk.h prevents a partially-
+  // opened bundle from being committed to files_, so in well-behaved flows fd_ is always
+  // valid here. This guard catches any future regression that re-introduces fd_=-1 on
+  // the submit path — empirically, io_submit with aio_fildes=-1 has been observed to
+  // hang inside libaio on some kernels instead of returning -EBADF synchronously, which
+  // crashes the calling process.
+  if (fd_ < 0) {
+    return Status::IOError;
+  }
+
   auto io_context = core::alloc_context<QueueIoHandler::IoCallbackContext>(sizeof(
                       QueueIoHandler::IoCallbackContext));
   if(!io_context.get()) return Status::OutOfMemory;
@@ -298,21 +345,26 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   struct iocb* iocbs[1];
   iocbs[0] = reinterpret_cast<struct iocb*>(io_context.get());
 
+  // Pick a per-thread sharded io_context so each submitter primarily lands on its own
+  // kernel io_context_t mutex. With num_contexts >= num_submitters, io_submit becomes
+  // effectively contention-free at the kernel side.
+  io_context_t ctx = handler_->pick_context();
+
   // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
   //   1            : kernel accepted; one completion will fire.
   //   0 or -EAGAIN : transient kernel ring full; retry indefinitely with bounded backoff.
   //                  The iocb is not queued; we still own it.
   //   other <0     : permanent error (EINVAL/EBADF/EIO); surface immediately.
   //
-  // We MUST NOT surface transient EAGAIN to the caller. The libaio io_context is 128 slots
-  // wide; the upper-layer device throttle caps in-flight at ~120; the engine's pending-IO
-  // queue bursts up to 1024 reads per chunk through device.ReadAsync(). When the burst races
-  // the kernel drainer we transiently hit -EAGAIN. If we returned IOError, the engine
-  // interprets numBytes=0 as a short read, recursively retries via AsyncGetFromDiskCallback,
-  // and we spiral into a positive feedback loop that backs up the ThreadPool and never
-  // drains. So instead: yield/sleep until the kernel has space, regardless of how long
-  // that takes. This matches Tsavorite's longstanding contract that device submit either
-  // succeeds or returns a permanent error.
+  // We MUST NOT surface transient EAGAIN to the caller. The per-context libaio ring is
+  // 128 slots wide; the upper-layer device throttle caps total in-flight; the engine's
+  // pending-IO queue bursts up to 1024 reads per chunk through device.ReadAsync(). When
+  // the burst races the kernel drainer we transiently hit -EAGAIN. If we returned
+  // IOError, the engine interprets numBytes=0 as a short read, recursively retries via
+  // AsyncGetFromDiskCallback, and we spiral into a positive feedback loop that backs up
+  // the ThreadPool and never drains. So instead: yield/sleep until the kernel has space,
+  // regardless of how long that takes. This matches Tsavorite's longstanding contract
+  // that device submit either succeeds or returns a permanent error.
   //
   // Backoff curve: 64 sched_yield's, then 1ms nanosleep loops. Permanent errors still
   // surface immediately.
@@ -320,7 +372,7 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   int retries = 0;
   int result;
   while (true) {
-    result = ::io_submit(io_object_, 1, iocbs);
+    result = ::io_submit(ctx, 1, iocbs);
     if (result == 1) break;
     if (result < 0 && result != -EAGAIN) return Status::IOError;
     // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")

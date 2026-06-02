@@ -50,7 +50,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext> callbackQueue;
+        /// <remarks>
+        /// Carries the heap-allocated <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper
+        /// rather than the (~112-byte) <see cref="AsyncIOContext"/> struct itself. Each
+        /// Enqueue/Dequeue moves only an 8-byte reference instead of forcing
+        /// <c>Buffer.BulkMoveWithWriteBarrier</c> over the full struct (which contains
+        /// multiple GC-tracked refs and thus pays the barrier cost on every move). The
+        /// completion thread writes its modified <see cref="AsyncIOContext"/> back into
+        /// <see cref="AsyncGetFromDiskResult{TContext}.context"/> before enqueueing, and the
+        /// worker reads it out on dequeue then returns the wrapper to its allocator pool.
+        /// </remarks>
+        internal AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> callbackQueue;
 
         /// <summary>
         /// Synchronous completion event
