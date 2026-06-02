@@ -85,18 +85,40 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.readyResponses.Count == 0)
                 return;
 
-            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext request))
-                InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
+            // The queue carries a heap-allocated wrapper (AsyncGetFromDiskResult) rather
+            // than the AsyncIOContext struct itself, so each TryDequeue moves only an 8-byte
+            // reference instead of a ~112-byte struct copy through the queue segment. The
+            // worker reads result.context exactly once into a local then returns the
+            // wrapper to the allocator's pool so it can be reused for the next IO.
+            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncGetFromDiskResult<AsyncIOContext> result))
+            {
+                // try/finally ensures the pooled wrapper is returned even if the user
+                // callback inside InternalCompletePendingRequest throws — otherwise a
+                // throwing callback would leak the wrapper forever and degrade pool
+                // hit rate over time.
+                try
+                {
+                    // Pass result.context by ref directly so we avoid two struct copies (the
+                    // dequeue itself only moved the wrapper reference; passing ref keeps the
+                    // ~112-byte AsyncIOContext in place inside the heap-allocated wrapper
+                    // while InternalCompletePendingRequest reads its fields).
+                    InternalCompletePendingRequest(sessionFunctions, ref result.context, completedOutputs);
+                }
+                finally
+                {
+                    hlogBase.ReturnAsyncGetFromDiskResult(result);
+                }
+            }
         }
 
-        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, request, ref pendingContext, out _);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref pendingContext, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -113,7 +135,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

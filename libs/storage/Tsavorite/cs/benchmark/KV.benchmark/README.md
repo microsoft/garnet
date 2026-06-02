@@ -78,9 +78,9 @@ and use 32-byte aligned NUMA pinning. Pick the row matching your scenario:
 | 100 M | fits | thread sweep (1→32) | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device null --rumd 100,0,0,0 --load-threads 32 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 -i 3` |
 | 100 M | constrained (2 GB) — **native + libaio** | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device native --device-io-backend libaio --log-memory 2g --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
 | 100 M | constrained (2 GB) — **native + io_uring** | uniform | `numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 -v 100 --device native --device-io-backend uring --log-memory 2g --rumd 100,0,0,0 --runsec 15 --warmup-sec 5 -i 3 --data-path /mnt/nvme/kv` |
-| 100 M | **mostly on disk** (16 MB log, ~0.125 % in memory) — disk-IO thread-scale sweep, **RandomAccess** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device randomaccess --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
-| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + libaio** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend libaio --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
-| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + io_uring** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend uring --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 0 --data-path /mnt/nvme/kv` |
+| 100 M | **mostly on disk** (16 MB log, ~0.125 % in memory) — disk-IO thread-scale sweep, **RandomAccess** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device randomaccess --device-throttle 512 --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 --data-path /mnt/nvme/kv` |
+| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + libaio** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend libaio --device-throttle 512 --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 --data-path /mnt/nvme/kv` |
+| 100 M | mostly on disk (16 MB) — disk-IO thread-scale sweep, **native + io_uring** | uniform 100 % reads | `numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 --device native --device-io-backend uring --device-throttle 512 --log-memory 16m --page-size 4m --segment-size 1g --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 --runsec 15 --warmup-sec 5 --data-path /mnt/nvme/kv` |
 
 **Knobs that affect the in-memory vs out-of-memory mix**:
 - `--log-memory` (default: auto-sized to fit dataset at 90 % mutable). Set
@@ -99,16 +99,23 @@ roughly **0.125 %** of the dataset is in memory at any time. Every read
 becomes a 4 KB random disk fetch, making the result a direct measurement of
 the device backend under contention. With 6 thread counts × 3 devices
 (RandomAccess, native + libaio, native + io_uring), each invocation does one
-load (~35 s for 100 M keys at ~3 M ops/sec) and then sweeps the six
-thread-count cells at 15 s each. Total wall-clock per device ≈ 35 + 6 × 15 =
-~2 min. Compare against the disk's `fio` ceiling
-(`fio --rw=randread --bs=4k --direct=1 --ioengine=libaio --iodepth=64
---numjobs=8 --runtime=15 --time_based --group_reporting --filename=/mnt/nvme/...`)
-to know what fraction of the device each backend is leaving on the table.
-Native + libaio plateaus at the single-`io_context_` cap (~400–500 K IOPS on
-a P5600); RandomAccess is capped by the BCL's `RandomAccess.ReadAsync`
-managed-async dispatch (~120 K IOPS); native + io_uring currently sits
-between the two — see the `Linux native I/O backends` section below.
+load (~35 s for 100 M keys) and then sweeps the six thread-count cells at
+warmup 5 s + run 15 s each (≈ 2.5 min wall-clock per device).
+
+Use a **100 M dataset** for disk-bound runs: smaller datasets fill only the
+first ~1 GB of LBA range and land on a subset of NAND dies, raising per-IO
+service time at the device even at identical queue depth and IO size, and
+therefore understating IOPS. **`--device-throttle 512` is required to reach
+peak IOPS** — the default of 120 leaves a large fraction of the device
+unused. Native + libaio with throttle 512 plateaus at the
+single-`io_context_` cap; RandomAccess is capped by the BCL's
+`RandomAccess.ReadAsync` managed-async dispatch; native + io_uring sits
+between the two. See the `Linux native I/O backends` section below for
+backend-specific tuning.
+
+Compare against the disk's `fio` ceiling:
+`fio --rw=randread --bs=4k --direct=1 --ioengine=libaio --iodepth=64
+--numjobs=8 --runtime=15 --time_based --group_reporting --filename=/mnt/nvme/...`
 
 ### Detailed examples
 
