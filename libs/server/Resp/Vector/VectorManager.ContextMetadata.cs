@@ -366,13 +366,14 @@ namespace Garnet.server
         internal readonly struct FlushGuard : IDisposable
         {
             private readonly VectorManager manager;
+            private readonly ReadOptimizedLock.LockToken lockToken;
 
             internal FlushGuard(VectorManager manager)
             {
                 this.manager = manager;
 
                 // Stop other Vector Set operations
-                this.manager.vectorSetLocks.AcquireAllExclusiveLock();
+                this.manager.vectorSetLocks.AcquireAllExclusiveLock(out lockToken);
 
                 // Acquire a lock that will block all other attempts to issue a new context
                 Monitor.Enter(this.manager);
@@ -390,7 +391,7 @@ namespace Garnet.server
                 manager.contextMetadata = default;
 
                 // Allow Vector Set operations again
-                manager.vectorSetLocks.ReleaseAllExclusiveLock();
+                manager.vectorSetLocks.ReleaseLock(lockToken);
 
                 // Allow new contexts to be issued
                 Monitor.Exit(manager);
