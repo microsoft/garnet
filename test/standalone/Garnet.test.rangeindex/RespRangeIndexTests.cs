@@ -2162,7 +2162,7 @@ namespace Garnet.test
         /// up the working file but PRESERVES per-flush snapshot files (LOG-tied lifetime).
         /// </summary>
         [Test]
-        public void RIDiskFileCleanupOnDeleteAfterEvictionAndRestoreTest()
+        public async Task RIDiskFileCleanupOnDeleteAfterEvictionAndRestoreTest()
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -2171,32 +2171,36 @@ namespace Garnet.test
 
             var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
+            var redisServer = redis.GetServers()[0];
 
             // Create a disk-backed range index on an early page
             db.Execute("RI.CREATE", "evictdel", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
             db.Execute("RI.SET", "evictdel", "key1", "val1");
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live after creation");
 
+            // Capture TailAddress after RI insertion — flushing up to this address guarantees
+            // the RI record is on disk.
+            var tailAfterRiInsert = TestUtils.GetStoreAddressInfo(redisServer).TailAddress;
+
             var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
             ClassicAssert.IsTrue(Directory.Exists(riLogRoot), "riLogRoot should exist");
 
-            // Fill the log with string keys to push RI stub below HeadAddress and trigger eviction
-            for (var i = 0; i < 200; i++)
-                db.StringSet($"filler{i:D4}", $"data{i:D4}");
+            // Fill the log with string keys and wait for deterministic flush past the RI record.
+            // This pushes the RI stub below HeadAddress and triggers eviction.
+            await TestUtils.FlushAndWaitForStoreAsync(db, redisServer, tailAfterRiInsert);
 
             // Verify eviction actually occurred
             ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "tree should have been freed by eviction");
 
             // Files should still exist after eviction (preserved for lazy restore).
-            // Flush snapshot creation can be asynchronous, so poll with a timeout.
             var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
             ClassicAssert.AreEqual(1, dataFiles.Length, "data.bftree file should survive eviction");
 
-            var flushFilesPostEvict = TestUtils.WaitForBfTreeFlushFiles(riLogRoot);
+            var flushFilesPostEvict = Directory.GetFiles(riLogRoot, "*.flush.bftree");
             ClassicAssert.GreaterOrEqual(flushFilesPostEvict.Length, 1,
-                "at least one flush snapshot should exist after flush (waited up to 5s)");
+                "at least one flush snapshot should exist after deterministic flush");
 
             // Lazy restore brings the record back in-memory (DEL requires the record
             // to be in-memory; the unified Delete path does not trigger lazy restore).

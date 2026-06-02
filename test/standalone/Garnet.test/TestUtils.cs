@@ -16,6 +16,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
@@ -39,6 +40,7 @@ namespace Garnet.test
         public long BeginAddress;
         public long HeadAddress;
         public long ReadOnlyAddress;
+        public long FlushedUntilAddress;
         public long TailAddress;
         public long MemorySize;
         public long ReadCacheHeadAddress;
@@ -1109,26 +1111,39 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Polls for at least one <c>*.flush.bftree</c> file to appear in
-        /// <paramref name="directory"/>, waiting up to <paramref name="timeoutMs"/> ms.
-        /// Flush snapshot creation can be asynchronous, so immediate assertions are flaky.
-        /// Returns the matching file paths (empty array if none found within timeout).
+        /// Inserts filler string keys to advance the log past a captured address, then polls
+        /// <c>INFO STORE</c> with exponential backoff until <c>Log.FlushedUntilAddress</c>
+        /// reaches <paramref name="flushUntilAddress"/>. This guarantees that the record at
+        /// that address has been written to disk.
         /// </summary>
-        public static string[] WaitForBfTreeFlushFiles(string directory, int timeoutMs = 5000)
+        /// <param name="db">The Redis database to insert filler keys into.</param>
+        /// <param name="server">The StackExchange.Redis server for issuing INFO commands.</param>
+        /// <param name="flushUntilAddress">The log address to wait for (typically the TailAddress
+        /// captured after inserting the record of interest).</param>
+        /// <param name="fillerCount">Number of filler keys to insert before polling (default 200).</param>
+        /// <param name="fillerPrefix">Prefix for filler key names (default "flushfiller").</param>
+        /// <param name="timeoutMs">Maximum time in ms to wait for flush (default 5000).</param>
+        public static async Task FlushAndWaitForStoreAsync(IDatabase db, IServer server,
+            long flushUntilAddress, int fillerCount = 200, string fillerPrefix = "flushfiller",
+            int timeoutMs = 5000)
         {
+            for (var i = 0; i < fillerCount; i++)
+                await db.StringSetAsync($"{fillerPrefix}{i:D4}", $"data{i:D4}").ConfigureAwait(false);
+
             var deadline = Environment.TickCount64 + timeoutMs;
-            string[] files = [];
+            var backoffMs = 10;
             while (Environment.TickCount64 < deadline)
             {
-                if (Directory.Exists(directory))
-                {
-                    files = Directory.GetFiles(directory, "*.flush.bftree");
-                    if (files.Length > 0)
-                        return files;
-                }
-                Thread.Sleep(50);
+                var addressInfo = GetStoreAddressInfo(server);
+                if (addressInfo.FlushedUntilAddress >= flushUntilAddress)
+                    return;
+
+                await Task.Delay(backoffMs).ConfigureAwait(false);
+                backoffMs = Math.Min(backoffMs * 2, 500);
             }
-            return files;
+
+            Assert.Fail($"Timed out waiting for FlushedUntilAddress to reach {flushUntilAddress} " +
+                        $"(current: {GetStoreAddressInfo(server).FlushedUntilAddress})");
         }
 
         /// <summary>
@@ -1234,6 +1249,8 @@ using System.Threading.Tasks;
                         result.HeadAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.FlushedUntilAddress"))
+                        result.FlushedUntilAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.MemorySizeBytes"))
