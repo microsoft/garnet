@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -39,7 +39,7 @@ namespace Garnet.server
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false,
-                HasExpiration = srcLogRecord.Info.HasExpiration,
+                HasExpiration = srcLogRecord.DataHeader.HasExpiration,
                 RecordType = srcLogRecord.RecordType,
             };
         }
@@ -88,7 +88,7 @@ namespace Garnet.server
             return new RecordFieldInfo()
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
                 HasETag = false,
                 RecordType = inputLogRecord.RecordType,

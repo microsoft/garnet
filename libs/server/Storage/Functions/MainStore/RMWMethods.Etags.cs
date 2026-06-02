@@ -28,7 +28,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly IPUResult HandleEtagInPlaceUpdateWorker(RespCommand cmd, ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            long existingEtag = logRecord.Info.HasETag ? logRecord.ETag : LogRecord.NoETag;
+            long existingEtag = logRecord.DataHeader.HasETag ? logRecord.ETag : LogRecord.NoETag;
 
             return cmd switch
             {
@@ -62,7 +62,7 @@ namespace Garnet.server
             if (comparisonResult != expectedResult)
             {
                 if (input.header.CheckSetGetFlag())
-                    CopyRespWithEtagData(logRecord.ValueSpan, ref output, logRecord.Info.HasETag, existingEtag, functionsState.memoryPool);
+                    CopyRespWithEtagData(logRecord.ValueSpan, ref output, logRecord.DataHeader.HasETag, existingEtag, functionsState.memoryPool);
                 else
                 {
                     // write back array of the format [etag, nil]
@@ -82,7 +82,7 @@ namespace Garnet.server
 
             // If we're here we know we have a valid ETag for update. Get the value to update. We'll need to return false for CopyUpdate if no space for new value.
             var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (logRecord.Info.ValueIsInline)
+            if (logRecord.DataHeader.ValueIsInline)
             {
                 // We are going to set ETag and possibly Expiration--but we won't remove either. Precheck adequate length before making any changes.
                 if (!logRecord.CanGrowPinnedValue(inputValue.Length, newETagLen: LogRecord.ETagSize,
@@ -128,7 +128,7 @@ namespace Garnet.server
         {
             // Update value and increment ETag
             var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (logRecord.Info.ValueIsInline)
+            if (logRecord.DataHeader.ValueIsInline)
             {
                 if (!logRecord.CanGrowPinnedValue(inputValue.Length, newETagLen: LogRecord.ETagSize,
                         newExpirationLen: input.arg1 != 0 ? LogRecord.ExpirationSize : logRecord.ExpirationLen, out var valueAddress, out var valueLength))
@@ -160,7 +160,7 @@ namespace Garnet.server
                 if (!logRecord.TrySetExpiration(input.arg1))
                     return IPUResult.Failed;
             }
-            else if (logRecord.Info.HasExpiration)
+            else if (logRecord.DataHeader.HasExpiration)
                 _ = logRecord.RemoveExpiration();
 
             // Return the new ETag as integer
@@ -180,7 +180,7 @@ namespace Garnet.server
         private readonly bool HandleEtagNeedCopyUpdate<TSourceLogRecord>(RespCommand cmd, in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            long existingEtag = srcLogRecord.Info.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
+            long existingEtag = srcLogRecord.DataHeader.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
 
             return cmd switch
             {
@@ -224,7 +224,7 @@ namespace Garnet.server
             if (input.header.CheckSetGetFlag())
             {
                 // Copy value to output for the GET part of the command.
-                CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output, srcLogRecord.Info.HasETag, existingEtag, functionsState.memoryPool);
+                CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output, srcLogRecord.DataHeader.HasETag, existingEtag, functionsState.memoryPool);
             }
             else
             {
@@ -275,7 +275,7 @@ namespace Garnet.server
                 writeDirect: true
             );
 
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
             return true;
         }
 
@@ -300,7 +300,7 @@ namespace Garnet.server
             // Return the initial ETag
             functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output.SpanByteAndMemory);
 
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
             return true;
         }
 
@@ -316,7 +316,7 @@ namespace Garnet.server
         private readonly bool HandleEtagCopyUpdateWorker<TSourceLogRecord>(RespCommand cmd, in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
-            long existingEtag = srcLogRecord.Info.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
+            long existingEtag = srcLogRecord.DataHeader.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
 
             return cmd switch
             {
@@ -352,7 +352,7 @@ namespace Garnet.server
             var numDigitsInEtag = NumUtils.CountDigits(newEtag);
             WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + functionsState.nilResp.Length, functionsState.nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
 
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
 
@@ -376,7 +376,7 @@ namespace Garnet.server
             // Return the new ETag as integer
             functionsState.CopyRespNumber(newEtag, ref output.SpanByteAndMemory);
 
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
 

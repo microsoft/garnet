@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// </summary>
         public ConditionallyHoistedKey requestKey;
 
-        /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
+        /// The retrieved record, including deserialized ValueObject if RecordDataHeader.ValueIsObject, and key or value Overflows
         public DiskLogRecord diskLogRecord;
 
         /// <summary>
