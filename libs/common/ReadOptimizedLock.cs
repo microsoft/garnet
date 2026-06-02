@@ -296,7 +296,7 @@ namespace Garnet.common
                     }
                 }
             }
-            else if(lockToken.type == LockType.Shared)
+            else if (lockToken.type == LockType.Shared)
             {
                 // lockToken.token is an index
                 ref var releaseRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), lockToken.token);
@@ -411,7 +411,7 @@ namespace Garnet.common
                 }
             }
 
-            lockToken =  LockToken.CreateAllExclusive();
+            lockToken = LockToken.CreateAllExclusive();
         }
 
         /// <summary>
