@@ -137,6 +137,10 @@ namespace Tsavorite.kvbench
             HelpText = "After load: single-threaded readback of every key. Aborts on mismatch.")]
         public bool Validate { get; set; }
 
+        [Option("dump-distribution", Required = false, Default = false,
+            HelpText = "After load: print the hash-table bucket distribution (TsavoriteKV.DumpDistribution()).")]
+        public bool DumpDistribution { get; set; }
+
         // ===== Output =====
 
         [Option("report-interval-sec", Required = false, Default = 1,
