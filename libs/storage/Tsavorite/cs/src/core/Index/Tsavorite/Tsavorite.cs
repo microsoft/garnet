@@ -753,7 +753,33 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions,
+        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
+                                                                          TContext context, TSessionFunctionsWrapper sessionFunctions)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            OperationStatus internalStatus;
+
+            do
+                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+        }
+
+        /// <summary>
+        /// RMW overload that carries a per-operation <paramref name="initialIORecordSize"/> override. Used by the
+        /// <see cref="RMWOptions"/>-taking client-context overloads; the no-options overloads call the other
+        /// <see cref="ContextRMW{TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper}(TKey, long, ref TInput, ref TOutput, out RecordMetadata, TContext, TSessionFunctionsWrapper)"/>
+        /// to keep the hot path free of any RMWOptions handling.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize,
                                                                           out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
              where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -761,7 +787,8 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref rmwOptions);
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            pcontext.initialIORecordSize = initialIORecordSize;
             OperationStatus internalStatus;
 
             do

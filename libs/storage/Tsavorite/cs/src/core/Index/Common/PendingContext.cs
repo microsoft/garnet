@@ -122,14 +122,6 @@ namespace Tsavorite.core
                 initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref RMWOptions rmwOptions)
-            {
-                operationFlags = kNoOpFlags;
-                readCopyOptions = sessionReadCopyOptions;
-                initialIORecordSize = rmwOptions.InitialIORecordSize;
-            }
-
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
             internal void SetIsNoKey() => operationFlags |= kIsNoKey;
 

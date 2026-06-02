@@ -11,9 +11,9 @@ namespace Tsavorite.core
     internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
-        public const int kMinPageSizeBits = IDevice.MinDeviceSectorSizeBits;
+        public const int kMinPageSizeBits = 12; // 4KB
         /// <summary>Maximum number of bits for a page size</summary>
-        public const int kMaxPageSizeBits = 30; // 1TB
+        public const int kMaxPageSizeBits = 27; // 128MB
 
         /// <summary>Minimum number of bits for a main-log segment (segments consist of one or more pages)</summary>
         public const int kMinMainLogSegmentSizeBits = kMinPageSizeBits;
