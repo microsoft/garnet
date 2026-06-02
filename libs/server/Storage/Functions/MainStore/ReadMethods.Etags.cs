@@ -39,8 +39,8 @@ namespace Garnet.server
             }
 
             // For both GETWITHETAG and GETIFNOTMATCH (when etag didn't match), return [etag, value]
-            long etag = srcLogRecord.Info.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
-            CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, etag, functionsState.memoryPool);
+            long etag = srcLogRecord.DataHeader.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
+            CopyRespWithEtagData(value, ref output, srcLogRecord.DataHeader.HasETag, etag, functionsState.memoryPool);
             return true;
         }
     }

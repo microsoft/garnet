@@ -93,6 +93,12 @@ namespace Tsavorite.core
         public readonly bool CallOnDiskRead => recordTriggers.CallOnDiskRead;
 
         /// <inheritdoc/>
+        public readonly bool CallPostCopyToTail => recordTriggers.CallPostCopyToTail;
+
+        /// <inheritdoc/>
+        public readonly bool CallOnTruncate => recordTriggers.CallOnTruncate;
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
 
@@ -102,7 +108,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnFlush(ref LogRecord logRecord) => recordTriggers.OnFlush(ref logRecord);
+        public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress) => recordTriggers.OnFlush(ref logRecord, logicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -122,6 +128,20 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) => recordTriggers.OnCheckpoint(trigger, checkpointToken);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                              ref LogRecord dstLogRecord, long dstLogicalAddress)
+            where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => recordTriggers.PostCopyToTail(in srcLogRecord, srcLogicalAddress, ref dstLogRecord, dstLogicalAddress);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnTruncate(long newBeginAddress) => recordTriggers.OnTruncate(newBeginAddress);
         #endregion Record Triggers
 
         #region Checkpoint Completion

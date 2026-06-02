@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -16,13 +16,13 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input, ref ObjectOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!srcLogRecord.Info.ValueIsObject)
+            if (!srcLogRecord.DataHeader.ValueIsObject)
             {
                 readInfo.Action = ReadAction.WrongType;
                 return false;
             }
 
-            if (srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
+            if (srcLogRecord.DataHeader.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
                 // Do not set 'value = null' or otherwise mark this; Reads should not update the database. We rely on consistently checking for expiration everywhere.
                 readInfo.Action = ReadAction.Expire;

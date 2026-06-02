@@ -63,27 +63,38 @@ namespace Device.benchmark
         unsafe void Callback(uint errorCode, uint numBytes, object ctx)
         {
 #if DEBUG
-            var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
-            var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
-            bool valid = readSpan.SequenceEqual(expectedSpan);
-
-            if (!valid)
+            if (errorCode == 0)
             {
-                Console.WriteLine($"Data mismatch");
+                var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
+                var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
+                bool valid = readSpan.SequenceEqual(expectedSpan);
+
+                if (!valid)
+                {
+                    Console.WriteLine($"Data mismatch");
+                }
             }
-#else
-            // In Release builds, skip data validation for performance
 #endif
             if (errorCode != 0)
             {
-                Console.WriteLine($"I/O error: {errorCode}");
+                // Hot-path: NEVER Console.WriteLine here. 100K+ errors/sec serial console
+                // writes both falsify throughput numbers (errors get counted as "completed
+                // fast") and slow the real path enough to compound the failure rate.
+                // Aggregate per-code counts; Program prints them once after the run.
+                Interlocked.Increment(ref Program.totalErrors);
+                if (errorCode < (uint)Program.ErrorCounts.Length)
+                    Interlocked.Increment(ref Program.ErrorCounts[errorCode]);
+            }
+            else
+            {
+                Interlocked.Increment(ref Program.totalCompletedOk);
             }
             _benchmarkPool.Enqueue((BenchmarkOperation)ctx);
         }
 
         public unsafe void Run()
         {
-            long localTotalOperations = 0;
+            long localTotalSubmitted = 0;
             try
             {
                 // Wait for the start event to be signaled
@@ -101,7 +112,7 @@ namespace Device.benchmark
                     long sector = threadRnd.NextInt64(0, (long)sectorCount) * sectorSize;
                     long dest = (long)op.Buffer;
                     while (device.Throttle()) Thread.Yield();
-                    localTotalOperations++;
+                    localTotalSubmitted++;
                     device.ReadAsync((ulong)sector, (IntPtr)dest, (uint)sectorSize, Callback, op);
                     device.TryComplete();
                 }
@@ -109,7 +120,10 @@ namespace Device.benchmark
             finally
             {
                 while (_benchmarkPool.Count < batchSize) Thread.Yield();
-                _ = Interlocked.Add(ref Program.totalOperations, localTotalOperations);
+                // Authoritative throughput counter (successful ops only) is updated in the
+                // callback. We also publish the per-thread submission count for diagnostics
+                // (helps spot pathological submit/complete ratios under errors).
+                _ = Interlocked.Add(ref Program.totalSubmitted, localTotalSubmitted);
                 doneEvent.Set();
             }
         }

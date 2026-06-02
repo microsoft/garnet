@@ -23,6 +23,8 @@ namespace Garnet.server.BfTreeInterop
         /// storage_backend: 0 = Disk, 1 = Memory.
         /// For disk-backed trees, file_path/file_path_len specify the data file path.
         /// For in-memory trees, file_path can be null.
+        /// snapshot_file_path/snapshot_file_path_len configure the CPR snapshot output
+        /// path (use_snapshot=true if non-empty). Pass null/0 to disable snapshots.
         /// </summary>
         [LibraryImport(LibName)]
         internal static partial nint bftree_create(
@@ -33,7 +35,9 @@ namespace Garnet.server.BfTreeInterop
             uint leaf_page_size,
             byte storage_backend,
             byte* file_path,
-            int file_path_len);
+            int file_path_len,
+            byte* snapshot_file_path,
+            int snapshot_file_path_len);
 
         /// <summary>
         /// Free a BfTree instance.
@@ -115,52 +119,51 @@ namespace Garnet.server.BfTreeInterop
         internal static partial void bftree_scan_drop(nint handle);
 
         // ---------------------------------------------------------------
-        // Snapshot / Recovery
+        // Snapshot / Recovery (CPR — bftree 0.5+)
         // ---------------------------------------------------------------
 
         /// <summary>
-        /// Snapshot a disk-backed BfTree in place. Drains circular buffer and
-        /// writes index structure to the tree's own data file.
-        /// Returns 0 on success, -1 on failure.
+        /// Take a CPR (Concurrent Prefix Recovery) snapshot of a BfTree. Synchronous;
+        /// designed to be non-blocking to concurrent insert/read/delete callers. Writes
+        /// the snapshot to the path configured at tree-creation time via
+        /// <c>Config::snapshot_file_path</c> / <c>use_snapshot=true</c>.
+        ///
+        /// Internal <c>snapshot_in_progress</c> AtomicBool serializes concurrent calls;
+        /// losers no-op silently. To produce snapshots at multiple destination paths,
+        /// the caller is expected to <c>File.Move</c> / copy the configured snapshot
+        /// file to the final destination after each call.
+        ///
+        /// Returns 0 on success, -1 on panic.
         /// </summary>
         [LibraryImport(LibName)]
-        internal static partial int bftree_snapshot(nint tree);
+        internal static partial int bftree_cpr_snapshot(nint tree);
 
         /// <summary>
-        /// Recover a disk-backed BfTree from its snapshot file.
-        /// If the file does not exist, creates a new empty tree.
+        /// Recover a BfTree from a CPR snapshot file. Unified for disk-backed and
+        /// memory-backed (cache_only) trees — the storage backend is recorded in the
+        /// snapshot.
+        ///
+        /// recovery_path: source CPR snapshot file to recover from.
+        /// new_snapshot_path: scratch path for the recovered tree's future cpr_snapshot
+        ///   calls. Pass null/0 to disable snapshots on the recovered tree.
+        /// buffer_ptr: optional pre-allocated buffer for the recovered tree's cache.
+        ///   If null, bftree allocates and owns the buffer (freed on tree.Dispose).
+        ///   If non-null, the caller owns the buffer.
+        ///
         /// Returns a native pointer, or IntPtr.Zero on failure.
         /// </summary>
         [LibraryImport(LibName)]
-        internal static partial nint bftree_new_from_snapshot(
-            byte* file_path, int file_path_len,
-            ulong cb_size_byte,
-            uint cb_min_record_size,
-            uint cb_max_record_size,
-            uint cb_max_key_len,
-            uint leaf_page_size);
+        internal static partial nint bftree_new_from_cpr_snapshot(
+            byte* recovery_path, int recovery_path_len,
+            byte* new_snapshot_path, int new_snapshot_path_len,
+            byte* buffer_ptr, nuint buffer_size);
 
         /// <summary>
-        /// Snapshot a memory-only (cache_only) BfTree to a file on disk.
-        /// STUB: returns -1 until bf-tree adds cache_only snapshot support.
+        /// Returns 1 if all threads have moved past the snapshot's version barrier,
+        /// 0 otherwise, -1 on panic. Useful for assertions/diagnostics.
         /// </summary>
         [LibraryImport(LibName)]
-        internal static partial int bftree_snapshot_memory(
-            nint tree,
-            byte* path, int path_len);
-
-        /// <summary>
-        /// Recover a memory-only (cache_only) BfTree from a snapshot file.
-        /// STUB: returns IntPtr.Zero until bf-tree adds cache_only recovery support.
-        /// </summary>
-        [LibraryImport(LibName)]
-        internal static partial nint bftree_recover_memory(
-            byte* path, int path_len,
-            ulong cb_size_byte,
-            uint cb_min_record_size,
-            uint cb_max_record_size,
-            uint cb_max_key_len,
-            uint leaf_page_size);
+        internal static partial int bftree_are_all_threads_in_next_version(nint tree);
 
         /// <summary>
         /// No-op for measuring pure FFI transition overhead.

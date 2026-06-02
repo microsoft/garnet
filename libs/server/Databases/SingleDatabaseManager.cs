@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -248,7 +249,7 @@ namespace Garnet.server
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
-            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
+            var aofProcessor = new AofProcessor(StoreWrapper, clusterProvider: StoreWrapper.clusterProvider, recordToAof: false, logger: Logger);
 
             try
             {
@@ -347,7 +348,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, DefaultDatabase.VectorManager, Logger, respProtocolVersion);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper, PooledArrayMemoryPool.Shared, SizeTracker, DefaultDatabase.VectorManager, Logger, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,

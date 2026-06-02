@@ -144,7 +144,11 @@ namespace Tsavorite.core
                     if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
                         if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+                        {
+                            // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
+                            pendingContext.originalAddress = request.logicalAddress;
                             status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx);
+                        }
                         else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                 && TryCopyToReadCache(in pendingContext.diskLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                             status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -310,6 +314,10 @@ namespace Tsavorite.core
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
+                    // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
+                    // request.logicalAddress is the actual disk-resolved source (AsyncGetFromDiskCallback
+                    // walks the chain to skip colliding keys).
+                    pendingContext.originalAddress = request.logicalAddress;
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
                         ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx, minAddress, pendingContext.maxAddress)

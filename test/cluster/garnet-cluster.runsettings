@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <!-- Run test projects in parallel -->
+    <MaxCpuCount>0</MaxCpuCount>
+  </RunConfiguration>
+</RunSettings>

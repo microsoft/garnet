@@ -16,7 +16,7 @@ namespace BDN.benchmark.Cluster
         EmbeddedRespServer server;
         RespServerSession session;
         readonly BenchUtils benchUtils = new();
-        readonly int port = 7000;
+        readonly int port = 7000;   // This is not in the shared ClusterTestContext so does not conflict
 
         public static ReadOnlySpan<byte> keyTag => "{0}"u8;
         public Request[] singleGetSet;

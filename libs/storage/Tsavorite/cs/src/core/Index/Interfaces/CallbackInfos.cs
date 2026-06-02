@@ -114,10 +114,23 @@ namespace Tsavorite.core
         public long Version { get; internal set; }
 
         /// <summary>
-        /// The logical address of the record being operated on. For CopyUpdater, this is the source address,
-        /// or <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache.
+        /// The logical address of the record being operated on. For CopyUpdater, this is the source address
+        /// when <see cref="ISessionFunctions{TInput, TOutput, TContext}.NeedCopyUpdate"/> runs, then becomes
+        /// the destination address by the time <see cref="ISessionFunctions{TInput, TOutput, TContext}.CopyUpdater"/>
+        /// and <see cref="ISessionFunctions{TInput, TOutput, TContext}.PostCopyUpdater"/> are called. Use
+        /// <see cref="SourceAddress"/> to access the source address from PostCopyUpdater.
+        /// Set to <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache.
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// For CopyUpdater (and the post-CAS PostCopyUpdater hook): the logical address of the source record
+        /// that was copied from. Populated alongside <see cref="Address"/> at the start of the RMW so it remains
+        /// available even after <see cref="Address"/> is reassigned to the destination.
+        /// Equals <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache or there is no source
+        /// (initial update path).
+        /// </summary>
+        public long SourceAddress { get; internal set; }
 
         /// <summary>
         /// Hash code of key being operated on

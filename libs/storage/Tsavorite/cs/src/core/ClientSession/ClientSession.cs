@@ -482,6 +482,32 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Push iteration with snapshot semantics: emits each unique live key exactly once,
+        /// using its latest version that lives in <c>[BeginAddress, TailAddress(at call time))</c>.
+        /// Concurrent RCUs that move a key's tail above the captured <c>TailAddress</c> during
+        /// the scan do <b>not</b> suppress the in-range version — the scan returns a consistent
+        /// point-in-time view of every key that existed when the scan started.
+        /// <para/>
+        /// Internally captures <c>Log.TailAddress</c> once and passes it as both
+        /// <c>endAddress</c> and <c>maxAddress</c> to <see cref="ScanCursor"/>. This is the
+        /// lookup-based equivalent of the legacy <see cref="Iterate{TScanFunctions}(ref TScanFunctions, long)"/>
+        /// (which builds a parallel <c>tempKv</c> sized like the keyspace and copies every
+        /// in-range record into it). The snapshot variant avoids that O(N) memory cost; per-call
+        /// allocations match those of <see cref="IterateLookup"/>.
+        /// </summary>
+        /// <param name="scanFunctions">Functions receiving pushed records.</param>
+        /// <param name="includeTombstones">Whether to include tombstoned records while iterating. Default <c>false</c>.</param>
+        /// <returns>True if iteration completed; false if <c>Reader</c> returned false or iteration ended early.</returns>
+        public bool IterateLookupSnapshot<TScanFunctions>(ref TScanFunctions scanFunctions, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions
+        {
+            var untilAddress = store.Log.TailAddress;
+            long cursor = 0;
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress,
+                validateCursor: false, maxAddress: untilAddress, resetCursor: true, includeTombstones: includeTombstones);
+        }
+
+        /// <summary>
         /// Push-scan the log from <paramref name="cursor"/> (which should be a valid address) and push up to <paramref name="count"/> records
         /// to the caller via <paramref name="scanFunctions"/> for each Key that is not found at a higher address.
         /// </summary>

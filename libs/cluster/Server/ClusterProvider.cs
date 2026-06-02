@@ -27,6 +27,7 @@ namespace Garnet.cluster
         internal readonly ILoggerFactory loggerFactory;
         internal readonly StoreWrapper storeWrapper;
         internal readonly GarnetServerOptions serverOptions;
+        internal readonly RangeIndexManager rangeIndexManager;
         internal long GarnetCurrentEpoch = 1;
         ClusterAuthContainer authContainer;
 
@@ -43,10 +44,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Create new cluster provider
         /// </summary>
-        public ClusterProvider(StoreWrapper storeWrapper)
+        public ClusterProvider(StoreWrapper storeWrapper, RangeIndexManager rangeIndexManager)
         {
             this.storeWrapper = storeWrapper;
             this.serverOptions = storeWrapper.serverOptions;
+            this.rangeIndexManager = rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
 
             authContainer = new ClusterAuthContainer
@@ -183,7 +185,6 @@ namespace Garnet.cluster
                 else
                 {
                     storeWrapper.appendOnlyFile?.Log.TruncateUntil(truncateUntil);
-                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Log.Commit();
                 }
             }
         }

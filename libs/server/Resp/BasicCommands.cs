@@ -19,6 +19,15 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
+        /// Per-session scratch array used by <see cref="NetworkGET_SG"/> to hold pending GET
+        /// results while waiting for their disk IOs to complete. Cached across batches so a
+        /// steady-state pipeline (e.g. b=1024) only allocates once — without this, every
+        /// pending-GET batch grows the array via doubling (8→16→…→batchSize), allocating
+        /// ~80 KB per batch at b=1024 and dominating the disk-GET allocation profile.
+        /// </summary>
+        private (GarnetStatus, StringOutput)[] pendingGetOutputArr;
+
+        /// <summary>
         /// GET
         /// </summary>
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
@@ -168,7 +177,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             StringInput input = new(RespCommand.GET, arg1: -1);
             var firstPending = -1;
-            (GarnetStatus, StringOutput)[] outputArr = null;
+            (GarnetStatus, StringOutput)[] outputArr = pendingGetOutputArr;
             var output = GetStringOutput();
             var c = 0;
 
@@ -227,7 +236,8 @@ namespace Garnet.server
                 _ = storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (var i = 0; i < c - firstPending; i++)
+                var n = c - firstPending;
+                for (var i = 0; i < n; i++)
                 {
                     var status = outputArr[i].Item1;
                     output = outputArr[i].Item2;
@@ -240,6 +250,12 @@ namespace Garnet.server
                         WriteNull();
                     }
                 }
+
+                // Publish the (possibly grown) array back to the session-cached field so the
+                // next batch can reuse it, and clear the used slots so we don't keep
+                // references to disposed StringOutput.SpanByteAndMemory.Memory wrappers.
+                pendingGetOutputArr = outputArr;
+                Array.Clear(outputArr, 0, n);
             }
 
             if (c > 1)
@@ -1733,7 +1749,10 @@ namespace Garnet.server
             const int initialBatchSize = 8; // number of items in initial batch
             if (firstPending == -1)
             {
-                outputArr = new (GarnetStatus, StringOutput)[initialBatchSize];
+                // Lazily allocate the per-session output array on first pending entry of a session.
+                // Subsequent batches reuse the (possibly grown) array via the cached session field,
+                // so steady-state pipelines never allocate here after the first batch.
+                outputArr ??= new (GarnetStatus, StringOutput)[initialBatchSize];
                 firstPending = c;
             }
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -216,7 +216,8 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = 0,
                 HasETag = false,
-                HasExpiration = srcLogRecord.Info.HasExpiration
+                HasExpiration = srcLogRecord.DataHeader.HasExpiration,
+                RecordType = srcLogRecord.RecordType,
             };
 
             if (input.header.cmd != RespCommand.NONE)
@@ -311,7 +312,7 @@ namespace Garnet.server
                     case RespCommand.SETIFMATCH:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasETag = true;
-                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
+                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.DataHeader.HasExpiration;
                         return fieldInfo;
 
                     case RespCommand.SETWITHETAG:
@@ -360,6 +361,12 @@ namespace Garnet.server
 
                     case RespCommand.VADD:
                     case RespCommand.VREM:
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
+                        {
+                            // During replication we might trigger a CU, in which case... make sure there's space for the index we'll copy over
+                            fieldInfo.ValueSize = VectorManager.IndexSize;
+                        }
+
                         return fieldInfo;
 
                     default:
@@ -418,7 +425,7 @@ namespace Garnet.server
 #endif
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (inputLogRecord.Info.ValueIsObject)
+            if (inputLogRecord.DataHeader.ValueIsObject)
                 throw new GarnetException("String store should not be called with IHeapObject");
             return inputLogRecord.GetRecordFieldInfo();
         }

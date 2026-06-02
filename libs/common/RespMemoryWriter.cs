@@ -25,7 +25,7 @@ namespace Garnet.common
         ref SpanByteAndMemory output;
         public readonly bool resp3;
 
-        public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
+        public RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
             this.output = ref output;
             ptrHandle = default;

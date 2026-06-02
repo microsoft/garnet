@@ -40,6 +40,8 @@ namespace Tsavorite.core
 
         internal void Wait(CancellationToken token = default) => semaphore.Wait(token);
 
+        internal bool Wait(TimeSpan timeout, CancellationToken token = default) => semaphore.Wait(timeout, token);
+
         internal Task WaitAsync(CancellationToken token = default) => semaphore.WaitAsync(token);
 
         internal Task WaitAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default) => semaphore.WaitAsync(timeSpan, cancellationToken);

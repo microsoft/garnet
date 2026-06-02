@@ -14,7 +14,10 @@ namespace Tsavorite.core
     {
 
         /// <summary>
-        /// 
+        /// Required alignment (in bytes) of buffers, offsets, and lengths for this device's
+        /// direct I/O. Computed once at device construction (typically from a kernel probe of
+        /// the target filesystem's <c>logical_block_size</c> / <c>STATX_DIOALIGN</c>) and
+        /// passed to the base ctor, so the value is immutable for the lifetime of the device.
         /// </summary>
         public uint SectorSize { get; }
 
@@ -84,11 +87,26 @@ namespace Tsavorite.core
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="readOnly">Open file in readOnly mode </param>
+        /// <remarks>
+        /// <para>
+        /// The ctor establishes <c>segmentSize = -1</c> / <c>segmentSizeBits = 64</c> /
+        /// <c>segmentSizeMask = ~0UL</c> as defaults, which is functionally identical to having
+        /// called <c>Initialize(-1)</c>: the segment computation in IO entry points
+        /// (<c>address &gt;&gt; segmentSizeBits</c>) routes every address to segment 0, which is
+        /// unbounded single-segment mode. Callers may issue IO immediately after construction
+        /// without an explicit <see cref="Initialize"/> call; <see cref="Initialize"/> exists only
+        /// to override these defaults (e.g. switch to multi-segment mode by passing a positive
+        /// power-of-two segment size).
+        /// </para>
+        /// </remarks>
         public StorageDeviceBase(string filename, uint sectorSize, long capacity, bool readOnly = false)
         {
             FileName = filename;
             SectorSize = sectorSize;
 
+            // Defaults are equivalent to Initialize(-1): unbounded single-segment routing.
+            // Initialize() is optional and only needed when the caller wants a different segment
+            // size (multi-segment mode).
             segmentSize = -1;
             segmentSizeBits = 64;
             segmentSizeMask = ~0UL;
@@ -97,11 +115,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initialize device
+        /// Override device defaults. The ctor establishes a valid baseline (unbounded single
+        /// segment, equivalent to passing <c>segmentSize = -1</c>); callers only need to invoke
+        /// <see cref="Initialize"/> if they want a different segment size (multi-segment mode)
+        /// or want to opt into <paramref name="omitSegmentIdFromFilename"/>. Passing
+        /// <c>segmentSize = -1</c> is a no-op equivalent to relying on the ctor defaults; any
+        /// other value must be a positive power of two.
         /// </summary>
-        /// <param name="segmentSize"></param>
+        /// <param name="segmentSize">Segment size in bytes, or -1 for unbounded single segment.</param>
         /// <param name="epoch"></param>
-        /// <param name="omitSegmentIdFromFilename"></param>
+        /// <param name="omitSegmentIdFromFilename">When true, the segment index is not appended
+        /// to the filename. Only permitted with <c>segmentSize = -1</c>.</param>
         public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
             if (segmentSize != -1)

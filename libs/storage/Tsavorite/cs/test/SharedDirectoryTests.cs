@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
@@ -18,10 +17,8 @@ namespace Tsavorite.test.recovery.sumstore
 {
     using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>>;
     using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    internal class SharedDirectoryTests : AllureTestBase
+    internal class SharedDirectoryTests : TestBase
     {
         const int NumUniqueKeys = 1 << 5;
         const long KeySpace = 1L << 11;

@@ -92,7 +92,6 @@ namespace Garnet.server
                 MaxKeyLen = maxKeyLen,
                 LeafPageSize = leafPageSize,
                 StorageBackend = storageBackend,
-                Flags = 0,
                 SerializationPhase = 0,
             };
 
@@ -550,7 +549,7 @@ namespace Garnet.server
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
             var output = StringOutput.FromPinnedSpan(stubSpan);
 
-            var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringBasicContext);
+            var status = Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref stringBasicContext);
 
             // OK means the key exists and IS a RangeIndex (WRONGTYPE/NOTFOUND for anything else)
             exists = status == GarnetStatus.OK;
@@ -653,7 +652,7 @@ namespace Garnet.server
 
                 ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
                 treeHandle = stub.TreeHandle;
-                isLive = functionsState.rangeIndexManager.IsTreeLive(stub.TreeHandle);
+                isLive = stub.TreeHandle != nint.Zero;
                 isFlushed = stub.IsFlushed;
                 isRecovered = stub.IsRecovered;
                 result = RangeIndexResult.OK;

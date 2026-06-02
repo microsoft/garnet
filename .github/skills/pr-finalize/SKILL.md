@@ -286,7 +286,7 @@ When reviewing code changes in Garnet, focus on:
    - Session-local vs shared state boundaries
 
 5. **Test quality**
-   - `[AllureNUnit]` attribute and `AllureTestBase` inheritance on test fixtures
+   - `TestBase` inheritance on test fixtures
    - `TestUtils.OnTearDown()` called in `[TearDown]` (checks for leaked epochs)
    - `TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true)` in `[SetUp]`
    - Both `StackExchange.Redis` and `LightClient` coverage where applicable

@@ -86,12 +86,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Options for automatically copying immutable records on Read().
         /// </summary>
-        public ReadCopyOptions CopyOptions { get; internal set; }
+        public ReadCopyOptions CopyOptions { get; set; }
 
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}";

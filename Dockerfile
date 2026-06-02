@@ -43,6 +43,7 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        libaio1t64 \
+       liburing2 \
        liblua5.4-0 \
     && ARCH="$(uname -m)" \
     && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \

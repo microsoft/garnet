@@ -93,7 +93,7 @@ namespace Garnet.server.BfTreeInterop
     /// <summary>
     /// High-level managed wrapper for the native bftree-garnet library.
     /// Provides safe C# access to BfTree lifecycle, point operations, scans,
-    /// and snapshot/recovery.
+    /// and CPR snapshot/recovery.
     /// </summary>
     public sealed unsafe class BfTreeService : IDisposable
     {
@@ -101,6 +101,7 @@ namespace Garnet.server.BfTreeInterop
         private int _disposed;
         private readonly StorageBackendType _storageBackend;
         private readonly string _filePath;
+        private readonly string _snapshotFilePath;
 
         /// <summary>
         /// Gets the native tree pointer for storage in stubs and direct P/Invoke.
@@ -118,11 +119,19 @@ namespace Garnet.server.BfTreeInterop
         public StorageBackendType StorageBackend => _storageBackend;
 
         /// <summary>
+        /// Gets the CPR snapshot scratch file path configured at construction. Null if the
+        /// tree was created without snapshot support.
+        /// </summary>
+        public string SnapshotFilePath => _snapshotFilePath;
+
+        /// <summary>
         /// Creates a new BfTree with the given configuration.
         /// Pass 0 for any numeric parameter to use the bf-tree default.
         /// </summary>
         /// <param name="storageBackend">Disk (default, file-backed) or Memory (bounded in-memory).</param>
         /// <param name="filePath">Data file path for disk-backed trees. Ignored for memory-only.</param>
+        /// <param name="snapshotFilePath">Scratch path for CPR snapshot output. Required if
+        /// <see cref="CprSnapshot"/> will be called later. Null disables snapshots (legacy behavior).</param>
         /// <param name="cbSizeByte">Circular buffer size in bytes (hot-data cache for Disk; total capacity for Memory).</param>
         /// <param name="cbMinRecordSize">Minimum record size.</param>
         /// <param name="cbMaxRecordSize">Maximum record size.</param>
@@ -131,6 +140,7 @@ namespace Garnet.server.BfTreeInterop
         public BfTreeService(
             StorageBackendType storageBackend = StorageBackendType.Disk,
             string filePath = null,
+            string snapshotFilePath = null,
             ulong cbSizeByte = 0,
             uint cbMinRecordSize = 0,
             uint cbMaxRecordSize = 0,
@@ -139,14 +149,18 @@ namespace Garnet.server.BfTreeInterop
         {
             _storageBackend = storageBackend;
             _filePath = filePath;
+            _snapshotFilePath = snapshotFilePath;
             if (storageBackend == StorageBackendType.Disk && string.IsNullOrEmpty(filePath))
                 throw new ArgumentException("filePath is required for disk-backed trees.", nameof(filePath));
             byte[] pathBytes = filePath != null ? Encoding.UTF8.GetBytes(filePath) : null;
+            byte[] snapBytes = snapshotFilePath != null ? Encoding.UTF8.GetBytes(snapshotFilePath) : null;
             fixed (byte* pp = pathBytes)
+            fixed (byte* sp = snapBytes)
             {
                 _tree = NativeBfTreeMethods.bftree_create(
                     cbSizeByte, cbMinRecordSize, cbMaxRecordSize, cbMaxKeyLen, leafPageSize,
-                    (byte)storageBackend, pp, pathBytes?.Length ?? 0);
+                    (byte)storageBackend, pp, pathBytes?.Length ?? 0,
+                    sp, snapBytes?.Length ?? 0);
             }
             if (_tree == 0)
                 throw new InvalidOperationException("Failed to create BfTree instance.");
@@ -156,13 +170,14 @@ namespace Garnet.server.BfTreeInterop
         /// Creates a BfTreeService wrapping an existing native tree pointer (e.g. from snapshot restore).
         /// Takes ownership of the pointer.
         /// </summary>
-        internal BfTreeService(nint treePtr, StorageBackendType storageBackend, string filePath = null)
+        internal BfTreeService(nint treePtr, StorageBackendType storageBackend, string filePath = null, string snapshotFilePath = null)
         {
             if (treePtr == 0)
                 throw new ArgumentException("Tree pointer must not be null.", nameof(treePtr));
             _tree = treePtr;
             _storageBackend = storageBackend;
             _filePath = filePath;
+            _snapshotFilePath = snapshotFilePath;
         }
 
         // ---------------------------------------------------------------
@@ -467,119 +482,75 @@ namespace Garnet.server.BfTreeInterop
         }
 
         /// <summary>
-        /// Snapshot the BfTree to a file.
-        /// For disk-backed trees: drains the circular buffer and writes the index
-        /// structure to the tree's own data file. <paramref name="snapshotPath"/> is ignored.
-        /// For memory-only trees: serializes the tree to the given path.
-        /// Currently throws <see cref="NotSupportedException"/> until bf-tree adds
-        /// cache_only snapshot support.
+        /// Take a CPR (Concurrent Prefix Recovery) snapshot of this tree. Synchronous;
+        /// non-blocking to concurrent insert/read/delete callers. Writes the snapshot to
+        /// the path configured at construction (<see cref="SnapshotFilePath"/>).
+        ///
+        /// <para>To produce snapshots at multiple destination paths, the caller is expected
+        /// to <c>File.Move</c> / copy the configured snapshot file to the final destination
+        /// after each call.</para>
+        ///
+        /// <para>Internal <c>snapshot_in_progress</c> AtomicBool serializes concurrent calls;
+        /// losers no-op silently. Callers that need both snapshots to succeed must serialize
+        /// externally.</para>
         /// </summary>
-        /// <param name="snapshotPath">Target snapshot file path (used for memory-only trees; ignored for disk).</param>
-        public void Snapshot(string snapshotPath = null)
+        public void CprSnapshot()
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            if (_storageBackend == StorageBackendType.Disk)
-            {
-                int result = NativeBfTreeMethods.bftree_snapshot(_tree);
-                if (result != 0)
-                    throw new InvalidOperationException("Failed to snapshot disk-backed BfTree.");
-            }
-            else
-            {
-                if (string.IsNullOrEmpty(snapshotPath))
-                    throw new ArgumentException("snapshotPath is required for memory-only trees.", nameof(snapshotPath));
-                var pathBytes = Encoding.UTF8.GetBytes(snapshotPath);
-                int result;
-                fixed (byte* pp = pathBytes)
-                {
-                    result = NativeBfTreeMethods.bftree_snapshot_memory(_tree, pp, pathBytes.Length);
-                }
-                if (result != 0)
-                    throw new NotSupportedException(
-                        "Snapshot is not yet supported for memory-only trees. Pending bf-tree cache_only snapshot support.");
-            }
+            if (string.IsNullOrEmpty(_snapshotFilePath))
+                throw new InvalidOperationException("CprSnapshot requires the tree to be constructed with a snapshotFilePath.");
+            int result = NativeBfTreeMethods.bftree_cpr_snapshot(_tree);
+            if (result != 0)
+                throw new InvalidOperationException("Failed to take CPR snapshot of BfTree.");
         }
 
         /// <summary>
-        /// Snapshot the BfTree to a specified target file for flush persistence.
-        /// For disk-backed trees: performs in-place snapshot, then copies the data file to <paramref name="targetPath"/>.
-        /// For memory-only trees: serializes directly to <paramref name="targetPath"/>.
+        /// Take a CPR snapshot of a tree given only its native handle (no managed wrapper).
+        /// Used by RangeIndex's <c>OnFlush</c> path which has direct access to the stub's
+        /// TreeHandle but not the managed <see cref="BfTreeService"/> instance.
+        /// Snapshot is written to the path configured at the tree's construction time.
         /// </summary>
-        /// <param name="targetPath">Target file path for the snapshot.</param>
-        public void SnapshotToFile(string targetPath)
+        /// <param name="handle">Native BfTree pointer.</param>
+        public static void CprSnapshotByPtr(nint handle)
         {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            if (string.IsNullOrEmpty(targetPath))
-                throw new ArgumentException("targetPath is required.", nameof(targetPath));
-
-            if (_storageBackend == StorageBackendType.Disk)
-            {
-                // Snapshot in-place first (drains circular buffer to data file)
-                int result = NativeBfTreeMethods.bftree_snapshot(_tree);
-                if (result != 0)
-                    throw new InvalidOperationException("Failed to snapshot disk-backed BfTree before file copy.");
-
-                // Copy the data file to the target path
-                System.IO.File.Copy(_filePath, targetPath, overwrite: true);
-            }
-            else
-            {
-                // For memory-only trees, serialize directly to the target path
-                var pathBytes = Encoding.UTF8.GetBytes(targetPath);
-                int result;
-                fixed (byte* pp = pathBytes)
-                {
-                    result = NativeBfTreeMethods.bftree_snapshot_memory(_tree, pp, pathBytes.Length);
-                }
-                if (result != 0)
-                    throw new NotSupportedException(
-                        "Snapshot to file is not yet supported for memory-only trees. Pending bf-tree cache_only snapshot support.");
-            }
+            if (handle == nint.Zero)
+                throw new ArgumentException("Native handle is null.", nameof(handle));
+            int result = NativeBfTreeMethods.bftree_cpr_snapshot(handle);
+            if (result != 0)
+                throw new InvalidOperationException("Failed to take CPR snapshot of BfTree.");
         }
 
         /// <summary>
-        /// Recover a BfTree from its snapshot.
-        /// For disk-backed trees: reopens the existing data file and resumes.
-        /// For memory-only trees: loads the snapshot from disk into a new cache_only tree.
-        /// Currently throws <see cref="NotSupportedException"/> for memory-only until
-        /// bf-tree adds cache_only recovery support.
+        /// Recover a BfTree from a CPR snapshot file. Unified API for disk-backed and
+        /// memory-backed (cache_only) trees — the storage backend is recorded in the
+        /// snapshot and inferred by the native library.
         /// </summary>
-        public static BfTreeService RecoverFromSnapshot(
-            string filePath,
-            StorageBackendType storageBackend = StorageBackendType.Disk,
-            ulong cbSizeByte = 0,
-            uint cbMinRecordSize = 0,
-            uint cbMaxRecordSize = 0,
-            uint cbMaxKeyLen = 0,
-            uint leafPageSize = 0)
+        /// <param name="recoveryPath">Source CPR snapshot file path.</param>
+        /// <param name="newSnapshotPath">Scratch path for the recovered tree's future cpr_snapshot
+        /// calls. Pass null to disable snapshots on the recovered tree (legacy behavior).</param>
+        /// <param name="storageBackend">Storage backend of the recovered tree (for managed tracking).</param>
+        public static BfTreeService RecoverFromCprSnapshot(
+            string recoveryPath,
+            string newSnapshotPath,
+            StorageBackendType storageBackend)
         {
-            var pathBytes = Encoding.UTF8.GetBytes(filePath);
+            if (string.IsNullOrEmpty(recoveryPath))
+                throw new ArgumentException("recoveryPath is required.", nameof(recoveryPath));
+
+            var recoveryBytes = Encoding.UTF8.GetBytes(recoveryPath);
+            var newSnapBytes = newSnapshotPath != null ? Encoding.UTF8.GetBytes(newSnapshotPath) : null;
             nint treePtr;
-
-            if (storageBackend == StorageBackendType.Disk)
+            fixed (byte* rp = recoveryBytes)
+            fixed (byte* sp = newSnapBytes)
             {
-                fixed (byte* pp = pathBytes)
-                {
-                    treePtr = NativeBfTreeMethods.bftree_new_from_snapshot(
-                        pp, pathBytes.Length,
-                        cbSizeByte, cbMinRecordSize, cbMaxRecordSize, cbMaxKeyLen, leafPageSize);
-                }
-                if (treePtr == 0)
-                    throw new InvalidOperationException($"Failed to recover disk-backed BfTree from '{filePath}'.");
+                treePtr = NativeBfTreeMethods.bftree_new_from_cpr_snapshot(
+                    rp, recoveryBytes.Length,
+                    sp, newSnapBytes?.Length ?? 0,
+                    null, 0);
             }
-            else
-            {
-                fixed (byte* pp = pathBytes)
-                {
-                    treePtr = NativeBfTreeMethods.bftree_recover_memory(
-                        pp, pathBytes.Length,
-                        cbSizeByte, cbMinRecordSize, cbMaxRecordSize, cbMaxKeyLen, leafPageSize);
-                }
-                if (treePtr == 0)
-                    throw new NotSupportedException(
-                        "Recovery is not yet supported for memory-only trees. Pending bf-tree cache_only recovery support.");
-            }
-            return new BfTreeService(treePtr, storageBackend, filePath);
+            if (treePtr == 0)
+                throw new InvalidOperationException($"Failed to recover BfTree from CPR snapshot '{recoveryPath}'.");
+            return new BfTreeService(treePtr, storageBackend, filePath: null, snapshotFilePath: newSnapshotPath);
         }
 
         /// <summary>
