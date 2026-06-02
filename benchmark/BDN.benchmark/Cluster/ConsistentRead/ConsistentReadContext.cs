@@ -52,7 +52,6 @@ namespace BDN.benchmark.Cluster.ConsistentRead
             {
                 opt.AofPhysicalSublogCount = 1;
                 opt.AofReplayTaskCount = 4;
-                opt.EnableFastCommit = true;
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
