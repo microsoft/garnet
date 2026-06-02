@@ -334,7 +334,14 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        if (takeExclusiveLock)
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(sharedLockToken);
+                        }
+                        else
+                        {
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        }
 
                         throw;
                     }
@@ -501,7 +508,14 @@ namespace Garnet.server
                     }
                     else if (readRes != GarnetStatus.OK)
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        if (takeExclusiveLock)
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                        }
+                        else
+                        {
+                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        }
 
                         status = readRes;
                         return default;
