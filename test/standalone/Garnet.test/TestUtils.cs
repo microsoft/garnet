@@ -1109,6 +1109,29 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Polls for at least one <c>*.flush.bftree</c> file to appear in
+        /// <paramref name="directory"/>, waiting up to <paramref name="timeoutMs"/> ms.
+        /// Flush snapshot creation can be asynchronous, so immediate assertions are flaky.
+        /// Returns the matching file paths (empty array if none found within timeout).
+        /// </summary>
+        public static string[] WaitForBfTreeFlushFiles(string directory, int timeoutMs = 5000)
+        {
+            var deadline = Environment.TickCount64 + timeoutMs;
+            string[] files = [];
+            while (Environment.TickCount64 < deadline)
+            {
+                if (Directory.Exists(directory))
+                {
+                    files = Directory.GetFiles(directory, "*.flush.bftree");
+                    if (files.Length > 0)
+                        return files;
+                }
+                Thread.Sleep(50);
+            }
+            return files;
+        }
+
+        /// <summary>
         /// Delegate to use in TLS certificate validation
         /// Test certificate should be issued by "CN=Garnet"
         /// </summary>

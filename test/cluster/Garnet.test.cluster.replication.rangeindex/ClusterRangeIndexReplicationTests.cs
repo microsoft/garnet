@@ -165,11 +165,12 @@ namespace Garnet.test.cluster
             for (var i = 0; i < 100; i++)
                 context.clusterTestUtils.Execute(endpoint, "SET", [$"filler{i:D4}", $"val{i:D4}"], logger: context.logger);
 
-            // Verify flush.bftree files were created on the primary (confirms flush path was triggered)
+            // Verify flush.bftree files were created on the primary (confirms flush path was triggered).
+            // Flush snapshot creation can be asynchronous, so poll with a timeout.
             var primaryRiLogRoot = GetRiLogRoot(primaryIndex);
-            var primaryFlushFiles = Directory.GetFiles(primaryRiLogRoot, "*.flush.bftree");
+            var primaryFlushFiles = ClusterTestUtils.WaitForBfTreeFlushFiles(primaryRiLogRoot);
             ClassicAssert.IsTrue(primaryFlushFiles.Length > 0,
-                "flush.bftree files should exist on primary after eviction");
+                "flush.bftree files should exist on primary after flush (waited up to 5s)");
 
             // Take checkpoint
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
@@ -185,7 +186,7 @@ namespace Garnet.test.cluster
 
             // Verify flush.bftree files were transferred to the replica
             var replicaRiLogRoot = GetRiLogRoot(replicaIndex);
-            var replicaFlushFiles = Directory.GetFiles(replicaRiLogRoot, "*.flush.bftree");
+            var replicaFlushFiles = ClusterTestUtils.WaitForBfTreeFlushFiles(replicaRiLogRoot);
             ClassicAssert.IsTrue(replicaFlushFiles.Length > 0,
                 "flush.bftree files should exist on replica after replication sync");
             ClassicAssert.AreEqual(primaryFlushFiles.Length, replicaFlushFiles.Length,
@@ -350,5 +351,6 @@ namespace Garnet.test.cluster
                 logger: context.logger);
             ClassicAssert.AreEqual("OK", (string)result);
         }
+
     }
 }

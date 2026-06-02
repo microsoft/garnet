@@ -2189,11 +2189,14 @@ namespace Garnet.test
             // Verify eviction actually occurred
             ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "tree should have been freed by eviction");
 
-            // Files should still exist after eviction (preserved for lazy restore)
+            // Files should still exist after eviction (preserved for lazy restore).
+            // Flush snapshot creation can be asynchronous, so poll with a timeout.
             var dataFiles = Directory.GetFiles(riLogRoot, "*.data.bftree");
             ClassicAssert.AreEqual(1, dataFiles.Length, "data.bftree file should survive eviction");
-            var flushFilesPostEvict = Directory.GetFiles(riLogRoot, "*.flush.bftree");
-            ClassicAssert.GreaterOrEqual(flushFilesPostEvict.Length, 1, "at least one flush snapshot should exist post-eviction");
+
+            var flushFilesPostEvict = TestUtils.WaitForBfTreeFlushFiles(riLogRoot);
+            ClassicAssert.GreaterOrEqual(flushFilesPostEvict.Length, 1,
+                "at least one flush snapshot should exist after flush (waited up to 5s)");
 
             // Lazy restore brings the record back in-memory (DEL requires the record
             // to be in-memory; the unified Delete path does not trigger lazy restore).

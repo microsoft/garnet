@@ -3537,5 +3537,8 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
+
+        public static string[] WaitForBfTreeFlushFiles(string directory, int timeoutMs = 5000)
+            => TestUtils.WaitForBfTreeFlushFiles(directory, timeoutMs);
     }
 }
