@@ -123,8 +123,25 @@ namespace Garnet.server
             try
             {
                 var workingPath = LogDataPathFor(keyBytes);
-                Directory.CreateDirectory(Path.GetDirectoryName(workingPath)!);
 
+                // TODO: Crash-unsafe replacement.
+                // Replacing an existing BfTree like this is not safe across crashes:
+                // we delete the existing data.bftree and File.Move the new snapshot
+                // in. If the process crashes between Delete and Move, or between Move
+                // and the RICREATE RMW that publishes the new stub, recovery will see
+                // a missing/mismatched file relative to the in-memory stub.
+                //
+                // Proper fix (follow-up work):
+                //   1. Move the migrated snapshot to a staging path (not workingPath).
+                //   2. If a stub already exists at this key, atomically mark it as
+                //      "replacement in progress" pointing at the staging path.
+                //   3. Promote staging → workingPath only after the in-store stub
+                //      has been updated; on recovery, replay the marker to either
+                //      complete or roll back the swap.
+                //
+                // Also note: the MIGRATE REPLACE flag is not currently honored for
+                // RI keys — see PublishMigratedIndex(replaceOption: ...) wiring.
+                //
                 // If a data file already exists (e.g., from a previous migration of the same key
                 // that was later deleted), remove it so the new snapshot can take its place.
                 if (File.Exists(workingPath))
@@ -142,8 +159,7 @@ namespace Garnet.server
 
                 Span<byte> newStubBytes = stackalloc byte[IndexSizeBytes];
                 stubBytes.CopyTo(newStubBytes);
-                ref var newStub = ref Unsafe.As<byte, RangeIndexStub>(
-                    ref MemoryMarshal.GetReference(newStubBytes));
+                ref var newStub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(newStubBytes));
                 newStub.TreeHandle = bfTree.NativePtr;
                 newStub.ResetFlags();
                 newStub.SerializationPhase = 0;
