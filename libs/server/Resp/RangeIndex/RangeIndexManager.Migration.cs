@@ -114,8 +114,9 @@ namespace Garnet.server
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
         /// <remarks>
-        /// If a RangeIndex already exists at this key on the destination, the migration is
-        /// skipped regardless of <paramref name="replaceOption"/>:
+        /// If ANY key (string, object, RI, vector, etc.) already exists at this key name
+        /// on the destination, the migration is skipped regardless of
+        /// <paramref name="replaceOption"/>:
         /// <list type="bullet">
         /// <item><paramref name="replaceOption"/> = false → <see cref="PublishMigratedIndexResult.SkippedAlreadyExists"/></item>
         /// <item><paramref name="replaceOption"/> = true  → <see cref="PublishMigratedIndexResult.SkippedReplaceNotSupported"/>
@@ -125,16 +126,16 @@ namespace Garnet.server
         /// </remarks>
         public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
-            var riExists = RangeIndexExists(keyBytes, ref ctx);
-            if (riExists)
+            var keyExists = KeyExists(keyBytes, ref ctx);
+            if (keyExists)
             {
                 if (replaceOption)
                 {
-                    logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key and MIGRATE REPLACE was requested, but replacement is not yet supported for RI keys; skipping");
+                    logger?.LogWarning("PublishMigratedIndex: a key already exists at this name and MIGRATE REPLACE was requested, but replacement is not yet supported for RangeIndex migration; skipping");
                     return PublishMigratedIndexResult.SkippedReplaceNotSupported;
                 }
 
-                logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key (use MIGRATE REPLACE to overwrite); skipping");
+                logger?.LogWarning("PublishMigratedIndex: a key already exists at this name (use MIGRATE REPLACE to overwrite once supported); skipping");
                 return PublishMigratedIndexResult.SkippedAlreadyExists;
             }
 
@@ -142,12 +143,12 @@ namespace Garnet.server
             {
                 var workingPath = LogDataPathFor(keyBytes);
 
-                // Reaching here implies riExists was false (REPLACE+existing returns
-                // SkippedReplaceNotSupported above). The stub doesn't exist, but a stale
+                // Reaching here implies no key exists at this name in the store. A stale
                 // data.bftree file may still be on disk from a previous migration of the
-                // same key whose stub was later deleted (DEL triggers DisposeAndDeleteFilesDeferred,
-                // but a crash between unlink-of-file and tombstone-commit could leave a
-                // stale file). Remove it so File.Move below can take its place.
+                // same key whose stub was later deleted (DEL triggers
+                // DisposeAndDeleteFilesDeferred, but a crash between unlink-of-file and
+                // tombstone-commit could leave a stale file). Remove it so File.Move below
+                // can take its place.
                 //
                 // TODO: When MIGRATE REPLACE support is added for RI keys, the destructive
                 // swap will need a staging-file + in-progress-marker design so that recovery
@@ -212,21 +213,30 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Check whether a RangeIndex stub already exists at the given key on this node.
-        /// Returns <c>true</c> for <see cref="GarnetStatus.OK"/> (an RI stub is present);
-        /// <c>false</c> for <see cref="GarnetStatus.NOTFOUND"/> or <see cref="GarnetStatus.WRONGTYPE"/>.
+        /// Check whether ANY key (string, object, RI, vector, etc.) already exists at the
+        /// given key name on this node. Returns <c>true</c> regardless of type — used as a
+        /// pre-publish gate so we never overwrite an existing key with a migrated RangeIndex.
         /// </summary>
         /// <remarks>
-        /// Used by <see cref="PublishMigratedIndex"/> to decide whether to honor MIGRATE without REPLACE.
-        /// Does not take the RI shared lock — destination-side publish already runs after the
-        /// migration sketch gate is closed, so no concurrent RI writes can race here.
+        /// <para>Implementation: issues a plain <see cref="RespCommand.GET"/> through the
+        /// string context and checks <c>status.Found || status.IsWrongType</c>:</para>
+        /// <list type="bullet">
+        /// <item><b>String record</b> → <c>Found = true</c></item>
+        /// <item><b>Object record</b> (hash, list, set, sorted-set) → <c>IsWrongType = true</c>
+        /// (<c>ReadMethods.Reader</c> rejects GET on <c>ValueIsObject</c> records).</item>
+        /// <item><b>RangeIndex / Vector record</b> → <c>IsWrongType = true</c>
+        /// (<c>CheckRecordTypeMismatch</c> rejects GET on typed records).</item>
+        /// <item><b>Missing key</b> → both false.</item>
+        /// </list>
+        /// <para>Does not take the RI shared lock — destination-side publish already runs
+        /// after the migration sketch gate is closed, so no concurrent RI writes can race.</para>
         /// </remarks>
-        private unsafe bool RangeIndexExists(ReadOnlySpan<byte> keyBytes, ref StringBasicContext ctx)
+        internal unsafe bool KeyExists(ReadOnlySpan<byte> keyBytes, ref StringBasicContext ctx)
         {
-            Span<byte> stubSpan = stackalloc byte[IndexSizeBytes];
-            var output = StringOutput.FromPinnedSpan(stubSpan);
+            Span<byte> outputSpan = stackalloc byte[1];
+            var output = StringOutput.FromPinnedSpan(outputSpan);
             StringInput input = default;
-            input.header.cmd = RespCommand.RIGET;
+            input.header.cmd = RespCommand.GET;
 
             fixed (byte* keyPtr = keyBytes)
             {
@@ -239,7 +249,7 @@ namespace Garnet.server
                 if (!output.SpanByteAndMemory.IsSpanByte)
                     output.SpanByteAndMemory.Dispose();
 
-                return status.Found;
+                return status.Found || status.IsWrongType;
             }
         }
 
