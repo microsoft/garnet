@@ -1988,7 +1988,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            string[] quantizers = ["NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8" ];
+            string[] quantizers = ["NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8"];
             int[] reduceValues = [0, 5];
             int[] efValues = [0, 8];
             int[] mValues = [0, 16];
