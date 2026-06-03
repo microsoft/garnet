@@ -169,12 +169,7 @@ namespace Tsavorite.core
             // Release-store: publishes data to the consumer.
             Volatile.Write(ref slot.Sequence, claimed + 1);
 
-            // Lost-wakeup-safe wake. The StoreLoad barrier ensures the sequence-write
-            // above is globally visible before the wakeNeeded-read below; pairs with
-            // the Interlocked.Exchange on the consumer's park path.
-            Interlocked.MemoryBarrier();
-            if (Volatile.Read(ref _wakeNeeded) != 0)
-                Wake();
+            WakeIfParked();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -192,6 +187,24 @@ namespace Tsavorite.core
             var sw = default(SpinWait);
             while (Volatile.Read(ref slot.Sequence) != claimed)
                 sw.SpinOnce();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WakeIfParked()
+        {
+            // Lost-wakeup-safe wake. The StoreLoad barrier ensures the seq-write above is
+            // globally visible before we read _wakeNeeded; pairs with the Interlocked.Exchange
+            // on the consumer's park path.
+            Interlocked.MemoryBarrier();
+            if (Volatile.Read(ref _wakeNeeded) == 0)
+                return;
+            // CLAIM the wake atomically. Only the producer that successfully CASes
+            // _wakeNeeded from 1 to 0 calls Set(), so a burst of N producers after a
+            // consumer parks issues exactly ONE Set() instead of N. ManualResetEventSlim.Set
+            // internally takes a Monitor; without this claim, redundant Sets dominated
+            // the profile at ~10% of managed CPU on the read-pending path.
+            if (Interlocked.CompareExchange(ref _wakeNeeded, 0, 1) == 1)
+                Wake();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

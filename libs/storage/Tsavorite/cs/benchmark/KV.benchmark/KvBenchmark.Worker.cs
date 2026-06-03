@@ -217,7 +217,7 @@ namespace Tsavorite.kvbench
 
                     if (rcoin < readCutoff)
                     {
-                        bContext.Read(key, ref pinnedInputSpan, ref _output, Empty.Default);
+                        bContext.Read(key, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
