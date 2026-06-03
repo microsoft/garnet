@@ -87,16 +87,20 @@ namespace Garnet.server
         /// and produces chunked migration records via async file reads.
         /// </summary>
         /// <param name="localServerSession">The local server session for store access.</param>
-        /// <param name="key">The pinned RangeIndex key to serialize. Caller must keep the underlying bytes pinned for the duration of this call.</param>
+        /// <param name="keyBytes">The key bytes of the RangeIndex to serialize.</param>
         /// <param name="chunkSize">The chunk size for streaming. Defaults to <see cref="DefaultMigrationChunkSize"/>.</param>
-        public RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, PinnedSpanByte key, int chunkSize = DefaultMigrationChunkSize)
+        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, int chunkSize = DefaultMigrationChunkSize)
         {
-            if (!SnapshotForMigration(localServerSession.storageSession, key, out var snapshotPath, out var totalBytes, out var stubBytes))
-                throw new InvalidOperationException("Failed to snapshot BfTree for migration");
+            fixed (byte* keyPtr = keyBytes)
+            {
+                var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
+                if (!SnapshotForMigration(localServerSession.storageSession, pinnedKey, out var snapshotPath, out var totalBytes, out var stubBytes))
+                    throw new InvalidOperationException("Failed to snapshot BfTree for migration");
 
-            var serializer = new RangeIndexChunkedSerializer(key.ToArray(), stubBytes, totalBytes);
-            var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
-            return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, chunkSize, logger);
+                var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes, totalBytes);
+                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
+                return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, chunkSize, logger);
+            }
         }
 
         /// <summary>
@@ -109,8 +113,13 @@ namespace Garnet.server
         /// Publish a migrated RangeIndex key: move the temp file to the working path,
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
-        public unsafe bool PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, ref StringBasicContext ctx)
+        /// <remarks>
+        /// <paramref name="replaceOption"/> is wired through from the MIGRATE REPLACE flag
+        /// but is not currently honored — overwrite semantics on existing RI keys are TODO.
+        /// </remarks>
+        public unsafe bool PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
+            _ = replaceOption; // TODO: honor MIGRATE REPLACE for RangeIndex keys
             try
             {
                 var workingPath = LogDataPathFor(keyBytes);

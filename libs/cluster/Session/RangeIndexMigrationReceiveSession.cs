@@ -102,7 +102,7 @@ namespace Garnet.cluster
                 }
 
                 receiveActivity.OnPublishing();
-                if (!rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, ref stringBasicContext))
+                if (!rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext))
                 {
                     receiveActivity.OnError("PublishMigratedIndex failed");
                     Reset();

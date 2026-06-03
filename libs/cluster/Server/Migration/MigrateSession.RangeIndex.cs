@@ -41,19 +41,7 @@ namespace Garnet.cluster
             var transmitActivity = RangeIndexMigrationActivities.TransmitActivity.StartActivity();
             try
             {
-                RangeIndexMigrationReader CreateReader()
-                {
-                    unsafe
-                    {
-                        fixed (byte* keyPtr = keyBytes)
-                        {
-                            var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
-                            return rangeIndexManager.SnapshotRangeIndexAndCreateReader(migrateOperation.LocalSession, pinnedKey, chunkSize);
-                        }
-                    }
-                }
-
-                using var reader = CreateReader();
+                using var reader = rangeIndexManager.SnapshotRangeIndexAndCreateReader(migrateOperation.LocalSession, keyBytes, chunkSize);
                 transmitActivity.OnSnapshotCompleted(reader.TotalFileBytes);
 
                 while (!reader.IsComplete)
