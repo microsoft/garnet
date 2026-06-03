@@ -21,7 +21,6 @@ namespace Tsavorite.core
         internal const int BufferSize = 1 << LogSettings.kMinObjectLogSegmentSizeBits;
 
         /// <summary>Initial IO size to read. Sized to comfortably cover a typical small record (header + small key + small value)
-        /// <summary>Initial IO size to read. Sized to comfortably cover a typical small record (header + small key + small value)
         /// in one device-sector IO. The previous default of one OS system page (4 KB on Linux x64) caused most reads of small
         /// records to span 4 KB NAND-page boundaries on NVMe, doubling per-IO device latency (~0.92 ms vs ~0.67 ms for sector-aligned
         /// 4 KB reads). With a 128-byte speculative read, the sector-aligned IO is typically 1 sector (and up to 2 sectors when the
