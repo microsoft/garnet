@@ -350,6 +350,7 @@ namespace Tsavorite.kvbench
                 "randomaccess" => Tsavorite.core.DeviceType.RandomAccess,
                 "filestream" => Tsavorite.core.DeviceType.FileStream,
                 "null" => Tsavorite.core.DeviceType.Null,
+                "localmemory" or "localmem" => Tsavorite.core.DeviceType.LocalMemory,
                 "default" => Tsavorite.core.DeviceType.Default,
                 _ => Tsavorite.core.DeviceType.Default,
             };
@@ -370,7 +371,7 @@ namespace Tsavorite.kvbench
         static bool IsKnownDeviceName(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return true;
-            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default" or "localmemory";
+            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default" or "localmemory" or "localmem";
         }
 
         static bool IsKnownIoBackendName(string s)

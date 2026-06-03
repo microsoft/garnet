@@ -52,7 +52,7 @@ namespace Device.benchmark
         static void PrintBenchMarkSummary(Options opts)
         {
             Console.WriteLine("<<<<<<< Start Benchmark Configuration >>>>>>>>");
-            if (opts.UseLocalMemory)
+            if (opts.DeviceType == DeviceType.LocalMemory)
             {
                 Console.WriteLine($"Device Type: LocalMemory (parallelism={opts.LocalMemoryParallelism}, latencyMs={opts.LocalMemoryLatencyMs})");
             }
@@ -211,21 +211,22 @@ namespace Device.benchmark
 
         static IDevice GetDevice(Options opts)
         {
-            if (opts.UseLocalMemory)
+            if (opts.DeviceType == DeviceType.LocalMemory)
             {
                 // Capacity must be >= FileSize (the benchmark fills FileSize bytes then reads randomly).
-                // Segment size must divide capacity; align to opts.SegmentSize but cap by FileSize.
+                // Capacity must be a multiple of segment size.
                 long segSize = opts.SegmentSize;
                 long capacity = opts.FileSize;
                 if (capacity % segSize != 0)
                     capacity = ((capacity + segSize - 1) / segSize) * segSize;
                 Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism={opts.LocalMemoryParallelism} latencyMs={opts.LocalMemoryLatencyMs}");
-                return new LocalMemoryDevice(
+                return Devices.CreateLogDevice(
+                    logPath: null,
+                    deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
-                    sz_segment: segSize,
-                    parallelism: opts.LocalMemoryParallelism,
-                    latencyMs: opts.LocalMemoryLatencyMs,
-                    sector_size: (uint)opts.SectorSize);
+                    localMemorySegmentSize: segSize,
+                    localMemoryParallelism: opts.LocalMemoryParallelism,
+                    localMemoryLatencyMs: opts.LocalMemoryLatencyMs);
             }
 
             var deviceType = opts.DeviceType;

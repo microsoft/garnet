@@ -82,16 +82,13 @@ namespace Tsavorite.kvbench
             int numCt = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : 1;
             IDevice dev;
 
-            // LocalMemoryDevice: pure in-process pinned byte[] arrays simulating a "fast disk"
-            // without any kernel involvement. Used to measure Tsavorite's peak end-to-end throughput
-            // when device cost is removed. Capacity is sized to fit the expected log tail
-            // (Keys * (KeySize + ValueSize + ~16B overhead)) rounded up to a multiple of segment size,
-            // plus 4 extra segments of slack for in-flight allocations and reservation.
-            if (string.Equals(opts.Device, "localmemory", System.StringComparison.OrdinalIgnoreCase))
+            // LocalMemory: RAM-backed device modelling a syscall-free "fast IO" backend, used to
+            // measure the upper bound of Tsavorite throughput. Capacity is sized to fit the
+            // expected log tail (Keys * (8B key + ValueSize + 16B header)) rounded up to a
+            // multiple of segment size, plus 4 extra segments for in-flight slack.
+            if (devType == DeviceType.LocalMemory)
             {
                 long segSize = opts.ResolvedSegmentSizeBytes;
-
-                // Estimate per-record size: 8B key + value-size + 16B Tsavorite header. Round up.
                 long perRecord = 8 + opts.ValueSize + 16;
                 long approxBytes = checked(opts.Keys * perRecord);
                 long needSegments = (approxBytes + segSize - 1) / segSize + 4;
@@ -103,12 +100,13 @@ namespace Tsavorite.kvbench
                 System.Console.WriteLine(
                     $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism={localmemParallelism} latencyMs={latencyMs}");
 
-                dev = new LocalMemoryDevice(
+                dev = Devices.CreateLogDevice(
+                    logPath: null,
+                    deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
-                    sz_segment: segSize,
-                    parallelism: localmemParallelism,
-                    latencyMs: latencyMs,
-                    sector_size: 512);
+                    localMemorySegmentSize: segSize,
+                    localMemoryParallelism: localmemParallelism,
+                    localMemoryLatencyMs: latencyMs);
                 if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
                 return dev;
             }

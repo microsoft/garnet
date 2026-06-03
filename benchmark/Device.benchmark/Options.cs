@@ -18,16 +18,13 @@ namespace Device.benchmark
         [Option("file-name", Required = false, Default = "c:/data/test.dat", HelpText = "File name")]
         public string FileName { get; set; }
 
-        [Option("device-type", Required = false, Default = DeviceType.Native, HelpText = "Device type (Native, FileStream, RandomAccess). Ignored when --local-memory is set.")]
+        [Option("device-type", Required = false, Default = DeviceType.Native, HelpText = "Device type (Native, FileStream, RandomAccess, LocalMemory). LocalMemory uses --local-memory-parallelism / --local-memory-latency-ms; --file-name and --io-backend are ignored.")]
         public DeviceType DeviceType { get; set; }
 
-        [Option("local-memory", Required = false, Default = false, HelpText = "Use the in-process LocalMemoryDevice (RAM-backed) instead of a real disk device. Used to measure the maximum throughput Tsavorite/Garnet can achieve with a syscall-free 'fast device'. When set, --device-type, --file-name, --io-backend are ignored.")]
-        public bool UseLocalMemory { get; set; }
-
-        [Option("local-memory-parallelism", Required = false, Default = 8, HelpText = "LocalMemoryDevice IO processor threads (and SPSC rings). Each ring is fed by one submitter thread (per-thread routing) and drained by one processor thread. Pick >= number of submitter threads for true SPSC; lower values fall back to MPSC-via-lock.")]
+        [Option("local-memory-parallelism", Required = false, Default = 8, HelpText = "DeviceType.LocalMemory: IO processor threads (and SPSC rings). Each ring is fed by one submitter thread (per-thread routing) and drained by one processor thread. For best scaling, pick >= --threads; lower values still work via MPSC-by-lock.")]
         public int LocalMemoryParallelism { get; set; }
 
-        [Option("local-memory-latency-ms", Required = false, Default = 0, HelpText = "Per-IO simulated latency in milliseconds (only effective with --local-memory-parallelism > 0).")]
+        [Option("local-memory-latency-ms", Required = false, Default = 0, HelpText = "DeviceType.LocalMemory: per-IO simulated latency in milliseconds.")]
         public int LocalMemoryLatencyMs { get; set; }
 
         [Option("throttle-limit", Required = false, Default = 0, HelpText = "Max device-level in-flight ops (0 = no throttle). Note: for Native libaio the kernel io_context is only 128 slots wide — running with --throttle-limit 0 plus high QD (threads × batch > 128) floods the ring and the kernel returns EAGAIN per request (surfaced as Status::IOError=4). The benchmark reports these as errors; throughput uses successful completions only. Set to 128 (matches both the libaio io_context capacity and the io_uring SQ depth this build uses) to avoid flood.")]
