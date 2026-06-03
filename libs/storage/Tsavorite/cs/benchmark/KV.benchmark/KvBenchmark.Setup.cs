@@ -82,6 +82,37 @@ namespace Tsavorite.kvbench
             int numCt = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : 1;
             IDevice dev;
 
+            // LocalMemoryDevice: pure in-process pinned byte[] arrays simulating a "fast disk"
+            // without any kernel involvement. Used to measure Tsavorite's peak end-to-end throughput
+            // when device cost is removed. Capacity is sized to fit the expected log tail
+            // (Keys * (KeySize + ValueSize + ~16B overhead)) rounded up to a multiple of segment size,
+            // plus 4 extra segments of slack for in-flight allocations and reservation.
+            if (string.Equals(opts.Device, "localmemory", System.StringComparison.OrdinalIgnoreCase))
+            {
+                long segSize = opts.ResolvedSegmentSizeBytes;
+
+                // Estimate per-record size: 8B key + value-size + 16B Tsavorite header. Round up.
+                long perRecord = 8 + opts.ValueSize + 16;
+                long approxBytes = checked(opts.Keys * perRecord);
+                long needSegments = (approxBytes + segSize - 1) / segSize + 4;
+                long capacity = needSegments * segSize;
+
+                int localmemParallelism = opts.LocalMemParallelism < 1 ? 8 : opts.LocalMemParallelism;
+                int latencyMs = opts.LocalMemLatencyMs;
+
+                System.Console.WriteLine(
+                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism={localmemParallelism} latencyMs={latencyMs}");
+
+                dev = new LocalMemoryDevice(
+                    capacity: capacity,
+                    sz_segment: segSize,
+                    parallelism: localmemParallelism,
+                    latencyMs: latencyMs,
+                    sector_size: 512);
+                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
+                return dev;
+            }
+
             if (devType == DeviceType.Native && OperatingSystem.IsLinux())
             {
                 dev = new NativeStorageDevice(logPath,

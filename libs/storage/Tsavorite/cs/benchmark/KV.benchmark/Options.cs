@@ -94,7 +94,7 @@ namespace Tsavorite.kvbench
         // ===== Device =====
 
         [Option("device", Required = false, Default = "default",
-            HelpText = "Device backend: native, randomaccess, filestream, null, default.")]
+            HelpText = "Device backend: native, randomaccess, filestream, null, localmemory, default.")]
         public string Device { get; set; }
 
         [Option("device-throttle", Required = false, Default = 0,
@@ -112,6 +112,17 @@ namespace Tsavorite.kvbench
                        "affinity. Throughput scales with this value up to the available submitter " +
                        "concurrency. 0 = Garnet default (1).")]
         public int DeviceCompletionThreads { get; set; }
+
+        [Option("localmem-parallelism", Required = false, Default = 8,
+            HelpText = "LocalMemoryDevice IO processor threads (and SPSC rings). Each ring is fed by one submitter " +
+                       "thread (per-thread routing) and drained by one processor thread. For best scaling, pick >= " +
+                       "number of run-phase threads so every ring is true SPSC; lower values still work via MPSC-by-lock.")]
+        public int LocalMemParallelism { get; set; }
+
+        [Option("localmem-latency-ms", Required = false, Default = 0,
+            HelpText = "LocalMemoryDevice simulated per-IO latency in milliseconds (only active when " +
+                       "--localmem-parallelism > 0).")]
+        public int LocalMemLatencyMs { get; set; }
 
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
@@ -238,7 +249,7 @@ namespace Tsavorite.kvbench
 
             ResolvedDeviceType = ParseDeviceType(Device);
             if (ResolvedDeviceType == Tsavorite.core.DeviceType.Default && !IsKnownDeviceName(Device))
-                return $"--device must be one of: native, randomaccess, filestream, null, default (got: {Device})";
+                return $"--device must be one of: native, randomaccess, filestream, null, localmemory, default (got: {Device})";
             ResolvedIoBackend = ParseIoBackend(DeviceIoBackend);
             if (ResolvedIoBackend == Tsavorite.core.NativeStorageDevice.IoBackend.Default && !IsKnownIoBackendName(DeviceIoBackend))
                 return $"--device-io-backend must be one of: libaio, uring, default (got: {DeviceIoBackend})";
@@ -359,7 +370,7 @@ namespace Tsavorite.kvbench
         static bool IsKnownDeviceName(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return true;
-            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default";
+            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default" or "localmemory";
         }
 
         static bool IsKnownIoBackendName(string s)
