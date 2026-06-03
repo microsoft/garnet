@@ -1682,8 +1682,7 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            if (!asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
-                asyncResult = new AsyncGetFromDiskResult<AsyncIOContext>();
+            var asyncResult = RentAsyncGetFromDiskResult();
             asyncResult.context = context;
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
@@ -2272,6 +2271,32 @@ namespace Tsavorite.core
             }
         }
 
+        // Two-tier pool for AsyncGetFromDiskResult wrappers. The per-thread cache
+        // (ThreadStatic) absorbs the Get/Return cycles a single worker thread issues
+        // back-to-back, eliminating the CAS on the shared ConcurrentQueue's head/tail
+        // cache line under 16-way worker contention (was ~100 ns × 4 CAS/op × 16
+        // threads = a whole core of MESI ping-pong). On thread-local cache miss/full
+        // we fall back to the shared pool, which is still allocation-free in steady
+        // state because the total number of in-flight wrappers is bounded by the
+        // device throttle.
+        [ThreadStatic]
+        private static System.Collections.Generic.Stack<AsyncGetFromDiskResult<AsyncIOContext>> t_asyncGetFromDiskResultCache;
+        private const int AsyncGetFromDiskResultCacheCapacity = 32;
+
+        /// <summary>
+        /// Two-tier rent: thread-local LIFO first, fall back to shared ConcurrentQueue.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal AsyncGetFromDiskResult<AsyncIOContext> RentAsyncGetFromDiskResult()
+        {
+            var cache = t_asyncGetFromDiskResultCache;
+            if (cache is not null && cache.Count > 0)
+                return cache.Pop();
+            if (asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
+                return asyncResult;
+            return new AsyncGetFromDiskResult<AsyncIOContext>();
+        }
+
         /// <summary>
         /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
         /// pool after the worker has consumed its <c>context</c> field in
@@ -2283,6 +2308,14 @@ namespace Tsavorite.core
             // Clear the captured ctx so a pooled wrapper doesn't transitively retain
             // SectorAlignedMemory / DiskLogRecord references across rentals.
             result.context = default;
+            var cache = t_asyncGetFromDiskResultCache;
+            if (cache is null)
+                cache = t_asyncGetFromDiskResultCache = new System.Collections.Generic.Stack<AsyncGetFromDiskResult<AsyncIOContext>>(AsyncGetFromDiskResultCacheCapacity);
+            if (cache.Count < AsyncGetFromDiskResultCacheCapacity)
+            {
+                cache.Push(result);
+                return;
+            }
             asyncGetFromDiskResultPool.Enqueue(result);
         }
 
