@@ -240,6 +240,9 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [MemorySizeValidation]
+        [Option("aof-segment-size", Required = false, HelpText = "Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated.")]
+        public string AofSegmentSize { get; set; }
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -901,6 +904,7 @@ namespace Garnet
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
+                AofSegmentSize = AofSegmentSize,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,

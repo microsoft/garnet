@@ -104,6 +104,12 @@ namespace Garnet.server
         public string AofPageSize = "4m";
 
         /// <summary>
+        /// Size of each AOF segment (file) in bytes on disk (rounds down to power of 2).
+        /// This is the granularity at which AOF files are created and truncated.
+        /// </summary>
+        public string AofSegmentSize = "1g";
+
+        /// <summary>
         /// AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
         /// </summary>
         public int AofReplicationRefreshFrequencyMs = 10;
@@ -908,10 +914,29 @@ namespace Garnet.server
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
         public void GetAofSettings(int dbId, LightEpoch epoch, out TsavoriteLogSettings tsavoriteLogSettings)
         {
+            // Validate sizes up-front so we don't allocate devices or commit managers
+            // that would need to be disposed if validation fails.
+            var memorySizeBits = AofMemorySizeBits();
+            var pageSizeBits = AofPageSizeBits();
+            var segmentSizeBits = AofSegmentSizeBits();
+
+            if (pageSizeBits > memorySizeBits)
+            {
+                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
+                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+            }
+
+            if (pageSizeBits > segmentSizeBits)
+            {
+                logger?.LogError("AOF Page size cannot be more than the AOF segment size.");
+                throw new Exception("AOF Page size cannot be more than the AOF segment size.");
+            }
+
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
-                MemorySizeBits = AofMemorySizeBits(),
-                PageSizeBits = AofPageSizeBits(),
+                MemorySizeBits = memorySizeBits,
+                PageSizeBits = pageSizeBits,
+                SegmentSizeBits = segmentSizeBits,
                 LogDevice = GetAofDevice(dbId),
                 TryRecoverLatest = false,
                 SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
@@ -920,11 +945,6 @@ namespace Garnet.server
                 MutableFraction = 0.9,
                 Epoch = epoch
             };
-            if (tsavoriteLogSettings.PageSize > tsavoriteLogSettings.MemorySize)
-            {
-                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
-            }
 
             var aofDir = GetAppendOnlyFileDirectory(dbId);
             // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
@@ -968,6 +988,19 @@ namespace Garnet.server
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF page size than specified (power of 2)");
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Get AOF segment size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int AofSegmentSizeBits()
+        {
+            var size = ParseSize(AofSegmentSize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation("Warning: using lower AOF segment size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
