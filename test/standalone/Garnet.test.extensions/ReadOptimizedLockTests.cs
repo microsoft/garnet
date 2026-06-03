@@ -33,8 +33,8 @@ namespace Garnet.test
             var gotExclusive = lockContext.TryAcquireExclusiveLock(hash, out _);
             ClassicAssert.IsFalse(gotExclusive);
 
-            lockContext.ReleaseSharedLock(sharedToken0);
-            lockContext.ReleaseSharedLock(sharedToken1);
+            lockContext.ReleaseLock(sharedToken0);
+            lockContext.ReleaseLock(sharedToken1);
 
             var gotExclusiveAgain = lockContext.TryAcquireExclusiveLock(hash, out var exclusiveToken);
             ClassicAssert.IsTrue(gotExclusiveAgain);
@@ -42,7 +42,7 @@ namespace Garnet.test
             var gotSharedAgain = lockContext.TryAcquireSharedLock(hash, out _);
             ClassicAssert.IsFalse(gotSharedAgain);
 
-            lockContext.ReleaseExclusiveLock(exclusiveToken);
+            lockContext.ReleaseLock(exclusiveToken);
         }
 
         [Test]
@@ -151,7 +151,7 @@ namespace Garnet.test
                                                     ClassicAssert.AreEqual(sub[0], sub[k]);
                                                 }
 
-                                                lockContext.ReleaseSharedLock(sharedLockToken);
+                                                lockContext.ReleaseLock(sharedLockToken);
                                             }
                                             else
                                             {
@@ -172,7 +172,7 @@ namespace Garnet.test
                                                     sub[k] = newValue;
                                                 }
 
-                                                lockContext.ReleaseExclusiveLock(exclusiveLockToken);
+                                                lockContext.ReleaseLock(exclusiveLockToken);
                                             }
                                             else
                                             {
@@ -191,7 +191,7 @@ namespace Garnet.test
                                                 ClassicAssert.AreEqual(sub[0], sub[k]);
                                             }
 
-                                            lockContext.ReleaseSharedLock(sharedLockToken);
+                                            lockContext.ReleaseLock(sharedLockToken);
                                         }
 
                                         break;
@@ -207,7 +207,7 @@ namespace Garnet.test
                                                 sub[k] = newValue;
                                             }
 
-                                            lockContext.ReleaseExclusiveLock(exclusiveLockToken);
+                                            lockContext.ReleaseLock(exclusiveLockToken);
                                         }
 
                                         break;
@@ -215,7 +215,7 @@ namespace Garnet.test
                                     // Try: Read, verify, promote, modify
                                     case 4:
                                         {
-                                            if (lockContext.TryAcquireSharedLock(hash, out var sharedLockToken))
+                                            if (lockContext.TryAcquireSharedLock(hash, out var lockToken))
                                             {
                                                 var sub = values[hashIx];
                                                 for (var k = 1; k < sub.Length; k++)
@@ -223,7 +223,7 @@ namespace Garnet.test
                                                     ClassicAssert.AreEqual(sub[0], sub[k]);
                                                 }
 
-                                                if (lockContext.TryPromoteSharedLock(hash, sharedLockToken, out var exclusiveLockToken))
+                                                if (lockContext.TryPromoteSharedLock(hash, ref lockToken))
                                                 {
                                                     var newValue = threadRandom.NextInt64();
                                                     for (var k = 0; k < sub.Length; k++)
@@ -231,11 +231,11 @@ namespace Garnet.test
                                                         sub[k] = newValue;
                                                     }
 
-                                                    lockContext.ReleaseExclusiveLock(exclusiveLockToken);
+                                                    lockContext.ReleaseLock(lockToken);
                                                 }
                                                 else
                                                 {
-                                                    lockContext.ReleaseSharedLock(sharedLockToken);
+                                                    lockContext.ReleaseLock(lockToken);
 
                                                     j--;
                                                 }
