@@ -102,13 +102,18 @@ namespace Garnet.cluster
                 }
 
                 receiveActivity.OnPublishing();
-                if (!rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext))
+                var publishResult = rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext);
+                receiveActivity.OnPublishResult(publishResult);
+
+                if (publishResult == PublishMigratedIndexResult.Failed)
                 {
                     receiveActivity.OnError("PublishMigratedIndex failed");
                     Reset();
                     return false;
                 }
 
+                // Both Success and SkippedAlreadyExists are valid outcomes: the destination
+                // is in a consistent state and the migration protocol can continue.
                 receiveActivity.LogActivity(logger, keyBytes);
                 Reset();
             }

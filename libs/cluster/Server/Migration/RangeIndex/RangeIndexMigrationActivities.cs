@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Text;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -105,6 +106,7 @@ namespace Garnet.cluster
             private long totalBytesReceived;
             private string error;
             private bool sessionDisposed;
+            private PublishMigratedIndexResult? publishResult;
 
             private ReceiveActivity() => timestampFirstChunk = Stopwatch.GetTimestamp();
 
@@ -120,6 +122,8 @@ namespace Garnet.cluster
 
             internal void OnPublishing() => timestampPublish = Stopwatch.GetTimestamp();
 
+            internal void OnPublishResult(PublishMigratedIndexResult result) => publishResult = result;
+
             internal void OnError(string error) => this.error = error;
 
             internal void OnSessionDisposed() => sessionDisposed = true;
@@ -130,8 +134,8 @@ namespace Garnet.cluster
             {
                 var totalTicks = Stopwatch.GetElapsedTime(timestampFirstChunk, timestampEnd).Ticks;
                 var publishTicks = timestampPublish > 0 ? Stopwatch.GetElapsedTime(timestampPublish, timestampEnd).Ticks : -1;
-                logger?.LogInformation("RangeIndexMigrationReceive: key={key} isError={isError} errorStr={errorStr} sessionDisposed={sessionDisposed} chunkCount={chunkCount} totalBytesReceived={totalBytesReceived} publishTicks={publishTicks} totalTicks={totalTicks}",
-                    keyBytes.Length > 0 ? Encoding.UTF8.GetString(keyBytes) : "null", error != null, error, sessionDisposed, chunkCount, totalBytesReceived, publishTicks, totalTicks);
+                logger?.LogInformation("RangeIndexMigrationReceive: key={key} isError={isError} errorStr={errorStr} sessionDisposed={sessionDisposed} publishResult={publishResult} chunkCount={chunkCount} totalBytesReceived={totalBytesReceived} publishTicks={publishTicks} totalTicks={totalTicks}",
+                    keyBytes.Length > 0 ? Encoding.UTF8.GetString(keyBytes) : "null", error != null, error, sessionDisposed, publishResult?.ToString() ?? "n/a", chunkCount, totalBytesReceived, publishTicks, totalTicks);
             }
 
             internal void EndAndLogActivity(ILogger logger, ReadOnlySpan<byte> keyBytes)

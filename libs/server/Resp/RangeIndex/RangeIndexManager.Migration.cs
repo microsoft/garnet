@@ -115,17 +115,19 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// If a RangeIndex already exists at this key on the destination and the caller did
-        /// not pass <paramref name="replaceOption"/>, the migration is skipped (logged and
-        /// returns <c>false</c>). When <paramref name="replaceOption"/> is true and a stub
-        /// exists, the existing tree IS overwritten — note that this overwrite path is
-        /// currently NOT crash-safe (see TODO inside the method).
+        /// not pass <paramref name="replaceOption"/>, the migration is skipped and the method
+        /// returns <see cref="PublishMigratedIndexResult.SkippedAlreadyExists"/>. When
+        /// <paramref name="replaceOption"/> is true and a stub exists, the existing tree IS
+        /// overwritten — note that this overwrite path is currently NOT crash-safe
+        /// (see TODO inside the method).
         /// </remarks>
-        public unsafe bool PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
+        public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
-            if (RangeIndexExists(keyBytes, ref ctx) && !replaceOption)
+            var riExists = RangeIndexExists(keyBytes, ref ctx);
+            if (riExists && !replaceOption)
             {
                 logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key (use MIGRATE REPLACE to overwrite); skipping");
-                return false;
+                return PublishMigratedIndexResult.SkippedAlreadyExists;
             }
 
             try
@@ -196,12 +198,12 @@ namespace Garnet.server
                     }
                 }
 
-                return true;
+                return PublishMigratedIndexResult.Success;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PublishMigratedIndex: failed to recover BfTree");
-                return false;
+                return PublishMigratedIndexResult.Failed;
             }
         }
 
