@@ -2200,14 +2200,18 @@ namespace Tsavorite.core
             {
                 // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset), so we must subtract
                 // valid_offset from the device's reported transfer count (which is total bytes written into the aligned buffer starting at aligned_pointer).
-                Debug.Assert(numBytes <= ctx.record.available_bytes + ctx.record.valid_offset,
+                Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
                     $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
                 Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
                     $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
                 ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
 
-                Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid,
-                    $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {*(RecordInfo*)ctx.record.GetValidPointer()}");
+                if (ctx.record.available_bytes >= RecordInfo.Size)
+                {
+                    var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
+                    Debug.Assert(!recordInfo.Invalid,
+                        $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
+                }
 
                 if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {
