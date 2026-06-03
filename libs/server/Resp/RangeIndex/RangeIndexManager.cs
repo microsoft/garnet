@@ -248,6 +248,7 @@ namespace Garnet.server
                         ex);
                 }
             }
+
             Directory.CreateDirectory(migrationTempDir);
         }
 

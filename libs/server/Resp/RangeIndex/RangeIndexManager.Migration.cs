@@ -26,18 +26,30 @@ namespace Garnet.server
 
         /// <summary>
         /// Discover which of the given keys are RangeIndex keys by reading each via
-        /// <see cref="RespCommand.RIGET"/> through <see cref="StorageSession.Read_RangeIndex"/>.
+        /// <see cref="RespCommand.RIGET"/> through <see cref="ReadRangeIndex"/> (under a shared lock).
         /// Returns the set of keys that are RangeIndex type. Stub bytes are NOT captured here
         /// to avoid TOCTOU — the authoritative stub is read later under exclusive lock by
         /// <see cref="SnapshotForMigration"/>.
         /// Mirrors <see cref="VectorManager.GetNamespacesForKeys"/> pattern.
         /// </summary>
+        /// <remarks>
+        /// Used by <c>CLUSTER MIGRATE ... KEYS</c> (KEYS path) only. The SLOTS path
+        /// scans the slot range directly and does not need upfront discovery.
+        /// </remarks>
         public unsafe HashSet<byte[]> GetRangeIndexKeysForMigration(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys)
         {
             var rangeIndexKeys = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
-            using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null,
-                storeWrapper.DefaultDatabase.Id, readSessionState: null, storeWrapper.DefaultDatabase.VectorManager, logger);
+            using var storageSession = new StorageSession(
+                storeWrapper: storeWrapper,
+                scratchBufferBuilder: new(),
+                scratchBufferAllocator: new(),
+                sessionMetrics: null,
+                LatencyMetrics: null,
+                dbId: storeWrapper.DefaultDatabase.Id,
+                readSessionState: null,
+                vectorManager: storeWrapper.DefaultDatabase.VectorManager,
+                logger: logger);
 
             Span<byte> stubSpan = stackalloc byte[IndexSizeBytes];
 
@@ -46,19 +58,13 @@ namespace Garnet.server
                 StringInput input = default;
                 input.header.cmd = RespCommand.RIGET;
 
-                // Use Read_RangeIndex to suppress CopyToTail — RI handles its own promotion
-                // via RIPROMOTE. Using Read_MainStore would risk triggering PostCopyToTail which
-                // takes the RI exclusive lock and could deadlock or cause unnecessary side effects.
-                var output = StringOutput.FromPinnedSpan(stubSpan);
-                var status = storageSession.Read_RangeIndex(keyPsb.ReadOnlySpan, ref input, ref output, ref storageSession.stringBasicContext);
+                using (ReadRangeIndex(storageSession, keyPsb, ref input, stubSpan, out var status))
+                {
+                    if (status != GarnetStatus.OK)
+                        continue;
 
-                if (status != GarnetStatus.OK)
-                    continue;
-
-                if (!output.SpanByteAndMemory.IsSpanByte)
-                    output.SpanByteAndMemory.Dispose();
-
-                rangeIndexKeys.Add(keyPsb.ToArray());
+                    rangeIndexKeys.Add(keyPsb.ToArray());
+                }
             }
 
             return rangeIndexKeys;
