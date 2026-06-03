@@ -303,6 +303,7 @@ namespace Garnet.server
             new($"Log.MemorySizeBytes", db.Store.Log.MemorySizeBytes.ToString()),
             new($"Log.HeapSizeBytes", db.Store.Log.HeapSizeBytes.ToString()),
             new($"Log.SafeReadOnlyAddress", db.Store.Log.SafeReadOnlyAddress.ToString()),
+            new($"Log.FlushedUntilAddress", db.Store.Log.FlushedUntilAddress.ToString()),
             new($"Log.TailAddress", db.Store.Log.TailAddress.ToString()),
             new($"ReadCache.BeginAddress", db.Store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
             new($"ReadCache.BufferSize", db.Store.ReadCache?.BufferSize.ToString() ?? "N/A"),
