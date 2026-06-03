@@ -50,17 +50,15 @@ namespace Tsavorite.core
         private readonly Thread[] processors;
         private readonly SpscRing<IORequestLocalMemory>[] rings;
 
-        // Per-submitter-thread ring routing. Each submitter thread is permanently assigned
-        // a ring index on first use, ensuring each ring sees exactly one producer when
-        // (#submitter threads ≤ #rings). This is the SPSC pattern used by io_uring per-thread
-        // rings and SPDK per-CPU NVMe queue pairs. When (#submitter threads > #rings),
-        // multiple producers map to the same ring; in that case the ring's MPSC discipline
-        // is preserved via a single per-ring spin lock taken only on enqueue.
+        // Per-submitter-thread ring routing. Each submitter thread is permanently
+        // assigned a ring index on first use. With per-thread routing each ring
+        // sees a single producer in the common case (#submitter threads <=
+        // parallelism), making the ring effectively SPSC. When more producers
+        // share a ring, SpscRing.Enqueue handles them natively via fetch-and-add
+        // on its tail counter — no per-ring lock needed.
         [ThreadStatic]
         private static int t_ringIdxPlusOne;
         private int nextRingIdx;
-        private readonly object[] ringEnqueueLocks;   // null entries when not contended.
-        private volatile bool ringNeedsLock;          // set true if any producer collision occurs.
 
         /// <summary>
         /// Constructor.
@@ -98,12 +96,10 @@ namespace Tsavorite.core
             segmentPtrs = new byte*[maxSegments];
 
             rings = new SpscRing<IORequestLocalMemory>[parallelism];
-            ringEnqueueLocks = new object[parallelism];
             processors = new Thread[parallelism];
             for (int i = 0; i < parallelism; i++)
             {
                 rings[i] = new SpscRing<IORequestLocalMemory>(ringCapacity);
-                ringEnqueueLocks[i] = new object();
                 int local = i;
                 processors[i] = new Thread(() => ProcessorLoop(rings[local]))
                 {
@@ -194,19 +190,10 @@ namespace Tsavorite.core
                 startTimestamp = latencyEnabled ? Stopwatch.GetTimestamp() : 0,
             };
 
-            if (!ringNeedsLock)
-            {
-                // Fast path: pure SPSC. Each thread is uniquely assigned a ring index
-                // (round-robin via Interlocked.Increment on AssignRingIdx), so when
-                // #submitter threads <= parallelism, each ring sees exactly one producer.
-                rings[idx].Enqueue(req);
-            }
-            else
-            {
-                // Slow path: more producers than rings. Hold a per-ring lock to keep the
-                // SPSC ring's producer-side invariant (single concurrent producer) intact.
-                lock (ringEnqueueLocks[idx]) rings[idx].Enqueue(req);
-            }
+            // SpscRing.Enqueue is MPSC-safe natively via fetch-and-add on its tail
+            // counter — no per-ring lock needed even when ThreadPool flush threads
+            // collide with worker threads on the same ring.
+            rings[idx].Enqueue(req);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -215,10 +202,6 @@ namespace Tsavorite.core
             int seq = Interlocked.Increment(ref nextRingIdx) - 1;
             int idx = (int)((uint)seq % (uint)parallelism);
             t_ringIdxPlusOne = idx + 1;
-            // If round-robin assignment has wrapped past parallelism, multiple submitters
-            // now share a ring — switch to the MPSC-via-lock slow path.
-            if (seq >= parallelism)
-                ringNeedsLock = true;
             return idx;
         }
 
