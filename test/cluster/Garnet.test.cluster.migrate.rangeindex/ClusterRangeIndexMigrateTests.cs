@@ -378,6 +378,160 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Key-based migration of a MIXED batch — some keys are RangeIndex and some are
+        /// plain string/hash keys — all in a single MIGRATE ... KEYS call.
+        ///
+        /// Validates <c>RangeIndexManager.GetRangeIndexKeysForMigration</c>:
+        /// it must identify the RI subset (so they go through the RI snapshot/transmit path)
+        /// while leaving the non-RI keys to the regular key-transmission path. Both sets
+        /// must arrive intact on the target.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateMixedRangeIndexAndRegularByKeys()
+        {
+            const int shardCount = 3;
+            const int riKeyCount = 4;
+            const int stringKeyCount = 4;
+            const int hashKeyCount = 4;
+
+            context.CreateInstances(shardCount, enableRangeIndexPreview: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, NullLogger.Instance);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, NullLogger.Instance);
+            var sourceEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
+            var targetEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+
+            // All keys share the {abc} hash tag so they map to one slot.
+            const string HashTag = "{abc}";
+            var workingSlot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(HashTag));
+
+            var rand = new Random(2026_06_03_01);
+
+            // RI keys
+            var riKeys = new List<(string Key, List<(string Field, string Value)> Fields)>();
+            for (var i = 0; i < riKeyCount; i++)
+            {
+                var key = $"{HashTag}ri_{i}";
+                var fields = new List<(string Field, string Value)>();
+                var fieldCount = rand.Next(1, 4);
+                for (var f = 0; f < fieldCount; f++)
+                    fields.Add(($"field_{f:D4}", $"ri_value_{i}_{f}_{rand.Next(10000)}"));
+
+                CreateRangeIndexWithFields(sourceEndpoint, key, fields);
+                riKeys.Add((key, fields));
+            }
+
+            // Plain string keys
+            var stringKeys = new List<(string Key, string Value)>();
+            for (var i = 0; i < stringKeyCount; i++)
+            {
+                var key = $"{HashTag}str_{i}";
+                var value = $"str_value_{i}_{rand.Next(10000)}";
+                var setResult = (string)context.clusterTestUtils.Execute(
+                    sourceEndpoint, "SET", [key, value], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual("OK", setResult, $"SET should succeed for {key}");
+                stringKeys.Add((key, value));
+            }
+
+            // Hash keys
+            var hashKeys = new List<(string Key, List<(string Field, string Value)> Fields)>();
+            for (var i = 0; i < hashKeyCount; i++)
+            {
+                var key = $"{HashTag}hash_{i}";
+                var fields = new List<(string Field, string Value)>();
+                var fieldCount = rand.Next(1, 4);
+                for (var f = 0; f < fieldCount; f++)
+                {
+                    var field = $"hf_{f:D4}";
+                    var value = $"hash_value_{i}_{f}_{rand.Next(10000)}";
+                    var hsetArgs = new object[] { key, field, value };
+                    _ = context.clusterTestUtils.Execute(
+                        sourceEndpoint, "HSET", hsetArgs, flags: CommandFlags.NoRedirect);
+                    fields.Add((field, value));
+                }
+                hashKeys.Add((key, fields));
+            }
+
+            // Manual slot migration setup
+            var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, workingSlot, "IMPORTING", sourceNodeId);
+            ClassicAssert.AreEqual("OK", respImport);
+            var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, workingSlot, "MIGRATING", targetNodeId);
+            ClassicAssert.AreEqual("OK", respMigrate);
+
+            // Build a single MIGRATE ... KEYS batch with a shuffled mix of RI + non-RI keys.
+            var batch = new List<byte[]>();
+            batch.AddRange(riKeys.Select(k => Encoding.ASCII.GetBytes(k.Key)));
+            batch.AddRange(stringKeys.Select(k => Encoding.ASCII.GetBytes(k.Key)));
+            batch.AddRange(hashKeys.Select(k => Encoding.ASCII.GetBytes(k.Key)));
+            for (var i = batch.Count - 1; i > 0; i--)
+            {
+                var j = rand.Next(i + 1);
+                (batch[i], batch[j]) = (batch[j], batch[i]);
+            }
+
+            context.clusterTestUtils.MigrateKeys(sourceEndpoint, targetEndpoint, batch, NullLogger.Instance);
+
+            // Complete migration
+            var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, workingSlot, "NODE", targetNodeId);
+            ClassicAssert.AreEqual("OK", respNodeTarget);
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true);
+
+            var respNodeSource = context.clusterTestUtils.SetSlot(sourceNodeIndex, workingSlot, "NODE", targetNodeId);
+            ClassicAssert.AreEqual("OK", respNodeSource);
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true);
+
+            context.clusterTestUtils.WaitForMigrationCleanup();
+
+            // Verify RI keys on target
+            foreach (var (key, fields) in riKeys)
+                VerifyFieldsOnEndpoint(targetEndpoint, key, fields);
+
+            // Verify string keys on target
+            foreach (var (key, expected) in stringKeys)
+            {
+                var actual = (string)context.clusterTestUtils.Execute(
+                    targetEndpoint, "GET", [key], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual(expected, actual, $"GET {key} on target");
+            }
+
+            // Verify hash keys on target
+            foreach (var (key, fields) in hashKeys)
+            {
+                foreach (var (field, expected) in fields)
+                {
+                    var actual = (string)context.clusterTestUtils.Execute(
+                        targetEndpoint, "HGET", [key, field], flags: CommandFlags.NoRedirect);
+                    ClassicAssert.AreEqual(expected, actual, $"HGET {key} {field} on target");
+                }
+            }
+
+            // Verify source returns MOVED for one key from each type
+            var movedRi = (string)context.clusterTestUtils.Execute(
+                sourceEndpoint, "RI.GET", [riKeys[0].Key, riKeys[0].Fields[0].Field],
+                flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedRi.StartsWith("Key has MOVED to "),
+                $"Expected MOVED from source for RI key {riKeys[0].Key}, got: {movedRi}");
+
+            var movedStr = (string)context.clusterTestUtils.Execute(
+                sourceEndpoint, "GET", [stringKeys[0].Key],
+                flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedStr.StartsWith("Key has MOVED to "),
+                $"Expected MOVED from source for string key {stringKeys[0].Key}, got: {movedStr}");
+
+            var movedHash = (string)context.clusterTestUtils.Execute(
+                sourceEndpoint, "HGET", [hashKeys[0].Key, hashKeys[0].Fields[0].Field],
+                flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedHash.StartsWith("Key has MOVED to "),
+                $"Expected MOVED from source for hash key {hashKeys[0].Key}, got: {movedHash}");
+        }
+
+        /// <summary>
         /// Multiple RI keys in the same slot, slot-based migration.
         /// </summary>
         [Test]
