@@ -182,11 +182,16 @@ namespace Tsavorite.core
                 if (Volatile.Read(ref slot.Sequence) == claimed) return;
                 Thread.SpinWait(16);
             }
-            // Phase 2: SpinWait — escalates to Yield/Sleep so the consumer
-            // gets the CPU when producer and consumer are oversubscribed.
-            var sw = default(SpinWait);
+            // Phase 2: pure Thread.Yield loop (no Sleep escalation). SpinWait.SpinOnce
+            // escalates to Thread.Sleep(1) within ~20 iterations, which a CPU profile
+            // showed dominated wall time (~21% of total stack-time at t=16) by stalling
+            // the producer for 1 ms each time the ring filled — far longer than the
+            // consumer needs to drain a slot (~167 ns). Thread.Yield drops the scheduler
+            // quantum (~µs on Linux) without parking, so the producer comes back as
+            // soon as it is re-scheduled and re-checks the slot, paying only scheduler
+            // round-trip rather than 1 ms Sleep granularity.
             while (Volatile.Read(ref slot.Sequence) != claimed)
-                sw.SpinOnce();
+                Thread.Yield();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
