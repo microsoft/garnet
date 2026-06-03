@@ -62,8 +62,6 @@ namespace Tsavorite.core
         private readonly object[] ringEnqueueLocks;   // null entries when not contended.
         private volatile bool ringNeedsLock;          // set true if any producer collision occurs.
 
-        private volatile bool terminated;
-
         /// <summary>
         /// Constructor.
         /// </summary>
@@ -226,13 +224,10 @@ namespace Tsavorite.core
 
         private void ProcessorLoop(SpscRing<IORequestLocalMemory> ring)
         {
-            var spinner = new SpinWait();
-            while (!terminated)
+            while (!ring.IsStopped)
             {
                 if (ring.TryDequeue(out var req))
                 {
-                    spinner.Reset();
-
                     if (latencyEnabled)
                     {
                         long deadline = req.startTimestamp + latencyTimestampTicks;
@@ -254,10 +249,14 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    spinner.SpinOnce();
+                    // Brief spin to catch back-to-back work, then park on the ring's
+                    // signal until the producer's next Enqueue wakes us, or Stop is
+                    // called. WaitForWork reads ring._stopped directly (single L1 read,
+                    // no virtual call) so shutdown is observed immediately.
+                    ring.WaitForWork();
                 }
             }
-            // Drain remainder after termination.
+            // Drain remainder after Stop.
             while (ring.TryDequeue(out var req))
             {
                 Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
@@ -286,7 +285,11 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override void Dispose()
         {
-            terminated = true;
+            // Stop each ring (sets the ring's own _stopped flag with proper ordering
+            // and signals the event). Parked processors observe _stopped on their
+            // post-fence recheck and exit WaitForWork without blocking.
+            for (int i = 0; i < rings.Length; i++)
+                rings[i].Stop();
             for (int i = 0; i < processors.Length; i++)
                 processors[i].Join();
         }
