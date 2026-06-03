@@ -18,16 +18,16 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         /// <summary>
-        /// Used to scope a shared lock related to a Vector Set operation.
+        /// Used to scope a lock (shared or exclusive) related to a Vector Set operation.
         /// 
         /// Disposing this releases the lock and exits the storage session context on the current thread.
         /// </summary>
-        internal readonly ref struct ReadVectorLock : IDisposable
+        internal readonly ref struct VectorSetLock : IDisposable
         {
             private readonly ref readonly ReadOptimizedLock lockableCtx;
-            private readonly int lockToken;
+            private readonly ReadOptimizedLock.LockToken lockToken;
 
-            internal ReadVectorLock(ref readonly ReadOptimizedLock lockableCtx, int lockToken)
+            internal VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken)
             {
                 this.lockToken = lockToken;
                 this.lockableCtx = ref lockableCtx;
@@ -44,38 +44,7 @@ namespace Garnet.server
                     return;
                 }
 
-                lockableCtx.ReleaseSharedLock(lockToken);
-            }
-        }
-
-        /// <summary>
-        /// Used to scope exclusive locks  to exclusive Vector Set operation (delete, migrate, etc.).
-        /// 
-        /// Disposing this releases the lock and exits the storage session context on the current thread.
-        /// </summary>
-        internal readonly ref struct ExclusiveVectorLock : IDisposable
-        {
-            private readonly ref readonly ReadOptimizedLock lockableCtx;
-            private readonly int lockToken;
-
-            internal ExclusiveVectorLock(ref readonly ReadOptimizedLock lockableCtx, int lockToken)
-            {
-                this.lockToken = lockToken;
-                this.lockableCtx = ref lockableCtx;
-            }
-
-            /// <inheritdoc/>
-            public void Dispose()
-            {
-                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
-                ActiveThreadSession = null;
-
-                if (Unsafe.IsNullRef(in lockableCtx))
-                {
-                    return;
-                }
-
-                lockableCtx.ReleaseExclusiveLock(lockToken);
+                lockableCtx.ReleaseLock(lockToken);
             }
         }
 
@@ -88,9 +57,9 @@ namespace Garnet.server
         /// </summary>
         internal bool NeedsRecreate(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-            return indexProcessInstanceId != processInstanceId;
+            return indexPtr == 0;
         }
 
         /// <summary>
@@ -100,7 +69,7 @@ namespace Garnet.server
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
-        internal ReadVectorLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -114,12 +83,25 @@ namespace Garnet.server
 
                 var readCmd = input.header.cmd;
 
+                var takeExclusiveLock = false;
+
                 while (true)
                 {
                     input.header.cmd = readCmd;
                     input.arg1 = 0;
 
-                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                    ReadOptimizedLock.LockToken lockToken;
+                    if (takeExclusiveLock)
+                    {
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out lockToken);
+
+                        // If we pass through _again_, don't start with an exclusive lock
+                        takeExclusiveLock = false;
+                    }
+                    else
+                    {
+                        vectorSetLocks.AcquireSharedLock(keyHash, out lockToken);
+                    }
 
                     GarnetStatus readRes;
                     try
@@ -129,7 +111,7 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        vectorSetLocks.ReleaseLock(lockToken);
 
                         throw;
                     }
@@ -137,14 +119,6 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                        {
-                            status = GarnetStatus.BADSTATE;
-
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                            return default;
-                        }
-
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -152,17 +126,30 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
+                    if (lockToken.IsExclusive && !needsRecreate)
+                    {
+                        // Raised to recreate but don't need it, lower to shared and retry
+                        vectorSetLocks.ReleaseLock(lockToken);
+
+                        continue;
+                    }
+
                     if (needsRecreate)
                     {
-                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        if (!lockToken.IsExclusive)
                         {
-                            // Release the SHARED lock if we can't promote and try again
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            // Try to promote
+                            if (!vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                            {
+                                // Release the SHARED lock if we can't promote and try again - but this time DEMAND an exclusive lock
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                takeExclusiveLock = true;
 
-                            continue;
+                                continue;
+                            }
                         }
 
-                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                         input.arg1 = RecreateIndexArg;
 
@@ -203,7 +190,7 @@ namespace Garnet.server
                         }
                         catch
                         {
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
 
                             throw;
                         }
@@ -211,13 +198,14 @@ namespace Garnet.server
                         if (writeRes == GarnetStatus.OK)
                         {
                             // Try again so we don't hold an exclusive lock while performing a search
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
+
                             continue;
                         }
                         else
                         {
                             status = writeRes;
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
 
                             return default;
                         }
@@ -225,13 +213,13 @@ namespace Garnet.server
                     else if (readRes != GarnetStatus.OK)
                     {
                         status = readRes;
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        vectorSetLocks.ReleaseLock(lockToken);
 
                         return default;
                     }
 
                     status = GarnetStatus.OK;
-                    return new(in vectorSetLocks, sharedLockToken);
+                    return new(in vectorSetLocks, lockToken);
                 }
             }
             catch
@@ -250,7 +238,7 @@ namespace Garnet.server
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
-        internal ReadVectorLock ReadOrCreateVectorIndex(
+        internal VectorSetLock ReadOrCreateVectorIndex(
             StorageSession storageSession,
             ReadOnlySpan<byte> key,
             ref StringInput input,
@@ -268,11 +256,24 @@ namespace Garnet.server
 
                 var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
+                var takeExclusiveLock = false;
+
                 while (true)
                 {
                     input.arg1 = 0;
 
-                    vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+                    ReadOptimizedLock.LockToken lockToken;
+                    if (takeExclusiveLock)
+                    {
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out lockToken);
+
+                        // If we pass through _again_, don't start with an exclusive lock
+                        takeExclusiveLock = false;
+                    }
+                    else
+                    {
+                        vectorSetLocks.AcquireSharedLock(keyHash, out lockToken);
+                    }
 
                     GarnetStatus readRes;
                     try
@@ -282,7 +283,7 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        vectorSetLocks.ReleaseLock(lockToken);
 
                         throw;
                     }
@@ -290,14 +291,6 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                        {
-                            status = GarnetStatus.BADSTATE;
-
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
-                            return default;
-                        }
-
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -305,21 +298,32 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
+                    // Don't need the exclusive lock, lower to shared immediately
+                    if (lockToken.IsExclusive && !(readRes == GarnetStatus.NOTFOUND || needsRecreate))
+                    {
+                        vectorSetLocks.ReleaseLock(lockToken);
+                        continue;
+                    }
+
                     if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                     {
-                        if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
+                        if (!lockToken.IsExclusive)
                         {
-                            // Release the SHARED lock if we can't promote and try again
-                            vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                            if (!vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                            {
+                                // Release the SHARED lock if we can't promote and try again but DEMAND exclusive this time
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                takeExclusiveLock = true;
 
-                            continue;
+                                continue;
+                            }
                         }
 
                         ulong indexContext;
                         nint newlyAllocatedIndex;
                         if (needsRecreate)
                         {
-                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                             input.arg1 = RecreateIndexArg;
 
@@ -378,12 +382,6 @@ namespace Garnet.server
                                 {
                                     // Insertion failed, drop index
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
                             }
                             catch
@@ -392,12 +390,6 @@ namespace Garnet.server
                                 {
                                     // Drop to avoid a leak on error
                                     Service.DropIndex(indexContext, newlyAllocatedIndex);
-
-                                    // If the failure was for a brand new index, free up the context too
-                                    if (!needsRecreate)
-                                    {
-                                        CleanupDroppedIndex(ref ActiveThreadSession.vectorBasicContext, indexContext);
-                                    }
                                 }
 
                                 throw;
@@ -410,7 +402,7 @@ namespace Garnet.server
                         }
                         catch
                         {
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
 
                             throw;
                         }
@@ -418,27 +410,27 @@ namespace Garnet.server
                         if (writeRes == GarnetStatus.OK)
                         {
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
                             continue;
                         }
                         else
                         {
                             status = writeRes;
-                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            vectorSetLocks.ReleaseLock(lockToken);
 
                             return default;
                         }
                     }
                     else if (readRes != GarnetStatus.OK)
                     {
-                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        vectorSetLocks.ReleaseLock(lockToken);
 
                         status = readRes;
                         return default;
                     }
 
                     status = GarnetStatus.OK;
-                    return new(in vectorSetLocks, sharedLockToken);
+                    return new(in vectorSetLocks, lockToken);
                 }
             }
             catch
@@ -455,7 +447,7 @@ namespace Garnet.server
         /// <summary>
         /// Acquire exclusive lock over a given key.
         /// </summary>
-        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key)
+        private VectorSetLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key)
         {
             var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
@@ -466,10 +458,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
-        /// 
-        /// If the index is partially deleted, <paramref name="status"/> will be set to <see cref="GarnetStatus.BADSTATE"/> but the locks will be still acquired.
         /// </summary>
-        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal VectorSetLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -490,15 +480,6 @@ namespace Garnet.server
                 acquiredLock.Dispose();
 
                 throw;
-            }
-
-            if (status == GarnetStatus.OK)
-            {
-                // Even if we read the value, it might be in a bad state due to a prior delete
-                if (PartiallyDeleted(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan))
-                {
-                    status = GarnetStatus.BADSTATE;
-                }
             }
 
             return acquiredLock;

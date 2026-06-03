@@ -40,7 +40,7 @@ namespace Garnet.common
             var waitTimeout = ProcessTimeSpan(timeout);
             for (var i = 0; i < participantCount; i++)
             {
-                if (!workCompleted.Wait(waitTimeout, cancellationToken))
+                if (!AsyncUtils.BlockingWait(workCompleted.WaitAsync(waitTimeout, cancellationToken)))
                     return false;
             }
 

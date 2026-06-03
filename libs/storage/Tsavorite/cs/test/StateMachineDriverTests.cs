@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -19,7 +18,7 @@ namespace Tsavorite.test.recovery
 
     public enum TimeFuzzMode { TimeFuzz, NoTimeFuzz };
 
-    public abstract class StateMachineDriverTestsBase : AllureTestBase
+    public abstract class StateMachineDriverTestsBase : TestBase
     {
         readonly int numOpThreads = 2;
         protected readonly int numKeys = 4;
@@ -258,8 +257,6 @@ namespace Tsavorite.test.recovery
             }
         }
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class CheckpointVersionSwitchRmw : StateMachineDriverTestsBase
     {
@@ -316,8 +313,6 @@ namespace Tsavorite.test.recovery
             [Values] TimeFuzzMode timeFuzzMode)
             => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz).ConfigureAwait(false);
     }
-
-    [AllureNUnit]
     [TestFixture]
     public class CheckpointVersionSwitchTxn : StateMachineDriverTestsBase
     {

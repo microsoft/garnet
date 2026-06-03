@@ -4,8 +4,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Allure.Net.Commons" Version="2.14.1" />
-    <PackageVersion Include="Allure.NUnit" Version="2.14.1" />
+
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
     <PackageVersion Include="Azure.Identity" Version="1.17.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
@@ -32,7 +31,7 @@
     <PackageVersion Include="System.Numerics.Tensors" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
-    <PackageVersion Include="diskann-garnet" Version="1.0.26" />
+    <PackageVersion Include="diskann-garnet" Version="1.0.27" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -347,7 +347,7 @@ namespace Tsavorite.core
             if (success)
             {
                 // Track key overflow internally — session functions only track in-place value deltas.
-                if (newLogRecord.Info.KeyIsOverflow)
+                if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
                 PostCopyToTail(in srcLogRecord, ref stackCtx);

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -77,8 +77,8 @@ namespace Tsavorite.core
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
-            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+            maxInlineKeySize = settings.LogSettings.MaxInlineKeySize;
+            maxInlineValueSize = settings.LogSettings.MaxInlineValueSize;
 
             ObjectLogSegmentSize = 1L << settings.LogSettings.ObjectLogSegmentSizeBits;
 
@@ -355,7 +355,7 @@ namespace Tsavorite.core
                     if (!logRecord.Info.Tombstone)
                         remainingHeap = logRecord.CalculateHeapMemorySize();
                     else
-                        remainingHeap = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                        remainingHeap = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
                     if (remainingHeap != 0)
                         logSizeTracker?.IncrementSize(-remainingHeap);
                 }
@@ -425,7 +425,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    heapSize = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                    heapSize = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
                 }
 
                 if (heapSize != 0)
@@ -436,7 +436,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Call <see cref="IStoreFunctions.OnFlush(ref LogRecord)"/> on original in-memory records
+        /// Call <see cref="IStoreFunctions.OnFlush(ref LogRecord, long)"/> on original in-memory records
         /// before they are flushed to disk. This allows the application to snapshot external resources
         /// (e.g. BfTree data files) and set flags on the live record while it is still in memory.
         /// </summary>
@@ -460,7 +460,7 @@ namespace Tsavorite.core
                     break;
 
                 if (logRecord.Info.Valid && !logRecord.Info.IsNull && !logRecord.Info.SkipOnScan && !logRecord.Info.Tombstone)
-                    storeFunctions.OnFlush(ref logRecord);
+                    storeFunctions.OnFlush(ref logRecord, address);
 
                 address += allocatedSize;
             }
@@ -750,6 +750,9 @@ namespace Tsavorite.core
             var startPadding = startOffset - alignedStartOffset;
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
+            // The srcBuffer path copies the record bytes out, mutates the copy's objectId slots with the on-disk lengths,
+            // then writes the copy to disk. The live main-log record stays intact for subsequent in-memory operations.
+
             // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
             // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
             // happening. Otherwise, we are here because we are moving the read-only address (FoldOver checkpoint is a special case of this). In that case
@@ -767,11 +770,12 @@ namespace Tsavorite.core
             try
             {
                 // Create a local copy of the main-log page inline data. Space for ObjectIds and the ObjectLogPosition will be updated as we go
-                // (ObjectId space and a byte of the length-metadata space will combine for 5 bytes or 1TB of object size, which is our max). This does
+                // (ObjectId space and the RecordDataHeader length fields will combine for the full range of object sizes). This does
                 // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
                 // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
                 var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
+
                 srcBuffer = bufferPool.Get(alignedBufferSize);
                 asyncResult.freeBuffer1 = srcBuffer;
 
@@ -802,27 +806,32 @@ namespace Tsavorite.core
                         epoch.Suspend();
                 }
 
+                // recordsBasePtr is the page-relative base pointer such that (recordsBasePtr + pageOffset) points to the record at that page offset.
+                // srcBuffer holds data starting at alignedStartOffset, so we subtract alignedStartOffset to get the same page-relative addressing.
+                var recordsBasePtr = srcBuffer.GetValidPointer() - alignedStartOffset;
+                // diskWritePtr is the pointer passed to device.WriteAsync — the sector-aligned start of the data to write.
+                var diskWritePtr = srcBuffer.GetValidPointer();
+
                 if (asyncResult.flushBuffers is not null)
                 {
                     logWriter = new(device, asyncResult.flushBuffers, storeFunctions);
                     _ = logWriter.OnBeginPartialFlush(objectLogTail);
                 }
 
-                // Include page header when calculating end address.
-                var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
-                var physicalAddress = (long)srcBuffer.GetValidPointer() + firstRecordOffset - alignedStartOffset;
+                // Include page header when calculating end address. Using page-relative addressing makes both paths look identical.
+                var endPhysicalAddress = (long)recordsBasePtr + startOffset + numBytesToWrite;
+                var physicalAddress = (long)recordsBasePtr + firstRecordOffset;
 
                 // For recovery flushes we don't re-serialize; rather we just update the object lengths and positions in the log file using deserialized
                 // Overflow and/or Object information. That means we also have to track the increasing object log position "as if" we were re-serializing
                 // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
                 // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
-                ref var pageHeader = ref *(PageHeader*)srcBuffer.GetValidPointer();
+                ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
                 while (physicalAddress < endPhysicalAddress)
                 {
-                    // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
                     var logRecordSize = logRecord.AllocatedSize;
@@ -832,12 +841,13 @@ namespace Tsavorite.core
                     // record's state (IsValid, IsInNewVersion, inline data, etc.) will not change.
                     if (logRecord.Info.Valid)
                     {
-                        // Do not write v+1 records (e.g. during a checkpoint)
+                        // Do not write v+1 records (e.g. during a checkpoint). For non-Snapshot flushes, fuzzyStartLogicalAddress is long.MaxValue
+                        // so this condition is always true and the SetInvalid branch is unreachable.
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
                             // Do not write objects for fully-inline records. This should always be false if we don't have a logWriter (i.e. no flushBuffers),
                             // which would be the case where we were created to be used for inline string records only.
-                            if (logRecord.Info.RecordHasObjects)
+                            if (logRecord.DataHeader.RecordHasObjects)
                             {
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
@@ -874,12 +884,12 @@ namespace Tsavorite.core
                                             }
                                         }
 
-                                        if (logRecord.Info.KeyIsOverflow)
+                                        if (logRecord.DataHeader.KeyIsOverflow)
                                             keyOverflow = logRecord.KeyOverflow;
 
-                                        if (logRecord.Info.ValueIsOverflow)
+                                        if (logRecord.DataHeader.ValueIsOverflow)
                                             valueOverflow = logRecord.ValueOverflow;
-                                        else if (logRecord.Info.ValueIsObject)
+                                        else if (logRecord.DataHeader.ValueIsObject)
                                             valueObject = logRecord.ValueObject;
                                     }
                                     finally
@@ -887,6 +897,11 @@ namespace Tsavorite.core
                                         if (pulseEpoch)
                                             epoch.Suspend();
                                     }
+
+                                    // WriteRecordObjects can do disk IO and must not hold the epoch. SetObjectLogRecordStartPositionAndLength
+                                    // writes the on-disk-encoded lengths and ObjectLogPosition into the disk-image record (srcBuffer copy).
+                                    // The main-log allocator page is left untouched by these calls.
+                                    logRecord.SetReuseObjectIdForSize();
 
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
@@ -905,7 +920,8 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            // Mark v+1 records as invalid to avoid deserializing them on recovery
+                            // Mark v+1 records as invalid to avoid deserializing them on recovery. This is only reachable when fuzzyStartLogicalAddress < long.MaxValue,
+                            // which only happens for Snapshot flushes. We are only setting Invalid in the disk image (srcBuffer), not the main log.
                             logRecord.InfoRef.SetInvalid();
                         }
                     } // endif record id Valid
@@ -916,8 +932,8 @@ namespace Tsavorite.core
                 }
 
             WritePage:
-                // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
-                // to the main log file unless we are to skip it because HeadAddress advanced.
+                // We are done with the per-record objectlog flushes and we've updated the page (in-place or in srcBuffer). Now write that page
+                // to the main log file (or snapshot file) unless we are to skip it because HeadAddress advanced.
                 if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                 {
                     if (asyncResult.partial)
@@ -930,9 +946,9 @@ namespace Tsavorite.core
                     // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                     // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                     if (logWriter is not null)
-                        logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
+                        logWriter.OnPartialFlushComplete(diskWritePtr, alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                     else
-                        device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+                        device.WriteAsync((IntPtr)diskWritePtr, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
                 }
             }
             finally
@@ -1048,7 +1064,7 @@ namespace Tsavorite.core
 
             // If the record is inline, we have no Overflow or Objects to retrieve.
             ref var diskLogRecord = ref ctx.diskLogRecord;
-            if (diskLogRecord.Info.RecordIsInline)
+            if (diskLogRecord.DataHeader.RecordIsInline)
                 return true;
 
             var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
@@ -1111,7 +1127,7 @@ namespace Tsavorite.core
                 var logRecord = new LogRecord(recordAddress);
                 recordAddress += logRecord.AllocatedSize;
 
-                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                 {
                     if (!startPosition.IsSet)
                         startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
@@ -1139,14 +1155,14 @@ namespace Tsavorite.core
                     var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
                     recordAddress += logRecord.AllocatedSize;
 
-                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
+                    if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
                         // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
                         // key overflow for tombstoned records. Add it here so the tracker stays balanced.
                         if (logRecord.Info.Tombstone)
                         {
-                            if (logRecord.Info.KeyIsOverflow)
+                            if (logRecord.DataHeader.KeyIsOverflow)
                                 logSizeTracker?.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
                         }
                         else

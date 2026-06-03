@@ -134,51 +134,106 @@ class FileSystemSegmentBundle {
 
   FileSystemSegmentBundle(const std::string& filename,
                           const environment::FileOptions& file_options, handler_t* handler,
-                          uint64_t begin_segment_, uint64_t end_segment_)
+                          uint64_t begin_segment_, uint64_t end_segment_,
+                          bool omit_segment_id)
     : filename_{ filename }
     , file_options_{ file_options }
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , omit_segment_id_{ omit_segment_id }
+    , owner_{ true }
+    , open_status_{ core::Status::Ok } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      // The assert is compiled out in Release, so capture the first non-Ok status so the
+      // caller (FileSystemSegmentedFile::OpenSegment) can detect a partially-opened
+      // bundle and refuse to commit it to files_. Without this guard a chmod-0 parent
+      // directory produced a bundle with fd_=-1, which the subsequent WriteAsync would
+      // submit to io_submit with aio_fildes=-1 — empirically hanging inside libaio on
+      // some kernels instead of returning -EBADF synchronously.
+      if (result != core::Status::Ok && open_status_ == core::Status::Ok) {
+        open_status_ = result;
+      }
     }
   }
 
   FileSystemSegmentBundle(handler_t* handler, uint64_t begin_segment_, uint64_t end_segment_,
                           bundle_t& other)
-    : filename_{ std::move(other.filename_) }
+    // Copy (do not move) filename_ from `other`. If a new-segment Open() fails below the
+    // bundle is rejected by OpenSegment, but `files_` still points to `other`, so `other`
+    // must remain fully intact — including its filename_ which subsequent OpenSegment
+    // calls read via segment_path().
+    : filename_{ other.filename_ }
     , file_options_{ other.file_options_ }
     , begin_segment{ begin_segment_ }
     , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , omit_segment_id_{ other.omit_segment_id_ }
+    , owner_{ true }
+    , open_status_{ core::Status::Ok } {
     assert(end_segment >= other.end_segment);
 
-    uint64_t begin_new = begin_segment;
     uint64_t begin_copy = std::max(begin_segment, other.begin_segment);
     uint64_t end_copy = std::min(end_segment, other.end_segment);
     uint64_t end_new = end_segment;
 
+    // Phase 1: open NEW segments only (the leading range [begin_segment, begin_copy)
+    // and the trailing range [end_copy, end_new)). `other` is not touched here, so
+    // if any Open() fails we can safely abort the construction without corrupting the
+    // previously-published bundle that `files_` still references. Track which slots we
+    // have constructed so the failure path destroys only those (not the still-empty
+    // middle slots [begin_copy, end_copy) reserved for the move below).
+    uint64_t leading_constructed_end = begin_segment;
+    uint64_t trailing_constructed_end = end_copy;
+
     for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
           file_options_ };
+      leading_constructed_end = idx + 1;
       core::Status result = file(idx).Open(handler);
-      assert(result == core::Status::Ok);
-    }
-    for(uint64_t idx = begin_copy; idx < end_copy; ++idx) {
-      // Move file handles for segments already opened.
-      new(files() + (idx - begin_segment)) file_t{ std::move(other.file(idx)) };
-    }
-    for(uint64_t idx = end_copy; idx < end_new; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
-          file_options_ };
-      core::Status result = file(idx).Open(handler);
-      assert(result == core::Status::Ok);
+      if (result != core::Status::Ok) {
+        open_status_ = result;
+        break;
+      }
     }
 
+    if (open_status_ == core::Status::Ok) {
+      for(uint64_t idx = end_copy; idx < end_new; ++idx) {
+        new(files() + (idx - begin_segment)) file_t{ segment_path(idx),
+            file_options_ };
+        trailing_constructed_end = idx + 1;
+        core::Status result = file(idx).Open(handler);
+        if (result != core::Status::Ok) {
+          open_status_ = result;
+          break;
+        }
+      }
+    }
+
+    if (open_status_ != core::Status::Ok) {
+      // Roll back: destroy the file_t objects we just constructed (this Close()s any
+      // fds that opened successfully via file_t's destructor) and disable the bundle
+      // destructor so it does not iterate over uninitialised middle slots. `other` is
+      // left completely intact — owner_ was never transferred away from it.
+      for(uint64_t idx = begin_segment; idx < leading_constructed_end; ++idx) {
+        file(idx).~file_t();
+      }
+      for(uint64_t idx = end_copy; idx < trailing_constructed_end; ++idx) {
+        file(idx).~file_t();
+      }
+      owner_ = false;
+      return;
+    }
+
+    // Phase 2: all new opens succeeded — now consume `other`. Move file handles for the
+    // overlapping range and transfer bundle ownership. If we crash between these steps
+    // (impossible for the move and assignment below — they are noexcept), the rollback
+    // is unnecessary.
+    for(uint64_t idx = begin_copy; idx < end_copy; ++idx) {
+      new(files() + (idx - begin_segment)) file_t{ std::move(other.file(idx)) };
+    }
     other.owner_ = false;
   }
 
@@ -231,33 +286,66 @@ class FileSystemSegmentBundle {
     return sizeof(bundle_t) + num_segments * sizeof(file_t);
   }
 
+  /// Returns the first non-Ok status captured during bundle construction (i.e., the first
+  /// per-segment file.Open() that returned an error). Status::Ok means every segment
+  /// opened successfully and the bundle is safe to commit to files_. OpenSegment must
+  /// check this before publishing a freshly-constructed bundle: committing a bundle that
+  /// contains an unopened (fd_=-1) file would later route an io_submit to an invalid
+  /// descriptor.
+  core::Status open_status() const {
+    return open_status_;
+  }
+
+  /// Build the on-disk filename for `segment`. With `omit_segment_id_` false (the default),
+  /// segments are named `<base>.<segmentId>` so multiple segments live side-by-side. With
+  /// `omit_segment_id_` true, all writes go to the bare `<base>` filename — only meaningful
+  /// in single-segment / unbounded mode (the upstream wrapper enforces that constraint).
+  std::string segment_path(uint64_t idx) const {
+    return omit_segment_id_ ? filename_ : (filename_ + "." + std::to_string(idx));
+  }
+
  public:
   const uint64_t begin_segment;
   const uint64_t end_segment;
  private:
   std::string filename_;
   environment::FileOptions file_options_;
+  bool omit_segment_id_;
   bool owner_;
+  /// First non-Ok status returned by any per-segment file.Open() during ctor. Status::Ok
+  /// while every Open succeeded; sticky after the first failure so the caller can refuse
+  /// to commit a partially-opened bundle to files_.
+  core::Status open_status_;
 };
 
-template <class H, uint64_t S>
+template <class H>
 class FileSystemSegmentedFile {
  public:
   typedef H handler_t;
   typedef FileSystemFile<H> file_t;
   typedef FileSystemSegmentBundle<handler_t> bundle_t;
 
-  static constexpr uint64_t kSegmentSize = S;
-  static_assert(core::Utility::IsPowerOfTwo(S), "template parameter S is not a power of two!");
+  /// Runtime segment size. Set once at construction and never mutated thereafter.
+  uint64_t segment_size() const { return segment_size_; }
 
   FileSystemSegmentedFile(const std::string& filename,
-                          const environment::FileOptions& file_options, core::LightEpoch* epoch)
+                          const environment::FileOptions& file_options,
+                          core::LightEpoch* epoch,
+                          uint64_t segment_size,
+                          bool omit_segment_id)
     : begin_segment_{ 0 }
     , files_{ nullptr }
     , handler_{ nullptr }
     , filename_{ filename }
     , file_options_{ file_options }
-    , epoch_{ epoch } {
+    , epoch_{ epoch }
+    , segment_size_{ segment_size }
+    , segment_mask_{ segment_size - 1 }
+    , segment_shift_{ ValidatedShift(segment_size) }
+    , omit_segment_id_{ omit_segment_id } {
+    // ValidatedShift threw if segment_size is non-positive or non-power-of-2 BEFORE the
+    // mask/shift constants were observable. Once we get here, the constants are sane and
+    // the hot-path uses `>> segment_shift_` / `& segment_mask_` (single register loads).
   }
 
   ~FileSystemSegmentedFile() {
@@ -287,32 +375,43 @@ class FileSystemSegmentedFile {
       TruncateSegments(segment + 1, truncate_callback);
   }
   void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
-    uint64_t new_begin_segment = new_begin_offset / kSegmentSize;
+    uint64_t new_begin_segment = new_begin_offset >> segment_shift_;
     begin_segment_ = new_begin_segment;
     TruncateSegments(new_begin_segment, callback);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
                    core::IAsyncContext& context) const {
-    uint64_t segment = source / kSegmentSize;
-    assert(source % kSegmentSize + length <= kSegmentSize);
+    // Hot path. The shift+mask resolves to two register-loads from this object (`segment_shift_`
+    // and `segment_mask_` are const-after-construction and on the same cache line as other
+    // members touched in this call) plus a `shr` + `and`. Equivalent codegen to the previous
+    // `/ S` / `% S` because compile-time-constant S was already strength-reduced; the only
+    // difference is the load of the runtime constants from `this` instead of an immediate.
+    uint64_t segment = source >> segment_shift_;
+    if ((source & segment_mask_) + length > segment_size_) {
+      // Spans segment boundary — caller bug. Promoted from debug assert because hitting this in
+      // production would silently mis-route the IO. Cold branch; predicted-not-taken.
+      return core::Status::IOError;
+    }
 
     bundle_t* files = files_.load();
 
     if(!files || !files->exists(segment)) {
-      core::Status result = const_cast<FileSystemSegmentedFile<H, S>*>(this)->OpenSegment(segment);
+      core::Status result = const_cast<FileSystemSegmentedFile<H>*>(this)->OpenSegment(segment);
       if(result != core::Status::Ok) {
         return result;
       }
       files = files_.load();
     }
-    return files->file(segment).ReadAsync(source % kSegmentSize, dest, length, callback, context);
+    return files->file(segment).ReadAsync(source & segment_mask_, dest, length, callback, context);
   }
 
   core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
                     core::AsyncIOCallback callback, core::IAsyncContext& context) {
-    uint64_t segment = dest / kSegmentSize;
-    assert(dest % kSegmentSize + length <= kSegmentSize);
+    uint64_t segment = dest >> segment_shift_;
+    if ((dest & segment_mask_) + length > segment_size_) {
+      return core::Status::IOError;
+    }
 
     bundle_t* files = files_.load();
 
@@ -323,7 +422,7 @@ class FileSystemSegmentedFile {
       }
       files = files_.load();
     }
-    return files->file(segment).WriteAsync(source, dest % kSegmentSize, length, callback, context);
+    return files->file(segment).WriteAsync(source, dest & segment_mask_, length, callback, context);
   }
 
   size_t alignment() const {
@@ -384,7 +483,20 @@ class FileSystemSegmentedFile {
       // First segment opened.
       void* buffer = std::malloc(bundle_t::size(1));
       bundle_t* new_files = new(buffer) bundle_t{ filename_, file_options_, handler_,
-          segment, segment + 1 };
+          segment, segment + 1, omit_segment_id_ };
+      // If any per-segment file.Open() inside the bundle ctor failed (e.g. EACCES on a
+      // chmod-0 parent directory) the bundle holds at least one file with fd_=-1.
+      // Submitting an io_submit with aio_fildes=-1 historically hangs inside libaio on
+      // some kernels rather than returning -EBADF synchronously, which crashes the test
+      // host and surfaces in production as a silently-stuck WriteAsync. Refuse to commit
+      // the broken bundle to files_; the caller's WriteAsync returns Status::IOError
+      // immediately, which routes through the AsyncIOCallback contract.
+      if (new_files->open_status() != core::Status::Ok) {
+        core::Status open_err = new_files->open_status();
+        new_files->~bundle_t();
+        std::free(buffer);
+        return open_err;
+      }
       files_.store(new_files);
       return core::Status::Ok;
     }
@@ -395,6 +507,15 @@ class FileSystemSegmentedFile {
     void* buffer = std::malloc(bundle_t::size(new_end_segment - new_begin_segment));
     bundle_t* new_files = new(buffer) bundle_t{ handler_, new_begin_segment, new_end_segment,
         *files };
+    // The expand-bundle ctor opens new segments BEFORE moving handles out of `*files`,
+    // so on failure `*files` is fully intact and still referenced by files_. Discard
+    // the rejected new bundle and surface the open error to the caller.
+    if (new_files->open_status() != core::Status::Ok) {
+      core::Status open_err = new_files->open_status();
+      new_files->~bundle_t();
+      std::free(buffer);
+      return open_err;
+    }
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
     Context context{ files };
@@ -414,16 +535,19 @@ class FileSystemSegmentedFile {
     class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
-              core::GcState::truncate_callback_t caller_callback_)
+              core::GcState::truncate_callback_t caller_callback_,
+              uint64_t segment_size_bytes_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
-        , caller_callback{ caller_callback_ } {
+        , caller_callback{ caller_callback_ }
+        , segment_size_bytes{ segment_size_bytes_ } {
       }
       /// The deep-copy constructor.
       Context(const Context& other)
         : files{ other.files }
         , new_begin_segment{ other.new_begin_segment }
-        , caller_callback{ other.caller_callback } {
+        , caller_callback{ other.caller_callback }
+        , segment_size_bytes{ other.segment_size_bytes } {
       }
      protected:
       core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
@@ -433,6 +557,9 @@ class FileSystemSegmentedFile {
       bundle_t* files;
       uint64_t new_begin_segment;
       core::GcState::truncate_callback_t caller_callback;
+      // Captured at TruncateSegments() entry so the deferred drain-list callback (which fires
+      // on an arbitrary thread after BumpCurrentEpoch) doesn't need to dereference `this`.
+      uint64_t segment_size_bytes;
     };
 
     auto callback = [](core::IAsyncContext* ctxt) {
@@ -444,7 +571,7 @@ class FileSystemSegmentedFile {
       }
       std::free(context->files);
       if(context->caller_callback) {
-        context->caller_callback(context->new_begin_segment * kSegmentSize);
+        context->caller_callback(context->new_begin_segment * context->segment_size_bytes);
       }
     };
 
@@ -455,7 +582,7 @@ class FileSystemSegmentedFile {
     if(files->begin_segment >= new_begin_segment) {
       // Segments have already been truncated.
       if(caller_callback) {
-        caller_callback(files->begin_segment * kSegmentSize);
+        caller_callback(files->begin_segment * segment_size_);
       }
       return;
     }
@@ -466,7 +593,7 @@ class FileSystemSegmentedFile {
         *files };
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
-    Context context{ files, new_begin_segment, caller_callback };
+    Context context{ files, new_begin_segment, caller_callback, segment_size_ };
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);
@@ -534,6 +661,35 @@ class FileSystemSegmentedFile {
   environment::FileOptions file_options_;
   core::LightEpoch* epoch_;
   std::mutex mutex_;
+
+  /// Runtime segment-size geometry. All three are set in the constructor and never mutated
+  /// thereafter — declared const so the optimizer can keep them in registers across the hot
+  /// path. segment_mask_ = segment_size_ - 1 and segment_shift_ = ctzll(segment_size_) so that
+  /// `addr % segment_size == addr & segment_mask_` and `addr / segment_size == addr >> segment_shift_`.
+  /// ValidatedShift below ensures segment_size_ is a positive power of 2 before computing
+  /// segment_shift_ (`__builtin_ctzll(0)` is UB).
+  const uint64_t segment_size_;
+  const uint64_t segment_mask_;
+  const uint32_t segment_shift_;
+
+  /// When true, segment files are named just `<filename_>` with no `.<segmentId>` suffix.
+  /// Only meaningful when there is a single segment in play (the upstream wrapper requires
+  /// unbounded segment-size mode for this to be safe — otherwise multiple segments would all
+  /// resolve to the same path and clobber each other).
+  const bool omit_segment_id_;
+
+  /// Validates that segment_size is a non-zero power of 2 and returns its ctzll. Throws
+  /// std::invalid_argument otherwise — Release-mode active (the previous `static_assert` is
+  /// gone because S is no longer a compile-time constant). Called from the member-initializer
+  /// list; if it throws, the partially-constructed FileSystemSegmentedFile is never seen by
+  /// the caller, which is the desired fail-fast behavior.
+  static uint32_t ValidatedShift(uint64_t segment_size) {
+    if (!core::Utility::IsPowerOfTwo(segment_size)) {
+      throw std::invalid_argument(
+        "FileSystemSegmentedFile: segment_size must be a positive power of two");
+    }
+    return core::Utility::CountTrailingZeros64(segment_size);
+  }
 };
 
 template <class H, uint64_t S>
@@ -541,7 +697,7 @@ class FileSystemDisk {
  public:
   typedef H handler_t;
   typedef FileSystemFile<handler_t> file_t;
-  typedef FileSystemSegmentedFile<handler_t, S> log_file_t;
+  typedef FileSystemSegmentedFile<handler_t> log_file_t;
 
  private:
   static std::string NormalizePath(std::string root_path) {
@@ -559,7 +715,7 @@ class FileSystemDisk {
     : root_path_{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
-    , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
+    , log_{ root_path_ + "log.log", default_file_options_, &epoch, S, false } {
     core::Status result = log_.Open(&handler_);
     assert(result == core::Status::Ok);
   }

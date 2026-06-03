@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -16,14 +15,22 @@ namespace Tsavorite.core
         /// <summary>Indicates the word has not been set.</summary>
         internal const ulong NotSet = ulong.MaxValue;
 
-        /// <summary>Maximum number of bytes to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
-        private const int NumSegmentAndOffsetBytes = 7;
+        /// <summary>Number of bits in <see cref="word"/> used for segment + offset (low bits). 60 bits gives a 1 EB Object Log size range.</summary>
+        internal const int NumSegmentAndOffsetBits = 60;
 
-        /// <summary>Maximum number of bits to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
-        private const int NumSegmentAndOffsetBits = NumSegmentAndOffsetBytes * sizeof(long);
+        /// <summary>Mask for the segment + offset portion of <see cref="word"/>.</summary>
+        internal const ulong SegmentAndOffsetMask = (1UL << NumSegmentAndOffsetBits) - 1;
 
-        /// <summary>Maximum number of bytes to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
-        private const ulong SegmentAndOffsetMask = (1UL << NumSegmentAndOffsetBits) - 1;
+        // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
+
+        /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
+        /// When set, the on-disk overflow/object length is encoded as (RDH KeyLength/ValueLength field low bits) + (objectId slot at keyAddress/valueAddress high 32 bits),
+        /// and the object-log stream contains NO length prefix. Set always in current code; reserved for a future variant where the length is communicated differently.</summary>
+        internal const int kReuseObjectIdForSizeBit = 63;
+        internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
+
+        /// <summary>Mask for the 3 reserved flag bits 60-62 (future use).</summary>
+        internal const ulong kReservedFlagsMask = 0x7UL << 60;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -67,32 +74,13 @@ namespace Tsavorite.core
             word = ulong.Parse(value);
         }
 
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
-        public int ObjectSizeHighByte
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get { return (int)((word >> NumSegmentAndOffsetBits) & 0xFFUL); }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                if (value > byte.MaxValue)
-                    throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-                word = (word & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
-            }
-        }
-
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
+        /// <summary>Set the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SetObjectSizeHighByte(ulong* wordPtr, int value)
-        {
-            if (value > byte.MaxValue)
-                throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-            *wordPtr = (*wordPtr & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
-        }
+        public static unsafe void SetReuseObjectIdForSize(ulong* wordPtr) => *wordPtr |= kReuseObjectIdForSizeMask;
 
-        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
+        /// <summary>Read the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe int GetObjectSizeHighByte(ulong* wordPtr) => (int)((*wordPtr >> NumSegmentAndOffsetBits) & 0xFFUL);
+        public static unsafe bool GetReuseObjectIdForSize(ulong* wordPtr) => (*wordPtr & kReuseObjectIdForSizeMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset

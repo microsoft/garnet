@@ -1230,7 +1230,7 @@ namespace Garnet.server
 
             // Perform the operation
             var cmd = customCommandManagerSession.GetCustomRespCommand(currentCustomRawStringCommand.id);
-            TryCustomRawStringCommand(cmd, currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            TryCustomRawStringCommand(cmd, currentCustomRawStringCommand, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -1246,8 +1246,7 @@ namespace Garnet.server
 
             // Perform the operation
             var type = customCommandManagerSession.GetCustomGarnetObjectType(currentCustomObjectCommand.id);
-            TryCustomObjectCommand(type, currentCustomObjectCommand.subid,
-                currentCustomObjectCommand.type, ref storageApi);
+            TryCustomObjectCommand(type, currentCustomObjectCommand, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
         }

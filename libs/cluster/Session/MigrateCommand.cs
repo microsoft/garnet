@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -16,7 +16,7 @@ namespace Garnet.cluster
     {
         public static bool Expired<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => logRecord.Info.HasExpiration && logRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
+            => logRecord.DataHeader.HasExpiration && logRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         internal enum MigrateCmdParseState : byte
         {

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -172,7 +172,7 @@ namespace Tsavorite.core
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor
             {
-                if (!inputLogRecord.Info.ValueIsObject)
+                if (!inputLogRecord.DataHeader.ValueIsObject)
                     sessionFunctions.PostUpsertOperation(key, ref input, inputLogRecord.ValueSpan, ref upsertInfo, epochAccessor);
                 else
                     sessionFunctions.PostUpsertOperation(key, ref input, inputLogRecord.ValueObject, ref upsertInfo, epochAccessor);

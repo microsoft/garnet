@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -9,9 +8,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    [AllureNUnit]
     [TestFixture]
-    public class ConcurrentCounterTests : AllureTestBase
+    public class ConcurrentCounterTests : TestBase
     {
         [Test]
         public void Increment_IncreasesCounterValue()

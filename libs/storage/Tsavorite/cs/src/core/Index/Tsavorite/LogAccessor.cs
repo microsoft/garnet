@@ -45,6 +45,11 @@ namespace Tsavorite.core
         public long SafeReadOnlyAddress => allocatorBase.SafeReadOnlyAddress;
 
         /// <summary>
+        /// Flushed-until address of log, i.e. all records below this address have been written to disk
+        /// </summary>
+        public long FlushedUntilAddress => allocatorBase.FlushedUntilAddress;
+
+        /// <summary>
         /// Head address of log, i.e. beginning of in-memory regions
         /// </summary>
         public long HeadAddress => allocatorBase.HeadAddress;

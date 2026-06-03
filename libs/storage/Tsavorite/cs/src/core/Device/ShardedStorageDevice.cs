@@ -263,6 +263,7 @@ namespace Tsavorite.core
             long currentReadStart = (long)sourceAddress;
             long readEnd = currentReadStart + readLength;
             uint aggregateErrorCode = 0;
+            uint aggregateNumBytes = 0;
             while (currentReadStart < readEnd)
             {
                 long newStart = partitions.MapRange(currentReadStart, readEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
@@ -275,13 +276,18 @@ namespace Tsavorite.core
                                                     (ulong)shardStartAddress,
                                                     IntPtr.Add(destinationAddress, (int)writeOffset),
                                                     (uint)(shardEndAddress - shardStartAddress),
-                                                    (e, n, o) =>
+                                                    (errorCode, numBytes, ctx) =>
                                                     {
                                                         // TODO: this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
-                                                        if (e != 0) aggregateErrorCode = e;
+                                                        if (errorCode != 0)
+                                                            aggregateErrorCode = errorCode;
+                                                        _ = Interlocked.Add(ref aggregateNumBytes, numBytes);
+
                                                         if (countdown.Signal())
                                                         {
-                                                            callback(aggregateErrorCode, n, o);
+                                                            // ReadAsync has called the ending .Signal() and exited, and we're the last parallel reader to finish.
+                                                            // Call the callback with the full length read.
+                                                            callback(aggregateErrorCode, aggregateNumBytes, ctx);
                                                             countdown.Dispose();
                                                         }
                                                     },
@@ -293,7 +299,8 @@ namespace Tsavorite.core
             // TODO: Check handling of overlapped wrapper
             if (countdown.Signal())
             {
-                callback(aggregateErrorCode, readLength, context);
+                // All parallel readers have finished. Call the callback with the full length read.
+                callback(aggregateErrorCode, aggregateNumBytes, context);
                 countdown.Dispose();
             }
         }

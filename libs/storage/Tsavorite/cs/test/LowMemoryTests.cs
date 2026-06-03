@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,10 +12,8 @@ namespace Tsavorite.test.LowMemory
 {
     using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    public class LowMemoryTests : AllureTestBase
+    public class LowMemoryTests : TestBase
     {
         IDevice log;
         TsavoriteKV<LongStoreFunctions, LongAllocator> store1;

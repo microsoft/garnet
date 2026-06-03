@@ -85,7 +85,6 @@ namespace Tsavorite.core
 
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-
             int startTier = FindClosestDeviceContaining(segmentId);
             Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
 

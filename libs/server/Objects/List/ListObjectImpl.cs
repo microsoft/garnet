@@ -261,6 +261,8 @@ namespace Garnet.server
                 writer.WriteArrayLength(count);
             }
 
+            var removed = 0;
+
             while (count > 0 && list.Any())
             {
                 LinkedListNode<byte[]> node = null;
@@ -279,8 +281,11 @@ namespace Garnet.server
                 writer.WriteBulkString(node.Value);
 
                 count--;
-                output.result1++;
+
+                removed++;
             }
+
+            output.result1 = removed;
         }
 
         private void ListSet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

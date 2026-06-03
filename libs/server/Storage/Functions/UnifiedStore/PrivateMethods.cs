@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -115,7 +115,7 @@ namespace Garnet.server
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedOutput output)
         {
-            var hasExpiration = logRecord.Info.HasExpiration;
+            var hasExpiration = logRecord.DataHeader.HasExpiration;
 
             // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))

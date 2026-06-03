@@ -270,6 +270,9 @@ namespace Tsavorite.core
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // SpanByteAllocator has no objects, so no value-object disposal is required.
                         diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap));
+                        // Fire OnDiskRead so app can invalidate stale TreeHandles, etc., on records loaded from disk.
+                        if (hlogBase.storeFunctions.CallOnDiskRead)
+                            hlogBase.storeFunctions.OnDiskRead(ref diskLogRecord.logRecord);
                     }
                 }
                 finally
@@ -325,6 +328,8 @@ namespace Tsavorite.core
         public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
         /// <inheritdoc/>
         public RecordInfo Info => diskLogRecord.Info;
+        /// <inheritdoc/>
+        public RecordDataHeader DataHeader => diskLogRecord.DataHeader;
 
         /// <inheritdoc/>
         public byte RecordType => diskLogRecord.RecordType;

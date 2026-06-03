@@ -5,9 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -467,15 +465,6 @@ namespace Garnet.cluster
         /// <param name="basicGarnetApi"></param>
         /// <param name="slots">Slot list</param>
         public static void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
-        {
-            using var iter = basicGarnetApi.IterateStore();
-            while (iter.GetNext())
-            {
-                var key = iter.Key;
-                var s = HashSlotUtils.HashSlot(key);
-                if (slots.Contains(s))
-                    _ = basicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
-            }
-        }
+            => basicGarnetApi.DeleteSlotKeys(slots);
     }
 }

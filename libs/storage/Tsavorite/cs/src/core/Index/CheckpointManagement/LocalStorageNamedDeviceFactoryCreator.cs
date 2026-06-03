@@ -15,6 +15,8 @@ namespace Tsavorite.core
         readonly int? throttleLimit;
         readonly bool disableFileBuffering;
         readonly DeviceType deviceType;
+        readonly NativeStorageDevice.IoBackend ioBackend;
+        readonly int numCompletionThreads;
         readonly bool readOnly;
         readonly ILogger logger;
 
@@ -26,22 +28,26 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
         /// <param name="deviceType">Device type</param>
+        /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
+        /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of IO completion drain threads (default 1). Ignored otherwise.</param>
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactoryCreator(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, bool readOnly = false, ILogger logger = null)
+        public LocalStorageNamedDeviceFactoryCreator(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, bool readOnly = false, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
             this.deviceType = deviceType;
+            this.ioBackend = ioBackend;
+            this.numCompletionThreads = numCompletionThreads;
             this.readOnly = readOnly;
             this.logger = logger;
         }
 
         public INamedDeviceFactory Create(string baseName)
         {
-            return new LocalStorageNamedDeviceFactory(preallocateFile, deleteOnClose, disableFileBuffering, throttleLimit, deviceType, readOnly, baseName, logger);
+            return new LocalStorageNamedDeviceFactory(preallocateFile, deleteOnClose, disableFileBuffering, throttleLimit, deviceType, ioBackend, numCompletionThreads, readOnly, baseName, logger);
         }
     }
 }
