@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -16,6 +17,8 @@ namespace Garnet.server
     {
         private readonly RangeIndexChunkedSerializer serializer;
         private FileStream fileStream;
+        private readonly string tempFilePath;
+        private readonly ILogger logger;
         private readonly Memory<byte> readBuffer;
         private bool disposed;
 
@@ -26,15 +29,21 @@ namespace Garnet.server
         public long TotalFileBytes => serializer.TotalFileBytes;
 
         /// <summary>
-        /// Create a migration reader that wraps a serializer and file stream.
+        /// Create a migration reader that wraps a serializer and file stream. On dispose,
+        /// the underlying <paramref name="fileStream"/> is closed and <paramref name="tempFilePath"/>
+        /// is deleted (best-effort) so source-side migration snapshots do not accumulate.
         /// </summary>
         /// <param name="serializer">The pure state-machine serializer.</param>
         /// <param name="fileStream">The file stream to read snapshot data from.</param>
+        /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
         /// <param name="chunkSize">Buffer size for file reads.</param>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, int chunkSize)
+        /// <param name="logger">Optional logger for delete failures.</param>
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int chunkSize, ILogger logger = null)
         {
             this.serializer = serializer;
             this.fileStream = fileStream;
+            this.tempFilePath = tempFilePath;
+            this.logger = logger;
             readBuffer = new byte[chunkSize];
         }
 
@@ -80,6 +89,19 @@ namespace Garnet.server
 
             fileStream?.Dispose();
             fileStream = null;
+
+            if (tempFilePath != null)
+            {
+                try
+                {
+                    if (File.Exists(tempFilePath))
+                        File.Delete(tempFilePath);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to delete migration snapshot {Path}", tempFilePath);
+                }
+            }
         }
     }
 }

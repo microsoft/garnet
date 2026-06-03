@@ -60,10 +60,22 @@ namespace Garnet.server
 
                 using (ReadRangeIndex(storageSession, keyPsb, ref input, stubSpan, out var status))
                 {
-                    if (status != GarnetStatus.OK)
-                        continue;
+                    switch (status)
+                    {
+                        case GarnetStatus.OK:
+                            // Key exists and is a RangeIndex.
+                            rangeIndexKeys.Add(keyPsb.ToArray());
+                            break;
 
-                    rangeIndexKeys.Add(keyPsb.ToArray());
+                        case GarnetStatus.WRONGTYPE:
+                        case GarnetStatus.NOTFOUND:
+                            // Key exists but is not RI (WRONGTYPE), or doesn't exist (NOTFOUND).
+                            // Either way: not an RI key — skip.
+                            break;
+
+                        default:
+                            throw new GarnetException($"Unexpected status {status} from ReadRangeIndex while discovering RI keys for migration");
+                    }
                 }
             }
 
@@ -75,20 +87,16 @@ namespace Garnet.server
         /// and produces chunked migration records via async file reads.
         /// </summary>
         /// <param name="localServerSession">The local server session for store access.</param>
-        /// <param name="keyBytes">The key bytes of the RangeIndex to serialize.</param>
+        /// <param name="key">The pinned RangeIndex key to serialize. Caller must keep the underlying bytes pinned for the duration of this call.</param>
         /// <param name="chunkSize">The chunk size for streaming. Defaults to <see cref="DefaultMigrationChunkSize"/>.</param>
-        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, int chunkSize = DefaultMigrationChunkSize)
+        public RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, PinnedSpanByte key, int chunkSize = DefaultMigrationChunkSize)
         {
-            fixed (byte* keyPtr = keyBytes)
-            {
-                var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
-                if (!SnapshotForMigration(localServerSession.storageSession, pinnedKey, out var snapshotPath, out var totalBytes, out var stubBytes))
-                    throw new InvalidOperationException("Failed to snapshot BfTree for migration");
+            if (!SnapshotForMigration(localServerSession.storageSession, key, out var snapshotPath, out var totalBytes, out var stubBytes))
+                throw new InvalidOperationException("Failed to snapshot BfTree for migration");
 
-                var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes, totalBytes);
-                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
-                return new RangeIndexMigrationReader(serializer, fileStream, chunkSize);
-            }
+            var serializer = new RangeIndexChunkedSerializer(key.ToArray(), stubBytes, totalBytes);
+            var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
+            return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, chunkSize, logger);
         }
 
         /// <summary>

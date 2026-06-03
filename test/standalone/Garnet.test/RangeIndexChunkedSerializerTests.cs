@@ -703,7 +703,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Calling Dispose twice on the migration reader should not throw.
+        /// Calling Dispose twice on the migration reader should not throw, and the
+        /// temp snapshot file should be deleted after the first Dispose call.
         /// </summary>
         [Test]
         public void DoubleDisposeIsIdempotent()
@@ -713,9 +714,10 @@ namespace Garnet.test
 
             var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 16);
-            var reader = new RangeIndexMigrationReader(serializer, fs, 256);
+            var reader = new RangeIndexMigrationReader(serializer, fs, filePath, 256);
 
             reader.Dispose();
+            ClassicAssert.IsFalse(File.Exists(filePath), "Temp snapshot file should be deleted on dispose");
             reader.Dispose(); // Should not throw
         }
 
