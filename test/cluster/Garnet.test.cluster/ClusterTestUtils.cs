@@ -3537,5 +3537,15 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
+
+        /// <summary>
+        /// Inserts filler keys via the specified node and polls <c>INFO STORE</c> with exponential
+        /// backoff until <c>Log.FlushedUntilAddress</c> reaches <paramref name="flushUntilAddress"/>.
+        /// Delegates to <see cref="TestUtils.FlushAndWaitForStoreAsync"/>.
+        /// </summary>
+        public Task FlushAndWaitForStoreAsync(int nodeIndex, long flushUntilAddress,
+            int fillerCount = 200, string fillerPrefix = "flushfiller", int timeoutMs = 5000)
+            => TestUtils.FlushAndWaitForStoreAsync(GetDatabase(), GetServer(nodeIndex),
+                flushUntilAddress, fillerCount, fillerPrefix, timeoutMs);
     }
 }
