@@ -25,9 +25,23 @@ namespace Tsavorite.core
             public long txnVersion;
 
             public long totalPending;
-            public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
+            public readonly Dictionary<long, PendingContextHolder<TInput, TOutput, TContext>> ioPendingRequests;
             public readonly AsyncCountDown pendingReads;
             public readonly AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> readyResponses;
+
+            /// <summary>
+            /// Per-session pool of <see cref="AsyncIOContext"/> instances. Each pending IO rents one upfront,
+            /// fills its fields in place, then returns it after completion processing.
+            /// </summary>
+            public readonly Stack<AsyncIOContext> asyncIOContextPool;
+
+            /// <summary>
+            /// Per-session pool of <see cref="PendingContextHolder{TInput,TOutput,TContext}"/> wrappers.
+            /// The wrapper lets the ioPendingRequests dictionary store an 8-byte reference rather than
+            /// bulk-copying the ~200-byte PendingContext struct (which triggers Buffer.BulkMoveWithWriteBarrier
+            /// on Dictionary.Add and was ~12-13% of worker CPU at single-thread libaio random reads).
+            /// </summary>
+            public readonly Stack<PendingContextHolder<TInput, TOutput, TContext>> pendingContextHolderPool;
 
             /// <summary>
             /// Per-session pool of <see cref="IHeapContainer{TInput}"/> wrappers
@@ -48,10 +62,50 @@ namespace Tsavorite.core
                 SessionState = SystemState.Make(Phase.REST, 1);
                 this.sessionID = sessionID;
                 readyResponses = new AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>>();
-                ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
+                ioPendingRequests = new Dictionary<long, PendingContextHolder<TInput, TOutput, TContext>>();
                 heapContainerPool = new Stack<IHeapContainer<TInput>>();
+                asyncIOContextPool = new Stack<AsyncIOContext>();
+                pendingContextHolderPool = new Stack<PendingContextHolder<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
                 isAcquiredTransactional = false;
+            }
+
+            /// <summary>
+            /// Rent a pre-allocated <see cref="AsyncIOContext"/> from the per-session pool. Single-threaded
+            /// per session, so non-concurrent <see cref="Stack{T}"/> is safe. Caller fills the instance's fields
+            /// directly and returns it to the pool via <see cref="ReturnAsyncIOContext"/> after the IO completes.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal AsyncIOContext RentAsyncIOContext()
+            {
+                if (asyncIOContextPool.TryPop(out var ctx))
+                    return ctx;
+                return new AsyncIOContext();
+            }
+
+            /// <summary>Return an <see cref="AsyncIOContext"/> to the per-session pool after completion.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void ReturnAsyncIOContext(AsyncIOContext ctx)
+            {
+                ctx.Reset();
+                asyncIOContextPool.Push(ctx);
+            }
+
+            /// <summary>Rent a <see cref="PendingContextHolder{TInput,TOutput,TContext}"/> from the per-session pool.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal PendingContextHolder<TInput, TOutput, TContext> RentPendingContextHolder()
+            {
+                if (pendingContextHolderPool.TryPop(out var holder))
+                    return holder;
+                return new PendingContextHolder<TInput, TOutput, TContext>();
+            }
+
+            /// <summary>Return a <see cref="PendingContextHolder{TInput,TOutput,TContext}"/> to the per-session pool.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void ReturnPendingContextHolder(PendingContextHolder<TInput, TOutput, TContext> holder)
+            {
+                holder.value = default;
+                pendingContextHolderPool.Push(holder);
             }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;

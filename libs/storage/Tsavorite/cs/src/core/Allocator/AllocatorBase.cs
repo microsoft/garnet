@@ -2237,7 +2237,7 @@ namespace Tsavorite.core
                 if (ctx.completionEvent is not null)
                 {
                     // completionEvent took ownership of the data via Set; finally returns the wrapper to the pool.
-                    ctx.completionEvent.Set(ref ctx);
+                    ctx.completionEvent.Set(ctx);
                 }
                 else
                 {

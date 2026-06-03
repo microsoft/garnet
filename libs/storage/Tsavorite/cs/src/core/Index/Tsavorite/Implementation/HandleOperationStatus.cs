@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -89,13 +88,17 @@ namespace Tsavorite.core
         /// <param name="sessionCtx">Thread (or session) context under which operation was tried to execute.</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
+        /// <param name="holder">Optional pre-rented holder whose <c>value</c> field IS <paramref name="pendingContext"/>'s backing storage.
+        ///     When provided, the RECORD_ON_DISK path stores an 8-byte reference in the dictionary instead of bulk-copying the
+        ///     ~200-byte struct. When null, falls back to renting a holder internally and copying.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus)
+            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus,
+            PendingContextHolder<TInput, TOutput, TContext> holder = null)
             => OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status)
                 ? status
-                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
+                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _, holder);
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
@@ -104,19 +107,22 @@ namespace Tsavorite.core
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="request">IO request, if operation went pending</param>
+        /// <param name="holder">Optional pre-rented holder — see the 3-parameter overload's doc.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus,
-            out AsyncIOContext request)
+            out AsyncIOContext request,
+            PendingContextHolder<TInput, TOutput, TContext> holder = null)
         {
             Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.CPR_SHIFT_DETECTED, "OperationStatus.CPR_SHIFT_DETECTED should have been handled before HandleOperationStatus");
 
-            request = default;
+            // AsyncIOContext is now a class; default = null. Only allocate when we actually need an IO request.
+            request = null;
 
             if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status))
                 return status;
@@ -130,27 +136,37 @@ namespace Tsavorite.core
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
             {
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
-                // Add context to dictionary
                 pendingContext.id = sessionCtx.totalPending++;
-                sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
-                if (!pendingContext.IsConditionalOp)
+                // Add holder to dictionary as an 8-byte reference store (vs ~200-byte struct copy + Buffer.BulkMoveWithWriteBarrier).
+                // When the caller pre-rented a holder and `pendingContext` is `ref holder.value`, this is allocation-free and
+                // copy-free. When holder is null (legacy entry sites — compaction, conditional ops), fall back to renting one
+                // here and bulk-copying the struct into it.
+                if (holder is not null)
                 {
-                    // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
-                    // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
-                    // (We know this will not be a nullref because we just added it). Don't do this for CONDITIONAL_*; the diskLogRecord is what
-                    // we'll insert or push if an overriding record is not found.
-                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
+                    sessionCtx.ioPendingRequests.Add(pendingContext.id, holder);
+                    if (!pendingContext.IsConditionalOp)
+                        holder.value.diskLogRecord = default;
+                }
+                else
+                {
+                    var fallbackHolder = sessionCtx.RentPendingContextHolder();
+                    fallbackHolder.value = pendingContext;
+                    sessionCtx.ioPendingRequests.Add(pendingContext.id, fallbackHolder);
+                    if (!pendingContext.IsConditionalOp)
+                        fallbackHolder.value.diskLogRecord = default;
                 }
 
-                // Issue asynchronous I/O request
+                // Issue asynchronous I/O request. AsyncIOContext is a class — rent or allocate one instance,
+                // fill its fields directly (each field-set is a single store, no Buffer.BulkMoveWithWriteBarrier).
+                request = sessionCtx.RentAsyncIOContext();
                 request.id = pendingContext.id;
 
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
                 request.requestKey = pendingContext.requestKey;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
-                request.record = default;
+                request.record = null;
                 request.callbackQueue = sessionCtx.readyResponses;
 
                 hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, request);

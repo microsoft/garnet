@@ -115,19 +115,24 @@ namespace Tsavorite.core
                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Get and Remove this request.id pending dictionary if it is there.
-            if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
+            // Get and Remove this request.id pending holder from the dict (8-byte ref load, not a struct copy).
+            if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var holder))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref pendingContext, out _);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref holder.value, out _, holder);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref pendingContext, status);
+                    completedOutputs.TransferFrom(ref holder.value, status);
                 }
                 if (!status.IsPending)
                 {
-                    OnDisposeDiskRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
-                    pendingContext.Dispose();
+                    OnDisposeDiskRecord(ref holder.value.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
+                    holder.value.Dispose();
+                    // Return both pooled instances. When status.IsPending, the IO was re-issued and ownership of
+                    // BOTH wrappers passed to the next IO (HandleOperationStatus added them back into the dict /
+                    // gave the request to AsyncGetFromDisk) — so we leave them alone.
+                    sessionFunctions.Ctx.ReturnAsyncIOContext(request);
+                    sessionFunctions.Ctx.ReturnPendingContextHolder(holder);
                 }
             }
         }
@@ -136,11 +141,12 @@ namespace Tsavorite.core
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
         internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
-                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
+                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest,
+                                                                    PendingContextHolder<TInput, TOutput, TContext> holder = null)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
-            newRequest = default;
+            newRequest = null;
 
             // If this was an operation that was trying to retrieve a target record, copy it into the pendingContext.
             // CONDITIONAL_* operations do not care about the retrieved data; they only care whether a record was found.
@@ -156,7 +162,9 @@ namespace Tsavorite.core
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest);
+            // Pass the same holder through to HandleOperationStatus so any re-read (RECORD_ON_DISK on completion)
+            // can re-Add the same holder ref into the dict (no struct copy).
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest, holder);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)
