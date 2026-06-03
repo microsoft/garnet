@@ -35,6 +35,8 @@ namespace Garnet.test.cluster
         ClusterReplicationDiskless = 7500,
         ClusterVectorSets = 7600,
         ClusterMultiLog = 7700,
+        ClusterReplicationRangeIndex = 7800,
+        ClusterMultiLogDiskless = 7900,
     }
 
     public class ClusterTestContext
@@ -162,13 +164,18 @@ namespace Garnet.test.cluster
                     TestContext.CurrentContext.Result.Message);
             }
 
-            cts.Cancel();
-            cts.Dispose();
-            waiter?.Dispose();
-            clusterTestUtils?.Dispose();
-
             var timeoutSeconds = 60;
             string failureReason = null;
+
+            // Phase 0: Tear down cancellation token, waiter, and client connections.
+            // Each disposal is isolated so a throw from one (e.g., ConnectionMultiplexer
+            // in a bad state after a mid-flight test failure) does not skip DisposeCluster
+            // below, which would leave GarnetServer nodes alive with TCP ports bound and
+            // cascade-fail subsequent tests.
+            try { cts.Cancel(); } catch (Exception ex) { logger?.LogError(ex, "cts.Cancel failed"); }
+            try { cts.Dispose(); } catch (Exception ex) { logger?.LogError(ex, "cts.Dispose failed"); }
+            try { waiter?.Dispose(); } catch (Exception ex) { logger?.LogError(ex, "waiter.Dispose failed"); }
+            try { clusterTestUtils?.Dispose(); } catch (Exception ex) { logger?.LogError(ex, "clusterTestUtils.Dispose failed"); }
 
             // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
             try
