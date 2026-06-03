@@ -245,7 +245,7 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                rangeIndexLocks.ReleaseLock(lockToken);
             }
 
             path = migrationPath;
