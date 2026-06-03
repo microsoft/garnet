@@ -215,7 +215,6 @@ namespace Garnet.test
             GC.KeepAlive(rmwDel);
         }
 
-
         [Test]
         public void VADD()
         {

@@ -134,6 +134,14 @@ namespace Garnet.server
                     }
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    curIx++;
+
+                    if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
+                    vectorDims = asBytes.Length;
 
                     valueType = VectorValueType.XU8;
                     values = asBytes;
@@ -148,6 +156,13 @@ namespace Garnet.server
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
                     curIx++;
+
+                    if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
+                    vectorDims = asBytes.Length;
 
                     valueType = VectorValueType.XI8;
                     values = asBytes;
@@ -243,7 +258,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
                     {
                         if (quantType != null)
                         {
@@ -255,7 +270,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {
@@ -267,7 +282,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {
@@ -279,7 +294,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {

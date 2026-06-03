@@ -76,7 +76,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var oversizedVectorData = Enumerable.Repeat<byte>(1, overflowSizeBytes).ToArray();
+            var oversizedVectorData = Enumerable.Repeat<byte>(1, 100_000).ToArray();
             var oversideAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
 
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", oversizedVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
@@ -373,14 +373,6 @@ namespace Garnet.test
             // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
             var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
-
-            // Unsupported quantization types (Q8 and BIN are not yet supported)
-            var exc28 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc28.Message);
-            var exc29 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "Q8"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc29.Message);
-            var exc30 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "BIN"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc30.Message);
 
             // Malformed XDISTANCE_METRIC
             var exc31 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC"]));
@@ -1996,8 +1988,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // TODO: Add tests for Q8 and BIN quantizers once supported in diskann-garnet
-            string[] quantizers = ["XPREQ8", "NOQUANT"];
+            string[] quantizers = ["NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8" ];
             int[] reduceValues = [0, 5];
             int[] efValues = [0, 8];
             int[] mValues = [0, 16];
@@ -2011,7 +2002,8 @@ namespace Garnet.test
 
                 foreach (var reduceValue in reduceValues)
                 {
-                    var reduceValueToUse = quantizer == "XPREQ8" ? 0 : reduceValue;
+                    var isExtensionQuantizer = quantizer[0] == 'X';
+                    var reduceValueToUse = isExtensionQuantizer ? 0 : reduceValue;
                     foreach (var ef in efValues)
                     {
                         foreach (var numLinks in mValues)
@@ -2025,7 +2017,8 @@ namespace Garnet.test
                                 // XPREQ8 requires XB8 format, NOQUANT uses VALUES format
                                 object vectorData1;
                                 object vectorData2;
-                                if (quantizer == "XPREQ8")
+
+                                if (isExtensionQuantizer)
                                 {
                                     // XB8 format: byte array
                                     var bytes1 = new byte[vectorDim];
@@ -2053,7 +2046,8 @@ namespace Garnet.test
                                 }
 
                                 // Create a vector set with known parameters
-                                var res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData1, [0, 0, 0, 0]));
+                                var opts = GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData1, [0, 0, 0, 0]);
+                                var res = db.Execute("VADD", opts);
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 string expectedEf = ef == 0 ? "200" : ef.ToString();
@@ -2096,7 +2090,9 @@ namespace Garnet.test
 
             static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object vectorData, byte[] elementId)
             {
-                if (quantizer == "XPREQ8")
+                var isExtensionQuantizer = quantizer[0] == 'X';
+
+                if (isExtensionQuantizer)
                 {
                     reduce = 0;
                 }
@@ -2109,10 +2105,10 @@ namespace Garnet.test
                 }
 
                 // Add vector data based on quantizer type
-                if (quantizer == "XPREQ8")
+                if (isExtensionQuantizer)
                 {
-                    // XB8 format for XPREQ8
-                    opts.Add("XB8");
+                    // XU8 format for extension methods
+                    opts.Add("XU8");
                     opts.Add(vectorData);
                 }
                 else
