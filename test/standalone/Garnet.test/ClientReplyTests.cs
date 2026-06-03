@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -16,9 +15,8 @@ namespace Garnet.test
     /// Tests for the <c>CLIENT REPLY ON|OFF|SKIP</c> subcommand.
     /// Uses a raw TCP socket because StackExchange.Redis cannot tolerate reply suppression.
     /// </summary>
-    [AllureNUnit]
     [TestFixture]
-    public class ClientReplyTests : AllureTestBase
+    public class ClientReplyTests : TestBase
     {
         GarnetServer server;
 
