@@ -106,22 +106,17 @@ namespace Tsavorite.kvbench
         public string DeviceIoBackend { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
-            HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
-                       "completion queue. Each drainer is bound 1:1 to its own kernel io_context " +
-                       "(libaio) or io_uring ring; submitters distribute across rings via per-thread " +
-                       "affinity. Throughput scales with this value up to the available submitter " +
-                       "concurrency. 0 = Garnet default (1).")]
+            HelpText = "Number of background drainer threads for the device's IO completion queue. " +
+                       "For DeviceType.Native on Linux: each drainer is bound 1:1 to its own kernel " +
+                       "io_context (libaio) or io_uring ring; submitters distribute across rings via " +
+                       "per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC " +
+                       "ring fed by one submitter (per-thread routing). Throughput scales with this " +
+                       "value up to the available submitter concurrency. 0 = default (1 for Native; " +
+                       "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
 
-        [Option("localmem-parallelism", Required = false, Default = 8,
-            HelpText = "LocalMemoryDevice IO processor threads (and SPSC rings). Each ring is fed by one submitter " +
-                       "thread (per-thread routing) and drained by one processor thread. For best scaling, pick >= " +
-                       "number of run-phase threads so every ring is true SPSC; lower values still work via MPSC-by-lock.")]
-        public int LocalMemParallelism { get; set; }
-
         [Option("localmem-latency-ms", Required = false, Default = 0,
-            HelpText = "LocalMemoryDevice simulated per-IO latency in milliseconds (only active when " +
-                       "--localmem-parallelism > 0).")]
+            HelpText = "DeviceType.LocalMemory simulated per-IO latency in milliseconds (0 = none).")]
         public int LocalMemLatencyMs { get; set; }
 
         [Option("data-path", Required = false, Default = null,

@@ -54,7 +54,7 @@ namespace Device.benchmark
             Console.WriteLine("<<<<<<< Start Benchmark Configuration >>>>>>>>");
             if (opts.DeviceType == DeviceType.LocalMemory)
             {
-                Console.WriteLine($"Device Type: LocalMemory (parallelism={opts.LocalMemoryParallelism}, latencyMs={opts.LocalMemoryLatencyMs})");
+                Console.WriteLine($"Device Type: LocalMemory (latencyMs={opts.LocalMemoryLatencyMs})");
             }
             else
             {
@@ -219,13 +219,14 @@ namespace Device.benchmark
                 long capacity = opts.FileSize;
                 if (capacity % segSize != 0)
                     capacity = ((capacity + segSize - 1) / segSize) * segSize;
-                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism={opts.LocalMemoryParallelism} latencyMs={opts.LocalMemoryLatencyMs}");
+                int parallelism = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
+                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism}) latencyMs={opts.LocalMemoryLatencyMs}");
                 return Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
+                    numCompletionThreads: parallelism,
                     localMemorySegmentSize: segSize,
-                    localMemoryParallelism: opts.LocalMemoryParallelism,
                     localMemoryLatencyMs: opts.LocalMemoryLatencyMs);
             }
 
@@ -247,6 +248,8 @@ namespace Device.benchmark
                 _ => throw new ArgumentOutOfRangeException()
             };
         }
+
+        const string CompletionThreadsLabel = "completion-threads";
 
         static NativeStorageDevice.IoBackend ParseBackend(string s) => (s ?? "default").ToLowerInvariant() switch
         {

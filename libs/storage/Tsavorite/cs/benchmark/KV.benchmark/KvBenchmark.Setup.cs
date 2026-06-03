@@ -94,18 +94,18 @@ namespace Tsavorite.kvbench
                 long needSegments = (approxBytes + segSize - 1) / segSize + 4;
                 long capacity = needSegments * segSize;
 
-                int localmemParallelism = opts.LocalMemParallelism < 1 ? 8 : opts.LocalMemParallelism;
+                int parallelism = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount;
                 int latencyMs = opts.LocalMemLatencyMs;
 
                 System.Console.WriteLine(
-                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism={localmemParallelism} latencyMs={latencyMs}");
+                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism} latencyMs={latencyMs}");
 
                 dev = Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
+                    numCompletionThreads: parallelism,
                     localMemorySegmentSize: segSize,
-                    localMemoryParallelism: localmemParallelism,
                     localMemoryLatencyMs: latencyMs);
                 if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
                 return dev;
