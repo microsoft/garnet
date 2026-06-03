@@ -114,12 +114,20 @@ namespace Garnet.server
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
         /// <remarks>
-        /// <paramref name="replaceOption"/> is wired through from the MIGRATE REPLACE flag
-        /// but is not currently honored — overwrite semantics on existing RI keys are TODO.
+        /// If a RangeIndex already exists at this key on the destination and the caller did
+        /// not pass <paramref name="replaceOption"/>, the migration is skipped (logged and
+        /// returns <c>false</c>). When <paramref name="replaceOption"/> is true and a stub
+        /// exists, the existing tree IS overwritten — note that this overwrite path is
+        /// currently NOT crash-safe (see TODO inside the method).
         /// </remarks>
         public unsafe bool PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
-            _ = replaceOption; // TODO: honor MIGRATE REPLACE for RangeIndex keys
+            if (RangeIndexExists(keyBytes, ref ctx) && !replaceOption)
+            {
+                logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key (use MIGRATE REPLACE to overwrite); skipping");
+                return false;
+            }
+
             try
             {
                 var workingPath = LogDataPathFor(keyBytes);
@@ -194,6 +202,38 @@ namespace Garnet.server
             {
                 logger?.LogError(ex, "PublishMigratedIndex: failed to recover BfTree");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Check whether a RangeIndex stub already exists at the given key on this node.
+        /// Returns <c>true</c> for <see cref="GarnetStatus.OK"/> (an RI stub is present);
+        /// <c>false</c> for <see cref="GarnetStatus.NOTFOUND"/> or <see cref="GarnetStatus.WRONGTYPE"/>.
+        /// </summary>
+        /// <remarks>
+        /// Used by <see cref="PublishMigratedIndex"/> to decide whether to honor MIGRATE without REPLACE.
+        /// Does not take the RI shared lock — destination-side publish already runs after the
+        /// migration sketch gate is closed, so no concurrent RI writes can race here.
+        /// </remarks>
+        private unsafe bool RangeIndexExists(ReadOnlySpan<byte> keyBytes, ref StringBasicContext ctx)
+        {
+            Span<byte> stubSpan = stackalloc byte[IndexSizeBytes];
+            var output = StringOutput.FromPinnedSpan(stubSpan);
+            StringInput input = default;
+            input.header.cmd = RespCommand.RIGET;
+
+            fixed (byte* keyPtr = keyBytes)
+            {
+                var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
+                var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+                var status = ctx.Read((FixedSpanByteKey)pinnedKey, ref input, ref output, ref readOptions);
+                if (status.IsPending)
+                    StorageSession.CompletePendingForSession(ref status, ref output, ref ctx);
+
+                if (!output.SpanByteAndMemory.IsSpanByte)
+                    output.SpanByteAndMemory.Dispose();
+
+                return status.Found;
             }
         }
 
