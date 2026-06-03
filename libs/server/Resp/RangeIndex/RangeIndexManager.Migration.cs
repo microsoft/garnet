@@ -114,18 +114,26 @@ namespace Garnet.server
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
         /// <remarks>
-        /// If a RangeIndex already exists at this key on the destination and the caller did
-        /// not pass <paramref name="replaceOption"/>, the migration is skipped and the method
-        /// returns <see cref="PublishMigratedIndexResult.SkippedAlreadyExists"/>. When
-        /// <paramref name="replaceOption"/> is true and a stub exists, the existing tree IS
-        /// overwritten — note that this overwrite path is currently NOT crash-safe
-        /// (see TODO inside the method).
+        /// If a RangeIndex already exists at this key on the destination, the migration is
+        /// skipped regardless of <paramref name="replaceOption"/>:
+        /// <list type="bullet">
+        /// <item><paramref name="replaceOption"/> = false → <see cref="PublishMigratedIndexResult.SkippedAlreadyExists"/></item>
+        /// <item><paramref name="replaceOption"/> = true  → <see cref="PublishMigratedIndexResult.SkippedReplaceNotSupported"/>
+        /// (REPLACE for RI keys is not yet implemented; safe overwrite requires the staging-file
+        /// + in-progress-marker design described in the TODO inside this method).</item>
+        /// </list>
         /// </remarks>
         public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
             var riExists = RangeIndexExists(keyBytes, ref ctx);
-            if (riExists && !replaceOption)
+            if (riExists)
             {
+                if (replaceOption)
+                {
+                    logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key and MIGRATE REPLACE was requested, but replacement is not yet supported for RI keys; skipping");
+                    return PublishMigratedIndexResult.SkippedReplaceNotSupported;
+                }
+
                 logger?.LogWarning("PublishMigratedIndex: RangeIndex already exists at key (use MIGRATE REPLACE to overwrite); skipping");
                 return PublishMigratedIndexResult.SkippedAlreadyExists;
             }
@@ -134,26 +142,22 @@ namespace Garnet.server
             {
                 var workingPath = LogDataPathFor(keyBytes);
 
-                // TODO: Crash-unsafe replacement.
-                // Replacing an existing BfTree like this is not safe across crashes:
-                // we delete the existing data.bftree and File.Move the new snapshot
-                // in. If the process crashes between Delete and Move, or between Move
-                // and the RICREATE RMW that publishes the new stub, recovery will see
-                // a missing/mismatched file relative to the in-memory stub.
+                // Reaching here implies riExists was false (REPLACE+existing returns
+                // SkippedReplaceNotSupported above). The stub doesn't exist, but a stale
+                // data.bftree file may still be on disk from a previous migration of the
+                // same key whose stub was later deleted (DEL triggers DisposeAndDeleteFilesDeferred,
+                // but a crash between unlink-of-file and tombstone-commit could leave a
+                // stale file). Remove it so File.Move below can take its place.
                 //
-                // Proper fix (follow-up work):
+                // TODO: When MIGRATE REPLACE support is added for RI keys, the destructive
+                // swap will need a staging-file + in-progress-marker design so that recovery
+                // can either complete or roll back the swap if we crash mid-replacement:
                 //   1. Move the migrated snapshot to a staging path (not workingPath).
-                //   2. If a stub already exists at this key, atomically mark it as
-                //      "replacement in progress" pointing at the staging path.
-                //   3. Promote staging → workingPath only after the in-store stub
-                //      has been updated; on recovery, replay the marker to either
-                //      complete or roll back the swap.
-                //
-                // Also note: the MIGRATE REPLACE flag is not currently honored for
-                // RI keys — see PublishMigratedIndex(replaceOption: ...) wiring.
-                //
-                // If a data file already exists (e.g., from a previous migration of the same key
-                // that was later deleted), remove it so the new snapshot can take its place.
+                //   2. Atomically mark the existing stub as "replacement in progress"
+                //      pointing at the staging path.
+                //   3. Promote staging → workingPath only after the in-store stub has
+                //      been updated; on recovery, replay the marker to either complete
+                //      or roll back the swap.
                 if (File.Exists(workingPath))
                     File.Delete(workingPath);
 

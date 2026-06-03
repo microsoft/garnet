@@ -15,6 +15,10 @@ namespace Garnet.server
         /// no destructive action was taken.</summary>
         SkippedAlreadyExists,
 
+        /// <summary>A RangeIndex already existed at this key and MIGRATE REPLACE was specified,
+        /// but RI key replacement is not yet supported; no destructive action was taken.</summary>
+        SkippedReplaceNotSupported,
+
         /// <summary>Publish failed due to an exception or store-level error (logged).</summary>
         Failed,
     }

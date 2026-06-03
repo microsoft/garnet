@@ -112,8 +112,9 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Both Success and SkippedAlreadyExists are valid outcomes: the destination
-                // is in a consistent state and the migration protocol can continue.
+                // Success, SkippedAlreadyExists, and SkippedReplaceNotSupported are all
+                // non-error outcomes: the destination is in a consistent state and the
+                // migration protocol can continue. Only Failed is propagated as an error.
                 receiveActivity.LogActivity(logger, keyBytes);
                 Reset();
             }
