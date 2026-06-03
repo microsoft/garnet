@@ -2451,5 +2451,45 @@ namespace Garnet.test
                 ClassicAssert.AreEqual($"value-{i:000}-pad", got, $"field-{i:000}");
             }
         }
+
+        /// <summary>
+        /// Verifies that <see cref="RangeIndexManager.KeyExists"/> correctly reports presence
+        /// for keys of every type (string, hash, sorted-set, RangeIndex) and absence for
+        /// non-existent keys. This is the gate used by
+        /// <see cref="RangeIndexManager.PublishMigratedIndex"/> to skip the publish when a
+        /// key with the same name already exists on the destination, regardless of its type.
+        /// </summary>
+        [Test]
+        public void RangeIndexManagerKeyExistsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Populate one key of each common type via the public API.
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "str-key", "string-value"));
+            db.Execute("HSET", "hash-key", "f", "v");
+            db.Execute("ZADD", "zset-key", "1", "m");
+            db.Execute("RI.CREATE", "ri-key", "MEMORY", "CACHESIZE", "65536");
+
+            // Reach into the running server to call the internal helper directly.
+            var storeWrapper = server.Provider.StoreWrapper;
+            var rangeIndexManager = storeWrapper.DefaultDatabase.RangeIndexManager;
+
+            using var localSession = new LocalServerSession(storeWrapper);
+            ref var ctx = ref localSession.storageSession.stringBasicContext;
+
+            // Every populated name reports true regardless of type.
+            ClassicAssert.IsTrue(rangeIndexManager.KeyExists("str-key"u8, ref ctx), "string key should be observed");
+            ClassicAssert.IsTrue(rangeIndexManager.KeyExists("hash-key"u8, ref ctx), "hash key should be observed");
+            ClassicAssert.IsTrue(rangeIndexManager.KeyExists("zset-key"u8, ref ctx), "sorted-set key should be observed");
+            ClassicAssert.IsTrue(rangeIndexManager.KeyExists("ri-key"u8, ref ctx), "RangeIndex key should be observed");
+
+            // Missing key reports false.
+            ClassicAssert.IsFalse(rangeIndexManager.KeyExists("missing-key"u8, ref ctx), "absent key should not be observed");
+
+            // Sanity check the byte-level overload too (covers non-UTF-8-literal paths).
+            ClassicAssert.IsTrue(rangeIndexManager.KeyExists(System.Text.Encoding.ASCII.GetBytes("str-key"), ref ctx));
+            ClassicAssert.IsFalse(rangeIndexManager.KeyExists(System.Text.Encoding.ASCII.GetBytes("nope"), ref ctx));
+        }
     }
 }
