@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -54,13 +55,13 @@ namespace Tsavorite.core
     /// ----------------------------------------------
     /// Consumer park sequence (called when <see cref="TryDequeue"/> returned false):
     ///   1. <c>_signal.Reset()</c>
-    ///   2. <c>Interlocked.Exchange(ref _wakeNeeded, 1)</c>  (full StoreLoad fence)
-    ///   3. Re-check work and <c>_stopped</c>; if anything to do, return
+    ///   2. <c>Interlocked.Exchange(ref _state.WakeNeeded, 1)</c>  (full StoreLoad fence)
+    ///   3. Re-check work and <c>_state.Stopped</c>; if anything to do, return
     ///   4. <c>_signal.Wait()</c>  (parks on futex; 0% CPU at idle)
     /// Producer's wake path runs after publishing the slot sequence:
     ///   <c>Interlocked.MemoryBarrier();</c>
-    ///   <c>if (Volatile.Read(ref _wakeNeeded) != 0) _signal.Set();</c>
-    /// In steady state the consumer is awake (draining a batch) and <c>_wakeNeeded == 0</c>
+    ///   <c>if (Volatile.Read(ref _state.WakeNeeded) != 0) _signal.Set();</c>
+    /// In steady state the consumer is awake (draining a batch) and <c>_state.WakeNeeded == 0</c>
     /// stays cache-stable in the producer's L1; the producer pays one
     /// Interlocked.Increment + one mfence (~10 ns total) per enqueue and never
     /// touches the OS. The consumer wakes once per idle→busy transition
@@ -83,32 +84,10 @@ namespace Tsavorite.core
         private readonly int _mask;
         private readonly long _capacity;
 
-        // ----- producer-shared (atomic) -----
-#pragma warning disable CS0169
-        private long _padA0, _padA1, _padA2, _padA3, _padA4, _padA5, _padA6, _padA7;
-#pragma warning restore CS0169
-        private long _tail;             // claim counter; producers Interlocked.Increment
-#pragma warning disable CS0169
-        private long _padB0, _padB1, _padB2, _padB3, _padB4, _padB5, _padB6, _padB7;
-#pragma warning restore CS0169
-
-        // ----- consumer-only -----
-        private long _head;             // next slot to read (consumer-only writer)
-#pragma warning disable CS0169
-        private long _padC0, _padC1, _padC2, _padC3, _padC4, _padC5, _padC6, _padC7;
-#pragma warning restore CS0169
-
-        // ----- shared signaling state (read by producer on every enqueue) -----
-        // Read by producer on every successful enqueue (cache-hot L1 hit while the
-        // consumer is awake and the line is in S); written by the consumer only at
-        // park / unpark transitions and by Stop(). Co-located with _stopped on its
-        // own cache line so the producer's hot-path read does not bounce with
-        // anything written frequently.
-        private int _wakeNeeded;
-        private volatile bool _stopped;
-#pragma warning disable CS0169
-        private long _padD0, _padD1, _padD2, _padD3, _padD4, _padD5, _padD6;
-#pragma warning restore CS0169
+        // All mutable cross-thread counters live in one cache-line-isolated block (see SpscRingState)
+        // so the producer's Tail writes, the consumer's Head writes, and the shared signaling word
+        // never false-share with each other or with neighboring object fields.
+        private SpscRingState _state;
 
         private readonly ManualResetEventSlim _signal = new(initialState: false, spinCount: 0);
 
@@ -129,23 +108,23 @@ namespace Tsavorite.core
         public int Capacity => _buf.Length;
 
         /// <summary>True after <see cref="Stop"/> has been called.</summary>
-        public bool IsStopped => _stopped;
+        public bool IsStopped => _state.Stopped;
 
         /// <summary>
         /// Signal any consumer parked in <see cref="WaitForWork"/> to exit. The stop
         /// flag is written before the event is set so a consumer whose Reset wiped
-        /// our Set will still observe <c>_stopped == true</c> on its post-fence
+        /// our Set will still observe <c>_state.Stopped == true</c> on its post-fence
         /// recheck and return without blocking.
         /// </summary>
         public void Stop()
         {
-            _stopped = true;
+            _state.Stopped = true;
             _signal.Set();
         }
 
         /// <summary>
         /// Producer enqueue. Multi-producer-safe via a single Interlocked.Increment
-        /// on <see cref="_tail"/>. If the claimed slot has not yet been drained by
+        /// on <see cref="SpscRingState.Tail"/>. If the claimed slot has not yet been drained by
         /// the consumer (ring full at this slot), spins briefly with pure
         /// <see cref="Thread.SpinWait(int)"/>; under sustained backpressure the spin
         /// escalates to <see cref="SpinWait"/> (which yields/sleeps), giving
@@ -154,7 +133,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Enqueue(in T item)
         {
-            long claimed = Interlocked.Increment(ref _tail) - 1;
+            long claimed = Interlocked.Increment(ref _state.Tail) - 1;
             ref var slot = ref _buf[claimed & _mask];
 
             // Wait until this slot is empty for OUR claim (slot.Sequence == claimed).
@@ -198,17 +177,17 @@ namespace Tsavorite.core
         private void WakeIfParked()
         {
             // Lost-wakeup-safe wake. The StoreLoad barrier ensures the seq-write above is
-            // globally visible before we read _wakeNeeded; pairs with the Interlocked.Exchange
+            // globally visible before we read _state.WakeNeeded; pairs with the Interlocked.Exchange
             // on the consumer's park path.
             Interlocked.MemoryBarrier();
-            if (Volatile.Read(ref _wakeNeeded) == 0)
+            if (Volatile.Read(ref _state.WakeNeeded) == 0)
                 return;
             // CLAIM the wake atomically. Only the producer that successfully CASes
-            // _wakeNeeded from 1 to 0 calls Set(), so a burst of N producers after a
+            // _state.WakeNeeded from 1 to 0 calls Set(), so a burst of N producers after a
             // consumer parks issues exactly ONE Set() instead of N. ManualResetEventSlim.Set
             // internally takes a Monitor; without this claim, redundant Sets dominated
             // the profile at ~10% of managed CPU on the read-pending path.
-            if (Interlocked.CompareExchange(ref _wakeNeeded, 0, 1) == 1)
+            if (Interlocked.CompareExchange(ref _state.WakeNeeded, 0, 1) == 1)
                 Wake();
         }
 
@@ -219,7 +198,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryDequeue(out T item)
         {
-            long pos = _head;
+            long pos = _state.Head;
             ref var slot = ref _buf[pos & _mask];
             if (Volatile.Read(ref slot.Sequence) != pos + 1)
             {
@@ -230,7 +209,7 @@ namespace Tsavorite.core
             slot.Value = default;
             // Release-store: re-empties slot for the NEXT round at this index.
             Volatile.Write(ref slot.Sequence, pos + _capacity);
-            _head = pos + 1;
+            _state.Head = pos + 1;
             return true;
         }
 
@@ -259,32 +238,51 @@ namespace Tsavorite.core
             // Phase 2: park. Order is critical for lost-wakeup safety:
             //   (a) Reset signal
             //   (b) Publish wakeNeeded = 1 with a full fence (Interlocked.Exchange)
-            //   (c) Re-check work AND _stopped — the fence at (b) ensures we see all
+            //   (c) Re-check work AND _state.Stopped — the fence at (b) ensures we see all
             //       stores globally ordered before it, including a concurrent Stop's
-            //       _stopped=true write and a concurrent Enqueue's sequence-write.
+            //       _state.Stopped=true write and a concurrent Enqueue's sequence-write.
             //   (d) If still empty and not stopped, Wait.
             _signal.Reset();
-            Interlocked.Exchange(ref _wakeNeeded, 1);
+            Interlocked.Exchange(ref _state.WakeNeeded, 1);
 
-            if (HasWork() || _stopped)
+            if (HasWork() || _state.Stopped)
             {
-                Volatile.Write(ref _wakeNeeded, 0);
+                Volatile.Write(ref _state.WakeNeeded, 0);
                 return;
             }
 
             _signal.Wait();
-            Volatile.Write(ref _wakeNeeded, 0);
+            Volatile.Write(ref _state.WakeNeeded, 0);
         }
 
         /// <summary>Cheap "is the next slot ready for consumer" check.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HasWork()
         {
-            long pos = _head;
+            long pos = _state.Head;
             return Volatile.Read(ref _buf[pos & _mask].Sequence) == pos + 1;
         }
 
         /// <summary>Approximate count (consumer-relative). For diagnostics only.</summary>
-        public long ApproximateCount => Volatile.Read(ref _tail) - Volatile.Read(ref _head);
+        public long ApproximateCount => Volatile.Read(ref _state.Tail) - Volatile.Read(ref _state.Head);
+    }
+
+    /// <summary>
+    /// Cache-line-isolated mutable state for <see cref="SpscRing{T}"/>. Declared as a non-generic top-level
+    /// struct because explicit layout is not permitted on a type nested in a generic type. Five cache lines:
+    /// line 0 and the trailing line are pad (isolating the block from adjacent object fields); <see cref="Tail"/>,
+    /// <see cref="Head"/>, and the signaling word each sit alone on lines 1-3. <see cref="WakeNeeded"/> and
+    /// <see cref="Stopped"/> intentionally share one line — the producer reads WakeNeeded on every enqueue, and
+    /// co-locating the rarely-written Stopped there costs the producer nothing.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 5 * CacheLineBytes)]
+    internal struct SpscRingState
+    {
+        private const int CacheLineBytes = 64;
+
+        [FieldOffset(1 * CacheLineBytes)] public long Tail;          // producer claim counter (Interlocked.Increment)
+        [FieldOffset(2 * CacheLineBytes)] public long Head;          // consumer read cursor (consumer-only writer)
+        [FieldOffset(3 * CacheLineBytes)] public int WakeNeeded;     // shared park/unpark flag
+        [FieldOffset(3 * CacheLineBytes + sizeof(int))] public volatile bool Stopped;
     }
 }
