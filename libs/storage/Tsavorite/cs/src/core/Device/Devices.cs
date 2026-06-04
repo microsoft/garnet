@@ -54,7 +54,7 @@ namespace Tsavorite.core
                 DeviceType.FileStream => new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly, logger: logger),
                 DeviceType.Null => new NullDevice(),
                 DeviceType.LocalMemory => new LocalMemoryDevice(
-                    capacity: capacity > 0 ? capacity : throw new TsavoriteException("LocalMemory requires a positive capacity"),
+                    capacity: capacity,
                     sz_segment: localMemorySegmentSize,
                     parallelism: numCompletionThreads > 0 ? numCompletionThreads : System.Environment.ProcessorCount,
                     latencyMs: localMemoryLatencyMs,

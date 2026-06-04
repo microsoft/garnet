@@ -60,10 +60,16 @@ namespace Tsavorite.core
         private static int t_ringIdxPlusOne;
         private int nextRingIdx;
 
+        // When capacity is unspecified, cap the segment-pointer arrays at this many segments
+        // (≈ 32 KB of overhead per array at 4096 entries). Segments themselves are still lazily
+        // allocated, so this bounds the upper limit of data that can be stored, not the working
+        // set. With the default 1 GB sz_segment this admits 4 TB of virtual address space.
+        private const int DefaultMaxSegments = 4096;
+
         /// <summary>
         /// Constructor.
         /// </summary>
-        /// <param name="capacity">Maximum number of bytes this device can accommodate. Must be &gt; 0 and a multiple of <paramref name="sz_segment"/>.</param>
+        /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity (segments are still allocated lazily, so this only sizes the per-segment lookup arrays).</param>
         /// <param name="sz_segment">Size in bytes of each segment.</param>
         /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Must be &gt;= 1.</param>
         /// <param name="latencyMs">Per-IO simulated wall-clock latency in milliseconds.</param>
@@ -71,17 +77,26 @@ namespace Tsavorite.core
         /// <param name="ringCapacity">Per-ring slot count (power of two). Defaults to 4096.</param>
         /// <param name="fileName">Virtual path used as the device identifier.</param>
         public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 512, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
-            : base(fileName, sector_size, capacity)
+            : base(fileName, sector_size, capacity > 0 ? capacity : checked(sz_segment * DefaultMaxSegments))
         {
-            if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new ArgumentException("LocalMemoryDevice must have a finite capacity.", nameof(capacity));
-            if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity), "capacity must be > 0");
             if (sz_segment <= 0) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be > 0");
             if (sz_segment > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be <= int.MaxValue");
-            if (capacity % sz_segment != 0) throw new ArgumentException("capacity must be a multiple of sz_segment", nameof(capacity));
             if (parallelism < 1) throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 1");
             if (latencyMs < 0) throw new ArgumentOutOfRangeException(nameof(latencyMs), "latencyMs must be >= 0");
             if (ringCapacity <= 0 || (ringCapacity & (ringCapacity - 1)) != 0)
                 throw new ArgumentOutOfRangeException(nameof(ringCapacity), "ringCapacity must be a positive power of two");
+
+            // capacity <= 0 (including CAPACITY_UNSPECIFIED == -1): default to DefaultMaxSegments;
+            // segments are lazily allocated so the only cost of a generous max is the byte[][]/byte*[]
+            // pointer arrays.
+            if (capacity <= 0)
+            {
+                capacity = checked(sz_segment * DefaultMaxSegments);
+            }
+            else if (capacity % sz_segment != 0)
+            {
+                throw new ArgumentException("capacity must be a multiple of sz_segment", nameof(capacity));
+            }
 
             this.sz_segment = sz_segment;
             maxSegments = checked((int)(capacity / sz_segment));
