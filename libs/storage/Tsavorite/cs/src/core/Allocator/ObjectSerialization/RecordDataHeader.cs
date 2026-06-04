@@ -1,496 +1,669 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The header describing the data layout of the record. The record must be pinned.
-    /// The layout is:
+    /// Fixed 8-byte header describing the data layout of the record. Atomic assignment is guaranteed on 64-bit systems because
+    /// the entire header fits in a single aligned <see cref="ulong"/>.
+    /// <para>Layout (low bit to high bit):</para>
     /// <list type="bullet">
-    ///     <item>Length indicator byte: flag bits and the number of bytes in KeyLength and RecordLength (3 bits, for 0-4). The layout of this indicator byte is:
-    ///     <list type="bullet">
-    ///         <item>Indicator bits: 2 bits for any flags we want to add.</item>
-    ///         <item>Number of bytes in Filler: 2 bits. This indicates the extra space available in the record if the used record length does not take the full allocated
-    ///             space, either on initial creation or due to later value shriking or removal of Optional fields. These two bits are ignored unless RecordInfo.HasFiller
-    ///             is set, in which case the value in these two bits must be nonzero, from 1-4. The 2 bits covers 0-3 and are offset by 1, as  they must be nonzero
-    ///             if RecordInfo.HasFiller is set, so there are 1-4 Filler length bytes possible. These 1-4 values are interpreted as:
-    ///                 <list type="bullet">
-    ///                     <item>1-3: this is the number of bytes in the Filler, as there is not enough Filler space for a full int.</item>
-    ///                     <item>4: there are enough extra bytes to hold an int, and that int contains the actual number of Filler bytes. This int is the last 4 bytes
-    ///                         of the RecordLength; i.e. the last int before <see cref="Constants.kRecordAlignment"/>.</item>
-    ///                 </list>
-    ///             </item>
-    ///         <item>Number of bytes in KeyLength: 2 bits. May be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow. The 2 bits covers 0-3 and
-    ///             is offset by 1, as there must always be at least one key byte, so there are 1-4 KeyLength bytes possible. KeyLength is immutable for the life of
-    ///             a record, but may be changed by revivification.</item>
-    ///         <item>Number of bytes in RecordLength: 2 bits. Includes Key and Value length (and other attributes such as optionals) so is nonzero. The 2 bits covers 0-3 and
-    ///             is offset by 1, as there must always be one byte. RecordLength is immutable for the life of the log page, including record revivification; even though
-    ///             namespace and key lengths and optionals may change, the record length does not.</item>
-    ///         </list>
-    ///     </item>
-    ///     <item>Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede the Key data bytes).</item>
-    ///     <item>Record type byte; interpreted by caller</item>
-    ///     <item>RecordLength. The entire allocated record size, from the start of the RecordInfo to the end of the allocation; rounded up to Constants.kRecordAlignment.
-    ///         It must precede KeyLength so it never has to change location, e.g. if Revivification changes the number of KeyLenght bytes.</item>
-    ///     <item>KeyLength. The length of the key</item>
-    ///     <item>Namespace extra data, if any</item>
-    ///     <item>Key data bytes</item>
-    ///     <item>Content, consisting of:
-    ///         <list type="bullet">
-    ///             <item>Value bytes, if any; there may be none, e.g. creating a Key to server as a Tombstone or as a lock.</item>
-    ///             <item>Optional fields, consisting of:</item>
-    ///             <list type="bullet">
-    ///                 <item>ETag, if present</item>
-    ///                 <item>Expiration, if present</item>
-    ///                 <item>ObjectLog position, if the Key is Overflow or the Value is Overflow or Object</item>
-    ///             </list>
-    ///             <item>Filler, if present</item>
-    ///         </list>
-    ///         We do not store ValueLength explicitly; it is derived from RecordLength minus the sizes of Namespace extra bytes if any, Key, Optionals if any, and Filler.
-    ///     </item>
+    ///     <item>Bit 0: <see cref="KeyIsInline"/></item>
+    ///     <item>Bit 1: <see cref="ValueIsInline"/></item>
+    ///     <item>Bit 2: <see cref="ValueIsObject"/></item>
+    ///     <item>Bit 3: <see cref="HasExpiration"/></item>
+    ///     <item>Bit 4: <see cref="HasETag"/></item>
+    ///     <item>Bit 5: Unused1 (reserved for future use, e.g. version toggle).</item>
+    ///     <item>Bits 6–13: <see cref="FillerWords"/> (8-bit count of 8-byte filler words AFTER the implicit alignment padding).
+    ///         The total explicit filler in bytes is <c>FillerWords &lt;&lt; Constants.kRecordAlignmentShift</c>; the filler bytes themselves live at
+    ///         <c>recordBase + alignedSum .. recordBase + alignedSum + (FillerWords &lt;&lt; Constants.kRecordAlignmentShift)</c> and are never read.
+    ///         Maximum representable explicit filler is <see cref="MaxFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 2040 bytes. Records that need more
+    ///         filler are <i>split</i>: the original record retains <see cref="RecordSplitRetainFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 512 bytes
+    ///         of filler and the excess is placed in a new invalid record (see <see cref="SetFiller"/>).</item>
+    ///     <item>Bits 14–23: <see cref="KeyLength"/>. The property returns this raw value for inline keys; for overflow keys
+    ///         it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray already carries the length, so mirroring it
+    ///         in the header would be extra work with no consumer.</item>
+    ///     <item>Bits 24–47: <see cref="ValueLength"/>. The property returns this raw value for inline values; for
+    ///         overflow/object values it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray / IHeapObject
+    ///         already carries the length, so mirroring it in the header would be extra work with no consumer.</item>
+    ///     <item>Bits 48–55: <see cref="RecordType"/> byte; interpreted by caller. (Byte-aligned at byte 6.)</item>
+    ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
+    ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    ///</summary>
-    public unsafe struct RecordDataHeader : IKey
+    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the low <see cref="kKeyLengthBits"/> /
+    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next
+    /// 32 bits stored in the objectId slot at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>)
+    /// the raw RDH fields are restored to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns
+    /// ObjectIdSize" invariant holds.</para>
+    /// <para>RecordLength is no longer stored; it is derived from the header alone:
+    /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
+    /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
+    /// word, a single atomic write to <c>word</c> publishes a fully-consistent new record layout.</para>
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 8)]
+    public struct RecordDataHeader
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        // When assigning these bits, use the highest # in kReservedBitMask#
-        const ulong kReservedBitMask1 = 0 << 7;           // Reserved bit
-        const ulong kReservedBitMask2 = 0 << 6;           // Reserved bit
 
-        // The bottom 6 bits are length bytecounts
-        /// <summary>
-        /// 2 bits (4, 5) for the number of bytes for the Filler Length. There must always be a filler length if RecordInfo.HasFiller is set, so we can store the filler
-        /// size indicator as 2 bits which when offset by 1 allows for 1-4 bytes. If the value is 4, then there are enough bytes to hold an int, and that int is the last 4
-        /// bytes of the record and contains the actual filler length. Otherwise, the value is between 1-3 and is the actual filler length.
-        /// </summary>
-        const int kFillerLengthIndicatorBitMask = (1 << kFillerLengthIndicatorBits) - 1;
-        const int kFillerLengthIndicatorBits = 2;
-        const int kFillerLengthIndicatorShift = kRecordLengthIndicatorBits + kKeyLengthBits;
+        // ── Indicator bits (bits 0-5) ──────────────────────────────────────────────
+        const int kKeyIsInlineBit = 0;
+        const int kValueIsInlineBit = 1;
+        const int kValueIsObjectBit = 2;
+        const int kHasExpirationBit = 3;
+        const int kHasETagBit = 4;
+        const int kUnused1Bit = 5;
 
-        /// <summary>
-        /// 2 bits (2, 3) for the number of bytes for the RecordLength. This must always be nonzero up to 1 &lt;&lt; <see cref="LogSettings.PageSizeBits"/>), which is
-        /// in 4 bytes, and 2 bits covers 0-3 which when adding 1 allows for 1-4 bytes.
-        /// </summary>
-        const int kRecordLengthIndicatorBitMask = (1 << kRecordLengthIndicatorBits) - 1;
-        const int kRecordLengthIndicatorBits = 2;
-        const int kRecordLengthIndicatorShift = kKeyLengthBits;     // Shift bits in the indicator byte
-        const int kRecordLengthShiftInHeader = NumIndicatorBytes * 8; // Shift bytes when storing or retrieving the actual length
+        const ulong kKeyIsInlineMask = 1UL << kKeyIsInlineBit;
+        const ulong kValueIsInlineMask = 1UL << kValueIsInlineBit;
+        const ulong kValueIsObjectMask = 1UL << kValueIsObjectBit;
+        const ulong kHasExpirationMask = 1UL << kHasExpirationBit;
+        const ulong kHasETagMask = 1UL << kHasETagBit;
+        const ulong kUnused1Mask = 1UL << kUnused1Bit;
 
-        /// <summary>
-        /// 2 bits (0, 1) for the number of bytes for the KeyLength. There must always be a key, so we can store the max key size (which is limited by 1 &lt;&lt;
-        /// <see cref="kRecordLengthIndicatorBits"/> and thus allows 4 bytes), and 2 bits covers 0-3 which when adding 1 allows for 1-4 bytes.
-        /// </summary>
-        const int kKeyLengthIndicatorBitMask = (1 << kKeyLengthBits) - 1;
-        const int kKeyLengthBits = 2;
-        const int kKeyLengthIndicatorShift = 0;
-        // keyLengthShiftInHeader is calculated in the code, as it relies on kRecordLengthShiftInHeader
+        // ── FillerWords field (bits 6-13, 8 bits) ──────────────────────────────────
+        const int kFillerWordsShift = 6;
+        const int kFillerWordsBits = 8;
+        const ulong kFillerWordsValueMask = (1UL << kFillerWordsBits) - 1;        // 0xFF
+        const ulong kFillerWordsMask = kFillerWordsValueMask << kFillerWordsShift;
+
+        /// <summary>Maximum value of the <see cref="FillerWords"/> field — represents up to <c>MaxFillerWords * Constants.kRecordAlignment</c> = 2040 bytes
+        /// of explicit filler. Records that need more filler are split (see <see cref="SetFiller"/>).</summary>
+        internal const int MaxFillerWords = (1 << kFillerWordsBits) - 1;          // 255
+
+        /// <summary>Number of bits in the <see cref="RecordSplitRetainFillerWords"/> constant (chosen so the retained filler stays well under
+        /// <see cref="MaxFillerWords"/> but is still a meaningful amount of in-place headroom for future re-growth).</summary>
+        const int kRecordSplitRetainFillerWordsBits = 6;
+
+        /// <summary>When splitting an over-filled record, the original record retains this many filler words
+        /// (= <c>RecordSplitRetainFillerWords * Constants.kRecordAlignment</c> = 512 bytes). The remainder becomes a new invalid record.</summary>
+        internal const int RecordSplitRetainFillerWords = 1 << kRecordSplitRetainFillerWordsBits;     // 64
+
+        // ── KeyLength field (low kKeyLengthBits bits after FillerWords) ─────────────
+        const int kKeyLengthShift = 14;
+        internal const int kKeyLengthBits = 10;
+        internal const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;
+        const ulong kKeyLengthMask = kKeyLengthValueMask << kKeyLengthShift;
+
+        // ── ValueLength field (low kValueLengthBits bits after KeyLength) ───────────
+        const int kValueLengthShift = kKeyLengthShift + kKeyLengthBits;
+        internal const int kValueLengthBits = 24;
+        internal const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1;
+        const ulong kValueLengthMask = kValueLengthValueMask << kValueLengthShift;
+
+        // ── RecordType byte (byte 6 of word; must be byte-aligned: requires kValueLengthShift + kValueLengthBits == 48) ─
+        const int kRecordTypeShift = kValueLengthShift + kValueLengthBits;
+        const ulong kRecordTypeMask = 0xFFUL << kRecordTypeShift;
+
+        // ── Namespace byte (byte 7 of word) ────────────────────────────────────────
+        const int kNamespaceShift = kRecordTypeShift + 8;
+        const ulong kNamespaceMask = 0xFFUL << kNamespaceShift;
+
+        /// <summary>Mask for extracting a single byte from the word.</summary>
+        const ulong ByteMask = 0xFFUL;
+
 #pragma warning restore IDE1006 // Naming Styles
 
-        /// <summary>The maximum number of key length bytes; <see cref="kKeyLengthBits"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxKeyLengthBytes = 1 << kKeyLengthBits;
+        /// <summary>The fixed size of the RecordDataHeader in bytes.</summary>
+        public const int Size = 8;
 
-        /// <summary>The maximum number of value length bytes; see <see cref="kRecordLengthIndicatorBits"/>.</summary>
-        internal const int MaxRecordLengthBytes = 1 << kRecordLengthIndicatorBits;
+        /// <summary>The bit position of the extended-namespace indicator (bit 7 of the namespace byte). The full byte may be split as:
+        /// <list type="bullet">
+        ///     <item>If bit at this position is 0, the lower 7 bits hold the namespace value itself (single-byte namespace).</item>
+        ///     <item>If bit at this position is 1, the lower 7 bits hold the length of the extended-namespace data preceding the key.</item>
+        /// </list>
+        /// Use <c>1 &lt;&lt; ExtendedNamespaceIndicatorBit</c> to obtain the mask, or <see cref="NamespaceIndicatorMask"/> for the value bits.</summary>
+        internal const byte ExtendedNamespaceIndicatorBit = 7;
+        /// <summary>Mask covering the lower 7 bits of the namespace byte (the value bits, excluding the extended-namespace indicator bit).</summary>
+        internal const byte NamespaceIndicatorMask = (1 << ExtendedNamespaceIndicatorBit) - 1;
 
-        /// <summary>The minimum number of total data header bytes--NumIndicatorBytes, 1 byte KeyLength, 1 byte RecordLength</summary>
-        public const int MinHeaderBytes = NumIndicatorBytes + 2;
-        /// <summary>The maximum number of total data header bytes--NumIndicatorBytes, 4 bytes KeyLength, 4 bytes RecordLength</summary>
-        internal const int MaxHeaderBytes = NumIndicatorBytes + 8;
-        /// <summary>The number of data header indicator bytes; currently 3 for the length indicator, Namespace, RecordType.</summary>
-        internal const int NumIndicatorBytes = 3;
+        /// <summary>Offset of the nameSpace byte in the header (byte 7).</summary>
+        internal const byte NamespaceOffsetInHeader = 7;
+        /// <summary>Offset of the recordType byte in the header (byte 6).</summary>
+        internal const byte RecordTypeOffsetInHeader = 6;
 
-        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
-        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
-        internal const byte ExtendedNamespaceIndicatorBit = 1 << 7;
-        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
-        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
-        internal const byte NamespaceIndicatorMask = ExtendedNamespaceIndicatorBit - 1;
+        /// <summary>The 8-byte word backing all fields. All access MUST go through this word to ensure atomic reads/writes.</summary>
+        [FieldOffset(0)]
+        internal ulong word;
 
-        /// <summary>Offset of the nameSpace byte in the header.</summary>
-        internal const byte NamespaceOffsetInHeader = 1;
-        /// <summary>Offset of the recordType byte in the header.</summary>
-        internal const byte RecordTypeOffsetInHeader = 2;
+        // ── Indicator-bit accessors ────────────────────────────────────────────────
 
-        /// <summary>Pointer to the first byte of the header, which is the length indicator byte.</summary>
-        internal byte* HeaderPtr;
+        /// <summary>Whether the record has an ETag optional field.</summary>
+        public readonly bool HasETag => (word & kHasETagMask) != 0;
+        /// <summary>Set the HasETag bit.</summary>
+        public void SetHasETag() => word |= kHasETagMask;
+        /// <summary>Clear the HasETag bit.</summary>
+        public void ClearHasETag() => word &= ~kHasETagMask;
 
-        /// <inheritdoc/>
-        public override readonly string ToString() => ToString("na", "na");
+        /// <summary>Whether the record has an Expiration optional field.</summary>
+        public readonly bool HasExpiration => (word & kHasExpirationMask) != 0;
+        /// <summary>Set the HasExpiration bit.</summary>
+        public void SetHasExpiration() => word |= kHasExpirationMask;
+        /// <summary>Clear the HasExpiration bit.</summary>
+        public void ClearHasExpiration() => word &= ~kHasExpirationMask;
 
-        internal readonly string ToString(string keyString, string valueString)
+        /// <summary>Whether the value is a serialized object (managed heap reference via ObjectIdMap).</summary>
+        public readonly bool ValueIsObject => (word & kValueIsObjectMask) != 0;
+        /// <summary>Set the ValueIsObject bit; also clears ValueIsInline.</summary>
+        public void SetValueIsObject() => word = (word & ~kValueIsInlineMask) | kValueIsObjectMask;
+
+        /// <summary>Whether the value data is stored inline in the record.</summary>
+        public readonly bool ValueIsInline => (word & kValueIsInlineMask) != 0;
+        /// <summary>Set the ValueIsInline bit; also clears ValueIsObject.</summary>
+        public void SetValueIsInline() => word = (word & ~kValueIsObjectMask) | kValueIsInlineMask;
+        /// <summary>Clear the ValueIsInline bit.</summary>
+        public void ClearValueIsInline() => word &= ~kValueIsInlineMask;
+
+        /// <summary>Whether the key data is stored inline in the record.</summary>
+        public readonly bool KeyIsInline => (word & kKeyIsInlineMask) != 0;
+        /// <summary>Set the KeyIsInline bit.</summary>
+        public void SetKeyIsInline() => word |= kKeyIsInlineMask;
+        /// <summary>Clear the KeyIsInline bit.</summary>
+        public void ClearKeyIsInline() => word &= ~kKeyIsInlineMask;
+        /// <summary>Whether the key is overflow (not inline).</summary>
+        public readonly bool KeyIsOverflow => !KeyIsInline;
+        /// <summary>Set the key to overflow (clear KeyIsInline).</summary>
+        public void SetKeyIsOverflow() => word &= ~kKeyIsInlineMask;
+
+        /// <summary>Whether the value is overflow (not inline and not object).</summary>
+        public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
+        /// <summary>Set the value to overflow (clear both ValueIsInline and ValueIsObject).</summary>
+        public void SetValueIsOverflow() => word &= ~(kValueIsInlineMask | kValueIsObjectMask);
+
+        /// <summary>Unused future-toggle bit. Exposed only for diagnostic ToString output.</summary>
+        internal readonly bool Unused1 => (word & kUnused1Mask) != 0;
+
+        /// <summary>Set both key and value to inline.</summary>
+        public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectMask) | kKeyIsInlineMask | kValueIsInlineMask;
+
+        /// <summary>Whether the record is fully inline (both key and value).</summary>
+        public readonly bool RecordIsInline => (word & (kKeyIsInlineMask | kValueIsInlineMask)) == (kKeyIsInlineMask | kValueIsInlineMask);
+
+        /// <summary>Whether the record has any objects (key overflow, value overflow, or value object).</summary>
+        public readonly bool RecordHasObjects => (word & (kKeyIsInlineMask | kValueIsInlineMask)) != (kKeyIsInlineMask | kValueIsInlineMask);
+
+        /// <summary>Whether the record has any optional fields (ETag or Expiration).</summary>
+        public readonly bool HasOptionalFields => (word & (kHasETagMask | kHasExpirationMask)) != 0;
+
+        /// <summary>Whether the record has optional fields or requires ObjectLogPosition (i.e., is not fully inline).</summary>
+        public readonly bool HasOptionalOrObjectFields => (word & (kKeyIsInlineMask | kValueIsInlineMask | kHasETagMask | kHasExpirationMask)) != (kKeyIsInlineMask | kValueIsInlineMask);
+
+        // ── FillerWords accessor ───────────────────────────────────────────────────
+
+        /// <summary>The number of 8-byte filler words BEYOND the implicit-alignment padding. The number of explicit filler bytes is
+        /// <c>FillerWords &lt;&lt; 3</c>; total filler is <c>implicitFiller + (FillerWords &lt;&lt; 3)</c>.</summary>
+        internal int FillerWords
         {
-            if (HeaderPtr == null)
-                return "<empty>";
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-            var recordLength = GetRecordLength();
-            var fillerLength = GetFillerLength(recordLength);
-            var (keyLength, keyAddress) = GetKeyFieldInfo();
-            var (valueLength, valueAdress) = GetValueFieldInfo(*RecordInfoPtr, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-            var fillerLenStr = (*RecordInfoPtr).HasFiller ? fillerLength.ToString() : "na";
-
-            return $"rec b:{numRecordLengthBytes}/o:na/l:{recordLength}"
-                 + $" | key b:{numKeyLengthBytes}/o:{keyAddress - (long)RecordInfoPtr}/l:{keyLength} {keyString}"
-                 + $" | val b:na/o:{valueAdress - (long)RecordInfoPtr}/l:{valueLength}, {valueString}"
-                 + $" | filLen {fillerLenStr} Namespace b:{NamespaceByte}/x:{ExtendedNamespaceLength}, RecordType {RecordType}";
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => (int)((word >> kFillerWordsShift) & kFillerWordsValueMask);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                Debug.Assert((uint)value <= MaxFillerWords, $"FillerWords {value} exceeds {MaxFillerWords}");
+                word = (word & ~kFillerWordsMask) | (((ulong)value & kFillerWordsValueMask) << kFillerWordsShift);
+            }
         }
 
-        internal RecordDataHeader(byte* indicatorPtr) => HeaderPtr = indicatorPtr;
+        /// <summary>Whether the record has any explicit filler beyond alignment padding (i.e., <see cref="FillerWords"/> != 0).
+        /// Provided for diagnostic and back-compat use; most callers should read <see cref="FillerWords"/> directly.</summary>
+        public readonly bool HasFiller => (word & kFillerWordsMask) != 0;
 
-        private readonly RecordInfo* RecordInfoPtr => (RecordInfo*)(HeaderPtr - RecordInfo.Size);
+        // ── Optional/object size helper ────────────────────────────────────────────
 
+        /// <summary>Get the total size of optional fields (ETag + Expiration + ObjectLogPosition if applicable).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetByteCount(long value) => ((sizeof(long) * 8) - BitOperations.LeadingZeroCount((ulong)(value | 1)) + 7) / 8;
+        internal readonly int GetOptionalSize()
+        {
+            var size = HasETag ? LogRecord.ETagSize : 0;
+            if (HasExpiration)
+                size += LogRecord.ExpirationSize;
+            if (!RecordIsInline)
+                size += LogRecord.ObjectLogPositionSize;
+            return size;
+        }
+
+        /// <summary>Initialize the DataHeader for a new record: currently, do nothing. Callers must subsequently invoke
+        /// <see cref="Initialize"/> to publish the full record state (lengths, inline/overflow/object bits, filler).
+        /// <para>Between <c>InitializeForNewRecord</c> and <c>Initialize</c>, the RDH is either zero already from log
+        /// allocation, or has been retrieved from a prior allocation (revivification or retry of failed CAS) and thus must
+        /// retain the original length information, as the record content may not be zero-initialized. If RDH is zero then
+        /// scanner length-walks see a min-length record (<see cref="Constants.FixedHeaderSize"/> = 16 bytes) so they advance
+        /// safely past the partially-allocated slot. See <see cref="GetRecordLength"/> for the zero-RDH guard.</para></summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeForNewRecord() { }
+
+        // ── Field accessors via ulong word bit manipulation ────────────────────────
+
+        /// <summary>The effective KeyLength for record-length calculations.
+        /// <para>For inline keys, returns the raw <see cref="kKeyLengthBits"/>-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
+        /// in the in-memory path).</para>
+        /// <para>The setter always writes the raw <see cref="kKeyLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kKeyLengthBits"/> bits of
+        /// the on-disk overflow key length (the next 32 bits live in the objectId slot at keyAddress); after read-back,
+        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
+        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetKeyLengthRaw"/>.</para></summary>
+        internal int KeyLength
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => KeyIsInline ? (int)((word >> kKeyLengthShift) & kKeyLengthValueMask) : ObjectIdMap.ObjectIdSize;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                Debug.Assert((uint)value <= kKeyLengthValueMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
+                word = (word & ~kKeyLengthMask) | (((ulong)value & kKeyLengthValueMask) << kKeyLengthShift);
+            }
+        }
+
+        /// <summary>Read the raw value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
+        /// where the field may hold the low <see cref="kKeyLengthBits"/> bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthValueMask);
+
+        /// <summary>The effective ValueLength for record-length calculations.
+        /// <para>For inline values, returns the raw <see cref="kValueLengthBits"/>-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
+        /// consumer in the in-memory path).</para>
+        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kValueLengthBits"/> bits of
+        /// the on-disk overflow/object value length (the next 32 bits live in the objectId slot at valueAddress); after read-back,
+        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
+        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
+        internal int ValueLength
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => ValueIsInline ? (int)((word >> kValueLengthShift) & kValueLengthValueMask) : ObjectIdMap.ObjectIdSize;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
+                word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthValueMask) << kValueLengthShift);
+            }
+        }
+
+        /// <summary>Read the raw value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
+        /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthValueMask);
 
         internal readonly int ExtendedNamespaceLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                return (nameSpace & ExtendedNamespaceIndicatorBit) == 0 ? 0 : nameSpace & NamespaceIndicatorMask;
+                var nameSpace = (byte)((word >> kNamespaceShift) & ByteMask);
+                return (nameSpace & (1 << ExtendedNamespaceIndicatorBit)) == 0 ? 0 : nameSpace & NamespaceIndicatorMask;
             }
         }
 
-        /// <summary>Get or set the RecordType byte. Throws an exception if out of range or if there is a conflicting specification for extended-length nameSpace.</summary>
+        /// <summary>Get or the Namespace byte. Set is not implemented as this is immutable after construction; see <see cref="SetNamespaceByteRaw"/>.</summary>
         public readonly byte NamespaceByte
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                if ((nameSpace & ExtendedNamespaceIndicatorBit) != 0)
-                    throw new TsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
+                var nameSpace = (byte)((word >> kNamespaceShift) & ByteMask);
+                if ((nameSpace & (1 << ExtendedNamespaceIndicatorBit)) != 0)
+                    ThrowTsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
                 return nameSpace;
             }
-            set
+        }
+
+        /// <summary>Set the raw namespace byte (including extended namespace indicator).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetNamespaceByteRaw(byte value)
+        {
+            word = (word & ~kNamespaceMask) | ((ulong)value << kNamespaceShift);
+        }
+
+        /// <summary>Get or set the RecordType byte.</summary>
+        public byte RecordType
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => (byte)((word >> kRecordTypeShift) & ByteMask);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => word = (word & ~kRecordTypeMask) | ((ulong)value << kRecordTypeShift);
+        }
+
+        // ── RecordLength derivation (no longer stored) ─────────────────────────────
+        //
+        // For perf, callers that need multiple of {unalignedSum, alignedSum, totalFiller, recordLength} should call
+        // GetRecordLengths(out ...) once instead of calling the individual getters multiple times, because each individual
+        // getter recomputes the unaligned/aligned sum. The unaligned/aligned/filler/record-length chain depends on multiple
+        // header fields, so the redundant work compounds quickly when called in a loop.
+        //
+        // Note: with FillerWords stored in the header word itself, NONE of these helpers need a recordBaseAddress argument
+        // — the explicit filler length is read directly from the FillerWords field, not from a stored int in the record body.
+
+        /// <summary>The unaligned sum of all record components: RecordInfo + DataHeader + ExtendedNamespace + Key + Value + Optionals.
+        /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need aligned sum, filler, or record length —
+        /// it computes everything in one pass.</para></summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetUnalignedComponentSum()
+            => Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
+
+        /// <summary>Aligned sum (rounded up to kRecordAlignment). See perf note on <see cref="GetUnalignedComponentSum"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetAlignedComponentSum()
+            => RoundUp(GetUnalignedComponentSum(), Constants.kRecordAlignment);
+
+        /// <summary>
+        /// Compute all record-length derivations in a single pass. Prefer this over multiple individual getters when you need
+        /// more than one of {unalignedSum, alignedSum, implicitFiller, explicitFiller, recordLength}.
+        /// </summary>
+        /// <param name="unalignedSum">Sum of all record components (no alignment padding).</param>
+        /// <param name="alignedSum">Aligned sum (= recordLength if there is no explicit filler).</param>
+        /// <param name="implicitFiller">Bytes of padding from alignment alone (0..kRecordAlignment-1).</param>
+        /// <param name="explicitFiller">Bytes of padding read from the <see cref="FillerWords"/> field (always a multiple of 8).</param>
+        /// <returns>The total allocated record length (alignedSum + explicitFiller).</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetRecordLengths(out int unalignedSum, out int alignedSum, out int implicitFiller, out int explicitFiller)
+        {
+            // Zero-RDH guard: a freshly-allocated record that has not yet been Initialize()d has word == 0
+            // (no indicator bits, no lengths, no filler, no namespace, no recordType). Scanner length-walks must step past
+            // it as a min-length record (Constants.FixedHeaderSize = 16 bytes) until Initialize publishes the real layout.
+            // We test the full word (not just the key/value-length bitfields) so a degenerate but valid record
+            // with KeyLength=0+ValueLength=0+nonzero indicator/filler/optional/namespace bits is NOT mistaken for unInitialized.
+            if (word == 0)
             {
-                if (value > sbyte.MaxValue)
-                    throw new TsavoriteException($"NamespaceByte value {value} exceeds max allowable {sbyte.MaxValue}");
-                *(HeaderPtr + NamespaceOffsetInHeader) = value;
+                unalignedSum = Constants.FixedHeaderSize;
+                alignedSum = unalignedSum;
+                implicitFiller = 0;
+                explicitFiller = 0;
+                return alignedSum;
             }
+
+            unalignedSum = Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + GetOptionalSize();
+            alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
+            implicitFiller = alignedSum - unalignedSum;
+            explicitFiller = FillerWords << Constants.kRecordAlignmentShift;
+            return alignedSum + explicitFiller;
         }
 
-        /// <summary>Get or set the RecordType byte</summary>
-        public readonly byte RecordType
+        /// <summary>Get the total allocated record length, including any filler.
+        /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetRecordLength()
         {
-            get => *(HeaderPtr + RecordTypeOffsetInHeader);
-            set => *(HeaderPtr + RecordTypeOffsetInHeader) = value;
+            // Zero-RDH guard: see comment in GetRecordLengths. Full-word test rejects degenerate-but-valid records with zero K/V lengths.
+            return word == 0 ? Constants.FixedHeaderSize : GetAlignedComponentSum() + (FillerWords << Constants.kRecordAlignmentShift);
         }
 
-        #region IKey
+        // ── Filler helpers ─────────────────────────────────────────────────────────
 
-        /// <inheritdoc/>
-        public readonly bool IsPinned => true;
+        /// <summary>Get the explicit filler length in bytes (= <c>FillerWords &lt;&lt; 3</c>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetExplicitFillerLength() => FillerWords << Constants.kRecordAlignmentShift;
 
-        /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> KeyBytes
+        /// <summary>Get the total filler length (implicit + explicit).
+        /// <para>NOTE: For perf, prefer <see cref="GetRecordLengths"/> if you also need other related values.</para></summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetTotalFillerLength()
         {
-            get
+            var unalignedSum = GetUnalignedComponentSum();
+            var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
+            return alignedSum - unalignedSum + (FillerWords << Constants.kRecordAlignmentShift);
+        }
+
+        /// <summary>Set the filler for a record given the total filler bytes available (allocatedRecordLength - unalignedSum).
+        /// Computes implicit and explicit portions and writes <see cref="FillerWords"/>.
+        /// <para>If the computed FillerWords value exceeds <see cref="MaxFillerWords"/> (255), the record is split: this RDH retains
+        /// <see cref="RecordSplitRetainFillerWords"/> (64) filler words and the excess becomes a new invalid record placed at
+        /// <c>recordBase + alignedSum + (RecordSplitRetainFillerWords &lt;&lt; Constants.kRecordAlignmentShift)</c>. The new record's RecordInfo (with Invalid set)
+        /// and RDH (inline keys/values, no optionals) are written BEFORE this RDH's FillerWords is updated; this ordering ensures a
+        /// concurrent scanner that reads our OLD RDH will jump over the new (invalid) record (effectively as part of the old record's
+        /// allocated extent), while a scanner that reads our NEW RDH will see the new invalid record as its own next-record entry and
+        /// will properly skip it (because Invalid is set).</para>
+        /// <para>This record splitting is safe to do without any kind of additional locking, because it is still part of the current
+        /// record that we have locked. To make this splitting safe for concurrent scanners, the newly split-off record's RecordInfo
+        /// and RecordDataHeader must be set before the original record's RDH is updated; this ensures that a concurrent scanner will
+        /// see a valid record if it reads the new RDH, and if it still has the old RDH, it will just jump to the end of the original
+        /// record, which effectively just jumps over the new invalid record.</para>
+        /// <para>TODO: REVIVIFICATION — if revivification is active when a split occurs, the newly split-off record should be sent to
+        /// <c>TryTransferToFreeList</c> so the free-record pool can absorb it.</para>
+        /// </summary>
+        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo (only used when a split is required).</param>
+        /// <param name="totalFiller">Total filler bytes = allocatedRecordLength - unalignedSum. Must be non-negative.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetFiller(long recordBaseAddress, int totalFiller)
+        {
+            var fillerWords = ComputeFillerWordsOrSplit(recordBaseAddress, totalFiller);
+            word = (word & ~kFillerWordsMask) | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift);
+        }
+
+        /// <summary>Compute the <see cref="FillerWords"/> value for a given total filler size, performing record-splitting
+        /// if the explicit filler would exceed <see cref="MaxFillerWords"/>.
+        /// <para>Does NOT mutate <see cref="word"/> — returns the computed FillerWords value for the caller to fold into a
+        /// larger atomic word write (e.g. <see cref="Initialize"/> publishes indicator bits, lengths, namespace, recordType,
+        /// AND filler in a single 8-byte word write).</para>
+        /// <para>May write to memory at <c>recordBaseAddress + alignedSum + retainedExplicitFiller</c> if a split occurs,
+        /// publishing the new invalid record's RecordInfo + RDH before returning. The caller MUST then perform its own
+        /// publish of this RDH (typically as part of the surrounding atomic word write) so concurrent scanners see the
+        /// split-off record as either part of this extent (old RDH) or as a separate invalid entry (new RDH).</para>
+        /// </summary>
+        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo (only used if a split is required).</param>
+        /// <param name="totalFiller">Total filler bytes = allocatedRecordLength - unalignedSum. Must be non-negative.</param>
+        /// <returns>The FillerWords value (0..MaxFillerWords) for the caller to encode into the RDH word.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int ComputeFillerWordsOrSplit(long recordBaseAddress, int totalFiller)
+        {
+            Debug.Assert(totalFiller >= 0, $"Total filler {totalFiller} must be non-negative");
+
+            var unalignedSum = GetUnalignedComponentSum();
+            var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
+            var implicitFiller = alignedSum - unalignedSum;
+            var explicitFiller = totalFiller - implicitFiller;
+            Debug.Assert(explicitFiller >= 0, $"Explicit filler {explicitFiller} must be non-negative");
+            Debug.Assert((explicitFiller & (Constants.kRecordAlignment - 1)) == 0, $"Explicit filler {explicitFiller} must be a multiple of kRecordAlignment");
+
+            var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
+            if (fillerWords > MaxFillerWords)
+                fillerWords = SplitOverflowingFiller(recordBaseAddress, alignedSum, explicitFiller);
+            return fillerWords;
+        }
+
+        /// <summary>
+        /// Handle the case where computed <see cref="FillerWords"/> would exceed <see cref="MaxFillerWords"/>: split off the excess into a
+        /// new invalid record placed AFTER this record's retained filler. Returns the <see cref="RecordSplitRetainFillerWords"/> value that
+        /// the caller should write into this record's <see cref="FillerWords"/> field.
+        /// <para>The new split-off record's RecordInfo and RDH are written here, BEFORE the caller updates this record's <see cref="FillerWords"/>.
+        /// This ordering is critical for concurrent-scanner safety: a scanner that reads our OLD (pre-split) RDH will treat the entire
+        /// pre-split extent as one record and step over the new invalid record without inspecting it; a scanner that reads our NEW
+        /// (post-split) RDH will encounter the new invalid record as a separate entry and will properly skip it (because Invalid is set).</para>
+        /// </summary>
+        private static unsafe int SplitOverflowingFiller(long recordBaseAddress, int alignedSum, int explicitFiller)
+        {
+            var retainedExplicitFiller = RecordSplitRetainFillerWords << Constants.kRecordAlignmentShift;        // 512 bytes
+            var newRecordBytes = explicitFiller - retainedExplicitFiller;          // must be > 0 since fillerWords > MaxFillerWords > RecordSplitRetainFillerWords
+            Debug.Assert(newRecordBytes >= Constants.FixedHeaderSize, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({Constants.FixedHeaderSize})");
+            Debug.Assert((newRecordBytes & (Constants.kRecordAlignment - 1)) == 0, $"Split-off region {newRecordBytes} must be a multiple of kRecordAlignment");
+
+            var newRecordAddress = recordBaseAddress + alignedSum + retainedExplicitFiller;
+
+            // The new record holds: RecordInfo + RDH + (the rest as inline "value" bytes; no key, no optionals).
+            // If the rest doesn't fit in the ValueLength field + 8-bit FillerWords*8, recursively split via SetFiller.
+            var newInnerBytes = newRecordBytes - Constants.FixedHeaderSize;        // bytes available for value + filler
+            int newValueLength = newInnerBytes <= LogSettings.MaxInlineValueSizeLimit ? newInnerBytes : LogSettings.MaxInlineValueSizeLimit;
+            var newRemainingFiller = newInnerBytes - newValueLength;
+
+            // Step 1: Write the new record's RecordInfo (Invalid set) FIRST.
+            var newRecInfo = RecordInfo.InitialValid;
+            newRecInfo.SetInvalid();
+            *(RecordInfo*)newRecordAddress = newRecInfo;
+
+            // Step 2: Build and write the new record's RDH (inline keys/values, no optionals, KeyLength=0, ValueLength as computed).
+            //   Then, if there's leftover filler, recursively call SetFiller on the new record's RDH.
+            var newRDH = new RecordDataHeader
             {
-                var ptr = HeaderPtr - RecordInfo.Size;
+                word = kKeyIsInlineMask | kValueIsInlineMask
+                     | (((ulong)newValueLength & kValueLengthValueMask) << kValueLengthShift)
+            };
+            // If there's still leftover filler after maxing out ValueLength, set it (this may itself trigger another split).
+            if (newRemainingFiller > 0)
+                newRDH.SetFiller(newRecordAddress, newRemainingFiller);
 
-                var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-                var offsetToKeyStart = GetOffsetToKeyStart(headerLength);
+            *(RecordDataHeader*)(newRecordAddress + RecordInfo.Size) = newRDH;
 
-                var keyStartPtr = ptr + offsetToKeyStart;
-                var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+            // TODO: REVIVIFICATION — if revivification is active, send this newly split-off record to TryTransferToFreeList so
+            // the free-record pool can absorb it.
 
-                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
-            }
+            // Step 3: Caller writes RecordSplitRetainFillerWords into this record's FillerWords (atomic update of the original RDH).
+            return RecordSplitRetainFillerWords;
         }
 
-        /// <inheritdoc/>
-        public readonly bool HasNamespace
+        // ── Key and Value field info ───────────────────────────────────────────────
+
+        /// <summary>Get the offset of the key data, relative to the RecordInfo start.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly int GetOffsetToKeyStart() => Constants.FixedHeaderSize + ExtendedNamespaceLength;
+
+        /// <summary>Get the key length and key data address.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo(long recordBaseAddress)
+            => (KeyLength, recordBaseAddress + GetOffsetToKeyStart());
+
+        /// <summary>Get the value length and value data address.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (int valueLength, long valueAddress) GetValueFieldInfo(long recordBaseAddress)
+            => (ValueLength, recordBaseAddress + GetOffsetToKeyStart() + KeyLength);
+
+        /// <summary>Get all KV lengths, optional sizes, filler, and value address in a single pass for perf.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (int keyLength, int valueLength) GetKVLengths(long recordBaseAddress, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen, out long valueAddress)
         {
-            get
-            {
-                // True if non-0 OR ExtendedNamespaceIndicatorBit is et
-                var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                return nameSpace != 0;
-            }
+            eTagLen = HasETag ? LogRecord.ETagSize : 0;
+            expirationLen = HasExpiration ? LogRecord.ExpirationSize : 0;
+            objectLogPositionLen = RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
+
+            var keyLength = KeyLength;
+            var valueLength = ValueLength;
+            fillerLen = GetTotalFillerLength();
+
+            valueAddress = recordBaseAddress + GetOffsetToKeyStart() + keyLength;
+            return (keyLength, valueLength);
         }
 
-        /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> NamespaceBytes
+        // ── Initialize ─────────────────────────────────────────────────────────────
+
+        /// <summary>Initialize the DataHeader for a new or revivified record. Sets the field lengths, namespace, recordType,
+        /// the indicator bits (KeyIsInline/Overflow and ValueIsInline/Overflow/Object based on <paramref name="sizeInfo"/>),
+        /// and the FillerWords field — all in a SINGLE atomic 8-byte word write so a concurrent scanner observes either the
+        /// pre-Initialize zero RDH or the fully-formed post-Initialize state, never a partial intermediate.
+        /// <para>The inline/overflow/object decision flows directly from <paramref name="sizeInfo"/> — callers must NOT
+        /// subsequently call <see cref="SetKeyIsInline"/>/<see cref="SetKeyIsOverflow"/>/<see cref="SetValueIsInline"/>/
+        /// <see cref="SetValueIsOverflow"/>/<see cref="SetValueIsObject"/> on the RDH (each of those would be a separate
+        /// word write, breaking atomicity).</para></summary>
+        /// <param name="recordBaseAddress">Physical address of the start of the RecordInfo.</param>
+        /// <param name="sizeInfo">Record size information.</param>
+        /// <param name="keyAddress">Output: physical address of key data.</param>
+        /// <param name="namespaceAddress">Output: physical address of namespace byte.</param>
+        /// <param name="valueAddress">Output: physical address of value data.</param>
+        /// <returns>The fixed header length (always <see cref="Size"/>).</returns>
+        internal int Initialize(in RecordSizeInfo sizeInfo, out long keyAddress, out long namespaceAddress, out long valueAddress, long recordBaseAddress)
         {
-            get
-            {
-                Debug.Assert(HasNamespace, "Should call if !HasNamespace");
-
-                var nameSpacePtr = (HeaderPtr + NamespaceOffsetInHeader);
-
-                if (((*nameSpacePtr) & ExtendedNamespaceIndicatorBit) == 0)
-                {
-                    // Single byte namespace
-                    return new ReadOnlySpan<byte>(nameSpacePtr, 1);
-                }
-                else
-                {
-                    throw new TsavoriteException($"Extended namespaces not yet implemented");
-                }
-            }
-        }
-
-        #endregion
-
-        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, out long keyAddress, out long namespaceAddress, out long valueAddress)
-        {
-            // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
             var valueLength = sizeInfo.InlineValueSize;
-            var recordLength = sizeInfo.AllocatedInlineRecordSize;
-            var numRecordLengthBytes = sizeInfo.RecordLengthBytes;
-            Debug.Assert(numRecordLengthBytes == GetByteCount(recordLength), "RecordLengthBytes does not match RecordLength");
-            var numKeyLengthBytes = sizeInfo.KeyLengthBytes;
-            Debug.Assert(numKeyLengthBytes == GetByteCount(keyLength), "KeyLengthBytes does not match KeyLength");
-
-            // If this was from revivification, we should have <= keyLengthBytes and == recordLengthBytes. Don't change keyLengthBytes, as that would move the RecordLength
-            // field in the header and that might not be an atomic update if it crosses a ulong boundary.
-            if (sizeInfo.IsRevivifiedRecord)
-            {
-                var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
-                if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
-                    ThrowTsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
-                numKeyLengthBytes = revivKeyLenBytes;
-            }
-
-            // Fill in the indicator byte.
-            *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) << kKeyLengthIndicatorShift));
-
-            // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
-            // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
-            // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
             var extendedNamespaceSize = sizeInfo.FieldInfo.ExtendedNamespaceSize;
-            namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
-            *(byte*)namespaceAddress = (byte)(extendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (extendedNamespaceSize & NamespaceIndicatorMask)) : 0);
-            *(HeaderPtr + RecordTypeOffsetInHeader) = sizeInfo.FieldInfo.RecordType;
+            var namespaceByte = (byte)(extendedNamespaceSize > 0 ? ((1 << ExtendedNamespaceIndicatorBit) | (extendedNamespaceSize & NamespaceIndicatorMask)) : 0);
+            var recordType = sizeInfo.FieldInfo.RecordType;
 
-            // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
-            // If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet and thus not in optionals, but we need to reserve the
-            // ObjectLogPosition space and not let it be part of FillerLength. Do this here after we have initialized the nameSpace byte.
-            var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - extendedNamespaceSize - keyLength - valueLength - sizeInfo.ObjectLogPositionSize);
+            // Build indicator bits from sizeInfo so Initialize is the single source of truth for inline/overflow/object.
+            ulong indicatorBits = 0;
+            if (sizeInfo.KeyIsInline) indicatorBits |= kKeyIsInlineMask;
+            if (sizeInfo.ValueIsInline)
+                indicatorBits |= kValueIsInlineMask;
+            else if (sizeInfo.ValueIsObject)
+                indicatorBits |= kValueIsObjectMask;
+            // (else: ValueIsOverflow, so both ValueIsInline and ValueIsObject are left clear)
 
-            // Set RecordLength into the header. Header format is (low->high): <Indicator byte><Namespace byte><RecordType byte><RecordLength><KeyLength (may overflow ulong)>.
-            // RecordLength will always fit in the header word. Zero out bits before we assign them in case we have non-zeroinitialized space.
-            var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
-            *(ulong*)HeaderPtr = (*(ulong*)HeaderPtr & ~(recordLengthMask << kRecordLengthShiftInHeader)) | (((ulong)recordLength & recordLengthMask) << kRecordLengthShiftInHeader);
+            // Compute filler. We have all the values locally, so compute unalignedSum/alignedSum directly (without
+            // calling helpers that depend on the RDH word being populated).
+            var unalignedSum = Constants.FixedHeaderSize + extendedNamespaceSize + keyLength + valueLength + sizeInfo.ObjectLogPositionSize;
+            var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
+            var totalFiller = sizeInfo.AllocatedInlineRecordSize - unalignedSum;
+            var implicitFiller = alignedSum - unalignedSum;
+            var explicitFiller = totalFiller > implicitFiller ? totalFiller - implicitFiller : 0;
+            var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
+            if (fillerWords > MaxFillerWords)
+                fillerWords = SplitOverflowingFiller(recordBaseAddress, alignedSum, explicitFiller);
 
-            // Set KeyLength into the header. The key length actual bytes may fit along with everything else in the header into a single ulong; otherwise the key length bytes
-            // overflow the ulong. To access they key length, offset IndicatorPtr to align to point to the bytes of a ulong with the KeyLength space as high bytes (remembering
-            // that in little endian, the high bytes are the "rightmost" bytes of a byte*). If the entire header (including key length) fits in a ulong this will back up into
-            // the RecordInfo space; otherwise, we will subtract the negative adjustment and thus "advance" IndicatorPtr. (We don't advance to make KeyLength the low bits,
-            // because that could encounter end-of-record if length is zero). Zero out bits before we assign them in case we have non-zeroinitialized space.
-            var keyLengthMask = (1UL << (numKeyLengthBytes * 8)) - 1;
-            var ptrBackup = sizeof(ulong) - NumIndicatorBytes - numRecordLengthBytes - numKeyLengthBytes;   // If negative, the pointer advances
-            var keyLenPtr = (ulong*)(HeaderPtr - ptrBackup);
-            var keyLengthShiftInHeader = (sizeof(ulong) - numKeyLengthBytes) * 8;
-            *keyLenPtr = (*keyLenPtr & ~(keyLengthMask << keyLengthShiftInHeader)) | (((ulong)keyLength & keyLengthMask) << keyLengthShiftInHeader);
+            // Note: We do not set HasETag or HasExpiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
+            // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
 
-            keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
+            // SINGLE atomic 8-byte word write: indicator bits + FillerWords + KeyLength + ValueLength + Namespace + RecordType.
+            // A concurrent scanner sees either the prior zero RDH (which routes through the GetRecordLength zero-RDH guard
+            // to a 16-byte advance) or this fully-formed post-Initialize state.
+            word = indicatorBits
+                 | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift)
+                 | (((ulong)keyLength & kKeyLengthValueMask) << kKeyLengthShift)
+                 | (((ulong)valueLength & kValueLengthValueMask) << kValueLengthShift)
+                 | ((ulong)namespaceByte << kNamespaceShift)
+                 | ((ulong)recordType << kRecordTypeShift);
+
+            namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
+            keyAddress = recordBaseAddress + Constants.FixedHeaderSize + extendedNamespaceSize;
             valueAddress = keyAddress + keyLength;
 
-            return headerLength;
+            return Size;
         }
 
-        internal readonly void InitializeForRevivification(ref RecordInfo recordInfo, ref RecordSizeInfo sizeInfo)
+        /// <summary>Prepare the header for revivification: clear filler, namespace, and recordType; preserve inline bits and lengths.
+        /// This is called only when an existing allocation is being reused (revivification or retry on CAS failure), so preserves length info.
+        /// <para>Atomicity: builds the cleaned RDH in a local then publishes via a single 8-byte word write (<c>word = local.word</c>).
+        /// Concurrent scanners observe either the pre-revivification or post-revivification state, never an intermediate.</para></summary>
+        internal void InitializeForRevivification(ref RecordSizeInfo sizeInfo, long recordBaseAddress)
         {
-            Debug.Assert(recordInfo.Invalid, "Expected record to be Invalid in InitializeForRevivification");
-            Debug.Assert(recordInfo.KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
-            Debug.Assert(recordInfo.ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
-            Debug.Assert(!recordInfo.HasETag && !recordInfo.HasExpiration, "Expected no optionals in InitializeForRevivification");
+            Debug.Assert(KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
+            Debug.Assert(ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
+            Debug.Assert(!HasETag && !HasExpiration, "Expected no optionals in InitializeForRevivification");
 
-            // See Initialize() for formatting notes.
-            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, any movement
-            // of RecordLength might not be atomic if it crosses the ulong boundary, so we just don't allow it).
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            Debug.Assert(GetByteCount(sizeInfo.InlineKeySize) <= numKeyLengthBytes, "Cannot exceed previous Key size bytes in InitializeForRevivification");
-            var recordLength = GetRecordLength(numRecordLengthBytes);
+            var recordLength = GetRecordLength();
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
-            // We have no optionals, so just set up with key length and recordLength; no filler.
-            recordInfo.ClearHasFiller();
-            *HeaderPtr = (byte)(*HeaderPtr & ~(kFillerLengthIndicatorBitMask << kFillerLengthIndicatorShift));
+            // Build the cleaned RDH in a local: clear FillerWords + Namespace + RecordType bytes; preserve inline bits + lengths.
+            var localDataHeader = this;
+            localDataHeader.FillerWords = 0;
+            localDataHeader.SetNamespaceByteRaw(0);
+            localDataHeader.RecordType = 0;
 
-            *(HeaderPtr + NamespaceOffsetInHeader) = 0;
-            *(HeaderPtr + RecordTypeOffsetInHeader) = 0;
+            // Single atomic publish via word assignment through `ref this`.
+            word = localDataHeader.word;
 
-            // RecordLength is already set and we don't set key here; we wait for Revivification to do that. But we must update the sizeInfo
-            // to ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called.
+            // Ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called
             sizeInfo.AllocatedInlineRecordSize = recordLength;
             sizeInfo.SetIsRevivifiedRecord();
         }
 
-        /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
-        /// <param name="newRecordLength"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetRecordLength(int newRecordLength)
+        // ── ToString ───────────────────────────────────────────────────────────────
+
+        /// <inheritdoc/>
+        public override readonly string ToString() => ToString("na", "na");
+
+        internal readonly string ToString(string keyString, string valueString)
         {
-            // This might leave extra bytes in the record length field if the new length uses fewer bytes than the previous length but this is only
-            // temporary so it is acceptable.
-            var recordLengthMask = (1UL << (DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes * 8)) - 1;
-            *(ulong*)HeaderPtr = (*(ulong*)HeaderPtr & ~(recordLengthMask << kRecordLengthShiftInHeader)) | (((ulong)newRecordLength & recordLengthMask) << kRecordLengthShiftInHeader);
-        }
+            if (word == 0)
+                return "<empty>";
+            static string bstr(bool value) => value ? "T" : "F";
+            static string bstr01(bool value) => value ? "1" : "0";
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int numKeyLengthBytes, int numRecordLengthBytes) DeconstructKVByteLengths(out int headerLength)
-        {
-            var indicator = *HeaderPtr;
-            var numRecordLengthBytes = ((indicator >> kRecordLengthIndicatorShift) & kRecordLengthIndicatorBitMask) + 1;    // RecordLength does not allow zero, so add 1
-            var numKeyLengthBytes = ((indicator >> kKeyLengthIndicatorShift) & kKeyLengthIndicatorBitMask) + 1;             // KeyLength does not allow zero, so add 1
-            headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            return (numKeyLengthBytes, numRecordLengthBytes);
-        }
+            var keyLength = KeyLength;
+            var valueLength = ValueLength;
 
-        /// <summary>Get the offset of the key, relative to the <see cref="RecordInfo"/> start.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetOffsetToKeyStart(int headerLength) => RecordInfo.Size + headerLength + ExtendedNamespaceLength;
+            var recordLen = GetRecordLengths(out var unalignedSum, out var alignedSum, out var implicitFiller, out var explicitFiller);
+            var recordLenStr = $"act: {alignedSum}, all: {recordLen}";
+            var fillerLenStr = $"[i:{implicitFiller} + e:{explicitFiller}({FillerWords}w) = {implicitFiller + explicitFiller}]";
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength(RecordInfo recordInfo, int recordLength)
-            => recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
+            var keyStr = KeyIsInline ? "inl" : "ovf";
+            var valStr = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength(RecordInfo recordInfo, out int recordLength)
-        {
-            recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-            return recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly int GetFillerLength(int recordLength)
-        {
-            var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
-            return fillerLen < 3 ? fillerLen + 1 : *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetFillerLength(ref RecordInfo recordInfo, int recordLength, int fillerLength)
-        {
-            Debug.Assert(fillerLength >= 0, $"Filler length {fillerLength} must be nonnegative");
-
-            if (fillerLength > 0)
-            {
-                recordInfo.SetHasFiller();
-                if (fillerLength <= 3)
-                {
-                    // Store only the indicator bits; we don't have space for the full int. Mask out previous bits in the filler space first.
-                    *HeaderPtr = (byte)((*HeaderPtr & ~(kFillerLengthIndicatorBitMask << kFillerLengthIndicatorShift)) | ((fillerLength - 1) << kFillerLengthIndicatorShift));
-                }
-                else
-                {
-                    // Store the indicator bits as 3, and the filler length in the int at the end of the record. 3 is "all bits set" in the filler space, so we don't need to mask out previous bits there.
-                    *HeaderPtr |= 3 << kFillerLengthIndicatorShift;
-                    *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize) = fillerLength;
-                }
-            }
-            else
-            {
-                recordInfo.ClearHasFiller();
-                *HeaderPtr = (byte)(*HeaderPtr & ~(kFillerLengthIndicatorBitMask << kFillerLengthIndicatorShift));
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength(int numRecordLengthBytes)
-        {
-            // See notes in Initialize() about layout of RecordLength in header and for the "set" side of this--keep them in sync.
-            var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
-            return (int)((*(ulong*)HeaderPtr >> kRecordLengthShiftInHeader) & recordLengthMask);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetKeyLength(int numKeyLengthBytes, int numRecordLengthBytes)
-        {
-            var keyLengthMask = (1UL << (numKeyLengthBytes * 8)) - 1;
-            var ptrBackup = sizeof(ulong) - NumIndicatorBytes - numRecordLengthBytes - numKeyLengthBytes;   // If negative, the pointer advances
-            var keyLenPtr = (ulong*)(HeaderPtr - ptrBackup);
-            var keyLengthShiftInHeader = (sizeof(ulong) - numKeyLengthBytes) * 8;
-            return (int)((*keyLenPtr >> keyLengthShiftInHeader) & keyLengthMask);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo)
-            => GetKVLengths(recordInfo, out _ /* recordLength */, out _ /* eTagLen */, out _ /* expirationLen */, out _ /* objectLogPositionLen */, out _ /* fillerLen */, out _ /*valueAddress*/);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen, out long valueAddress)
-        {
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-
-            // Include changeable fields that are set or cleared by the caller, and the objectLogPosition which is indirectly set by the caller when changing
-            // the state of recordInfo.RecordIsInline. Namespace is not included; immutable and conceptually part of the key, it is not part of the record content.
-            // Returning these is useful for length-change calculations, and we must retrieve them anyway to determine object size.
-            eTagLen = recordInfo.HasETag ? LogRecord.ETagSize : 0;
-            expirationLen = recordInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
-            objectLogPositionLen = recordInfo.RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
-
-            // See note in Initialize about layout of lengths in header
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            recordLength = GetRecordLength(numRecordLengthBytes);
-            fillerLen = GetFillerLength(recordInfo, recordLength);
-
-            // The value length is the recordLength minus everything other than the value. To get valueAddress, back up the HeaderPtr to the start of the RecordInfo then add key offset and size.
-            var keyOffset = RecordInfo.Size + headerLength + ExtendedNamespaceLength;
-            valueAddress = (long)HeaderPtr - RecordInfo.Size + keyOffset + keyLength;
-            return (keyLength, recordLength - keyOffset - keyLength - recordInfo.GetOptionalSize() - fillerLen);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo() => GetKeyFieldInfo(out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo(out int numKeyLengthBytes, out int numRecordLengthBytes)
-        {
-            (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
-
-            // See note in Initialize about layout of lengths in header
-            var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            var keyAddress = (long)(HeaderPtr + headerLength + ExtendedNamespaceLength);
-            return (keyLength, keyAddress);
-        }
-
-        /// <summary>
-        /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo)
-            => GetValueFieldInfo(recordInfo, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-
-        /// <summary>
-        /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo, out int keyLength, out int numKeyLengthBytes, out int numRecordLengthBytes)
-        {
-            (keyLength, var keyAddress) = GetKeyFieldInfo(out numKeyLengthBytes, out numRecordLengthBytes);
-            var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-
-            var recordLength = GetRecordLength(numRecordLengthBytes);
-            var fillerLength = GetFillerLength(recordInfo, recordLength);
-
-            // The value length is the recordLength minus everything other than the value.
-            var valueLength = recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - recordInfo.GetOptionalSize() - fillerLength;
-
-            // Move past the key and value length bytes and the key data to the start of the value data
-            return (valueLength, keyAddress + keyLength);
-        }
-
-        internal readonly int GetAllocatedRecordSize() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-
-        internal readonly int GetActualRecordSize(RecordInfo recordInfo)
-        {
-            var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
-            return recordLength - GetFillerLength(recordInfo, recordLength);
+            return $"rec l:{recordLenStr}"
+                 + $" | key {keyStr}/l:{keyLength} {keyString}"
+                 + $" | val {valStr}/l:{valueLength}, {valueString}"
+                 + $" | ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}"
+                 + $" | fil {fillerLenStr} Ns:{(byte)((word >> kNamespaceShift) & ByteMask)}/x:{ExtendedNamespaceLength}, RT:{RecordType}"
+                 + $" | Unused1 {bstr01(Unused1)}";
         }
     }
 }

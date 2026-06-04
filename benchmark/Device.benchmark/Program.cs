@@ -25,8 +25,19 @@ namespace Device.benchmark
         // Add a new field to signal start event
         static readonly ManualResetEventSlim startEvent = new ManualResetEventSlim(false);
 
-        // Add a new field to collect total operations
-        internal static long totalOperations = 0;
+        // ---- Run-phase counters. Reset between thread settings. -----------------------
+        // totalSubmitted    = ops kicked off by workers (does not imply success).
+        // totalCompletedOk  = ops whose callback returned errorCode == 0 (real throughput).
+        // totalErrors       = ops whose callback returned errorCode != 0.
+        // ErrorCounts[code] = per-code histogram (cap 256; rare codes outside that range
+        //                     still contribute to totalErrors but not the histogram).
+        // The old `totalOperations` field is kept only as an alias for totalSubmitted so
+        // anyone scraping `... operations in ...` strings doesn't break, but the new
+        // "throughput" field below is computed from totalCompletedOk.
+        internal static long totalSubmitted = 0;
+        internal static long totalCompletedOk = 0;
+        internal static long totalErrors = 0;
+        internal static readonly long[] ErrorCounts = new long[256];
 
         static void Main(string[] args)
         {
@@ -42,6 +53,7 @@ namespace Device.benchmark
         {
             Console.WriteLine("<<<<<<< Start Benchmark Configuration >>>>>>>>");
             Console.WriteLine($"Device Type: {opts.DeviceType}");
+            Console.WriteLine($"IO Backend: {opts.IoBackend}");
             Console.WriteLine($"File Name: {opts.FileName}");
             Console.WriteLine($"File Size: {opts.FileSize}");
             Console.WriteLine($"Sector Size: {opts.SectorSize}");
@@ -64,7 +76,7 @@ namespace Device.benchmark
             }
 
             // Create disk file
-            using var device = GetDevice(opts.DeviceType, opts.FileName);
+            using var device = GetDevice(opts);
 
             // Set IO throttle limit
             device.ThrottleLimit = opts.ThrottleLimit > 0 ? opts.ThrottleLimit : int.MaxValue;
@@ -89,7 +101,10 @@ namespace Device.benchmark
                     ManualResetEventSlim[] doneEvents = new ManualResetEventSlim[threads];
                     timeUpEvent.Reset();
                     startEvent.Reset();
-                    Interlocked.Exchange(ref totalOperations, 0);
+                    Interlocked.Exchange(ref totalSubmitted, 0);
+                    Interlocked.Exchange(ref totalCompletedOk, 0);
+                    Interlocked.Exchange(ref totalErrors, 0);
+                    for (int i = 0; i < ErrorCounts.Length; i++) Interlocked.Exchange(ref ErrorCounts[i], 0);
                     BenchWorker[] bworkers = new BenchWorker[threads];
                     for (int t = 0; t < threads; t++)
                     {
@@ -127,11 +142,28 @@ namespace Device.benchmark
                     foreach (var worker in workers)
                         worker.Join();
 
-                    long ops = Interlocked.Read(ref totalOperations);
+                    long submitted = Interlocked.Read(ref totalSubmitted);
+                    long completedOk = Interlocked.Read(ref totalCompletedOk);
+                    long errors = Interlocked.Read(ref totalErrors);
                     double seconds = sw.Elapsed.TotalSeconds;
-                    double throughput = ops / seconds;
+                    double throughput = completedOk / seconds;
 
-                    Console.WriteLine($"Benchmark finished: {ops} operations in {seconds:F2} seconds, throughput: {throughput:F2} ops/sec");
+                    // Throughput is from SUCCESSFUL completions only (errored ops are NOT real
+                    // IOPS). The submitted/error counts are reported alongside so a misleading
+                    // number can be spotted instantly: a healthy run has errors=0 and
+                    // submitted ≈ completedOk; a flooded run has errors > 0 (most often
+                    // Status::IOError=4, kernel libaio EAGAIN — try a smaller --throttle-limit).
+                    Console.WriteLine($"Benchmark finished: {completedOk} ok, {errors} err, {submitted} submitted in {seconds:F2} s, throughput: {throughput:F2} ops/sec");
+                    if (errors > 0)
+                    {
+                        Console.Write("  error breakdown:");
+                        for (int code = 0; code < ErrorCounts.Length; code++)
+                        {
+                            long c = Interlocked.Read(ref ErrorCounts[code]);
+                            if (c > 0) Console.Write($" code{code}={c}");
+                        }
+                        Console.WriteLine();
+                    }
                     Thread.Sleep(2000);
                 }
             }
@@ -155,18 +187,39 @@ namespace Device.benchmark
             for (int i = 0; i < tempBufferSectors; i++)
                 Buffer.BlockCopy(ExpectedData, 0, tempBuffer, i * sectorSize, sectorSize);
 
-            int totalBuffers = opts.FileSize / tempBufferSize;
-            for (int i = 0; i < totalBuffers; i++)
+            long totalBuffers = opts.FileSize / tempBufferSize;
+            for (long i = 0; i < totalBuffers; i++)
                 DeviceUtils.WriteInto(device, (ulong)(i * tempBufferSize), tempBuffer);
         }
 
-        static IDevice GetDevice(DeviceType deviceType, string fileName) => deviceType switch
+        static IDevice GetDevice(Options opts)
         {
-            DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, true, false),
-            DeviceType.Native when OperatingSystem.IsLinux() => new NativeStorageDevice(fileName, true, true, -1, 1, null),
-            DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
-            DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
-            _ => throw new ArgumentOutOfRangeException()
+            var deviceType = opts.DeviceType;
+            var fileName = opts.FileName;
+            return deviceType switch
+            {
+                DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, true, false),
+                DeviceType.Native when OperatingSystem.IsLinux() => new NativeStorageDevice(
+                    fileName,
+                    deleteOnClose: true,
+                    disableFileBuffering: true,
+                    capacity: -1,
+                    numCompletionThreads: opts.CompletionThreads > 0 ? opts.CompletionThreads : 1,
+                    ioBackend: ParseBackend(opts.IoBackend),
+                    logger: null),
+                DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
+                DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
+                _ => throw new ArgumentOutOfRangeException()
+            };
+        }
+
+        static NativeStorageDevice.IoBackend ParseBackend(string s) => (s ?? "default").ToLowerInvariant() switch
+        {
+            "default" => NativeStorageDevice.IoBackend.Default,
+            "libaio" => NativeStorageDevice.IoBackend.Libaio,
+            "uring" => NativeStorageDevice.IoBackend.Uring,
+            _ => throw new ArgumentException(
+                $"Unknown --io-backend value '{s}'. Valid values: default, libaio, uring."),
         };
     }
 }

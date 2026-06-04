@@ -411,12 +411,12 @@ namespace Garnet.test
                 var info = TestUtils.GetStoreAddressInfo(garnetServer);
                 ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
-                // Insert records until head address moves. We want to fit two records per page; pages are 1024 bytes so after subtracting
-                // PageHeader.Size we have 4032 / 2 = 2016 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
-                // more than 255, we have no optionals (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
-                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 2016, so valueLength = 2016-22 = 1994 bytes.
+                // Insert records until head address moves. We want to fit two records per page; pages are 4096 bytes so after subtracting
+                // PageHeader.Size we have 4032 / 2 = 2016 bytes per record. FixedHeaderSize is 16 bytes, Keys are 8 bytes, we have no optionals
+                // (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
+                //   FixedHeaderSize + 8 + valueLength = 2016, so valueLength = 2016-24 = 1992 bytes.
                 // It's rounded up to kRecordAlignment (8) anyway.
-                var val = new RedisValue(new string('x', 1994));
+                var val = new RedisValue(new string('x', 1992));
 
                 var i = 0;
                 var prevHead = info.HeadAddress;

@@ -309,7 +309,7 @@ namespace Tsavorite.test
                 {
                     // Verify the recordSize from the first record's tailAddress growth.
                     recordSize = (int)(store.Log.TailAddress - startTailAddress);
-                    // Size should be RecordInfo, MinHeaderBytes, Key len 4, value size 4 (objectId), objectLogPosition ulong.
+                    // Size should be RecordInfo, RecordDataHeader.Size, Key len 4, value size 4 (objectId), objectLogPosition ulong.
                     Assert.That(recordSize, Is.EqualTo(32), $"Expected record size of 32 but was {recordSize}");
                 }
             }

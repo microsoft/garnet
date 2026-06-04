@@ -193,13 +193,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual("376", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "mylist"]);
-            ClassicAssert.AreEqual("208", r.ToString());
+            ClassicAssert.AreEqual("216", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "myset"]);
-            ClassicAssert.AreEqual("232", r.ToString());
+            ClassicAssert.AreEqual("240", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "myhash"]);
-            ClassicAssert.AreEqual("296", r.ToString());
+            ClassicAssert.AreEqual("304", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "foo"]);
             ClassicAssert.IsTrue(r.IsNull);

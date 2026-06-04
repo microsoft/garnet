@@ -53,7 +53,7 @@ namespace Tsavorite.test
         public void DefaultIORecordSizeConstantTest()
         {
             // Verify the constant has the expected value
-            ClassicAssert.AreEqual(32, IStreamBuffer.DefaultInitialIORecordSize);
+            ClassicAssert.AreEqual(128, IStreamBuffer.DefaultInitialIORecordSize);
         }
 
         [Test]

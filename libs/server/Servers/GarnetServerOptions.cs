@@ -64,12 +64,12 @@ namespace Garnet.server
         /// <summary>
         /// Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.
         /// </summary>
-        public string AofMemorySize = "64m";
+        public string AofMemorySize = "128m";
 
         /// <summary>
         /// Aof page size in bytes (rounds down to power of 2).
         /// </summary>
-        public string AofPageSize = "4m";
+        public string AofPageSize = "32m";
 
         /// <summary>
         /// Size of each AOF segment (file) in bytes on disk (rounds down to power of 2).
@@ -295,10 +295,6 @@ namespace Garnet.server
         /// </summary>
         public int CheckpointThrottleFlushDelayMs = 0;
 
-        /// <summary>
-        /// Enable FastCommit mode for TsavoriteAof
-        /// </summary>
-        public bool EnableFastCommit = true;
 
         /// <summary>
         /// Throttle FastCommit to write metadata once every K commits
@@ -370,6 +366,25 @@ namespace Garnet.server
         /// Use specified device type
         /// </summary>
         public DeviceType DeviceType = DeviceType.Default;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: which IO backend to use (libaio or io_uring).
+        /// Ignored for other device types or platforms. io_uring requires the native library
+        /// to be built with -DUSE_URING=ON.
+        /// </summary>
+        public NativeStorageDevice.IoBackend DeviceIoBackend = NativeStorageDevice.IoBackend.Default;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: number of background IO completion drain threads.
+        /// Has a strong effect on io_uring throughput; default of 1 is usually enough for libaio.
+        /// </summary>
+        public int DeviceCompletionThreads = 1;
+
+        /// <summary>
+        /// Per-device max number of in-flight IOs (<see cref="IDevice.ThrottleLimit"/>).
+        /// 0 means "use the device's built-in default" (120 for the in-box Tsavorite devices).
+        /// </summary>
+        public int DeviceThrottleLimit = 0;
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
@@ -670,8 +685,16 @@ namespace Garnet.server
 
             if (DeviceType == DeviceType.Default)
                 DeviceType = Devices.GetDefaultDeviceType();
-            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
-            logger?.LogInformation("Using device type {deviceType}", DeviceType);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(
+                deviceType: DeviceType,
+                ioBackend: DeviceIoBackend,
+                numCompletionThreads: DeviceCompletionThreads,
+                throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
+                logger: logger);
+            if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
+            else
+                logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -804,9 +827,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
-        /// Tsavorite requires this to be at least 64 bytes (1 &lt;&lt; LogSettings.kLowestMaxInlineSizeBits)
-        /// and at most 256 MB (1 &lt;&lt; (LogSettings.kMaxStringSizeBits - 1)). The value will be rounded down to the previous power of 2.
-        /// Additionally, the effective (power-of-2) value must be strictly less than the effective PageSize
+        /// Tsavorite requires this to be at least 64 bytes and at most 0xFFFFFE (the RecordDataHeader value-length field's
+        /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
+        /// is internal to Tsavorite.core and not visible from Garnet.server).
+        /// The value will be used directly.
+        /// Additionally, the effective value must be strictly less than the effective PageSize
         /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
         /// if not, it is clamped down to the largest valid value (with a warning).
         /// </summary>
@@ -814,8 +839,8 @@ namespace Garnet.server
         /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
         public int ValueOverflowThresholdBytes()
         {
-            const long MinBytes = 64L;                  // 1 << LogSettings.kLowestMaxInlineSizeBits
-            const long MaxBytes = 1L << 28;             // 1 << (LogSettings.kMaxStringSizeBits - 1)
+            const long MinBytes = 64L;                  // LogSettings.MinMaxInlineSize
+            const long MaxBytes = 0xFFFFFE;             // LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
 
             if (string.IsNullOrEmpty(ValueOverflowThreshold))
                 throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");
@@ -879,16 +904,52 @@ namespace Garnet.server
             var pageSizeBits = AofPageSizeBits();
             var segmentSizeBits = AofSegmentSizeBits();
 
-            if (pageSizeBits > memorySizeBits)
+            // Tsavorite requires MemorySize >= 2 * PageSize (so at least two pages fit in memory).
+            // With power-of-two rounded sizes this means memorySizeBits >= pageSizeBits + 1.
+            // Catch this here so we can produce a Garnet-specific error that names the actual
+            // AofMemorySize / AofPageSize config options, rather than the generic Tsavorite
+            // "MemorySize must be at least twice the page size" message which does not say AOF.
+            if (memorySizeBits <= pageSizeBits)
             {
-                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+                var effectiveMemory = PrettySize(1L << memorySizeBits);
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var minMemory = PrettySize(1L << (pageSizeBits + 1));
+                var msg = $"AofMemorySize (effective {effectiveMemory} after rounding down to a power of two) " +
+                          $"must be at least twice AofPageSize (effective {effectivePage}). " +
+                          $"Increase --aof-memory to at least {minMemory}, or reduce --aof-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
             }
 
             if (pageSizeBits > segmentSizeBits)
             {
-                logger?.LogError("AOF Page size cannot be more than the AOF segment size.");
-                throw new Exception("AOF Page size cannot be more than the AOF segment size.");
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var effectiveSegment = PrettySize(1L << segmentSizeBits);
+                var msg = $"AofPageSize (effective {effectivePage} after rounding down to a power of two) " +
+                          $"cannot be larger than AofSegmentSize (effective {effectiveSegment}). " +
+                          $"Increase --aof-segment-size to at least {effectivePage}, or reduce --aof-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
+            }
+
+            // AofPageSize must be at least twice the main-log PageSize. An AOF entry mirrors a single
+            // main-log write (key + value/input + small overhead); raw-string SETs can be as large as
+            // the main-log PageSize (values above MaxInlineValueSize overflow to the heap on the main
+            // store but are still written in full to the AOF), and object commands like LPUSH/HSET can
+            // push the AOF entry even higher. Throw a clear error here so users do not hit the runtime
+            // "Entry does not fit on page" path with a stalled session.
+            var mainPageSizeBits = PageSizeBits();
+            if (pageSizeBits < mainPageSizeBits + 1)
+            {
+                var effectiveAofPage = PrettySize(1L << pageSizeBits);
+                var effectiveMainPage = PrettySize(1L << mainPageSizeBits);
+                var minAofPage = PrettySize(1L << (mainPageSizeBits + 1));
+                var msg = $"AofPageSize (effective {effectiveAofPage} after rounding down to a power of two) " +
+                          $"must be at least twice the main-log PageSize (effective {effectiveMainPage}). " +
+                          $"Increase --aof-page-size to at least {minAofPage} (and --aof-memory to at least {PrettySize(1L << (mainPageSizeBits + 2))}), " +
+                          $"or reduce --page.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
             }
 
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
@@ -901,7 +962,7 @@ namespace Garnet.server
                     SegmentSizeBits = segmentSizeBits,
                     LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
-                    FastCommitMode = EnableFastCommit,
+                    FastCommitMode = true,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
                     Epoch = null
@@ -913,7 +974,7 @@ namespace Garnet.server
                     FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(aofDir, AofPhysicalSublogCount == 1 ? -1 : i),
                         removeOutdated: true,
-                        fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+                        fastCommitThrottleFreq: FastCommitThrottleFreq);
             }
         }
 

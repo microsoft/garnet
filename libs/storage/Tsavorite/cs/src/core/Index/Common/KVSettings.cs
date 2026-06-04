@@ -146,12 +146,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
         /// </summary>
-        public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+        public int MaxInlineKeySize = LogSettings.DefaultMaxInlineKeySize;
 
         /// <summary>
         /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
-        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
+        public int MaxInlineValueSize = LogSettings.DefaultMaxInlineValueSize;
 
         /// <summary>Sentinel value indicating that the default <see cref="IStreamBuffer.DefaultInitialIORecordSize"/> should be used.</summary>
         public const int UseDefaultInitialIORecordSize = -1;
@@ -249,8 +249,8 @@ namespace Tsavorite.core
                 MutableFraction = MutableFraction,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings(),
-                MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
-                MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
+                MaxInlineKeySize = MaxInlineKeySize,
+                MaxInlineValueSize = MaxInlineValueSize
             };
 
         private ReadCacheSettings GetReadCacheSettings()

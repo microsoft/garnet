@@ -17,7 +17,7 @@ namespace Garnet.cluster
             => new GarnetClusterCheckpointManager(aofPhysicalSublogCount, deviceFactoryCreator, checkpointNamingScheme, isMainStore, logger: logger);
 
         /// <inheritdoc />
-        public IClusterProvider CreateClusterProvider(StoreWrapper store)
-            => new ClusterProvider(store);
+        public IClusterProvider CreateClusterProvider(StoreWrapper store, RangeIndexManager rangeIndexManager)
+            => new ClusterProvider(store, rangeIndexManager);
     }
 }

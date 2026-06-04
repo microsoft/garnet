@@ -131,7 +131,18 @@ namespace Tsavorite.core
             {
                 if (Interlocked.CompareExchange(ref totalAllocated, _totalAllocated + 1, _totalAllocated) == _totalAllocated)
                 {
-                    item = creator();
+                    try
+                    {
+                        item = creator();
+                    }
+                    catch
+                    {
+                        // creator() failed (e.g. open() returned EACCES). Roll back the
+                        // allocation reservation so Dispose() can drain to zero, and
+                        // re-throw so the caller observes the failure.
+                        _ = Interlocked.Decrement(ref totalAllocated);
+                        throw;
+                    }
                     return true;
                 }
                 if (itemQueue.TryDequeue(out item)) return true;

@@ -193,11 +193,11 @@ namespace Garnet
         public bool? EnableAOF { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit")]
+        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit. Must be at least twice AofPageSize.")]
         public string AofMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes (rounds down to power of 2). Must be at least twice the main-log PageSize, since an AOF entry can be as large as the underlying main-log record being written; object commands like LPUSH/HSET can push this even higher. When you raise this, also raise --aof-memory to at least 2x this value.")]
         public string AofPageSize { get; set; }
 
         [MemorySizeValidation]
@@ -389,9 +389,6 @@ namespace Garnet
         [Option("checkpoint-throttle-delay", Required = false, HelpText = "Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync")]
         public int CheckpointThrottleFlushDelayMs { get; set; }
 
-        [OptionValidation]
-        [Option("fast-commit", Required = false, HelpText = "Use FastCommit when writing AOF.")]
-        public bool? EnableFastCommit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("fast-commit-throttle", Required = false, HelpText = "Throttle FastCommit to write metadata once every K commits.")]
@@ -484,6 +481,17 @@ namespace Garnet
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). The shipped native library is built with -DUSE_URING=ON and requires liburing.so.2 at load time for all backends; a -DUSE_URING=OFF rebuild only needs libaio.")]
+        public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
+        public int? DeviceCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, 65536)]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends.")]
+        public int? DeviceThrottleLimit { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -564,9 +572,7 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
-        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes. Note that we do not have a KeyOverflowThreshold
-        // because it would complicate the minimum pagesize check that uses ValueOverflowThreshold check at startup; keys are usually small so calculating a
-        // minimum page size using a large(ish) Key threshold would have spurious errors. We'll defer that rare case to runtime checks.
+        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
         [MemorySizeValidation(isRequired: false)]
         [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
         public string ValueOverflowThreshold { get; set; }
@@ -798,8 +804,6 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
-            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
-                throw new Exception("Cannot use sharded-log without FastCommit!");
 
             if (!EnableAOF.GetValueOrDefault())
             {
@@ -873,7 +877,6 @@ namespace Garnet
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
-                EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
@@ -901,7 +904,12 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(
+                        deviceType: deviceType,
+                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
+                        logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -917,6 +925,9 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
+                DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
+                DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

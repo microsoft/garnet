@@ -68,6 +68,37 @@ namespace Tsavorite.core
         /// </summary>
         public int available_bytes;
 
+        /// <summary>
+        /// Per-rental clear-on-return policy. The current renter set this at
+        /// <see cref="SectorAlignedBufferPool.Get(int,bool)"/> time and the pool consults
+        /// it on the matching <see cref="SectorAlignedBufferPool.Return(SectorAlignedMemory)"/>.
+        /// Default <c>true</c> (the safe choice for any caller that may stage a partial
+        /// write — the cleared tail forms the zero padding the device writes to disk).
+        /// <para>
+        /// Pass <c>false</c> only when the renter will fully overwrite the buffer's read
+        /// region (e.g., O_DIRECT device-read destinations). Saves the per-Return memory
+        /// bandwidth cost (~4-8 KB per pending read) that dominates the CPU profile on
+        /// disk-bound benchmarks.
+        /// </para>
+        /// </summary>
+        public bool clearOnReturn = true;
+
+        /// <summary>
+        /// Pool-internal: true when the buffer's tail (beyond <see cref="valid_offset"/> +
+        /// <see cref="available_bytes"/>) MAY contain non-zero bytes from a previous rental
+        /// that opted out of <see cref="clearOnReturn"/>. Cleared to false when the pool
+        /// zeroes the buffer (either on the matching Return or lazily on the next default
+        /// Get). Set to true on Return when the renter opted out.
+        /// <para>
+        /// Necessary because the buffer-pool slots are fungible: a buffer last rented by a
+        /// device-read destination (opted out) may be dequeued next by a write-staging
+        /// caller (default, expects zero tail). The lazy clear on default Get preserves the
+        /// historical "Get returns a zero buffer" contract while still letting the read
+        /// path skip the per-Return clear.
+        /// </para>
+        /// </summary>
+        internal bool isDirty;
+
         private int level;
         internal int Level => level
 #if CHECK_FREE
@@ -270,7 +301,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Return
+        /// Return a <see cref="SectorAlignedMemory"/> to the pool. Zeros the backing
+        /// buffer if <see cref="SectorAlignedMemory.clearOnReturn"/> is true (default);
+        /// callers that rented via <see cref="Get(int,bool)"/> with
+        /// <c>clearOnReturn: false</c> opt out of the per-Return zeroing. When opted
+        /// out, the buffer is enqueued in a dirty state and the lazy clear is deferred
+        /// to the next default <see cref="Get(int)"/> that dequeues it (preserving the
+        /// historical "Get returns a zero buffer" contract for write-staging callers).
         /// </summary>
         /// <param name="page"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -288,7 +325,22 @@ namespace Tsavorite.core
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
-            Array.Clear(page.buffer, 0, page.buffer.Length);
+            if (page.clearOnReturn)
+            {
+                Array.Clear(page.buffer, 0, page.buffer.Length);
+                page.isDirty = false;
+            }
+            else
+            {
+                // Renter opted out of clear; the buffer may carry non-zero tail bytes from
+                // the previous IO. A future default Get will lazy-clear before handing it
+                // to a write-staging caller that depends on zero tail padding.
+                page.isDirty = true;
+            }
+            // Reset the rental policy so a buffer that's been opted-out once doesn't
+            // surprise the next renter (which gets the default safe behaviour unless
+            // it also opts out via the Get overload).
+            page.clearOnReturn = true;
             if (!Disabled)
             {
                 if (UnpinOnReturn)
@@ -314,12 +366,33 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get buffer
+        /// Get buffer. Preserves the historical contract that the returned buffer is
+        /// fully zeroed; lazy-clears the tail if the slot is dirty from a prior
+        /// opted-out rental.
         /// </summary>
         /// <param name="numRecords"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe SectorAlignedMemory Get(int numRecords)
+        public SectorAlignedMemory Get(int numRecords) => Get(numRecords, clearOnReturn: true);
+
+        /// <summary>
+        /// Get buffer with an explicit <paramref name="clearOnReturn"/> policy that overrides
+        /// the default (<c>true</c>). Pass <c>false</c> only when the caller will fully
+        /// overwrite the buffer's read region (e.g., O_DIRECT device-read destinations) and
+        /// no downstream consumer relies on the buffer's tail being zero-padded.
+        /// <para>
+        /// When <paramref name="clearOnReturn"/> is <c>true</c> (the default) and the
+        /// dequeued slot is dirty from a prior opt-out, the buffer is zeroed before being
+        /// handed to the caller — so the "Get returns a zero buffer" contract is preserved
+        /// regardless of which previous renter handed it back.
+        /// </para>
+        /// </summary>
+        /// <param name="numRecords"></param>
+        /// <param name="clearOnReturn">Per-rent clear-on-return policy; carried by the
+        /// returned <see cref="SectorAlignedMemory"/> and consulted on the next
+        /// <see cref="Return(SectorAlignedMemory)"/>.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe SectorAlignedMemory Get(int numRecords, bool clearOnReturn)
         {
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalGets);
@@ -345,7 +418,17 @@ namespace Tsavorite.core
                     page.aligned_pointer = (byte*)RoundUp(page.handle.AddrOfPinnedObject(), sectorSize);
                     page.aligned_offset = (int)((long)page.aligned_pointer - page.handle.AddrOfPinnedObject());
                 }
+                // If the renter wants the historical zero-init contract and the slot is
+                // dirty from a prior opt-out rental, clear here. Renters that themselves
+                // opt out of the clear (clearOnReturn=false) will overwrite the buffer's
+                // read region and don't need it cleared, regardless of incoming dirty state.
+                if (clearOnReturn && page.isDirty)
+                {
+                    Array.Clear(page.buffer, 0, page.buffer.Length);
+                    page.isDirty = false;
+                }
                 page.required_bytes = required_bytes;
+                page.clearOnReturn = clearOnReturn;
                 return page;
             }
 
@@ -360,6 +443,8 @@ namespace Tsavorite.core
             page.aligned_pointer = (byte*)RoundUp(pageAddr, sectorSize);
             page.aligned_offset = (int)((long)page.aligned_pointer - pageAddr);
             page.required_bytes = required_bytes;
+            // Freshly-allocated buffer from GC.AllocateArray is zero-init; isDirty stays false.
+            page.clearOnReturn = clearOnReturn;
             page.pool = this;
             return page;
         }

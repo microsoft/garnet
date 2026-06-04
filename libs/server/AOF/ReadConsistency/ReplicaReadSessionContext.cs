@@ -212,6 +212,12 @@ namespace Garnet.server
                     return false;
             }
 
+            // Propagate batch context back to session context to maintain prefix consistency
+            // for subsequent single-key reads across different sublogs.
+            replicaReadContext.maximumSessionSequenceNumber = batchReadContext.maximumSessionSequenceNumber;
+            replicaReadContext.lastVirtualSublogIdx = batchReadContext.lastVirtualSublogIdx;
+            replicaReadContext.lastHash = batchReadContext.lastHash;
+
             return true;
         }
     }

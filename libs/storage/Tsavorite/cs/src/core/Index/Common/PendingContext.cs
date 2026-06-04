@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -163,10 +164,42 @@ namespace Tsavorite.core
 
                 if (this.input == default)
                 {
+                    // Rent a heap-container wrapper from the per-session pool so the disk-pending
+                    // hot path is allocation-free in steady state. The wrapper returns itself to
+                    // the pool when its Dispose() is invoked by PendingContext.Dispose(); on a
+                    // cold session (pool empty) we allocate once and the wrapper joins the pool
+                    // on first disposal.
+                    var pool = sessionFunctions.Ctx.heapContainerPool;
                     if (typeof(TInput) == typeof(PinnedSpanByte))
-                        this.input = new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), sessionFunctions.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                    {
+                        // Under this typeof-folded branch, TInput is statically PinnedSpanByte at JIT
+                        // specialization, so the Stack<IHeapContainer<TInput>> is the same CLR type as
+                        // Stack<IHeapContainer<PinnedSpanByte>>; reinterpret the reference without a
+                        // CLR type check.
+                        var spanByteInput = Unsafe.As<TInput, PinnedSpanByte>(ref input);
+                        var spanBytePool = Unsafe.As<Stack<IHeapContainer<PinnedSpanByte>>>(pool);
+                        if (spanBytePool.TryPop(out var rented))
+                        {
+                            Unsafe.As<SpanByteHeapContainer>(rented).Initialize(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool);
+                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref rented);
+                        }
+                        else
+                        {
+                            this.input = new SpanByteHeapContainer(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool) as IHeapContainer<TInput>;
+                        }
+                    }
                     else
-                        this.input = new StandardHeapContainer<TInput>(ref input);
+                    {
+                        if (pool.TryPop(out var rented))
+                        {
+                            Unsafe.As<StandardHeapContainer<TInput>>(rented).Initialize(ref input, pool);
+                            this.input = rented;
+                        }
+                        else
+                        {
+                            this.input = new StandardHeapContainer<TInput>(ref input, pool);
+                        }
+                    }
                 }
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);

@@ -184,7 +184,7 @@ namespace Tsavorite.test.spanbyte
             var availableSpaceForRecord3 = PageSize * 2 - store.Log.TailAddress;
             var p2value2len = (int)availableSpaceForRecord3
                                 - RecordInfo.Size
-                                - RecordDataHeader.MinHeaderBytes   // The third record will be small.
+                                - RecordDataHeader.Size
                                 - sizeof(long);         // key size
             Set(3L, valueSpan, p2value2len, 3);         // Inserted on page#1
             ClassicAssert.AreEqual(PageSize * 2, store.Log.TailAddress, "TailAddress should be at the end of page#2");

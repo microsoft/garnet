@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -299,20 +299,20 @@ namespace Tsavorite.test
                     Assert.Fail("wantValueStyle should not be None");
                     break;
                 case TestValueStyle.Inline:
-                    Assert.That(srcLogRecord.Info.ValueIsInline, Is.True);
+                    Assert.That(srcLogRecord.DataHeader.ValueIsInline, Is.True);
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(input.expectedSpanLength));
                     output.valueArray = srcLogRecord.ValueSpan.ToArray();
                     break;
                 case TestValueStyle.Overflow:
-                    Assert.That(srcLogRecord.Info.ValueIsOverflow, Is.True);
+                    Assert.That(srcLogRecord.DataHeader.ValueIsOverflow, Is.True);
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(input.expectedSpanLength));
                     output.valueArray = srcLogRecord.ValueSpan.ToArray();
                     break;
                 case TestValueStyle.Object:
-                    Assert.That(srcLogRecord.Info.ValueIsObject, Is.True);
+                    Assert.That(srcLogRecord.DataHeader.ValueIsObject, Is.True);
                     break;
             }
-            output.valueObject = srcLogRecord.Info.ValueIsObject ? (TestLargeObjectValue)srcLogRecord.ValueObject : default;
+            output.valueObject = srcLogRecord.DataHeader.ValueIsObject ? (TestLargeObjectValue)srcLogRecord.ValueObject : default;
             return true;
         }
 
@@ -321,7 +321,7 @@ namespace Tsavorite.test
             Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
-            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+            output.valueObject = logRecord.DataHeader.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 
@@ -331,7 +331,7 @@ namespace Tsavorite.test
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
             if (output is not null)
-                output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+                output.valueObject = logRecord.DataHeader.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 
@@ -345,10 +345,10 @@ namespace Tsavorite.test
             => new()
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = inputLogRecord.Info.HasETag,
-                HasExpiration = inputLogRecord.Info.HasExpiration
+                ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueIsObject = inputLogRecord.DataHeader.ValueIsObject,
+                HasETag = inputLogRecord.DataHeader.HasETag,
+                HasExpiration = inputLogRecord.DataHeader.HasExpiration
             };
     }
 
@@ -482,10 +482,10 @@ namespace Tsavorite.test
             => new()
             {
                 KeySize = key.KeyBytes.Length,
-                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
-                ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = inputLogRecord.Info.HasETag,
-                HasExpiration = inputLogRecord.Info.HasExpiration
+                ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueIsObject = inputLogRecord.DataHeader.ValueIsObject,
+                HasETag = inputLogRecord.DataHeader.HasETag,
+                HasExpiration = inputLogRecord.DataHeader.HasExpiration
             };
     }
 }

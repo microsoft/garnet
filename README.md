@@ -19,6 +19,12 @@ This repo contains the code to build and run Garnet. For more information and do
 
 **Looking for a fully managed service?** [Azure Cosmos DB Garnet Cache](https://microsoft.github.io/garnet/docs/azure/overview) provides Garnet as a fully managed, enterprise-ready caching solution with built-in high availability, performance guarantees and zero infrastructure management.
 
+## What's New 🎉
+
+- **🚀 [Vector Sets (Preview)](https://microsoft.github.io/garnet/docs/commands/vector-sets)** — Approximate nearest-neighbor search backed by the [DiskANN](https://github.com/microsoft/DiskANN) algorithm and Garnet's Tsavorite storage engine. In our [initial results](https://github.com/microsoft/DiskANN/wiki/Perf:-Garnet-Providers-vs-other-Vector-DBs-(Zilliz,-Pinecone,-etc.)), Garnet leads on QPS, p99 latency, and recall.
+- **🔍 [Range Index (Preview)](https://microsoft.github.io/garnet/docs/commands/range-index)** — Secondary range and equality indexes over Garnet keys, powered by [Bf-Tree](https://github.com/microsoft/bf-tree).
+- **📄 The Garnet paper will appear at VLDB 2026!** B. Chandramouli, V. Zois, T. Hart, T. Zaccai, L. M. Maas, Y. Rajasekaran, D. Gehring. *Garnet: A Next-Generation Cache-Store for Accelerating Applications and Services.* PVLDB 2026. [[PDF]](https://www.vldb.org/pvldb/vol19/p224-chandramouli.pdf)
+
 ## Feature Summary
 
 Garnet implements a wide range of APIs including raw strings (e.g., gets, sets, and key expiration), analytical (e.g., HyperLogLog and Bitmap), and object (e.g., sorted sets and lists)

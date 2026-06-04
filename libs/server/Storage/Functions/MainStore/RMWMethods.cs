@@ -71,7 +71,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
+            Debug.Assert(!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -284,8 +284,9 @@ namespace Garnet.server
 
                         stubSpan.CopyTo(logRecord.ValueSpan);
 
-                        var dataHeader = logRecord.RecordDataHeader;
+                        var dataHeader = logRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        logRecord.SetDataHeader(dataHeader);
                     }
                     break;
                 case RespCommand.VADD:
@@ -359,7 +360,7 @@ namespace Garnet.server
             }
 
             // Success if we made it here
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
             return true;
         }
 
@@ -377,7 +378,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            if (logRecord.Info.ValueIsObject)
+            if (logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
@@ -421,7 +422,7 @@ namespace Garnet.server
         {
             var cmd = input.header.cmd;
             // Expired data
-            if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 _ = logRecord.RemoveETag();
@@ -462,7 +463,7 @@ namespace Garnet.server
                     // If we are not adding an ETag or Expiration we don't need to grow the record size for any reason other than value growth,
                     // so we can optimize this to just set the length and span. Note: SETEXXX may or may not actually have an expiration.
                     // TODO: Convert this and similar to use LogRecord.CanGrowPinnedValue.
-                    if (logRecord.Info.ValueIsInline && (input.arg1 == 0 || logRecord.Info.HasExpiration))
+                    if (logRecord.DataHeader.ValueIsInline && (input.arg1 == 0 || logRecord.DataHeader.HasExpiration))
                     {
                         var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                         if (!logRecord.TrySetPinnedValueSpan(input.parseState.GetArgSliceByRef(0), valueAddress, ref valueLength))
@@ -483,7 +484,7 @@ namespace Garnet.server
                         if (!logRecord.TrySetExpiration(input.arg1))
                             Debug.Fail("Should have succeeded in setting Expiration as we should have ensured there was space there already");
                     }
-                    else if (logRecord.Info.HasExpiration)
+                    else if (logRecord.DataHeader.HasExpiration)
                         _ = logRecord.RemoveExpiration();
 
                     break;
@@ -498,7 +499,7 @@ namespace Garnet.server
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                    if (logRecord.Info.ValueIsInline)
+                    if (logRecord.DataHeader.ValueIsInline)
                     {
                         // We won't change ETag or Expiration. Precheck adequate length before making any changes.
                         if (!logRecord.CanGrowPinnedValue(setValue.Length, newETagLen: logRecord.ETagLen, newExpirationLen: logRecord.ExpirationLen, out var valueAddress, out var valueLength))
@@ -553,7 +554,7 @@ namespace Garnet.server
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset))
                     {
                         var newLength = BitmapManager.Length(bOffset);
-                        if (logRecord.Info.ValueIsInline)
+                        if (logRecord.DataHeader.ValueIsInline)
                         {
                             // We are removing expiration and not changing ETag presence. Precheck adequate length before making any changes.
                             if (!logRecord.CanGrowPinnedValue(newLength, newETagLen: logRecord.ETagLen, newExpirationLen: 0, out var valueAddress, out var valueLength))
@@ -592,7 +593,7 @@ namespace Garnet.server
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length))
                     {
                         var newLength = BitmapManager.LengthFromType(bitFieldArgs);
-                        if (logRecord.Info.ValueIsInline)
+                        if (logRecord.DataHeader.ValueIsInline)
                         {
                             // We are removing expiration and not changing ETag presence. Precheck adequate length before making any changes.
                             if (!logRecord.CanGrowPinnedValue(newLength, newETagLen: logRecord.ETagLen, newExpirationLen: 0, out var valueAddress, out var valueLength))
@@ -718,7 +719,7 @@ namespace Garnet.server
                     if (totalLength > logRecord.ValueSpan.Length)
                     {
                         // Try to grow in place. We are not changing the presence of ETag or Expiration
-                        if (logRecord.Info.ValueIsInline)
+                        if (logRecord.DataHeader.ValueIsInline)
                         {
                             var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                             if (!logRecord.TrySetPinnedValueLength(totalLength, valueAddress, ref valueLength))
@@ -764,7 +765,7 @@ namespace Garnet.server
                     else if (input.parseState.Count > 0)
                     {
                         // PERSIST means to remove the Expiration; if there is no expiration, the following is a no-op.
-                        if (input.parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST) && logRecord.Info.HasExpiration)
+                        if (input.parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST) && logRecord.DataHeader.HasExpiration)
                         {
                             _ = logRecord.RemoveExpiration();
                             ipuResult = IPUResult.Succeeded;
@@ -785,7 +786,7 @@ namespace Garnet.server
                         totalLength = originalLength + appendLength;
 
                         // Try to grow in place. We are not changing the presence of ETag or Expiration
-                        if (logRecord.Info.ValueIsInline)
+                        if (logRecord.DataHeader.ValueIsInline)
                         {
                             var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                             if (!logRecord.TrySetPinnedValueLength(totalLength, valueAddress, ref valueLength))
@@ -811,20 +812,15 @@ namespace Garnet.server
                 case RespCommand.VADD:
                     // Adding to an existing VectorSet is modeled as a read operations
                     //
-                    // However, we do synthesize some (pointless) writes to implement replication
-                    // and a "make me delete=able"-update during drop.
+                    // However, we do synthesize some (pointless) writes to implement replication (which we ignore here).
                     //
                     // Another "not quite write" is the recreate an index write operation
                     // that occurs if we're adding to an index that was restored from disk 
                     // or a primary node.
 
-                    // Handle "make me delete-able"
-                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        logRecord.ValueSpan.Clear();
-                    }
-                    else if (input.arg1 == VectorManager.RecreateIndexArg)
-                    {
+                        // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
@@ -869,7 +865,7 @@ namespace Garnet.server
                             // This assumes newLength has not been changed if !ret.
                             if (newLength < logRecord.ValueSpan.Length)
                             {
-                                if (logRecord.Info.ValueIsInline)
+                                if (logRecord.DataHeader.ValueIsInline)
                                 {
                                     var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                                     _ = logRecord.TrySetPinnedValueLength(newLength, valueAddress, ref valueLength);
@@ -904,7 +900,7 @@ namespace Garnet.server
                     return IPUResult.NotUpdated;
             }
 
-            sizeInfo2.AssertOptionalsIfSet(logRecord.Info, checkExpiration: shouldCheckExpiration);
+            sizeInfo2.AssertOptionalsIfSet(logRecord.DataHeader, checkExpiration: shouldCheckExpiration);
             return IPUResult.Succeeded;
         }
 
@@ -922,7 +918,7 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         return false;
@@ -940,7 +936,7 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
                     // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         return false;
@@ -979,7 +975,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
-            if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
                 _ = dstLogRecord.RemoveETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
@@ -1326,18 +1322,19 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    // Handle "make me delete-able"
-                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        dstLogRecord.ValueSpan.Clear();
-                    }
-                    else if (input.arg1 == VectorManager.RecreateIndexArg)
-                    {
+                        // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         oldValue.CopyTo(dstLogRecord.ValueSpan);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
+                    }
+                    else if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
+                    {
+                        // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
+                        oldValue.CopyTo(dstLogRecord.ValueSpan);
                     }
 
                     break;
@@ -1382,8 +1379,9 @@ namespace Garnet.server
                         RangeIndexManager.ClearFlushedFlag(dstLogRecord.ValueSpan);
 
                         // Preserve the RecordType
-                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        dstLogRecord.SetDataHeader(dataHeader);
 
                         // NOTE: Source TreeHandle is cleared in PostCopyUpdater (after CAS success)
                         // to avoid orphaning the tree if the CAS fails.
@@ -1398,13 +1396,14 @@ namespace Garnet.server
                         srcValue.CopyTo(dstLogRecord.ValueSpan);
                         RangeIndexManager.RecreateIndex((nint)input.arg1, dstLogRecord.ValueSpan);
 
-                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                        dstLogRecord.SetDataHeader(dataHeader);
                     }
                     break;
             }
 
-            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
 

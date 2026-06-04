@@ -156,7 +156,7 @@ namespace Tsavorite.test
                 _ = Interlocked.Increment(ref tracker.DisposeCounts[(int)reason]);
 
                 if (tracker.DisposeValuesOnDispose
-                    && logRecord.Info.ValueIsObject
+                    && logRecord.DataHeader.ValueIsObject
                     && (reason == DisposeReason.Deleted || reason == DisposeReason.CopyUpdated))
                 {
                     logRecord.ValueObject?.Dispose();
@@ -171,7 +171,7 @@ namespace Tsavorite.test
                 if (!logRecord.IsSet) return;
                 _ = Interlocked.Increment(ref tracker.DisposeDiskCounts[(int)reason]);
 
-                if (tracker.DisposeValuesOnDisposeDiskRecord && logRecord.Info.ValueIsObject)
+                if (tracker.DisposeValuesOnDisposeDiskRecord && logRecord.DataHeader.ValueIsObject)
                     logRecord.ValueObject?.Dispose();
             }
 
