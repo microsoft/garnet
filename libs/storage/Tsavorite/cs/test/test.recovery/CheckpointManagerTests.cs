@@ -52,7 +52,7 @@ namespace Tsavorite.test
                         IndexSize = 1L << 16,
                         LogDevice = log,
                         MutableFraction = 1,
-                        PageSize = IDevice.MinDeviceSectorSize,
+                        PageSize = TestUtils.MinKvLogPageSize,
                         LogMemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
                     }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)

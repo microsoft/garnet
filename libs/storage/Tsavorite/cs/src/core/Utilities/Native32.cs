@@ -207,6 +207,13 @@ namespace Tsavorite.core
 
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        internal static extern bool GetDiskFreeSpace(string lpRootPathName,
+           out uint lpSectorsPerCluster,
+           out uint lpBytesPerSector,
+           out uint lpNumberOfFreeClusters,
+           out uint lpTotalNumberOfClusters);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         internal static extern bool GetFileInformationByHandleEx([In] SafeFileHandle hFile, FILE_INFO_BY_HANDLE_CLASS infoClass, out FILE_STORAGE_INFO fileStorageInfo, uint dwBufferSize);
 
         /// <summary>
@@ -225,60 +232,14 @@ namespace Tsavorite.core
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return IDevice.MinDeviceSectorSize;
 
-            try
+            var volume = filename.Substring(0, 3);
+            if (!GetDiskFreeSpace(volume, out _, out var sectorSize, out _, out _))
             {
-                var fullPath = Path.GetFullPath(filename);
-
-                // Walk up the directory tree to find an existing ancestor (the target dir may not exist yet).
-                var dirPath = Path.GetDirectoryName(fullPath);
-                while (!string.IsNullOrEmpty(dirPath) && !Directory.Exists(dirPath))
-                    dirPath = Path.GetDirectoryName(dirPath);
-
-                if (string.IsNullOrEmpty(dirPath))
-                {
-                    Debug.WriteLine($"Unable to find an existing directory for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
-                    return IDevice.MinDeviceSectorSize;
-                }
-
-                // Open the directory with FILE_FLAG_BACKUP_SEMANTICS (required for directories) and read-only access.
-                const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-                var handle = CreateFileW(dirPath,
-                    GENERIC_READ,
-                    0x00000001 /*FILE_SHARE_READ*/ | 0x00000002 /*FILE_SHARE_WRITE*/ | FILE_SHARE_DELETE,
-                    IntPtr.Zero,
-                    3 /*OPEN_EXISTING*/,
-                    FILE_FLAG_BACKUP_SEMANTICS,
-                    IntPtr.Zero);
-
-                if (handle.IsInvalid)
-                {
-                    Debug.WriteLine($"Unable to open directory '{dirPath}' for sector size query — assuming {IDevice.MinDeviceSectorSize} bytes.");
-                    return IDevice.MinDeviceSectorSize;
-                }
-
-                try
-                {
-                    if (GetFileInformationByHandleEx(handle, FILE_INFO_BY_HANDLE_CLASS.FileStorageInfo, out var info, (uint)sizeof(FILE_STORAGE_INFO)))
-                    {
-                        var result = Math.Max(info.LogicalBytesPerSector, info.PhysicalBytesPerSectorForAtomicity);
-                        if (result > 0)
-                            return Math.Max(result, IDevice.MinDeviceSectorSize);
-                    }
-                }
-                finally
-                {
-                    handle.Dispose();
-                }
+                Debug.WriteLine("Unable to retrieve information for disk " + volume + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
+                return IDevice.MinDeviceSectorSize;
             }
-            catch
-            {
-                // Fall through to default
-            }
-
-            Debug.WriteLine($"Unable to retrieve sector size for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
-            return IDevice.MinDeviceSectorSize;
+            return Math.Max(sectorSize, IDevice.MinDeviceSectorSize);
         }
-
 
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)] string lpFileName);

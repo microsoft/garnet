@@ -27,9 +27,9 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = TestUtils.MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 17,
-                ReadCachePageSize = IDevice.MinDeviceSectorSize,
+                ReadCachePageSize = TestUtils.MinKvLogPageSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(new KeyStruct.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

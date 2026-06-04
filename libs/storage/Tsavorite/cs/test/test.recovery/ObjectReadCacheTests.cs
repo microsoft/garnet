@@ -30,9 +30,9 @@ namespace Tsavorite.test.ReadCacheTests
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = TestUtils.MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = IDevice.MinDeviceSectorSize,
+                ReadCachePageSize = TestUtils.MinKvLogPageSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

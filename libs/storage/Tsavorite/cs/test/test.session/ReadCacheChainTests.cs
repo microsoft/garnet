@@ -65,9 +65,9 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = IDevice.MinDeviceSectorSize,
+                ReadCachePageSize = MinKvLogPageSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -725,9 +725,9 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = IDevice.MinDeviceSectorSize,
+                ReadCachePageSize = MinKvLogPageSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -942,9 +942,9 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 20,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = IDevice.MinDeviceSectorSize,
+                PageSize = MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = IDevice.MinDeviceSectorSize,
+                ReadCachePageSize = MinKvLogPageSize,
                 ReadCacheEnabled = true
             }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
             , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

@@ -93,7 +93,7 @@ namespace Garnet.test
     internal static class TestUtils
     {
         // Use 4KB page size for tests, independent of device sector size
-        public const int MinKvLogPageSizeBits = 12;
+        public const int MinKvLogPageSizeBits = 12; // TODO: Same as LogSettings.kMinPageSizeBits; need to centralize
         public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
         public const int MinKvLogPageSizeInKB = MinKvLogPageSize / 1024;
 
