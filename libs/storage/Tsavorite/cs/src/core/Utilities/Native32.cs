@@ -216,6 +216,31 @@ namespace Tsavorite.core
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         internal static extern bool GetFileInformationByHandleEx([In] SafeFileHandle hFile, FILE_INFO_BY_HANDLE_CLASS infoClass, out FILE_STORAGE_INFO fileStorageInfo, uint dwBufferSize);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)] string lpFileName);
+
+        /// <summary>
+        /// Gets the logical sector size for the volume containing <paramref name="filename"/>.
+        /// On Windows this uses <c>GetDiskFreeSpace</c> on the path root; on non-Windows it returns <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// The returned value is clamped to at least <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// </summary>
+        /// <param name="filename">Any file path on the target volume; the file need not exist.</param>
+        /// <returns>The sector size in bytes.</returns>
+        internal static uint GetDeviceSectorSize(string filename)
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return (uint)IDevice.MinDeviceSectorSize;
+
+            // Normalize so relative paths and UNC paths work.
+            var root = Path.GetPathRoot(Path.GetFullPath(filename));
+            if (string.IsNullOrEmpty(root) || !GetDiskFreeSpace(root, out _, out var sectorSize, out _, out _))
+            {
+                Debug.WriteLine($"Unable to retrieve sector size for path '{filename}' (root '{root}'); assuming {IDevice.MinDeviceSectorSize} bytes.");
+                return (uint)IDevice.MinDeviceSectorSize;
+            }
+            return Math.Max(sectorSize, (uint)IDevice.MinDeviceSectorSize);
+        }
+
         /// <summary>
         /// Gets the device sector size for the volume containing <paramref name="filename"/> by opening the parent directory
         /// and querying <see cref="FILE_STORAGE_INFO"/> via <c>GetFileInformationByHandleEx</c>.
@@ -227,22 +252,64 @@ namespace Tsavorite.core
         /// <remarks>We open the parent directory (not the volume device) because <c>GetFileInformationByHandleEx(FileStorageInfo)</c>
         /// returns <c>ERROR_INVALID_FUNCTION</c> on volume device handles. Directory handles require <c>FILE_FLAG_BACKUP_SEMANTICS</c>
         /// and only read access, so this works even without write permissions.</remarks>
-        internal static uint GetDeviceSectorSize(string filename)
+        internal static uint GetVolumeSectorSize(string filename)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return IDevice.MinDeviceSectorSize;
 
-            var volume = filename.Substring(0, 3);
-            if (!GetDiskFreeSpace(volume, out _, out var sectorSize, out _, out _))
+            try
             {
-                Debug.WriteLine("Unable to retrieve information for disk " + volume + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
-                return IDevice.MinDeviceSectorSize;
-            }
-            return Math.Max(sectorSize, IDevice.MinDeviceSectorSize);
-        }
+                var fullPath = Path.GetFullPath(filename);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)] string lpFileName);
+                // Walk up the directory tree to find an existing ancestor (the target dir may not exist yet).
+                var dirPath = Path.GetDirectoryName(fullPath);
+                while (!string.IsNullOrEmpty(dirPath) && !Directory.Exists(dirPath))
+                    dirPath = Path.GetDirectoryName(dirPath);
+
+                if (string.IsNullOrEmpty(dirPath))
+                {
+                    Debug.WriteLine($"Unable to find an existing directory for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
+                    return IDevice.MinDeviceSectorSize;
+                }
+
+                // Open the directory with FILE_FLAG_BACKUP_SEMANTICS (required for directories) and read-only access.
+                const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+                var handle = CreateFileW(dirPath,
+                    GENERIC_READ,
+                    0x00000001 /*FILE_SHARE_READ*/ | 0x00000002 /*FILE_SHARE_WRITE*/ | FILE_SHARE_DELETE,
+                    IntPtr.Zero,
+                    3 /*OPEN_EXISTING*/,
+                    FILE_FLAG_BACKUP_SEMANTICS,
+                    IntPtr.Zero);
+
+                if (handle.IsInvalid)
+                {
+                    Debug.WriteLine($"Unable to open directory '{dirPath}' for sector size query — assuming {IDevice.MinDeviceSectorSize} bytes.");
+                    return IDevice.MinDeviceSectorSize;
+                }
+
+                try
+                {
+                    if (GetFileInformationByHandleEx(handle, FILE_INFO_BY_HANDLE_CLASS.FileStorageInfo, out var info, (uint)sizeof(FILE_STORAGE_INFO)))
+                    {
+                        var result = Math.Max(info.LogicalBytesPerSector, info.PhysicalBytesPerSectorForAtomicity);
+                        if (result > 0)
+                            return Math.Max(result, IDevice.MinDeviceSectorSize);
+                    }
+                }
+                finally
+                {
+                    handle.Dispose();
+                }
+            }
+            catch
+            {
+                // Fall through to default
+            }
+
+            Debug.WriteLine($"Unable to retrieve sector size for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
+            return IDevice.MinDeviceSectorSize;
+        }
         #endregion
 
         #region Thread and NUMA functions

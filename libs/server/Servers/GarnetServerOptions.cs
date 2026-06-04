@@ -888,6 +888,9 @@ namespace Garnet.server
             if (sizeInBytes <= 0)
                 throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) must be positive.");
 
+            if (sizeInBytes > 1L << PageSizeBits())
+                throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) exceeds the page size ({1L << PageSizeBits()} bytes).");
+
             return (int)sizeInBytes;
         }
 

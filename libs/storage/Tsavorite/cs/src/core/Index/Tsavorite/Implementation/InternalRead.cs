@@ -149,7 +149,6 @@ namespace Tsavorite.core
                     if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
                     CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
-                    ResolveInitialIORecordSize(sessionFunctions.Ctx, ref pendingContext);
                     return OperationStatus.RECORD_ON_DISK;
                 }
 
@@ -257,7 +256,6 @@ namespace Tsavorite.core
                 pendingContext.SetIsNoKey();
 
                 CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
-                ResolveInitialIORecordSize(sessionFunctions.Ctx, ref pendingContext);
                 return OperationStatus.RECORD_ON_DISK;
             }
 

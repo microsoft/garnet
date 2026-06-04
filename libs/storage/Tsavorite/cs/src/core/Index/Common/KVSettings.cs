@@ -158,7 +158,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Initial IO size for reading records from disk. <see cref="UseDefaultInitialIORecordSize"/> means unset;
-        /// the resolution chain (store → session → per-read → <see cref="IStreamBuffer.DefaultInitialIORecordSize"/>) determines the actual value.
+        /// the resolution chain (per-operation → session → store → <see cref="IStreamBuffer.DefaultInitialIORecordSize"/>) determines the actual value.
         /// </summary>
         public int InitialIORecordSize = UseDefaultInitialIORecordSize;
 

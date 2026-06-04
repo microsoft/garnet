@@ -153,10 +153,10 @@ namespace Tsavorite.core
                 request.record = default;
                 request.callbackQueue = sessionCtx.readyResponses;
 
-                // The IO record size was resolved by ResolveInitialIORecordSize in InternalRead/InternalRMW before returning RECORD_ON_DISK.
-                // If we were called from somewhere other than InternalRead/InternalRMW, we must resolve the initial IO record size here.
+                // The IO record size is resolved on the first call to this method. Usually this is from InternalRead/InternalRMW before returning
+                // RECORD_ON_DISK but may be from elsewhere such as ReadCache or ConditionalCopyToTail, so do the setting of initial IO record size here.
                 if (pendingContext.initialIORecordSize <= 0)
-                    pendingContext.initialIORecordSize = IStreamBuffer.DefaultInitialIORecordSize;
+                    ResolveInitialIORecordSize(sessionCtx, ref pendingContext);
                 hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, pendingContext.initialIORecordSize, request);
                 return new(StatusCode.Pending);
             }

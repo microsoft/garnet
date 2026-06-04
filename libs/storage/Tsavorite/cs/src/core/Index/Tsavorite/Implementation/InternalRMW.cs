@@ -217,7 +217,6 @@ namespace Tsavorite.core
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     CreatePendingRMWContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                    ResolveInitialIORecordSize(sessionFunctions.Ctx, ref pendingContext);
                     goto Done;
                 }
 
