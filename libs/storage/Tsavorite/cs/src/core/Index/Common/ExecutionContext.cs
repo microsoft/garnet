@@ -81,6 +81,10 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void ReturnAsyncIOContext(AsyncIOContext ctx)
             {
+                // Uncapped, matching the sibling per-session pools with the same rent-on-IO-issue /
+                // return-on-drain lifecycle (heapContainerPool, the allocator's asyncGetFromDiskResultPool).
+                // The pool self-bounds at this session's peak concurrent pending depth — the same high-water
+                // the (also uncapped) ioPendingRequests dictionary retains — so it cannot grow without bound.
                 ctx.Reset();
                 asyncIOContextPool.Push(ctx);
             }
