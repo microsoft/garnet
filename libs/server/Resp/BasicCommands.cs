@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -26,6 +28,101 @@ namespace Garnet.server
         /// ~80 KB per batch at b=1024 and dominating the disk-GET allocation profile.
         /// </summary>
         private (GarnetStatus, StringOutput)[] pendingGetOutputArr;
+
+        /// <summary>
+        /// Per-session pinned scratch buffer used by <see cref="NetworkGET_SG"/> to back
+        /// the <see cref="StringOutput"/> passed for each post-first-pending submission.
+        /// Each pending op reserves a fixed-size slot (<see cref="PendingScratchSlotSize"/>)
+        /// from this buffer; the Reader callback writes the RESP-encoded response into the
+        /// slot (the existing <c>CopyRespTo</c> direct-write fast path); the wrap-up loop
+        /// memcpy's each slot into the network buffer in batch order.
+        /// <para>
+        /// This replaces the previous design where each pending op rented a fresh
+        /// <see cref="System.Buffers.MemoryPool{T}"/> wrapper + <c>ArrayPool&lt;byte&gt;</c>
+        /// slice on the Reader callback — which dominated the disk-GET allocation profile
+        /// and added a global-pool round-trip per pending. Pinned via
+        /// <c>GC.AllocateArray(pinned: true)</c> so the cached <see cref="pendingScratchPtr"/>
+        /// is stable for the lifetime of the array; we re-pin on every grow.
+        /// </para>
+        /// </summary>
+        private byte[] pendingScratch;
+        private byte* pendingScratchPtr;
+        private int pendingScratchUsed;
+
+        /// <summary>
+        /// Per-slot reservation size in <see cref="pendingScratch"/>. Sized to cover a typical
+        /// small-value RESP response ("$&lt;3-digits&gt;\r\n&lt;value&gt;\r\n" for values up to ~120 B).
+        /// Pending responses that exceed this fall through to the existing
+        /// <see cref="System.Buffers.MemoryPool{T}"/> Rent path (rare); the overflowed
+        /// <c>IMemoryOwner&lt;byte&gt;</c> is disposed in the wrap-up loop via
+        /// <see cref="SendAndReset(System.Buffers.IMemoryOwner{byte},int)"/>.
+        /// </summary>
+        private const int PendingScratchSlotSize = 128;
+
+        /// <summary>
+        /// Reserves the next <see cref="PendingScratchSlotSize"/>-byte slot in
+        /// <see cref="pendingScratch"/> and returns a <see cref="StringOutput"/> whose
+        /// <see cref="SpanByteAndMemory"/> points at it. If the scratch buffer is not large
+        /// enough for another slot, returns <c>default</c> — the Reader will then fall
+        /// through to its existing Rent path for that op. <see cref="pendingScratchUsed"/>
+        /// is still advanced so we can grow the scratch at end-of-batch to fit next time.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private StringOutput GetPendingScratchOutput()
+        {
+            int off = pendingScratchUsed;
+            pendingScratchUsed = off + PendingScratchSlotSize;
+            if (pendingScratch != null && off + PendingScratchSlotSize <= pendingScratch.Length)
+                return StringOutput.FromPinnedPointer(pendingScratchPtr + off, PendingScratchSlotSize);
+            return default; // overflow — caller (Tsavorite Reader) will Rent
+        }
+
+        /// <summary>
+        /// If <see cref="pendingScratchUsed"/> exceeded the current
+        /// <see cref="pendingScratch"/> capacity during the batch, allocate a larger pinned
+        /// buffer so the next batch fits without overflow. Reset the offset for the next
+        /// batch either way. Called from the wrap-up of <see cref="NetworkGET_SG"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ResetPendingScratch()
+        {
+            if (pendingScratch == null || pendingScratchUsed > pendingScratch.Length)
+            {
+                int newSize = pendingScratch?.Length ?? 4096;
+                while (newSize < pendingScratchUsed) newSize *= 2;
+                pendingScratch = GC.AllocateArray<byte>(newSize, pinned: true);
+                pendingScratchPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pendingScratch));
+            }
+            pendingScratchUsed = 0;
+        }
+
+        /// <summary>
+        /// Memcpy <paramref name="length"/> bytes from <paramref name="src"/> (typically a
+        /// <see cref="pendingScratch"/> slot) into the network send buffer starting at
+        /// <c>dcurr</c>, flushing via <c>SendAndReset</c> as needed when the network buffer
+        /// fills. Does not allocate or dispose anything — the scratch is owned by the
+        /// session and reused next batch.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CopyToNetworkBuffer(byte* src, int length)
+        {
+            while (length > 0)
+            {
+                int destSpace = (int)(dend - dcurr);
+                int toCopy = length < destSpace ? length : destSpace;
+                Buffer.MemoryCopy(src, dcurr, destSpace, toCopy);
+                dcurr += toCopy;
+                src += toCopy;
+                length -= toCopy;
+                if (length > 0 && toCopy == destSpace)
+                {
+                    Send(networkSender.GetResponseObjectHead());
+                    networkSender.GetResponseObject();
+                    dcurr = networkSender.GetResponseObjectHead();
+                    dend = networkSender.GetResponseObjectTail();
+                }
+            }
+        }
 
         /// <summary>
         /// GET
@@ -178,6 +275,9 @@ namespace Garnet.server
             StringInput input = new(RespCommand.GET, arg1: -1);
             var firstPending = -1;
             (GarnetStatus, StringOutput)[] outputArr = pendingGetOutputArr;
+            // Initial output points at the current network buffer position. Used for the
+            // prefix-sync path and (if it goes pending) the first pending op — which is the
+            // only pending op whose response lands directly in the network buffer.
             var output = GetStringOutput();
             var c = 0;
 
@@ -195,7 +295,11 @@ namespace Garnet.server
                 if (isPending)
                 {
                     SetResult(c, ref firstPending, ref outputArr, status, default);
-                    output = new StringOutput();
+                    // After the first pending, every subsequent op (sync or pending) writes
+                    // into a per-session scratch slot via the Reader's existing IsSpanByte
+                    // fast path. The wrap-up loop memcpy's slots into the network buffer in
+                    // batch order.
+                    output = GetPendingScratchOutput();
                 }
                 else
                 {
@@ -210,7 +314,7 @@ namespace Garnet.server
                         else
                         {
                             SetResult(c, ref firstPending, ref outputArr, status, output);
-                            output = new StringOutput();
+                            output = GetPendingScratchOutput();
                         }
                     }
                     else
@@ -224,7 +328,7 @@ namespace Garnet.server
                         else
                         {
                             SetResult(c, ref firstPending, ref outputArr, status, output);
-                            output = new StringOutput();
+                            output = GetPendingScratchOutput();
                         }
                     }
                 }
@@ -235,15 +339,34 @@ namespace Garnet.server
                 // First complete all pending ops
                 _ = storageApi.GET_CompletePending(outputArr, true);
 
-                // Write the outputs to network buffer
+                // Write the outputs to network buffer in batch order. The first pending slot
+                // (i==0) is special: its Reader wrote directly into the network buffer at the
+                // dcurr that was captured at submission time, so we just advance dcurr to
+                // commit those bytes (the IsSpanByte fast path). All other slots were
+                // scratch-backed: memcpy them into the network buffer.
                 var n = c - firstPending;
                 for (var i = 0; i < n; i++)
                 {
                     var status = outputArr[i].Item1;
-                    output = outputArr[i].Item2;
+                    var sbm = outputArr[i].Item2.SpanByteAndMemory;
                     if (status == GarnetStatus.OK)
                     {
-                        ProcessOutput(output.SpanByteAndMemory);
+                        if (i == 0)
+                        {
+                            // First pending: data is already in the network buffer at dcurr.
+                            ProcessOutput(sbm);
+                        }
+                        else if (sbm.IsSpanByte)
+                        {
+                            // Scratch slot: copy into the network buffer.
+                            CopyToNetworkBuffer(sbm.SpanByte.ToPointer(), sbm.Length);
+                        }
+                        else
+                        {
+                            // Overflow path: Reader couldn't fit the response in the scratch
+                            // slot and rented a heap buffer instead. Copy + dispose.
+                            SendAndReset(sbm.Memory, sbm.Length);
+                        }
                     }
                     else
                     {
@@ -256,6 +379,9 @@ namespace Garnet.server
                 // references to disposed StringOutput.SpanByteAndMemory.Memory wrappers.
                 pendingGetOutputArr = outputArr;
                 Array.Clear(outputArr, 0, n);
+
+                // Grow pendingScratch if we exceeded it this batch; reset offset for next.
+                ResetPendingScratch();
             }
 
             if (c > 1)
