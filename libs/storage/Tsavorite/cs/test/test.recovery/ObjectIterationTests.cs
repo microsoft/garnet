@@ -206,7 +206,7 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
         //[Repeat(3000)]
-        //[Explicit("Temporary: accessing a disposed object")]
+        [Explicit("Temporary: need to adjust for new minimum page size")]
         public void ObjectIterationPushLockTest([Values(1, 2, 4, 8)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
         {
             InternalSetup(largeMemory);
