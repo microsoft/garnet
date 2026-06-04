@@ -578,7 +578,7 @@ namespace Garnet
         public string ValueOverflowThreshold { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
-        [Option("initial-io-record-size", Required = false, HelpText = "Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 32 bytes.")]
+        [Option("initial-io-record-size", Required = false, HelpText = "Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes.")]
         public string InitialIORecordSize { get; set; }
 
         [OptionValidation]
