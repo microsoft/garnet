@@ -481,13 +481,11 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Rent a holder so the PendingContext lives inside a heap-allocated slot from the start. If this Read
-            // goes pending (RECORD_ON_DISK), HandleOperationStatus stores `holder` (an 8-byte ref) into ioPendingRequests
-            // instead of bulk-copying ~200B via Buffer.BulkMoveWithWriteBarrier (the dominant single-thread regression
-            // vs Device.benchmark on the disk-pending hot path).
-            var holder = sessionFunctions.Ctx.RentPendingContextHolder();
-            holder.value = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
-            ref var pcontext = ref holder.value;
+            // Keep PendingContext on the stack: the overwhelmingly common in-memory read never goes pending,
+            // so it must not pay any heap/holder cost. Only when the read goes pending (RECORD_ON_DISK) does
+            // HandleOperationStatus rent a holder and copy this context into it (the dictionary then stores an
+            // 8-byte ref instead of bulk-copying ~200B on every dictionary op).
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             var keyHash = storeFunctions.GetKeyHashCode64(key);
 
@@ -495,13 +493,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus, holder);
-            // If the op didn't go pending, the holder isn't being kept alive by the dict — return it to the pool.
-            // (When status.IsPending, HandleOperationStatus added the holder to ioPendingRequests and ownership
-            // passes to InternalCompletePendingRequest which returns it on completion.)
-            if (!status.IsPending)
-                sessionFunctions.Ctx.ReturnPendingContextHolder(holder);
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

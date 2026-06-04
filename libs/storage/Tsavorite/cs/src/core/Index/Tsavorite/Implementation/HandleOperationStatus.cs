@@ -88,17 +88,13 @@ namespace Tsavorite.core
         /// <param name="sessionCtx">Thread (or session) context under which operation was tried to execute.</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
-        /// <param name="holder">Optional pre-rented holder whose <c>value</c> field IS <paramref name="pendingContext"/>'s backing storage.
-        ///     When provided, the RECORD_ON_DISK path stores an 8-byte reference in the dictionary instead of bulk-copying the
-        ///     ~200-byte struct. When null, falls back to renting a holder internally and copying.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus,
-            PendingContextHolder<TInput, TOutput, TContext> holder = null)
+            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus)
             => OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status)
                 ? status
-                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _, holder);
+                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
@@ -107,7 +103,9 @@ namespace Tsavorite.core
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="request">IO request, if operation went pending</param>
-        /// <param name="holder">Optional pre-rented holder — see the 3-parameter overload's doc.</param>
+        /// <param name="holder">On a re-pend (continued operation), the existing dictionary holder whose <c>value</c> field IS
+        ///     <paramref name="pendingContext"/>'s backing storage, so it is re-added to the dictionary as an 8-byte ref. For a
+        ///     first-time pending (the common case) this is null and a holder is rented here and the struct copied into it once.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
@@ -138,10 +136,10 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
                 pendingContext.id = sessionCtx.totalPending++;
 
-                // Add holder to dictionary as an 8-byte reference store (vs ~200-byte struct copy + Buffer.BulkMoveWithWriteBarrier).
-                // When the caller pre-rented a holder and `pendingContext` is `ref holder.value`, this is allocation-free and
-                // copy-free. When holder is null (legacy entry sites — compaction, conditional ops), fall back to renting one
-                // here and bulk-copying the struct into it.
+                // Store the pending op as an 8-byte holder reference in the dictionary (vs a ~200-byte struct copy +
+                // Buffer.BulkMoveWithWriteBarrier on every dictionary op). A first-time pending (holder == null) rents a
+                // holder and copies the stack PendingContext into it once. A re-pend already has its holder (the dict
+                // entry == pendingContext's backing storage), so it is re-added directly with no copy.
                 if (holder is not null)
                 {
                     sessionCtx.ioPendingRequests.Add(pendingContext.id, holder);
@@ -157,9 +155,9 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Legacy entry sites (compaction, conditional/RMW ops) pass no holder: rent one and copy the
-                    // struct in. The caller retains its own pendingContext.diskLogRecord for disposal, so the dict
-                    // copy must only drop its reference (disposing here would double-free the caller's record).
+                    // First-time pending: rent a holder and copy the stack PendingContext in. The caller retains its own
+                    // pendingContext.diskLogRecord for disposal, so the dict copy must only drop its reference (disposing
+                    // here would double-free the caller's record).
                     var fallbackHolder = sessionCtx.RentPendingContextHolder();
                     fallbackHolder.value = pendingContext;
                     sessionCtx.ioPendingRequests.Add(pendingContext.id, fallbackHolder);
