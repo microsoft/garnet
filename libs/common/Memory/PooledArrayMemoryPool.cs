@@ -29,7 +29,7 @@ namespace Garnet.common
     /// </para>
     /// <para>
     /// Memory ceiling (wrappers only; underlying byte[] are owned by ArrayPool):
-    /// <c>num_unique_threads × <see cref="TlsCacheSize"/> × sizeof(wrapper)</c>
+    /// <c>num_unique_threads × <see cref="TlsCacheCapacity"/> × sizeof(wrapper)</c>
     /// + <c><see cref="MaxRetainedWrappers"/> × sizeof(wrapper)</c>. With ~160 threads on an 80-core
     /// box that is roughly 660 KB — flat and independent of session count, batch size, or workload.
     /// </para>
@@ -47,11 +47,15 @@ namespace Garnet.common
         public static new readonly PooledArrayMemoryPool Shared = new();
 
         /// <summary>
-        /// Per-thread cache size (wrappers per thread). Chosen to comfortably cover a single
-        /// session's burst (e.g., a 1024-entry SG-GET batch is processed in chunks much smaller
-        /// than this) while keeping per-thread footprint to a few KB.
+        /// Per-thread cache size (wrappers per thread). Same shape/naming as
+        /// AllocatorBase's <c>AsyncGetFromDiskResult</c> TLS cache. Chosen to comfortably
+        /// cover a single session's burst (e.g., a 1024-entry SG-GET batch is processed
+        /// in chunks much smaller than this) while keeping per-thread footprint to a
+        /// few KB. Empirically (measured on KV.bench disk-bound) bumping this to 1024
+        /// to fully absorb the batch gives no throughput change — the shared
+        /// ConcurrentQueue fallback is not the bottleneck at these rates.
         /// </summary>
-        private const int TlsCacheSize = 64;
+        private const int TlsCacheCapacity = 64;
 
         /// <summary>
         /// Upper bound on the number of wrapper instances retained in the global fallback queue.
@@ -142,12 +146,12 @@ namespace Garnet.common
             var cache = tlsCache;
             if (cache == null)
             {
-                cache = new PooledBuffer[TlsCacheSize];
+                cache = new PooledBuffer[TlsCacheCapacity];
                 tlsCache = cache;
             }
 
             var count = tlsCount;
-            if ((uint)count < (uint)TlsCacheSize)
+            if ((uint)count < (uint)TlsCacheCapacity)
             {
                 cache[count] = buf;
                 tlsCount = count + 1;
