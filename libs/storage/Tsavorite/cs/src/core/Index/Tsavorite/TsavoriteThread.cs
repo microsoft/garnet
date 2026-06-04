@@ -85,11 +85,10 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.readyResponses.Count == 0)
                 return;
 
-            // The queue carries a heap-allocated wrapper (AsyncGetFromDiskResult) rather
-            // than the AsyncIOContext struct itself, so each TryDequeue moves only an 8-byte
-            // reference instead of a ~112-byte struct copy through the queue segment. The
-            // worker reads result.context exactly once into a local then returns the
-            // wrapper to the allocator's pool so it can be reused for the next IO.
+            // The queue carries a heap-allocated wrapper (AsyncGetFromDiskResult) that holds the
+            // AsyncIOContext reference, so each TryDequeue moves only an 8-byte wrapper reference.
+            // The worker reads result.context then returns the wrapper to the allocator's pool so it
+            // can be reused for the next IO.
             while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncGetFromDiskResult<AsyncIOContext> result))
             {
                 // try/finally ensures the pooled wrapper is returned even if the user
@@ -98,10 +97,6 @@ namespace Tsavorite.core
                 // hit rate over time.
                 try
                 {
-                    // Pass result.context by ref directly so we avoid two struct copies (the
-                    // dequeue itself only moved the wrapper reference; passing ref keeps the
-                    // ~112-byte AsyncIOContext in place inside the heap-allocated wrapper
-                    // while InternalCompletePendingRequest reads its fields).
                     InternalCompletePendingRequest(sessionFunctions, ref result.context, completedOutputs);
                 }
                 finally
@@ -118,7 +113,7 @@ namespace Tsavorite.core
             // Get and Remove this request.id pending holder from the dict (8-byte ref load, not a struct copy).
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var holder))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref holder.value, out _, holder);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref holder.value, out var newRequest, holder);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -128,11 +123,17 @@ namespace Tsavorite.core
                 {
                     OnDisposeDiskRecord(ref holder.value.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
                     holder.value.Dispose();
-                    // Return both pooled instances. When status.IsPending, the IO was re-issued and ownership of
-                    // BOTH wrappers passed to the next IO (HandleOperationStatus added them back into the dict /
-                    // gave the request to AsyncGetFromDisk) — so we leave them alone.
+                    // Completed: return both pooled instances to the per-session pools.
                     sessionFunctions.Ctx.ReturnAsyncIOContext(request);
                     sessionFunctions.Ctx.ReturnPendingContextHolder(holder);
+                }
+                else
+                {
+                    // Re-pended: the holder was re-added to the dictionary (owned by the next completion) and a
+                    // FRESH AsyncIOContext (newRequest) was issued for the next hop. The completed `request` is now
+                    // unreferenced and its record was already disposed, so return just it to the pool.
+                    Debug.Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct AsyncIOContext");
+                    sessionFunctions.Ctx.ReturnAsyncIOContext(request);
                 }
             }
         }

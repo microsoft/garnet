@@ -145,11 +145,21 @@ namespace Tsavorite.core
                 if (holder is not null)
                 {
                     sessionCtx.ioPendingRequests.Add(pendingContext.id, holder);
-                    if (!pendingContext.IsConditionalOp)
-                        holder.value.diskLogRecord = default;
+                    // On a re-pend (continued read), the record just read is stale — the re-issued IO reads the
+                    // next chain record. holder.value IS the dictionary entry and the sole owner, so dispose it
+                    // (not just drop the reference) to return its buffer, then leave it unset for the next
+                    // completion's TransferFrom. Conditional ops keep the record as their copy/push source.
+                    if (!pendingContext.IsConditionalOp && holder.value.diskLogRecord.IsSet)
+                    {
+                        OnDisposeDiskRecord(ref holder.value.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                        holder.value.diskLogRecord.Dispose();
+                    }
                 }
                 else
                 {
+                    // Legacy entry sites (compaction, conditional/RMW ops) pass no holder: rent one and copy the
+                    // struct in. The caller retains its own pendingContext.diskLogRecord for disposal, so the dict
+                    // copy must only drop its reference (disposing here would double-free the caller's record).
                     var fallbackHolder = sessionCtx.RentPendingContextHolder();
                     fallbackHolder.value = pendingContext;
                     sessionCtx.ioPendingRequests.Add(pendingContext.id, fallbackHolder);

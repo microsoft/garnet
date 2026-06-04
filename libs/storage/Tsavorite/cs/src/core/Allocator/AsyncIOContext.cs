@@ -140,10 +140,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Set(AsyncIOContext ctx)
         {
-            request.DisposeRecord();
-
-            // Class-typed AsyncIOContext: assignment is a single reference store.
-            request = ctx;
+            // The IO carries this event's `request` as its context, so `ctx` is the same instance and
+            // the completed record is already in `request`. Disposing here would free the record the
+            // waiter is about to read. Only adopt (and dispose the stale record) if a different
+            // instance is ever passed.
+            if (!ReferenceEquals(request, ctx))
+            {
+                request.DisposeRecord();
+                request = ctx;
+            }
             exception = null;
             _ = semaphore.Release(1);
         }

@@ -2021,8 +2021,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="fromLogicalAddress">Start of the record</param>
         /// <param name="numBytes">Number of bytes to be read (may be less than actual record size)</param>
-        /// <param name="context">The <see cref="AsyncIOContext"/> of the operation. This is passed by value, not reference; in the iterator case, it is
-        ///     the completionEvent's contained request, and populating it will result in prematurely freeing the record.</param>
+        /// <param name="context">The <see cref="AsyncIOContext"/> of the operation (a reference type). In the iterator/completion-event
+        ///     case it IS the completionEvent's request instance, and the completed record is read back through it.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
             // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
@@ -2221,12 +2221,9 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
-                        // Reread: the local ctx is a struct copy taken at line var ctx = result.context;
-                        // and carries id / requestKey / minAddress / callbackQueue forward. AsyncGetFromDisk
-                        // passes it by value to AsyncReadRecordToMemory, which rents a fresh wrapper from
-                        // asyncGetFromDiskResultPool and writes asyncResult.context = ctx — so every field
-                        // populated at RECORD_ON_DISK setup propagates into the new IO. Our (old) wrapper
-                        // is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
+                        // Reread: ctx is the same AsyncIOContext instance (a reference). AsyncGetFromDisk rents a
+                        // fresh wrapper and carries ctx into it, so all fields propagate into the new IO. The old
+                        // wrapper is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2235,7 +2232,8 @@ namespace Tsavorite.core
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
                 {
-                    // completionEvent took ownership of the data via Set; finally returns the wrapper to the pool.
+                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the
+                    // waiter. The wrapper is returned to the pool in the finally below (poolReturn stays true).
                     ctx.completionEvent.Set(ctx);
                 }
                 else
