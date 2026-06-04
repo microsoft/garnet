@@ -10,8 +10,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
-using static Tsavorite.core.Utility;
 using static Garnet.test.TestUtils;
+using static Tsavorite.core.Utility;
 
 namespace Garnet.test
 {
