@@ -278,18 +278,5 @@ namespace Tsavorite.core
             }
             #endregion Shortcuts to contained DiskLogRecord
         }
-
-        /// <summary>
-        /// Reference-typed wrapper around <see cref="PendingContext{TInput, TOutput, TContext}"/> used as the value type
-        /// in <see cref="TsavoriteExecutionContext{TInput, TOutput, TContext}.ioPendingRequests"/>. The dictionary stores
-        /// an 8-byte reference to the holder rather than a ~200-byte struct copy on every pending IO, which removes the
-        /// Buffer.BulkMoveWithWriteBarrier call at Dictionary.Add (the largest single source of GC-poll-loop CPU on the
-        /// disk-pending hot path). Entry sites rent a holder, fill <see cref="value"/> in place via <c>ref holder.value</c>,
-        /// and either add the holder to the dictionary (on RECORD_ON_DISK) or return it to the pool.
-        /// </summary>
-        internal sealed class PendingContextHolder<TInput, TOutput, TContext>
-        {
-            internal PendingContext<TInput, TOutput, TContext> value;
-        }
     }
 }

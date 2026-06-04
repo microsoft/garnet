@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -103,17 +104,13 @@ namespace Tsavorite.core
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="request">IO request, if operation went pending</param>
-        /// <param name="holder">On a re-pend (continued operation), the existing dictionary holder whose <c>value</c> field IS
-        ///     <paramref name="pendingContext"/>'s backing storage, so it is re-added to the dictionary as an 8-byte ref. For a
-        ///     first-time pending (the common case) this is null and a holder is rented here and the struct copied into it once.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus,
-            out AsyncIOContext request,
-            PendingContextHolder<TInput, TOutput, TContext> holder = null)
+            out AsyncIOContext request)
         {
             Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
@@ -136,33 +133,17 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
                 pendingContext.id = sessionCtx.totalPending++;
 
-                // Store the pending op as an 8-byte holder reference in the dictionary (vs a ~200-byte struct copy +
-                // Buffer.BulkMoveWithWriteBarrier on every dictionary op). A first-time pending (holder == null) rents a
-                // holder and copies the stack PendingContext into it once. A re-pend already has its holder (the dict
-                // entry == pendingContext's backing storage), so it is re-added directly with no copy.
-                if (holder is not null)
+                // Store the PendingContext struct directly in the dictionary's inline entry array. A reference
+                // wrapper was measured to be net slower here: it cannot avoid the struct copy (the entry sites
+                // build the context on the stack, so it is copied in either way) and adds pool rent/return plus a
+                // heap indirection on every dictionary access.
+                sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+                if (!pendingContext.IsConditionalOp)
                 {
-                    sessionCtx.ioPendingRequests.Add(pendingContext.id, holder);
-                    // On a re-pend (continued read), the record just read is stale — the re-issued IO reads the
-                    // next chain record. holder.value IS the dictionary entry and the sole owner, so dispose it
-                    // (not just drop the reference) to return its buffer, then leave it unset for the next
-                    // completion's TransferFrom. Conditional ops keep the record as their copy/push source.
-                    if (!pendingContext.IsConditionalOp && holder.value.diskLogRecord.IsSet)
-                    {
-                        OnDisposeDiskRecord(ref holder.value.diskLogRecord, DisposeReason.DeserializedFromDisk);
-                        holder.value.diskLogRecord.Dispose();
-                    }
-                }
-                else
-                {
-                    // First-time pending: rent a holder and copy the stack PendingContext in. The caller retains its own
-                    // pendingContext.diskLogRecord for disposal, so the dict copy must only drop its reference (disposing
-                    // here would double-free the caller's record).
-                    var fallbackHolder = sessionCtx.RentPendingContextHolder();
-                    fallbackHolder.value = pendingContext;
-                    sessionCtx.ioPendingRequests.Add(pendingContext.id, fallbackHolder);
-                    if (!pendingContext.IsConditionalOp)
-                        fallbackHolder.value.diskLogRecord = default;
+                    // We may have come from an already-pending operation; keep the diskLogRecord on the caller's
+                    // `pendingContext` (for disposal) but clear it on the dictionary copy so the next completion's
+                    // TransferFrom sees an unset slot. CONDITIONAL_* ops instead keep it as their copy/push source.
+                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
                 }
 
                 // Issue asynchronous I/O request. AsyncIOContext is a class — rent or allocate one instance,

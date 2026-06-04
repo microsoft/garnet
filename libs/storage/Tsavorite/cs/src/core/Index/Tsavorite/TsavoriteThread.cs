@@ -110,29 +110,34 @@ namespace Tsavorite.core
                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Get and Remove this request.id pending holder from the dict (8-byte ref load, not a struct copy).
-            if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var holder))
+            // Get and Remove this request.id pending op from the dictionary (struct copy out of the inline entry).
+            if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref holder.value, out var newRequest, holder);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref pendingContext, out var newRequest);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref holder.value, status);
+                    completedOutputs.TransferFrom(ref pendingContext, status);
                 }
                 if (!status.IsPending)
                 {
-                    OnDisposeDiskRecord(ref holder.value.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
-                    holder.value.Dispose();
-                    // Completed: return both pooled instances to the per-session pools.
+                    OnDisposeDiskRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
+                    pendingContext.Dispose();
                     sessionFunctions.Ctx.ReturnAsyncIOContext(request);
-                    sessionFunctions.Ctx.ReturnPendingContextHolder(holder);
                 }
                 else
                 {
-                    // Re-pended: the holder was re-added to the dictionary (owned by the next completion) and a
-                    // FRESH AsyncIOContext (newRequest) was issued for the next hop. The completed `request` is now
-                    // unreferenced and its record was already disposed, so return just it to the pool.
+                    // Re-pended: a FRESH AsyncIOContext (newRequest) was issued for the next hop and the dictionary
+                    // holds a fresh copy of pendingContext (diskLogRecord cleared for non-conditional ops). The
+                    // completed `request` is now unreferenced, so return it to the pool. The record just read is
+                    // stale; dispose it so its buffer isn't leaked (conditional ops keep it as the dict copy's
+                    // copy/push source, so only dispose for non-conditional).
                     Debug.Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct AsyncIOContext");
+                    if (!pendingContext.IsConditionalOp && pendingContext.diskLogRecord.IsSet)
+                    {
+                        OnDisposeDiskRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                        pendingContext.diskLogRecord.Dispose();
+                    }
                     sessionFunctions.Ctx.ReturnAsyncIOContext(request);
                 }
             }
@@ -142,8 +147,7 @@ namespace Tsavorite.core
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
         internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
-                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest,
-                                                                    PendingContextHolder<TInput, TOutput, TContext> holder = null)
+                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
@@ -163,9 +167,7 @@ namespace Tsavorite.core
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };
 
-            // Pass the same holder through to HandleOperationStatus so any re-read (RECORD_ON_DISK on completion)
-            // can re-Add the same holder ref into the dict (no struct copy).
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest, holder);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)
