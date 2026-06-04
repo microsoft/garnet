@@ -2271,40 +2271,25 @@ namespace Tsavorite.core
             }
         }
 
-        // Two-tier pool for AsyncGetFromDiskResult wrappers. The per-thread cache
-        // (ThreadStatic) absorbs the Get/Return cycles a single worker thread issues
-        // back-to-back, eliminating the CAS on the shared ConcurrentQueue's head/tail
-        // cache line under heavy worker contention. On thread-local cache miss/full
-        // we fall back to the shared queue, which is still allocation-free in steady
-        // state because the total number of in-flight wrappers is bounded by the
-        // device throttle. Same shape/naming as Garnet.common.PooledArrayMemoryPool's
-        // TLS cache.
-        private const int TlsCacheCapacity = 64;
-
-        [ThreadStatic]
-        private static AsyncGetFromDiskResult<AsyncIOContext>[] tlsCache;
-
-        [ThreadStatic]
-        private static int tlsCount;
+        // Two-tier pool for AsyncGetFromDiskResult wrappers. The TLS fast path
+        // (see <see cref="ThreadLocalCache{T}"/>) absorbs the Get/Return cycles
+        // a single worker thread issues back-to-back, eliminating the CAS on the
+        // shared ConcurrentQueue's head/tail cache line under heavy worker
+        // contention. On thread-local cache miss/full we fall back to the shared
+        // queue, which is still allocation-free in steady state because the total
+        // number of in-flight wrappers is bounded by the device throttle.
 
         /// <summary>
-        /// Two-tier rent: thread-local LIFO first, fall back to shared ConcurrentQueue,
+        /// Two-tier rent: thread-local LIFO first, then shared ConcurrentQueue,
         /// finally allocate a fresh wrapper.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal AsyncGetFromDiskResult<AsyncIOContext> RentAsyncGetFromDiskResult()
         {
-            var cache = tlsCache;
-            var idx = tlsCount - 1;
-            if (cache != null && idx >= 0)
-            {
-                var result = cache[idx];
-                cache[idx] = null;
-                tlsCount = idx;
+            if (ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryRent(out var result))
                 return result;
-            }
-            if (asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
-                return asyncResult;
+            if (asyncGetFromDiskResultPool.TryDequeue(out result))
+                return result;
             return new AsyncGetFromDiskResult<AsyncIOContext>();
         }
 
@@ -2320,25 +2305,11 @@ namespace Tsavorite.core
             // SectorAlignedMemory / DiskLogRecord references across rentals.
             result.context = default;
 
-            // Fast path: per-thread cache, lock-free.
-            var cache = tlsCache;
-            if (cache == null)
-            {
-                cache = new AsyncGetFromDiskResult<AsyncIOContext>[TlsCacheCapacity];
-                tlsCache = cache;
-            }
-
-            var count = tlsCount;
-            if ((uint)count < (uint)TlsCacheCapacity)
-            {
-                cache[count] = result;
-                tlsCount = count + 1;
-                return;
-            }
-
-            // Slow path: shared queue. Bounded externally by device.ThrottleLimit
-            // in-flight IOs, so the queue never grows unbounded in steady state.
-            asyncGetFromDiskResultPool.Enqueue(result);
+            // TLS first; on overflow fall back to the shared queue. The queue is
+            // bounded externally by device.ThrottleLimit in-flight IOs, so it never
+            // grows unbounded in steady state.
+            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result))
+                asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>
