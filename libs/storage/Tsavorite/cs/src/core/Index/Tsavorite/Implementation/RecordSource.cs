@@ -34,12 +34,15 @@ namespace Tsavorite.core
         internal long PhysicalAddress;
 
         /// <summary>
-        /// The highest logical address in the main log (i.e. below readcache) for this key; if we have a readcache prefix chain, this is the splice point.
+        /// The highest logical address in the main log (i.e. below readcache) for this key; if we have a readcache
+        /// prefix chain, this is the first main-log address below the prefix. New records set their PreviousAddress to
+        /// this, so CAS'ing them into the hash entry detaches any read-cache prefix.
         /// </summary>
         internal long LatestLogicalAddress;
 
         /// <summary>
-        /// If valid, the lowest readcache logical address for this key; used to splice records between readcache and main log.
+        /// If valid, the lowest readcache logical address for this key (the read-cache/main-log boundary record). Used
+        /// by the read-promotion path to verify no newer main-log record was inserted for the key.
         /// </summary>
         internal long LowestReadCacheLogicalAddress;
 

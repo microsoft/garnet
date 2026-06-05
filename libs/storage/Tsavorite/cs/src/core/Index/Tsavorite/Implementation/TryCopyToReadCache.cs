@@ -35,15 +35,18 @@ namespace Tsavorite.core
             stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
-            // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
+            // Insert the new record by CAS'ing directly into the hash entry (readcache records are always head-inserted
+            // into the HashBucketEntry). It is possible that we will successfully CAS but subsequently fail because a
+            // newer main-log record for this key was committed concurrently and must not be shadowed by this copy.
             var success = stackCtx.hei.TryCAS(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
 
-            // If lowestReadCacheLogicalAddress was previously set, see if there was a conflicting splice into the readcache/mainlog gap.
-            // (If lowestReadCacheLogicalAddress wasn't set, i.e. !hei.IsReadCache, then our CAS would have failed if there had been a conflicting insert at tail.)
+            // If lowestReadCacheLogicalAddress was previously set, verify no newer main-log record for this key was
+            // committed below the read-cache boundary while we were inserting this copy. (If lowestReadCacheLogicalAddress
+            // wasn't set, i.e. !hei.IsReadCache, then our head-insert CAS would have failed if there had been a
+            // conflicting insert at the head.)
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != kInvalidAddress)
             {
                 // We may have forced ReadCacheEvict by the TryAllocate above; in that case, stackCtx.recSrc.LowestReadCacheLogicalAddress, or even the entire
@@ -56,14 +59,15 @@ namespace Tsavorite.core
 
                 if (stackCtx.hei.IsReadCache)
                 {
-                    // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
-                    // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
-                    // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
-                    // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
+                    // If a newer main-log record for this key was committed concurrently (e.g. from a value-changing
+                    // update or a ConditionalCopyToTail), this read-cache copy is obsolete and must be Invalidated so it
+                    // does not shadow the newer value. The companion check is ReadCacheCheckTailAfterSplice, run by the
+                    // committing operation, which invalidates a competing read-cache copy added at the head.
                     // Consistency Notes:
-                    //  - This is only a concern for CTT; an update would take an XLock which means the ReadCache insert could not be done until that XLock was released.
-                    //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
-                    //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
+                    //  - The value-changing update path publishes its new record by detaching the read-cache prefix with
+                    //    a single hash-entry CAS, so a concurrent update that committed before our head-insert would have
+                    //    changed hei.entry and failed our CAS; one that commits after is caught here / by escaping-to-disk
+                    //    detection below (RECORD_ON_DISK).
                     //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
                     success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
                 }

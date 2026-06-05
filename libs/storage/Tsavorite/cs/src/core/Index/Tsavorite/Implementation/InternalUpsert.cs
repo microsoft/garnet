@@ -341,7 +341,7 @@ namespace Tsavorite.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             // If the current record can be elided then we can freelist it; detach it by swapping its .PreviousAddress into newRecordInfo.
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)

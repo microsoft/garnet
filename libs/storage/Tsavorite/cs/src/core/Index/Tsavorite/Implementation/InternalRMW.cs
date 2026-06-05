@@ -563,7 +563,7 @@ namespace Tsavorite.core
         DoCAS:
             // The record being cas'd below is going to be the tombstone record in the case of RCU requested tombstone, and NCU tombstoning.
             // For all other cases this is the new computed record after an RMW.
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {

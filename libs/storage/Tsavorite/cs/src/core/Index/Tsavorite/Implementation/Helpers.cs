@@ -195,19 +195,16 @@ namespace Tsavorite.core
             if (!UseReadCache)
                 return;
 
-            // We're using the read cache, so any insertion must check that a readcache insertion wasn't done
-            if (stackCtx.recSrc.HasReadCacheSrc)
-            {
-                // If we already have a readcache source, there will not be another inserted, so we can just invalidate the source directly.
-                srcLogRecord.InfoRef.SetInvalidAtomic();
-            }
-            else if (stackCtx.recSrc.HasMainLogSrc)
-            {
-                // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
-                // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
-                // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
+            // The new record was published by detaching the read-cache prefix (a single hash-entry CAS in
+            // CASRecordIntoChain). If the source was itself a read-cache record, it is now part of that orphaned
+            // (unreachable) prefix, so it needs no explicit invalidation - readers cannot reach it, and a reader that
+            // grabbed the old head before the detach linearizes before this update and correctly returns the old value.
+            //
+            // The remaining concern (main-log source) is that a competing read-cache promotion of this key may have
+            // been inserted at the head; if so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we
+            // are from ConditionalCopyToTail, which may have skipped the readcache before this.
+            if (stackCtx.recSrc.HasMainLogSrc)
                 ReadCacheCheckTailAfterSplice(srcLogRecord, ref stackCtx.hei, highestReadCacheAddressChecked);
-            }
         }
 
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
@@ -219,12 +216,14 @@ namespace Tsavorite.core
             if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
                 return false;
 
-            // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
+            // The read-cache boundary record (LowestReadCache*) is used by the read-promotion path (TryCopyToReadCache)
+            // to verify no newer main-log record was added for the key; if that boundary record fell below
+            // readcache.HeadAddress we cannot safely use it, so wait for the chain to be fixed up by eviction:
+            // return RETRY_LATER and restart the operation. (The value-changing update path no longer uses this
+            // boundary - it detaches via a single hash-entry CAS - so this only gates the read-cache allocation path.)
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
                 return true;
 
-            // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,
-            // so just return RETRY_LATER and restart the operation.
             return false;
         }
 

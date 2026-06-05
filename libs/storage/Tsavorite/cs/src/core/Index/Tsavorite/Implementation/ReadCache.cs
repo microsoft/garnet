@@ -42,7 +42,7 @@ namespace Tsavorite.core
                     goto RestartChain;
 
                 // LatestLogicalAddress is the "leading" pointer and will end up as the highest logical address in the main log for this tag chain.
-                // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
+                // Track the trailing "lowest read cache" address (the read-cache/main-log boundary record). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
@@ -136,7 +136,7 @@ namespace Tsavorite.core
                     goto RestartChain;
                 }
 
-                // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
+                // Track the trailing "lowest read cache" address (the read-cache/main-log boundary record). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
@@ -177,7 +177,7 @@ namespace Tsavorite.core
             }
         }
 
-        // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
+        // Called after a readcache insert, to make sure there was no race with another session that committed a newer main-log record for the key.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool EnsureNoNewMainLogRecordWasSpliced<TKey>(TKey key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestSearchedAddress, ref OperationStatus failStatus)
             where TKey : IKey
@@ -192,7 +192,7 @@ namespace Tsavorite.core
             Debug.Assert(!IsReadCache(lowest_rcri.PreviousAddress), "lowest-rcri.PreviousAddress should be a main-log address");
             if (lowest_rcri.PreviousAddress > highestSearchedAddress)
             {
-                // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
+                // A newer main-log record for this key was committed below the boundary after our read started. It won't be readcache; that would've been added at the head. See if it's our key.
                 var minAddress = highestSearchedAddress > hlogBase.HeadAddress ? highestSearchedAddress : hlogBase.HeadAddress;
                 if (TraceBackForKeyMatch(key, lowest_rcri.PreviousAddress, minAddress + 1, out var prevAddress, out _))
                     success = false;
