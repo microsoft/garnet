@@ -277,12 +277,11 @@ namespace Tsavorite.core
                 //                   |----- readcache records -----|    |------ main log records ------|
                 //      hashtable -> rcN -> ... -> rc3 -> rc2 -> rc1 -> mN -> ... -> m3 -> m2 -> m1 -> 0
 
-                // This diagram shows that this readcache record's PreviousAddress (in 'entry') is always a lower-readcache or non-readcache logicalAddress,
-                // and therefore this record and the entire sub-chain "to the right" should be evicted. The sequence of events is:
+                // We evict by dropping the entire readcache prefix for the key's bucket with a single CAS on the hash
+                // entry (see ReadCacheEvictChain). The sequence of events is:
                 //  1. Get the key from the readcache for this to-be-evicted record.
                 //  2. Call FindTag on that key in the main store to get the start of the hash chain.
-                //  3. Walk the hash chain's readcache entries, removing records in the "to be removed" range.
-                //     Do not remove Invalid records outside this range; that leads to race conditions.
+                //  3. If the chain links any readcache record in the eviction range, detach the whole prefix.
                 Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
@@ -302,57 +301,41 @@ namespace Tsavorite.core
             }
         }
 
+        // Latch-free, hash-entry-CAS-only eviction (drop). If this key's chain links any readcache record in the
+        // eviction range, detach the ENTIRE readcache prefix for the bucket with a single CAS on the hash entry
+        // (pointing it at the first main-log address). This removes every readcache record in the chain - including
+        // those being evicted - without any interior-record CAS, and only ever advances the head toward the main log
+        // (never restoring a superseded readcache address), so it is correct without a bucket latch and cannot mask a
+        // concurrent insert. Surviving readcache records (above the eviction range) are dropped too and are re-promoted
+        // on the next read. Interior readcache PreviousAddress fields are immutable after creation, so walking the
+        // prefix here only reads them; the sole contended write is the hash-entry CAS.
         private void ReadCacheEvictChain(long rcToLogicalAddress, ref HashEntryInfo hei)
         {
-            // Traverse the chain of readcache entries for this key, looking "ahead" to .PreviousAddress to see if it is less than readcache.HeadAddress.
-            // nextPhysicalAddress remains Constants.kInvalidAddress if hei.Address is < HeadAddress; othrwise, it is the lowest-address readcache record
-            // remaining following this eviction, and its .PreviousAddress is updated to each lower record in turn until we hit a non-readcache record.
-            var nextPhysicalAddress = kInvalidAddress;
-            HashBucketEntry entry = new() { word = hei.entry.word };
-            while (entry.IsReadCache)
+            while (hei.entry.IsReadCache)
             {
-                var logRecord = new LogRecord(readcacheBase.GetPhysicalAddress(entry.Address));
-                ref var recordInfo = ref logRecord.InfoRef;
-
-#if DEBUG
-                // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
-                var mask = state[resizeInfo.version].size_mask;
-                var rc_mask = hei.hash & mask;
-                var pa_mask = storeFunctions.GetKeyHashCode64(logRecord) & mask;
-                Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
-#endif
-
-                // If the record's address is above the eviction range, leave it there and track nextPhysicalAddress.
-                if (AbsoluteAddress(entry.Address) >= rcToLogicalAddress)
+                // Walk the (immutable) readcache prefix to the first main-log address, noting whether any record falls
+                // in the eviction range. Lower records (< the current eviction frontier) are never linked here, so a
+                // record with AbsoluteAddress < rcToLogicalAddress is one that is being evicted now.
+                var inEvictionRange = false;
+                HashBucketEntry walk = new() { word = hei.entry.word };
+                while (walk.IsReadCache)
                 {
-                    Debug.Assert(!IsReadCache(recordInfo.PreviousAddress) || entry.Address > recordInfo.PreviousAddress, "Invalid ordering in readcache chain");
-
-                    nextPhysicalAddress = logRecord.physicalAddress;
-                    entry.word = recordInfo.PreviousAddress;
-                    continue;
+                    if (AbsoluteAddress(walk.Address) < rcToLogicalAddress)
+                        inEvictionRange = true;
+                    walk.word = LogRecord.GetInfo(readcacheBase.GetPhysicalAddress(walk.Address)).PreviousAddress;
                 }
 
-                // The record is being evicted. If we have a higher readcache record that is not being evicted, unlink 'entry.Address' by setting
-                // (nextPhysicalAddress).PreviousAddress to (entry.Address).PreviousAddress.
-                if (nextPhysicalAddress != kInvalidAddress)
-                {
-                    ref var nextri = ref LogRecord.GetInfoRef(nextPhysicalAddress);
-                    if (nextri.TryUpdateAddress(entry.Address, recordInfo.PreviousAddress))
-                    {
-                        recordInfo.PreviousAddress = kTempInvalidAddress;     // The record is no longer in the chain
-                        entry.word = nextri.PreviousAddress;
-                    }
-                    else
-                        Debug.Assert(entry.word == nextri.PreviousAddress, "We should be about to retry nextri.PreviousAddress");
-                    continue;
-                }
+                // Nothing in this chain is being evicted; leave the prefix intact.
+                if (!inEvictionRange)
+                    return;
 
-                // We are evicting the record whose address is in the hash bucket; unlink 'la' by setting the hash bucket to point to (la).PreviousAddress.
-                if (hei.TryCAS(recordInfo.PreviousAddress))
-                    recordInfo.PreviousAddress = kTempInvalidAddress;     // The record is no longer in the chain
-                else
-                    hei.SetToCurrent();
-                entry.word = hei.entry.word;
+                // Detach the whole readcache prefix in one hash-entry CAS (walk.word is now the first main-log address).
+                if (hei.TryCAS(walk.word))
+                    return;
+
+                // Lost the CAS to a concurrent insert/eviction; re-read the head and retry until no in-range readcache
+                // record remains linked (so the pages about to be freed are no longer referenced by any chain).
+                hei.SetToCurrent();
             }
         }
     }
