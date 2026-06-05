@@ -1,12 +1,16 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Runtime.CompilerServices;
+using System.Security.Claims;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 using Garnet.server;
+using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
+using Microsoft.IdentityModel.Tokens;
 
 namespace BDN.benchmark.Operations
 {
@@ -31,6 +35,9 @@ namespace BDN.benchmark.Operations
                 yield break;
             yield return new(true, false);
             yield return new(false, true);
+            // AAD as a 4th first-class variant — exercises GarnetAadAuthenticator.IsAuthorized()
+            // twice per command on the same service code path production runs.
+            yield return new(false, false, useAad: true);
         }
 
         /// <summary>
@@ -51,6 +58,12 @@ namespace BDN.benchmark.Operations
         internal EmbeddedRespServer server;
         internal RespServerSession session;
         internal RespServerSession subscribeSession;
+
+        // Pre-built AUTH RESP command sent once after the session is created on AAD-enabled
+        // runs — null otherwise. Authenticating once leaves the session in the same state
+        // a production AAD-authenticated client would be in by the time benchmark iterations
+        // start, so the hot path includes the IsAuthenticated check per command.
+        private byte[] aadAuthCommand;
 
         /// <summary>
         /// Setup
@@ -85,9 +98,18 @@ namespace BDN.benchmark.Operations
                     File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +hset +hdel +publish +subscribe +@custom");
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
+                else if (Params.useAad)
+                {
+                    opts.AuthSettings = BuildAadAuthSettings(out aadAuthCommand);
+                }
 
                 server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
                 session = server.GetRespSession();
+
+                if (aadAuthCommand is not null)
+                {
+                    SlowConsumeMessage(aadAuthCommand);
+                }
             }
             finally
             {
@@ -105,6 +127,41 @@ namespace BDN.benchmark.Operations
             session.Dispose();
             subscribeSession?.Dispose();
             server.Dispose();
+        }
+
+        // Builds an AAD auth settings + an AUTH RESP command carrying a freshly-minted,
+        // in-process-signed JWT valid for 12 hours. Self-contained: no external IdP / no
+        // network IO; matches the production GarnetAadAuthenticator code path exactly.
+        private static AadAuthenticationSettings BuildAadAuthSettings(out byte[] authCommand)
+        {
+            const string issuer = "https://bdn.benchmark.local/";
+            const string audience = "bdn-bench-audience";
+            const string appId = "bdn-bench-app-id";
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("BDN.benchmark AAD signing key — used only for in-process JWT validation."));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var claims = new[] { new Claim("appidacr", "1"), new Claim("appid", appId) };
+            var jwt = new JwtSecurityTokenHandler().WriteToken(
+                new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(12), signingCredentials: creds));
+
+            var settings = new AadAuthenticationSettings(
+                [appId],
+                [audience],
+                [issuer],
+                new BdnIssuerSigningTokenProvider([key]),
+                validateUsername: false);
+
+            // RESP: AUTH default <jwt>
+            authCommand = Encoding.UTF8.GetBytes($"*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n${jwt.Length}\r\n{jwt}\r\n");
+            return settings;
+        }
+
+        // Stub IssuerSigningTokenProvider that returns the pre-baked signing keys without
+        // attempting OpenID metadata discovery (authority="" disables the refresh timer).
+        private sealed class BdnIssuerSigningTokenProvider : IssuerSigningTokenProvider
+        {
+            public BdnIssuerSigningTokenProvider(IReadOnlyCollection<SecurityKey> signingTokens)
+                : base(string.Empty, signingTokens, refreshTokens: false, logger: null) { }
         }
 
         protected void Send(Request request)
