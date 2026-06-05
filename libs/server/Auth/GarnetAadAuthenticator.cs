@@ -34,11 +34,13 @@ namespace Garnet.server.Auth
         private bool _authorized;
         private DateTime _validFrom;
         private DateTime _validateTo;
+
         // Tick projections of the validity window used on the hot path. Comparing longs
         // skips DateTime's per-call Kind-bit masking — measured ~4x faster than the
         // DateTime path even after CoarseDateTime eliminates the UtcNow syscall.
         private long _validFromTicks = long.MaxValue;
         private long _validToTicks = long.MinValue;
+
         private readonly IReadOnlyCollection<string> _authorizedAppIds;
         private readonly IReadOnlyCollection<string> _audiences;
         private readonly IReadOnlyCollection<string> _issuers;
