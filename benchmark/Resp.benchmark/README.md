@@ -266,14 +266,15 @@ SERVER_PID=$!
 ```
 
 Notes:
-* **`--sg-get true` is required for disk-bound GET throughput.** It enables
+* **`--sg-get` is enabled by default and drives disk-bound GET throughput** (pass
+  `--sg-get false` to disable). It enables
   scatter-gather libaio submissions, batching contiguous pending GETs from a
   pipelined RESP connection into a single vectored IO. Without it, the
   server processes pending GETs one at a time per connection and the device
   queue depth stays below 10 even with multiple client threads — the disk
-  reports 100 % busy at a small fraction of its IOPS ceiling. Enabling the
+  reports 100 % busy at a small fraction of its IOPS ceiling. The
   flag typically yields a several-fold throughput increase at low thread
-  counts and 3–4× at higher thread counts.
+  counts and 3–4× at higher thread counts. (MGET always uses scatter-gather.)
 * `--memory 16m --page 4m` → 4 pages, just enough that records spill into
   read-only and then to disk. (KV.benchmark uses the same shape.)
 * `--index 4g` → 4 GB hash index = 64 M buckets = 8 entries/bucket × 64 M ÷
