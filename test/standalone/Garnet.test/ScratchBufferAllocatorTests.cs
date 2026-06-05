@@ -26,16 +26,15 @@ namespace Garnet.test
             prior.Span.Fill(0xAB);
 
             var savedOffset = sba.ScratchBufferOffset;
-            var savedCount = sba.RetainedBufferCount;
 
             // Reserve several "GET_SG slots" on top.
             for (var i = 0; i < 8; i++)
                 sba.CreateArgSlice(16).Span.Fill((byte)(i + 1));
 
             ClassicAssert.Greater(sba.ScratchBufferOffset, savedOffset);
-            ClassicAssert.AreEqual(savedCount, sba.RetainedBufferCount, "should not have grown");
+            ClassicAssert.AreEqual(bufferLength, sba.TotalLength, "should not have grown");
 
-            sba.TryRewindToOffset(savedOffset, savedCount);
+            sba.TryRewindToOffset(savedOffset);
 
             ClassicAssert.AreEqual(savedOffset, sba.ScratchBufferOffset, "offset reclaimed");
             foreach (var b in prior.ReadOnlySpan)
@@ -47,24 +46,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(bufferLength, sba.TotalLength, "no growth on reuse");
         }
 
-        // When the allocator grows within the scope, the rewind is skipped (the larger buffer is retained).
+        // When the allocator grows within the scope, the current (largest) buffer is reclaimed to its
+        // base so it can be reused, while the larger buffer itself is retained (released by the next Reset).
         [Test]
-        public void GrowDuringScopeSkipsRewind()
+        public void GrowDuringScopeReclaimsCurrentBuffer()
         {
             var sba = new ScratchBufferAllocator();
 
             _ = sba.CreateArgSlice(16);
             var savedOffset = sba.ScratchBufferOffset;
-            var savedCount = sba.RetainedBufferCount;
-            var bufferLength = sba.TotalLength;
+            var totalBeforeGrow = sba.TotalLength;
 
-            // Allocate more than the remaining capacity to force a grow (pushes a buffer).
-            _ = sba.CreateArgSlice(bufferLength);
-            ClassicAssert.Greater(sba.RetainedBufferCount, savedCount, "should have grown");
+            // Allocate more than the remaining capacity to force a grow (pushes the current buffer).
+            _ = sba.CreateArgSlice(totalBeforeGrow);
+            ClassicAssert.Greater(sba.TotalLength, totalBeforeGrow, "should have grown");
+            var offsetAfterGrow = sba.ScratchBufferOffset;
+            var totalAfterGrow = sba.TotalLength;
 
-            var offsetBeforeRewind = sba.ScratchBufferOffset;
-            sba.TryRewindToOffset(savedOffset, savedCount);
-            ClassicAssert.AreEqual(offsetBeforeRewind, sba.ScratchBufferOffset, "rewind skipped on grow");
+            sba.TryRewindToOffset(savedOffset);
+
+            // The current buffer is reclaimed to its base, so the combined offset drops; the larger
+            // buffer is retained (nothing freed yet).
+            ClassicAssert.Less(sba.ScratchBufferOffset, offsetAfterGrow, "current buffer reclaimed");
+            ClassicAssert.AreEqual(totalAfterGrow, sba.TotalLength, "larger buffer retained, nothing freed");
+
+            // The reclaimed current buffer is reused by the next allocation rather than growing again.
+            _ = sba.CreateArgSlice(totalBeforeGrow);
+            ClassicAssert.AreEqual(totalAfterGrow, sba.TotalLength, "reused current buffer, no further grow");
         }
 
         // Rewinding back to the very first (default) state reclaims to zero but keeps the grown buffer.
@@ -74,13 +82,11 @@ namespace Garnet.test
             var sba = new ScratchBufferAllocator();
 
             var savedOffset = sba.ScratchBufferOffset; // 0
-            var savedCount = sba.RetainedBufferCount;  // 0
 
             _ = sba.CreateArgSlice(64);
-            ClassicAssert.AreEqual(savedCount, sba.RetainedBufferCount, "first alloc from default does not push");
             ClassicAssert.Greater(sba.ScratchBufferOffset, 0);
 
-            sba.TryRewindToOffset(savedOffset, savedCount);
+            sba.TryRewindToOffset(savedOffset);
             ClassicAssert.AreEqual(0, sba.ScratchBufferOffset);
             ClassicAssert.Greater(sba.TotalLength, 0, "buffer retained for reuse");
         }
@@ -100,14 +106,42 @@ namespace Garnet.test
             for (var run = 0; run < 1000; run++)
             {
                 var savedOffset = sba.ScratchBufferOffset;
-                var savedCount = sba.RetainedBufferCount;
                 for (var i = 0; i < 8; i++)
                     _ = sba.CreateArgSlice(128);
-                sba.TryRewindToOffset(savedOffset, savedCount);
+                sba.TryRewindToOffset(savedOffset);
             }
 
             ClassicAssert.AreEqual(0, sba.ScratchBufferOffset);
             ClassicAssert.AreEqual(boundedTotal, sba.TotalLength, "retained memory stayed bounded across runs");
+        }
+
+        // Even when the first run grows the allocator across several buffers, repeated reserve+rewind
+        // reuses the largest buffer instead of growing without bound across the batch. (Buffers stacked
+        // during the first run's growth linger until the next Reset, so the combined offset settles at a
+        // constant non-zero value rather than returning to 0.)
+        [Test]
+        public void RepeatedGrowingRunsReuseLargestBuffer()
+        {
+            var sba = new ScratchBufferAllocator();
+
+            var totalAfterFirstRun = 0;
+            var offsetAfterFirstRun = 0;
+            for (var run = 0; run < 100; run++)
+            {
+                var savedOffset = sba.ScratchBufferOffset;
+                for (var i = 0; i < 16; i++)
+                    _ = sba.CreateArgSlice(256);
+                sba.TryRewindToOffset(savedOffset);
+
+                if (run == 0)
+                {
+                    totalAfterFirstRun = sba.TotalLength;
+                    offsetAfterFirstRun = sba.ScratchBufferOffset;
+                }
+            }
+
+            ClassicAssert.AreEqual(totalAfterFirstRun, sba.TotalLength, "did not grow beyond the first run");
+            ClassicAssert.AreEqual(offsetAfterFirstRun, sba.ScratchBufferOffset, "offset did not accumulate across runs");
         }
     }
 }
