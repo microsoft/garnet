@@ -10,7 +10,7 @@ namespace BDN.benchmark.Auth
     /// Microbenchmark mirroring <c>GarnetAadAuthenticator.IsAuthorized()</c> — the
     /// hot path checked twice per command via <c>IsAuthenticated</c> on
     /// AAD-authenticated sessions. Compares the legacy <see cref="DateTime.UtcNow"/>
-    /// path against the cached <see cref="CoarseDateTime"/> path and an
+    /// path against the cached <see cref="CoarseTimeProvider"/> path and an
     /// <see cref="Environment.TickCount64"/>-based variant (suggested in PR review:
     /// monotonic ms-since-boot, no Timer thread, no static state).
     /// </summary>
@@ -55,16 +55,16 @@ namespace BDN.benchmark.Auth
         }
 
         [Benchmark]
-        public bool IsAuthorized_CoarseDateTime()
+        public bool IsAuthorized_CoarseTimeProvider()
         {
-            var now = CoarseDateTime.UtcNow;
+            var now = CoarseTimeProvider.System.UtcNow;
             return _authorized && now >= _validFrom && now <= _validateTo;
         }
 
         [Benchmark]
-        public bool IsAuthorized_CoarseDateTimeTicks()
+        public bool IsAuthorized_CoarseTimeProviderTicks()
         {
-            var nowTicks = CoarseDateTime.UtcNowTicks;
+            var nowTicks = CoarseTimeProvider.System.UtcNowTicks;
             return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
 

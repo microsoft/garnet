@@ -20,13 +20,12 @@ namespace Garnet.server.Auth.Settings
         private bool _validateUsername;
         private bool _disposed;
 
-        // Shared coarse-time cache passed to every authenticator we create.
-        // When the caller did NOT override TimeProvider we reuse the process-wide
-        // singleton (CoarseTimeProvider.System) — no per-settings Timer cost. When
-        // the caller DID override (typically tests with a FakeTimeProvider), we own
-        // a per-settings CoarseTimeProvider and dispose it in Dispose().
+        // Coarse-time cache passed to every authenticator we create. Obtained via
+        // CoarseTimeProvider.Create: returns the process-wide singleton when no override
+        // was supplied (or when TimeProvider.System was passed explicitly), so production
+        // configurations never spawn a per-settings Timer. We dispose unconditionally —
+        // CoarseTimeProvider.Dispose() is a no-op on the singleton.
         private readonly CoarseTimeProvider _coarseTime;
-        private readonly bool _ownsCoarseTime;
 
         /// <summary>
         /// Constructor
@@ -65,16 +64,7 @@ namespace Garnet.server.Auth.Settings
             _signingTokenProvider = signingTokenProvider;
             _validateUsername = validateUsername;
 
-            if (timeProvider is null || ReferenceEquals(timeProvider, TimeProvider.System))
-            {
-                _coarseTime = CoarseTimeProvider.System;
-                _ownsCoarseTime = false;
-            }
-            else
-            {
-                _coarseTime = new CoarseTimeProvider(timeProvider);
-                _ownsCoarseTime = true;
-            }
+            _coarseTime = CoarseTimeProvider.Create(timeProvider);
         }
 
         /// <summary>
@@ -98,10 +88,7 @@ namespace Garnet.server.Auth.Settings
                 {
                     _signingTokenProvider?.Dispose();
                     _signingTokenProvider = null;
-                    if (_ownsCoarseTime)
-                    {
-                        _coarseTime.Dispose();
-                    }
+                    _coarseTime.Dispose();
                 }
 
                 _disposed = true;
