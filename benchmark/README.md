@@ -37,12 +37,14 @@ Please see the [Microbenchmark Design Guidelines](https://github.com/dotnet/perf
 ## Device.benchmark
 
 A low-overhead random-read IOPS benchmark for Tsavorite's `IDevice` implementations
-(Native libaio / io_uring on Linux, IOCP on Windows; FileStream; RandomAccess).
-Useful for sanity-checking that a backend reaches the raw NVMe ceiling and for
-isolating IO-layer performance from upper-layer KV overhead. See
-[`Device.benchmark/README.md`](Device.benchmark/README.md) for usage, a
-copy-paste recipe to saturate ~750K IOPS on a Dell P5600-class NVMe, and a full
-flag reference.
+(Native libaio / io_uring on Linux, IOCP on Windows; FileStream; RandomAccess; and
+the in-RAM `LocalMemory` device). See [`Device.benchmark/README.md`](Device.benchmark/README.md)
+for usage and recipes to saturate ~750K IOPS on a Dell P5600-class NVMe or measure
+the ~78M ops/sec LocalMemory ceiling.
+
+The three layers — Device (raw IDevice), [KV](../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md)
+(Tsavorite engine), and Resp (full RESP server) — stack as **Resp ≤ KV ≤ Device ≤ fio**,
+and each has a matching disk and **LocalMemory (memory)** scenario for comparison.
 
 ## Privacy
 
