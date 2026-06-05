@@ -182,24 +182,16 @@ namespace Tsavorite.core
             return result;
         }
 
-        // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
-        // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
+        // Called after BlockAllocate or anything else that could shift HeadAddress, to return false for RETRY as needed.
+        // The caller still rechecks that the BlockAllocated address is above the position it will insert at.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool VerifyInMemoryAddresses(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
-            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
-                return false;
-
-            // Conservative guard for the read-cache allocation path: if a read-cache prefix's boundary record fell
-            // below readcache.HeadAddress during BlockAllocate (the prefix is being evicted), RETRY_LATER rather than
-            // proceed. This is defensive only - nothing downstream consumes the boundary now (the head-entry CAS in
-            // TryCopyToReadCache / CASRecordIntoChain is the arbiter and would itself fail against a concurrently
-            // evicted/changed head), so it could be removed; it is retained pending its own verification.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
-                return true;
-
-            return false;
+            // (We no longer need to guard the read-cache prefix boundary here: with the latch-free design nothing
+            // consumes the boundary after FindInReadCache - the update detaches and the promotion head-inserts via the
+            // hash-entry CAS, which itself fails if the prefix was concurrently evicted and the head changed.)
+            return !(stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
