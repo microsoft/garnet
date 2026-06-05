@@ -21,7 +21,8 @@ namespace Garnet.common
     {
         /// <summary>
         /// Refresh period in milliseconds. The cached value can lag the real
-        /// wall-clock by up to this many milliseconds.
+        /// wall-clock by up to this many milliseconds (or longer if the system
+        /// is under very high load and ThreadPool callbacks are delayed).
         /// </summary>
         public const int RefreshPeriodMs = 100;
 
