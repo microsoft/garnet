@@ -59,6 +59,11 @@ Swap `--device-io-backend libaio` → `uring`, or `--device native` → `randoma
 device's `fio` ceiling (`--rw=randread --bs=4k --direct=1 --ioengine=libaio
 --iodepth=64 --numjobs=8`).
 
+> Confirm it's truly device-bound: on a big-RAM host the 12.8 GB dataset fits in the
+> page cache, but the device opens with `O_DIRECT`, so reads bypass it. During the run
+> `iostat -x 1` should show `nvme r/s ≈ ops/sec` and `aqu-sz ≈ --device-throttle`; on a
+> shared box use per-process `/proc/<pid>/io` `read_bytes` (excludes other tenants).
+
 ### 3. Memory-device-bound — reads hit the in-RAM device
 
 Same as (2) but `--device localmemory`, a syscall-free RAM-backed `IDevice`. Reads

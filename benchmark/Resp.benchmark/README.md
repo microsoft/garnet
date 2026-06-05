@@ -123,6 +123,11 @@ dotnet $RB --online --op-workload GET --op-percent 100 --dbsize 1000000 -t 8 --i
 - **Verify the load is on disk**: `redis-cli INFO store` — `Log.TailAddress` should
   match the dataset size and `Log.HeadAddress ≈ TailAddress` (data evicted from the
   small memory region to the device).
+- **Confirm reads actually hit the device.** On a big-RAM host the whole dataset fits
+  in the page cache; the storage device opens with `O_DIRECT`, so reads bypass it.
+  During the read phase `iostat -x 1` should show the NVMe at `r/s ≈ ops/sec` and
+  `aqu-sz ≈ --device-throttle-limit`. On a shared box, read per-process
+  `/proc/<GarnetServer pid>/io` `read_bytes` instead — it excludes other tenants' IO.
 - **Run a few read phases** and take the steady-state — the first is warm-up.
 - **A/B fairly**: build/load/run each variant separately. To beat CPU clock drift,
   run both servers on different ports and **interleave** the runs. Stop a server by
