@@ -345,7 +345,7 @@ namespace Garnet.cluster
             var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
             var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore, preferredType);
 
-            WriteAsciiLargeRespString(shardsInfo);
+            WriteLargeAsciiDirectString(shardsInfo);
 
             return true;
         }
@@ -525,8 +525,43 @@ namespace Garnet.cluster
             return true;
         }
 
+
         /// <summary>
-        /// Handle a potentially quite large string by breaking it into pieces if necessary.
+        /// Handle a potentially large already encoded RESP response, breaking it into pieces if necessary.
+        /// </summary>
+        private void WriteLargeAsciiDirectString(ReadOnlySpan<char> message)
+        {
+            // Attempt to write w/o any buffering
+            if (RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
+            {
+                return;
+            }
+
+            var buffer = ArrayPool<byte>.Shared.Rent(message.Length);
+            try
+            {
+                var len = Encoding.ASCII.GetBytes(message, buffer);
+                var remaining = buffer.AsSpan()[..len];
+
+                while (!remaining.IsEmpty)
+                {
+                    var space = (int)(dend - dcurr);
+                    var res = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
+                    Debug.Assert(res, "Should never fail to fit in output buffer");
+
+                    SendAndReset();
+
+                    remaining = remaining[space..];
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        /// <summary>
+        /// Handle a potentially large bulk string by breaking it into pieces if necessary.
         /// </summary>
         private void WriteAsciiLargeRespString(ReadOnlySpan<char> message)
         {
