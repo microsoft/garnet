@@ -35,64 +35,29 @@ namespace Tsavorite.core
             stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            // Insert the new record by CAS'ing directly into the hash entry (readcache records are always head-inserted
-            // into the HashBucketEntry). It is possible that we will successfully CAS but subsequently fail because a
-            // newer main-log record for this key was committed concurrently and must not be shadowed by this copy.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
-            var casSuccess = success;
-
-            var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
-
-            // If lowestReadCacheLogicalAddress was previously set, verify no newer main-log record for this key was
-            // committed below the read-cache boundary while we were inserting this copy. (If lowestReadCacheLogicalAddress
-            // wasn't set, i.e. !hei.IsReadCache, then our head-insert CAS would have failed if there had been a
-            // conflicting insert at the head.)
-            if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != kInvalidAddress)
+            // Insert the new record by CAS'ing it into the hash entry (read-cache records are always head-inserted).
+            // The head CAS is the single linearization point: a newer main-log record for this key can only be published
+            // via a head CAS (a value-changing update detaching the prefix, a CTT, or another promotion) - which would
+            // have changed hei.entry and failed this CAS - or it already existed when the pending read completed, in
+            // which case the pending-read pre-check / re-issue (see InternalContinuePendingRead) would have used it
+            // instead of promoting. So a successful CAS here cannot shadow a newer value.
+            if (!stackCtx.hei.TryCAS(newLogicalAddress | RecordInfo.kIsReadCacheBitMask))
             {
-                // We may have forced ReadCacheEvict by the TryAllocate above; in that case, stackCtx.recSrc.LowestReadCacheLogicalAddress, or even the entire
-                // readcache chain, may have been evicted. Therefore, SkipReadCache here; reinitialize the recSrc to hei and the hlog (not readcache).
-                if (AbsoluteAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress) < readcacheBase.ClosedUntilAddress)
-                {
-                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
-                    SkipReadCache(ref stackCtx, out _); // No need to track didRefresh; we already know it was refreshed once.
-                }
-
-                if (stackCtx.hei.IsReadCache)
-                {
-                    // If a newer main-log record for this key was committed concurrently (e.g. from a value-changing
-                    // update or a ConditionalCopyToTail), this read-cache copy is obsolete and must be Invalidated so it
-                    // does not shadow the newer value. The companion check is ReadCacheCheckTailAfterSplice, run by the
-                    // committing operation, which invalidates a competing read-cache copy added at the head.
-                    // Consistency Notes:
-                    //  - The value-changing update path publishes its new record by detaching the read-cache prefix with
-                    //    a single hash-entry CAS, so a concurrent update that committed before our head-insert would have
-                    //    changed hei.entry and failed our CAS; one that commits after is caught here / by escaping-to-disk
-                    //    detection below (RECORD_ON_DISK).
-                    //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                    success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
-                }
-            }
-
-            if (success)
-            {
-                // We don't call PostInitialWriter here so we must do the size tracking separately.
-                readcacheBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
-
-                newLogRecord.InfoRef.UnsealAndValidate();
-                // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
-                // addresses, but here we found it in the main log address space, so retain that address.
-                stackCtx.ClearNewRecord();
-                return true;
-            }
-
-            // CAS failure, or another record was spliced in.
-            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            if (!casSuccess)
-            {
+                // Another insert won the head; abandon this copy (read-cache population is best-effort).
+                stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
                 newLogRecord.InfoRef.PreviousAddress = kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
+                return false;
             }
-            return false;
+
+            // We don't call PostInitialWriter here so we must do the size tracking separately.
+            readcacheBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
+
+            newLogRecord.InfoRef.UnsealAndValidate();
+            // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
+            // addresses, but here we found it in the main log address space, so retain that address.
+            stackCtx.ClearNewRecord();
+            return true;
         }
     }
 }

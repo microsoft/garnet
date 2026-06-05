@@ -571,8 +571,6 @@ namespace Tsavorite.core
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
-                PostCopyToTail(in srcLogRecord, ref stackCtx);
-
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)
                 {

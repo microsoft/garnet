@@ -350,8 +350,6 @@ namespace Tsavorite.core
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
-                PostCopyToTail(in srcLogRecord, ref stackCtx);
-
                 // Type arg specification is needed because we don't pass TContext
                 TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref newLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);

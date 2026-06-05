@@ -251,8 +251,6 @@ namespace Tsavorite.core
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
-                PostCopyToTail(in srcLogRecord, ref stackCtx);
-
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                 sessionFunctions.PostInitialDeleter(ref newLogRecord, ref deleteInfo);

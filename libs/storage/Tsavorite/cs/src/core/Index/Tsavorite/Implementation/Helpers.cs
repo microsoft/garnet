@@ -182,31 +182,6 @@ namespace Tsavorite.core
             return result;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TSourceLogRecord : ISourceLogRecord
-            => PostCopyToTail(in srcLogRecord, ref stackCtx, stackCtx.hei.Address);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            // Nothing required here if not using ReadCache
-            if (!UseReadCache)
-                return;
-
-            // The new record was published by detaching the read-cache prefix (a single hash-entry CAS in
-            // CASRecordIntoChain). If the source was itself a read-cache record, it is now part of that orphaned
-            // (unreachable) prefix, so it needs no explicit invalidation - readers cannot reach it, and a reader that
-            // grabbed the old head before the detach linearizes before this update and correctly returns the old value.
-            //
-            // The remaining concern (main-log source) is that a competing read-cache promotion of this key may have
-            // been inserted at the head; if so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we
-            // are from ConditionalCopyToTail, which may have skipped the readcache before this.
-            if (stackCtx.recSrc.HasMainLogSrc)
-                ReadCacheCheckTailAfterSplice(srcLogRecord, ref stackCtx.hei, highestReadCacheAddressChecked);
-        }
-
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
         // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -216,11 +191,11 @@ namespace Tsavorite.core
             if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
                 return false;
 
-            // The read-cache boundary record (LowestReadCache*) is used by the read-promotion path (TryCopyToReadCache)
-            // to verify no newer main-log record was added for the key; if that boundary record fell below
-            // readcache.HeadAddress we cannot safely use it, so wait for the chain to be fixed up by eviction:
-            // return RETRY_LATER and restart the operation. (The value-changing update path no longer uses this
-            // boundary - it detaches via a single hash-entry CAS - so this only gates the read-cache allocation path.)
+            // Conservative guard for the read-cache allocation path: if a read-cache prefix's boundary record fell
+            // below readcache.HeadAddress during BlockAllocate (the prefix is being evicted), RETRY_LATER rather than
+            // proceed. This is defensive only - nothing downstream consumes the boundary now (the head-entry CAS in
+            // TryCopyToReadCache / CASRecordIntoChain is the arbiter and would itself fail against a concurrently
+            // evicted/changed head), so it could be removed; it is retained pending its own verification.
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
                 return true;
 
