@@ -97,4 +97,3 @@ namespace BDN.benchmark.Auth
         }
     }
 }
-
