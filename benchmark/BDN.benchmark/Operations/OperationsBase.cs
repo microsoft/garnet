@@ -35,8 +35,6 @@ namespace BDN.benchmark.Operations
                 yield break;
             yield return new(true, false);
             yield return new(false, true);
-            // AAD as a 4th first-class variant — exercises GarnetAadAuthenticator.IsAuthorized()
-            // twice per command on the same service code path production runs.
             yield return new(false, false, useAad: true);
         }
 
