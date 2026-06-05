@@ -56,32 +56,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Memcpy <paramref name="length"/> bytes from <paramref name="src"/> (a scratch slot) into the
-        /// network send buffer starting at <c>dcurr</c>, flushing via <c>Send</c> as needed when the
-        /// network buffer fills. Does not allocate or dispose anything.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CopyToNetworkBuffer(byte* src, int length)
-        {
-            while (length > 0)
-            {
-                int destSpace = (int)(dend - dcurr);
-                int toCopy = length < destSpace ? length : destSpace;
-                Buffer.MemoryCopy(src, dcurr, destSpace, toCopy);
-                dcurr += toCopy;
-                src += toCopy;
-                length -= toCopy;
-                if (length > 0 && toCopy == destSpace)
-                {
-                    Send(networkSender.GetResponseObjectHead());
-                    networkSender.GetResponseObject();
-                    dcurr = networkSender.GetResponseObjectHead();
-                    dend = networkSender.GetResponseObjectTail();
-                }
-            }
-        }
-
-        /// <summary>
         /// GET
         /// </summary>
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
@@ -322,8 +296,12 @@ namespace Garnet.server
                         }
                         else if (sbm.IsSpanByte)
                         {
-                            // Scratch slot: copy into the network buffer.
-                            CopyToNetworkBuffer(sbm.SpanByte.ToPointer(), sbm.Length);
+                            // Scratch slot: write it into the network buffer (flushing if it is full).
+                            // The slot is at most PendingScratchSlotSize, well under the network buffer,
+                            // so this succeeds after at most one flush.
+                            var slot = new ReadOnlySpan<byte>(sbm.SpanByte.ToPointer(), sbm.Length);
+                            while (!RespWriteUtils.TryWriteDirect(slot, ref dcurr, dend))
+                                SendAndReset();
                         }
                         else
                         {
