@@ -536,6 +536,9 @@ namespace Garnet.cluster
             // Attempt to write w/o any buffering
             if (RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
             {
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                    SendAndReset();
+
                 return;
             }
 
@@ -552,6 +555,8 @@ namespace Garnet.cluster
                     Debug.Assert(res, "Should never fail to fit in output buffer");
 
                     SendAndReset();
+
+                    remaining = remaining[space..];
                 }
 
                 while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
