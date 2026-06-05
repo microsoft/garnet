@@ -10,7 +10,7 @@ namespace BDN.benchmark.Auth
     /// Microbenchmark mirroring <c>GarnetAadAuthenticator.IsAuthorized()</c> — the
     /// hot path checked twice per command via <c>IsAuthenticated</c> on
     /// AAD-authenticated sessions. Compares the legacy <see cref="DateTime.UtcNow"/>
-    /// path with the cached <see cref="CoarseUtcNow"/> path, plus the raw clock
+    /// path with the cached <see cref="CoarseDateTime"/> path, plus the raw clock
     /// primitives for context.
     /// </summary>
     [MemoryDiagnoser]
@@ -20,6 +20,9 @@ namespace BDN.benchmark.Auth
         private bool _authorized;
         private DateTime _validFrom;
         private DateTime _validateTo;
+        // Tick projections of the validity window for the Ticks-based variant.
+        private long _validFromTicks;
+        private long _validToTicks;
 
         [GlobalSetup]
         public void GlobalSetup()
@@ -29,6 +32,8 @@ namespace BDN.benchmark.Auth
             _authorized = true;
             _validFrom = now.AddMinutes(-30);
             _validateTo = now.AddMinutes(30);
+            _validFromTicks = _validFrom.Ticks;
+            _validToTicks = _validateTo.Ticks;
         }
 
         // ---- Production-shape methods (verbatim copies from GarnetAadAuthenticator) ----
@@ -41,10 +46,17 @@ namespace BDN.benchmark.Auth
         }
 
         [Benchmark]
-        public bool IsAuthorized_CoarseUtcNow()
+        public bool IsAuthorized_CoarseDateTime()
         {
-            var now = CoarseUtcNow.Value;
+            var now = CoarseDateTime.UtcNow;
             return _authorized && now >= _validFrom && now <= _validateTo;
+        }
+
+        [Benchmark]
+        public bool IsAuthorized_CoarseDateTimeTicks()
+        {
+            var nowTicks = CoarseDateTime.UtcNowTicks;
+            return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
 
         // ---- Raw clock primitives (for reference) ----
@@ -53,9 +65,9 @@ namespace BDN.benchmark.Auth
         public DateTime Raw_DateTimeUtcNow() => DateTime.UtcNow;
 
         [Benchmark]
-        public DateTime Raw_CoarseUtcNowValue() => CoarseUtcNow.Value;
+        public DateTime Raw_CoarseDateTimeUtcNow() => CoarseDateTime.UtcNow;
 
         [Benchmark]
-        public long Raw_CoarseUtcNowTicks() => CoarseUtcNow.Ticks;
+        public long Raw_CoarseDateTimeUtcNowTicks() => CoarseDateTime.UtcNowTicks;
     }
 }
