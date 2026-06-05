@@ -129,7 +129,7 @@ namespace BDN.benchmark.Operations
 
         // Builds an AAD auth settings + an AUTH RESP command carrying a freshly-minted,
         // in-process-signed JWT valid for 12 hours. Self-contained: no external IdP / no
-        // network IO; matches the production GarnetAadAuthenticator code path exactly.
+        // network IO.
         private static AadAuthenticationSettings BuildAadAuthSettings(out byte[] authCommand)
         {
             const string issuer = "https://bdn.benchmark.local/";
@@ -139,15 +139,9 @@ namespace BDN.benchmark.Operations
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("BDN.benchmark AAD signing key — used only for in-process JWT validation."));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var claims = new[] { new Claim("appidacr", "1"), new Claim("appid", appId) };
-            var jwt = new JwtSecurityTokenHandler().WriteToken(
-                new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(12), signingCredentials: creds));
+            var jwt = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(12), signingCredentials: creds));
 
-            var settings = new AadAuthenticationSettings(
-                [appId],
-                [audience],
-                [issuer],
-                new BdnIssuerSigningTokenProvider([key]),
-                validateUsername: false);
+            var settings = new AadAuthenticationSettings([appId], [audience], [issuer], new BdnIssuerSigningTokenProvider([key]), validateUsername: false);
 
             // RESP: AUTH default <jwt>
             authCommand = Encoding.UTF8.GetBytes($"*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n${jwt.Length}\r\n{jwt}\r\n");

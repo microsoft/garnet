@@ -26,8 +26,12 @@ namespace BDN.benchmark.Operations
         /// <summary>
         /// Constructor
         /// </summary>
+        /// <exception cref="ArgumentException">Thrown when both <paramref name="useACLs"/> and <paramref name="useAad"/> are true — the two auth modes are mutually exclusive.</exception>
         public OperationParams(bool useACLs, bool useAof, bool useAad = false)
         {
+            if (useACLs && useAad)
+                throw new ArgumentException("useACLs and useAad are mutually exclusive; pick one auth mode.");
+
             this.useACLs = useACLs;
             this.useAof = useAof;
             this.useAad = useAad;
