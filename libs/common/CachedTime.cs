@@ -22,10 +22,7 @@ public static class CachedTime
 {
     /// <summary>
     /// Refresh period in milliseconds. The cached value can lag the real
-    /// wall-clock by up to this many milliseconds. Redis, for example,
-    /// maintains a similar cached server time (<c>server.mstime</c>),
-    /// refreshed during its event loop to avoid <c>clock_gettime</c>
-    /// syscalls on hot paths like key expiration and LRU bookkeeping.
+    /// wall-clock by up to this many milliseconds.
     /// </summary>
     public const int RefreshPeriodMs = 100;
 
