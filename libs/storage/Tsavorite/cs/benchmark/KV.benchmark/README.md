@@ -6,7 +6,7 @@ fixed-value dataset via the safe `BasicContext` path. Built to reflect engine
 performance with minimal benchmark noise (zero per-op alloc, NUMA-pinned workers,
 false-sharing-free scoreboard, central tick timing).
 
-It sits one layer above [Device.benchmark](../../../../../../benchmark/Device.benchmark/README.md)
+It sits one layer above [Device.benchmark](../Device.benchmark/README.md)
 (raw IDevice IOPS) and below [Resp.benchmark](../../../../../../benchmark/Resp.benchmark/README.md)
 (full RESP server): **Resp ≤ KV ≤ Device ≤ fio**.
 
@@ -65,7 +65,7 @@ Same as (2) but `--device localmemory`, a syscall-free RAM-backed `IDevice`. Rea
 still go through the full pending-read path (hash walk, `PendingContext`, completion
 dispatch) but with **zero disk latency**, isolating engine per-op CPU/GC. Sits
 between (1) and (2), and below the
-[Device.benchmark LocalMemory ceiling](../../../../../../benchmark/Device.benchmark/README.md#memory-device-bound-localmemory)
+[Device.benchmark LocalMemory ceiling](../Device.benchmark/README.md#memory-device-bound-localmemory)
 (which excludes the KV path).
 
 ```bash
@@ -103,5 +103,5 @@ for machine-readable rows, `--report-interval-sec 0` for clean canonical numbers
 
 ## Related
 
-- [Device.benchmark](../../../../../../benchmark/Device.benchmark/README.md) — raw IDevice IOPS (layer below).
+- [Device.benchmark](../Device.benchmark/README.md) — raw IDevice IOPS (layer below).
 - [Resp.benchmark](../../../../../../benchmark/Resp.benchmark/README.md) — full Garnet RESP server (layer above).

@@ -2,7 +2,7 @@
 
 Random-read IOPS benchmark for Tsavorite's `IDevice` backends. Use it to check a
 backend reaches the raw NVMe ceiling (isolating IO from upper-layer KV overhead,
-cf. [KV.benchmark](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md)),
+cf. [KV.benchmark](../KV.benchmark/README.md)),
 to compare libaio vs io_uring on Linux, or — with `LocalMemory` — to measure the
 IO-submission/completion machinery itself with no real device latency.
 
@@ -31,8 +31,8 @@ Always measure on a **Release** build. Run `dotnet $DB --help` for all flags.
 
 This is a device benchmark, so it has two of the suite's three scenarios — both
 issue real IO. (The *memory-bound*/no-IO scenario lives in
-[KV](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md#the-three-scenarios)
-and [Resp](../Resp.benchmark/README.md#the-three-scenarios), which can serve reads
+[KV](../KV.benchmark/README.md#the-three-scenarios)
+and [Resp](../../../../../../benchmark/Resp.benchmark/README.md#the-three-scenarios), which can serve reads
 from RAM with no device.)
 
 ### NVMe storage-bound
@@ -105,5 +105,5 @@ io_uring SQ full). Fix by lowering `--throttle-limit`.
 
 ## Related
 
-- [KV.benchmark](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md) — full Tsavorite KV throughput.
-- [Native device backends](../../libs/storage/Tsavorite/cs/src/core/Device/NativeStorageDevice.cs) — libaio / io_uring.
+- [KV.benchmark](../KV.benchmark/README.md) — full Tsavorite KV throughput.
+- [Native device backends](../../src/core/Device/NativeStorageDevice.cs) — libaio / io_uring.

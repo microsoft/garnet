@@ -4,7 +4,7 @@ End-to-end throughput / latency benchmark for the Garnet RESP server. Drives
 GET/SET/INCR/MGET/... workloads against any RESP server (Garnet, Redis, KeyDB,
 Dragonfly) over TCP, or against an in-process embedded Garnet server. It is the
 top of the stack: **Resp ≤ [KV](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md)
-≤ [Device](../Device.benchmark/README.md) ≤ fio**.
+≤ [Device](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md) ≤ fio**.
 
 Two modes:
 - **Offline** (`--op X`): pre-built request batches of size `-b`, N threads loop
@@ -85,7 +85,7 @@ numactl --cpunodebind=0 --membind=0 dotnet $RB -s --op GET --dbsize 100000000 --
 Same tiered server, but the syscall-free `LocalMemory` device: the full RESP +
 pending path with **zero disk latency** (the software ceiling; matches the
 [KV](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md#the-three-scenarios)
-and [Device](../Device.benchmark/README.md#memory-device-bound-localmemory)
+and [Device](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md#memory-device-bound-localmemory)
 LocalMemory runs). Replace the device flags in (2) with:
 
 ```bash
@@ -148,7 +148,7 @@ dotnet $RB --online --op-workload GET --op-percent 100 --dbsize 1000000 -t 8 --i
 
 ## Related
 
-- [Device.benchmark](../Device.benchmark/README.md) — raw IDevice IOPS (layer 1).
+- [Device.benchmark](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md) — raw IDevice IOPS (layer 1).
 - [KV.benchmark](../../libs/storage/Tsavorite/cs/benchmark/KV.benchmark/README.md) — Tsavorite KV throughput (layer 2).
 - [BDN.benchmark](../BDN.benchmark) — per-command CPU/alloc microbenchmarks (CI).
 - [Garnet benchmarking docs](https://microsoft.github.io/garnet/docs/benchmarking/resp-bench)
