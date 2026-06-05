@@ -199,6 +199,15 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
+        // Latch-free read cache: a value-changing update detaches (drops) the entire readcache prefix for the key's
+        // bucket, so the key is no longer in the live readcache chain (it is re-promoted on its next read).
+        void AssertNotInReadCache(long keyNum)
+        {
+            long kv = keyNum;
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref kv));
+            ClassicAssert.IsFalse(FindRecordInReadCache(key, out _, out _, out _), $"key {keyNum} should not be in the readcache after a detaching update");
+        }
+
         internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TestSpanByteKey key, out PinnedSpanByte recordKey, out bool invalid, out bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
@@ -337,10 +346,12 @@ namespace Tsavorite.test.ReadCacheTests
             doTest(LowChainKey);
             doTest(HighChainKey);
             doTest(MidChainKey);
-            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: false);
 
-            store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
-            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: true, deleted: true);
+            // Latch-free read cache: each delete (a value-changing update) detaches (drops) the readcache prefix,
+            // so none of the deleted keys remain in the readcache.
+            AssertNotInReadCache(LowChainKey);
+            AssertNotInReadCache(MidChainKey);
+            AssertNotInReadCache(HighChainKey);
         }
 
         [Test]
@@ -380,25 +391,31 @@ namespace Tsavorite.test.ReadCacheTests
             for (var ii = LowChainKey; ii < MidChainKey; ++ii)
                 doTest(ii);
 
-            // LowChainKey should not be found in the readcache after deletion to just below midChainKey, but mid- and highChainKey should not be affected.
+            // Latch-free read cache: deleting a key in the chain detaches (drops) the ENTIRE readcache prefix for
+            // the bucket - including mid- and highChainKey, which were NOT deleted (they are re-promoted on read).
+            //  - lowChainKey: deleted; its tombstone is in the mutable main log, not the readcache.
+            //  - mid-/highChainKey: not deleted, but no longer in the readcache (their records are on disk).
             ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
             ClassicAssert.IsFalse(isReadCache);
-            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
-            ClassicAssert.IsTrue(isReadCache);
-            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
-            ClassicAssert.IsTrue(isReadCache);
+            AssertNotInReadCache(MidChainKey);
+            AssertNotInReadCache(HighChainKey);
 
-            store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
-
-            // Following deletion to just below midChainKey:
-            //  lowChainKey's tombstone should still be found in the mutable portion of the log
-            //  midChainKey and highChainKey should be found in the readcache
-            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
-            ClassicAssert.IsFalse(isReadCache);
-            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
-            ClassicAssert.IsTrue(isReadCache);
-            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
-            ClassicAssert.IsTrue(isReadCache);
+            // The non-deleted keys still read their correct values (served from disk / re-promoted on read).
+            long ReadValueOrPending(long keyNum)
+            {
+                long kv = keyNum, output = 0;
+                var k = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref kv));
+                var st = bContext.Read(k, ref output);
+                if (st.IsPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var outs, wait: true);
+                    (st, output) = GetSinglePendingResult(outs);
+                }
+                ClassicAssert.IsTrue(st.Found, st.ToString());
+                return output;
+            }
+            ClassicAssert.AreEqual(MidChainKey + ValueAdd, ReadValueOrPending(MidChainKey));
+            ClassicAssert.AreEqual(HighChainKey + ValueAdd, ReadValueOrPending(HighChainKey));
         }
 
         [Test]
@@ -434,17 +451,20 @@ namespace Tsavorite.test.ReadCacheTests
 
                 key.Set((long)keyNum);
                 var status = bContext.Read(key, ref valueVal);
+                if (status.IsPending)
+                {
+                    // A prior update detached (dropped) the readcache prefix, so this key is now read from disk.
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, valueVal) = GetSinglePendingResult(outputs);
+                }
                 ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 long input = valueVal + ValueAdd;
                 if (useRMW)
                 {
-                    // RMW will use the readcache entry for its source and then invalidate it.
+                    // RMW uses the readcache entry for its source, then detaches (drops) the readcache prefix.
                     status = bContext.RMW(key, ref input);
                     ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
-
-                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    ClassicAssert.IsTrue(invalid);
                 }
                 else
                 {
@@ -455,15 +475,15 @@ namespace Tsavorite.test.ReadCacheTests
                 status = bContext.Read(key, ref valueVal);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
                 ClassicAssert.AreEqual(keyNum + ValueAdd * 2, valueVal);
+
+                // Latch-free read cache: the value-changing update detached (dropped) the readcache prefix, so the
+                // updated key is no longer in the readcache; its new value is served from the (mutable) main log.
+                AssertNotInReadCache(keyNum);
             }
 
             doTest(LowChainKey);
             doTest(HighChainKey);
             doTest(MidChainKey);
-            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: false);
-
-            store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
-            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: true);
         }
 
         [Test]
@@ -548,8 +568,9 @@ namespace Tsavorite.test.ReadCacheTests
                 ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 if (recordRegion == RecordRegion.OnDisk)
                 {
-                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    ClassicAssert.IsTrue(invalid);
+                    // Latch-free read cache: a value-changing update detaches (drops) the readcache prefix, so the
+                    // updated key's readcache entry is no longer in the chain (it is re-promoted on its next read).
+                    AssertNotInReadCache(SpliceInExistingKey);
                 }
 
                 { // New key
