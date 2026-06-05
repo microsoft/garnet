@@ -134,7 +134,7 @@ namespace Garnet.server.Auth
 
         private bool IsAuthorized()
         {
-            var now = CachedTime.UtcNow;
+            var now = CoarseUtcNow.Value;
             return _authorized && now >= _validFrom && now <= _validateTo;
         }
 

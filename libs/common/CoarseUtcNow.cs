@@ -17,7 +17,7 @@ namespace Garnet.common
     /// acceptable; for anything requiring sub-<see cref="RefreshPeriodMs"/> ms
     /// precision call <see cref="DateTime.UtcNow"/> directly.
     /// </remarks>
-    public static class CachedTime
+    public static class CoarseUtcNow
     {
         /// <summary>
         /// Refresh period in milliseconds. The cached value can lag the real
@@ -36,12 +36,12 @@ namespace Garnet.common
         /// Most recently cached <see cref="DateTime.UtcNow"/> Ticks. May lag the
         /// real wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
         /// </summary>
-        public static long UtcNowTicks => Volatile.Read(ref utcTicks);
+        public static long Ticks => Volatile.Read(ref utcTicks);
 
         /// <summary>
         /// Most recently cached <see cref="DateTime.UtcNow"/>. May lag the real
         /// wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
         /// </summary>
-        public static DateTime UtcNow => new DateTime(Volatile.Read(ref utcTicks), DateTimeKind.Utc);
+        public static DateTime Value => new DateTime(Volatile.Read(ref utcTicks), DateTimeKind.Utc);
     }
 }
