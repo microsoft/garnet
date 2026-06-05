@@ -2,49 +2,27 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 
 namespace Garnet.common
 {
     /// <summary>
-    /// Process-wide cached UTC time, refreshed by a background <see cref="Timer"/>.
-    /// Reading the cached value is a pure memory load and avoids the per-call
-    /// platform clock read (<see cref="DateTime.UtcNow"/> reaches into
-    /// <c>clock_gettime</c> via the Linux vDSO or <c>GetSystemTimePreciseAsFileTime</c>
-    /// on Windows; each call is cheap individually but can dominate CPU on hot
-    /// paths invoked millions of times per second) where the
-    /// <see cref="RefreshPeriodMs"/> ms granularity is acceptable.
+    /// Static convenience wrapper around <see cref="CoarseTimeProvider.System"/> —
+    /// the process-wide coarse UTC cache backed by <see cref="TimeProvider.System"/>.
+    /// Prefer injecting a <see cref="CoarseTimeProvider"/> directly when the
+    /// callsite needs to substitute a different clock source (e.g. tests).
     /// </summary>
-    /// <remarks>
-    /// Use only when the callsite is on a hot path AND the bounded staleness is
-    /// acceptable; for anything requiring sub-<see cref="RefreshPeriodMs"/> ms
-    /// precision call <see cref="DateTime.UtcNow"/> directly.
-    /// </remarks>
     public static class CoarseDateTime
     {
         /// <summary>
-        /// Refresh period in milliseconds. The cached value can lag the real
-        /// wall-clock by up to this many milliseconds (or longer if the system
-        /// is under very high load and ThreadPool callbacks are delayed).
+        /// Refresh period in milliseconds — mirrors <see cref="CoarseTimeProvider.RefreshPeriodMs"/>.
         /// </summary>
-        public const int RefreshPeriodMs = 100;
+        public const int RefreshPeriodMs = CoarseTimeProvider.RefreshPeriodMs;
 
-        private static long utcTicks = DateTime.UtcNow.Ticks;
+        /// <inheritdoc cref="CoarseTimeProvider.UtcNow"/>
+        public static DateTime UtcNow => CoarseTimeProvider.System.UtcNow;
 
-        private static readonly Timer timer = new Timer(static _ => UpdateCachedUtc(), state: null, dueTime: RefreshPeriodMs, period: RefreshPeriodMs);
-
-        private static void UpdateCachedUtc() => Volatile.Write(ref utcTicks, DateTime.UtcNow.Ticks);
-
-        /// <summary>
-        /// Most recently cached <see cref="DateTime.UtcNow"/>. May lag the real
-        /// wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
-        /// </summary>
-        public static DateTime UtcNow => new DateTime(Volatile.Read(ref utcTicks), DateTimeKind.Utc);
-
-        /// <summary>
-        /// Ticks of the most recently cached <see cref="DateTime.UtcNow"/>. May lag
-        /// the real wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
-        /// </summary>
-        public static long UtcNowTicks => Volatile.Read(ref utcTicks);
+        /// <inheritdoc cref="CoarseTimeProvider.UtcNowTicks"/>
+        public static long UtcNowTicks => CoarseTimeProvider.System.UtcNowTicks;
     }
 }
+

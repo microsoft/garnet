@@ -47,6 +47,12 @@ namespace Garnet.server.Auth
         private readonly IssuerSigningTokenProvider _signingTokenProvider;
         private readonly bool _validateUsername;
 
+        // Injected coarse-time cache. Production callers pass CoarseTimeProvider.System
+        // (the process-wide singleton backed by TimeProvider.System); tests pass an
+        // instance wrapping a FakeTimeProvider so advancing the fake's clock drives
+        // the same cache-refresh code path the production hot path reads from.
+        private readonly CoarseTimeProvider _coarseTime;
+
         private readonly ILogger _logger;
 
         public GarnetAadAuthenticator(
@@ -55,7 +61,8 @@ namespace Garnet.server.Auth
             IReadOnlyCollection<string> issuers,
             IssuerSigningTokenProvider signingTokenProvider,
             bool validateUsername,
-            ILogger logger)
+            ILogger logger,
+            CoarseTimeProvider coarseTime = null)
         {
             _authorizedAppIds = authorizedAppIds;
             _signingTokenProvider = signingTokenProvider;
@@ -63,6 +70,7 @@ namespace Garnet.server.Auth
             _issuers = issuers;
             _validateUsername = validateUsername;
             _logger = logger;
+            _coarseTime = coarseTime ?? CoarseTimeProvider.System;
         }
 
         public bool Authenticate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username)
@@ -145,7 +153,7 @@ namespace Garnet.server.Auth
 
         private bool IsAuthorized()
         {
-            var nowTicks = CoarseDateTime.UtcNowTicks;
+            var nowTicks = _coarseTime.UtcNowTicks;
             return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
 
