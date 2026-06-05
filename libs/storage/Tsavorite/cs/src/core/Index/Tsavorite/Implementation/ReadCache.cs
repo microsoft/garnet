@@ -42,24 +42,24 @@ namespace Tsavorite.core
                     goto RestartChain;
 
                 // LatestLogicalAddress is the "leading" pointer and will end up as the highest logical address in the main log for this tag chain.
-                // Track the trailing "lowest read cache" address (the read-cache/main-log boundary record). We'll look ahead from this to examine the next record.
-                stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                // curReadCache* is the read-cache record we are currently examining; we look ahead from it to the next record.
+                var curReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                var curReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(curReadCacheLogicalAddress);
 
                 // Use a non-ref local, because we don't need to update.
-                var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                var recordInfo = LogRecord.GetInfo(curReadCachePhysicalAddress);
 
                 // When traversing the readcache, we skip Invalid (Closed) records. We don't have Sealed records in the readcache because they cause
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
                     // TODO: Can we avoid always creating the log record here?
-                    var logRecord = readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                    var logRecord = readcache.CreateLogRecord(curReadCacheLogicalAddress);
                     if (storeFunctions.KeysEqual(key, logRecord))
                     {
                         // Keep these at the current readcache location; they'll be the caller's source record.
-                        stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
-                        stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
+                        stackCtx.recSrc.LogicalAddress = curReadCacheLogicalAddress;
+                        stackCtx.recSrc.PhysicalAddress = curReadCachePhysicalAddress;
                         stackCtx.recSrc.SetAllocator(readcacheBase);
                         stackCtx.recSrc.SetHasReadCacheSrc();
 
@@ -136,11 +136,10 @@ namespace Tsavorite.core
                     goto RestartChain;
                 }
 
-                // Track the trailing "lowest read cache" address (the read-cache/main-log boundary record). We'll look ahead from this to examine the next record.
-                stackCtx.recSrc.LowestReadCacheLogicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
-                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                // curReadCachePhysicalAddress is the read-cache record we are currently examining; we look ahead from it to the next record.
+                var curReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress));
 
-                var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                var recordInfo = LogRecord.GetInfo(curReadCachePhysicalAddress);
                 if (!IsReadCache(recordInfo.PreviousAddress))
                 {
                     stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
