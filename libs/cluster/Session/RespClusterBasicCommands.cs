@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
@@ -274,8 +275,8 @@ namespace Garnet.cluster
             }
 
             var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
-            while (!RespWriteUtils.TryWriteAsciiBulkString(nodes, ref dcurr, dend))
-                SendAndReset();
+
+            WriteAsciiLargeRespString(nodes);
 
             return true;
         }
@@ -343,8 +344,8 @@ namespace Garnet.cluster
 
             var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
             var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore, preferredType);
-            while (!RespWriteUtils.TryWriteAsciiDirect(shardsInfo, ref dcurr, dend))
-                SendAndReset();
+
+            WriteAsciiLargeRespString(shardsInfo);
 
             return true;
         }
@@ -522,6 +523,44 @@ namespace Garnet.cluster
 
             clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
             return true;
+        }
+
+        /// <summary>
+        /// Handle a potentially quite large string by breaking it into pieces if necessary.
+        /// </summary>
+        private void WriteAsciiLargeRespString(ReadOnlySpan<char> message)
+        {
+            while (!RespWriteUtils.TryWriteBulkStringLength(message.Length, ref dcurr, dend))
+                SendAndReset();
+
+            // Attempt to write w/o any buffering
+            if (RespWriteUtils.TryWriteAsciiDirect(message, ref dcurr, dend))
+            {
+                return;
+            }
+
+            var buffer = ArrayPool<byte>.Shared.Rent(message.Length);
+            try
+            {
+                var len = Encoding.ASCII.GetBytes(message, buffer);
+                var remaining = buffer.AsSpan()[..len];
+
+                while (!remaining.IsEmpty)
+                {
+                    var space = (int)(dend - dcurr);
+                    var res = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
+                    Debug.Assert(res, "Should never fail to fit in output buffer");
+
+                    SendAndReset();
+                }
+
+                while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                    SendAndReset();
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
     }
 }
