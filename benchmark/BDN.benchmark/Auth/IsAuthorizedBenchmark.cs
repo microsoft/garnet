@@ -10,8 +10,7 @@ namespace BDN.benchmark.Auth
     /// Microbenchmark mirroring <c>GarnetAadAuthenticator.IsAuthorized()</c> — the
     /// hot path checked twice per command via <c>IsAuthenticated</c> on
     /// AAD-authenticated sessions. Compares the legacy <see cref="DateTime.UtcNow"/>
-    /// path with the cached <see cref="CoarseDateTime"/> path, plus the raw clock
-    /// primitives for context.
+    /// path with the cached <see cref="CoarseDateTime"/> path.
     /// </summary>
     [MemoryDiagnoser]
     public class IsAuthorizedBenchmark
@@ -36,8 +35,6 @@ namespace BDN.benchmark.Auth
             _validToTicks = _validateTo.Ticks;
         }
 
-        // ---- Production-shape methods (verbatim copies from GarnetAadAuthenticator) ----
-
         [Benchmark(Baseline = true)]
         public bool IsAuthorized_DateTimeUtcNow()
         {
@@ -58,16 +55,5 @@ namespace BDN.benchmark.Auth
             var nowTicks = CoarseDateTime.UtcNowTicks;
             return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
-
-        // ---- Raw clock primitives (for reference) ----
-
-        [Benchmark]
-        public DateTime Raw_DateTimeUtcNow() => DateTime.UtcNow;
-
-        [Benchmark]
-        public DateTime Raw_CoarseDateTimeUtcNow() => CoarseDateTime.UtcNow;
-
-        [Benchmark]
-        public long Raw_CoarseDateTimeUtcNowTicks() => CoarseDateTime.UtcNowTicks;
     }
 }
