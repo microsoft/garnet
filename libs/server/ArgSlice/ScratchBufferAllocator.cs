@@ -88,9 +88,16 @@ namespace Garnet.server
         int totalLength;
 
         /// <summary>
-        /// Combined offset in all managed scratch buffers
+        /// Combined offset in all managed scratch buffers. Together with <see cref="RetainedBufferCount"/>
+        /// this forms a savepoint that can be passed to <see cref="TryRewindToOffset"/>.
         /// </summary>
         internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
+
+        /// <summary>
+        /// Number of grown buffers currently retained on the stack. Part of a savepoint together with
+        /// <see cref="ScratchBufferOffset"/>; a change indicates the allocator grew since the savepoint.
+        /// </summary>
+        internal int RetainedBufferCount => previousScratchBuffers.Count;
 
         /// <summary>
         /// Total length of all currently managed buffers
@@ -157,6 +164,31 @@ namespace Garnet.server
 
             Debug.Assert(currScratchBuffer.IsDefault || ScratchBufferOffset == 0);
             Debug.Assert(TotalLength == (currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length));
+        }
+
+        /// <summary>
+        /// Rewinds the current buffer offset back to a savepoint captured as
+        /// (<paramref name="savedOffset"/>, <paramref name="savedBufferCount"/>) from
+        /// <see cref="ScratchBufferOffset"/> and <see cref="RetainedBufferCount"/>, reclaiming every
+        /// slice allocated since. The caller must guarantee that all slices allocated after the savepoint
+        /// are dead. If the allocator grew (pushed a buffer) since the savepoint, the rewind is skipped so
+        /// the larger buffer is retained as the high-water mark; its offset is reclaimed by the next
+        /// <see cref="Reset"/>.
+        /// </summary>
+        /// <param name="savedOffset">Combined offset captured at the savepoint</param>
+        /// <param name="savedBufferCount">Retained buffer count captured at the savepoint</param>
+        internal void TryRewindToOffset(int savedOffset, int savedBufferCount)
+        {
+            if (currScratchBuffer.IsDefault || previousScratchBuffers.Count != savedBufferCount)
+                return;
+
+            var newOffset = savedOffset - prevScratchBuffersOffset;
+
+            // Only a backward rewind within the current buffer is valid (negative wraps to a large uint).
+            if ((uint)newOffset > (uint)currScratchBuffer.scratchBufferOffset)
+                return;
+
+            currScratchBuffer.scratchBufferOffset = newOffset;
         }
 
         /// <summary>

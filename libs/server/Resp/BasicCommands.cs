@@ -238,6 +238,11 @@ namespace Garnet.server
             var output = GetStringOutput();
             var c = 0;
 
+            // Savepoint so the scratch slots this call reserves are reclaimed on return, rather than
+            // accumulating across GET runs within a network batch (slots are dead after the wrap-up).
+            var scratchOffset = scratchBufferAllocator.ScratchBufferOffset;
+            var scratchBufferCount = scratchBufferAllocator.RetainedBufferCount;
+
             for (; ; c++)
             {
                 if (c > 0 && !ParseGETAndKey(ref key))
@@ -337,8 +342,10 @@ namespace Garnet.server
                 pendingGetOutputArr = outputArr;
                 Array.Clear(outputArr, 0, n);
 
-                // Scratch slots were reserved from scratchBufferAllocator; it is reset at the end of the
-                // network batch (RespServerSession.ProcessMessages), so nothing to release here.
+                // The scratch slots are dead now that they have been copied to the network buffer;
+                // rewind the allocator to its entry savepoint so subsequent commands in this network
+                // batch reuse the space instead of growing on top of it.
+                scratchBufferAllocator.TryRewindToOffset(scratchOffset, scratchBufferCount);
             }
 
             if (c > 1)
