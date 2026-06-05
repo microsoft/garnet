@@ -754,7 +754,6 @@ namespace Garnet.test
 
             _ = db.KeyDelete(VectorSet);
 
-            // Add first vector with year=1980
             for (var i = 0; i < VectorCount; i++)
             {
                 var elementId = new byte[sizeof(int)];
