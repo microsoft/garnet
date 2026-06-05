@@ -643,6 +643,84 @@ namespace Tsavorite.test
                 "Read-cache flush must not route through main-log OnEvict");
         }
 
+        /// <summary>
+        /// Read-cache heap-size accounting parity. Every byte of heap a promoted read-cache record adds to
+        /// the read-cache <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> (at copy-to-read-cache
+        /// time, via <c>UpdateSize(add: true)</c>) must be removed again when that record leaves memory (at
+        /// page-close eviction, via <c>EvictRecordsInRange</c>). In particular, a value-changing update
+        /// (Upsert) over a key that is currently cached in the read cache must NOT leak the cached record's
+        /// heap from the tracker.
+        ///
+        /// Regression for a latent read-cache heap-tracker leak: the old splice design invalidated the
+        /// read-cache source record in-place after such an update (<c>PostCopyToTail</c> -> <c>SetInvalidAtomic</c>).
+        /// <c>EvictRecordsInRange</c> skips Invalid records (it assumes their heap was already decremented at the
+        /// invalidation site), so the <c>+UpdateSize</c> from promotion was never matched by a decrement and the
+        /// read-cache tracker drifted upward without bound. The latch-free detach design leaves the orphaned
+        /// source Valid, so eviction decrements it normally and the tracker returns to zero.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void ReadCacheHeapSizeTrackerReturnsToZeroAfterUpdateAndEvict()
+        {
+            // Tear down the default main-log-only store and recreate with read cache enabled.
+            store.Dispose(); store = null;
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 16,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true,
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
+                    new LifecycleRecordTriggers(tracker))
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            // Wire a heap-size tracker onto the read cache so HeapSizeBytes reflects the tracked heap. The
+            // target is set far above the read cache's actual capacity so the tracker never triggers trimming
+            // on its own; the resizer task is intentionally NOT started, because we drive eviction explicitly
+            // below. Only the create-site (UpdateSize) and evict-site (IncrementSize) accounting is exercised.
+            var rcTargetSize = 1L << 20;
+            var rcTracker = new LogSizeTracker<LifecycleStoreFunctions, LifecycleAllocator>(
+                store.ReadCache, rcTargetSize, rcTargetSize / 10, rcTargetSize / 50, logger: null);
+            store.ReadCache.SetLogSizeTracker(rcTracker);
+
+            ClassicAssert.AreEqual(0, store.ReadCache.HeapSizeBytes, "Read-cache heap must start at zero");
+
+            const int n = 50;
+            for (int i = 0; i < n; i++) Upsert(i, i);
+            store.Log.FlushAndEvict(wait: true); // push to disk so the next Read populates the read cache
+
+            // Reads complete pending and promote each record into the read cache (each carries a heap value object).
+            using (var s = NewSession())
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    var input = new TestObjectInput();
+                    var output = new TestObjectOutput();
+                    _ = s.BasicContext.Read(new TestObjectKey { key = i }, ref input, ref output, 0);
+                }
+                _ = s.BasicContext.CompletePending(wait: true);
+            }
+
+            var heapAfterPromote = store.ReadCache.HeapSizeBytes;
+            ClassicAssert.Greater(heapAfterPromote, 0,
+                "Promoting heap-bearing records into the read cache must increase tracked heap");
+
+            // Value-changing update over every read-cached key. Each Upsert finds the read-cache record as its
+            // source (HasReadCacheSrc) and publishes a new main-log record, detaching the read-cache prefix.
+            for (int i = 0; i < n; i++) Upsert(i, i + 1000);
+
+            // Evict the entire read cache. Every promoted record (now orphaned by the detach) must have its heap
+            // decremented exactly once, so the tracker returns to zero with no leak.
+            store.ReadCache.FlushAndEvict(wait: true);
+
+            ClassicAssert.AreEqual(0, store.ReadCache.HeapSizeBytes,
+                $"Read-cache heap tracker leaked after update+evict: expected 0 but was {store.ReadCache.HeapSizeBytes} (promoted {heapAfterPromote})");
+        }
+
         #endregion
 
         #region No double-dispose across lifecycle

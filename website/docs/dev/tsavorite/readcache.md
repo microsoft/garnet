@@ -189,6 +189,31 @@ safe for a concurrent reader **without** epoch protection (the reader observes e
 the old or the new successor, both valid); epoch is needed so eviction does not *free*
 a page a reader or in-flight operation still references.
 
+## Heap-size tracking parity
+
+The read cache has its own `LogSizeTracker` (wired by Garnet's `CacheSizeTracker`)
+that tracks the heap memory (value objects and overflow key/value) held by
+read-cache records. This heap is adjusted at exactly two internal sites:
+
+- **Create**: `TryCopyToReadCache` calls `logSizeTracker.UpdateSize(add: true)`
+  *after* its head-CAS succeeds (a CAS failure abandons the allocation before any
+  heap is added, so no decrement is owed).
+- **Evict**: at page close, `EvictRecordsInRange` decrements each record's heap —
+  but it **skips `Invalid`/`Null` records**, on the contract that an invalidated
+  record already had its heap decremented at the invalidation site.
+
+The load-bearing invariant is therefore: **no read-cache record that has had its
+heap accounted may be marked `Invalid` before it is evicted.** If it were, eviction
+would skip it and the `+UpdateSize` would never be matched — the tracker would drift
+upward and the read cache would over-trim.
+
+The detach design upholds this for free: a value-changing update detaches the whole
+prefix with one hash-entry CAS, leaving every orphaned record **`Valid`**, so each is
+decremented exactly once when its page closes. (The old splice design instead
+invalidated the read-cache source in place after such an update — and during a
+splice/promotion race — without decrementing, which leaked read-cache heap from the
+tracker; removing those in-place invalidations fixed it.)
+
 ## Checkpointing
 
 `SkipReadCacheBucket` runs during the index checkpoint over a copy of each bucket
@@ -205,6 +230,11 @@ always well-defined.
   prefix, eviction retains survivors, and values remain correct.
 - `test/test.stress/ReadCacheStressTests.cs` — multi-threaded stress (1–8 read/write
   threads, forced collisions, concurrent eviction).
+- `test/test.recordops/RecordLifecycleTests.cs` —
+  `ReadCacheHeapSizeTrackerReturnsToZeroAfterUpdateAndEvict` asserts heap-tracker
+  parity: after promoting heap-bearing records into the read cache, updating each
+  cached key (value-changing), and evicting the read cache, the read-cache
+  `LogSizeTracker` heap returns to zero (no leak).
 
 ---
 
