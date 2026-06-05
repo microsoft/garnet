@@ -23,8 +23,10 @@ public static class CachedTime
 {
     /// <summary>
     /// Refresh period in milliseconds. The cached value can lag the real
-    /// wall-clock by up to this many milliseconds. Matches Redis's default
-    /// <c>hz=10</c> cadence.
+    /// wall-clock by up to this many milliseconds. Redis, for example,
+    /// maintains a similar cached server time (<c>server.mstime</c>),
+    /// refreshed during its event loop to avoid <c>clock_gettime</c>
+    /// syscalls on hot paths like key expiration and LRU bookkeeping.
     /// </summary>
     public const int RefreshPeriodMs = 100;
 
