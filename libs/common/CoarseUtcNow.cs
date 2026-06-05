@@ -9,7 +9,10 @@ namespace Garnet.common
     /// <summary>
     /// Process-wide cached UTC time, refreshed by a background <see cref="Timer"/>.
     /// Reading the cached value is a pure memory load and avoids the per-call
-    /// <see cref="DateTime.UtcNow"/> syscall on hot paths where the
+    /// platform clock read (<see cref="DateTime.UtcNow"/> reaches into
+    /// <c>clock_gettime</c> via the Linux vDSO or <c>GetSystemTimePreciseAsFileTime</c>
+    /// on Windows; each call is cheap individually but can dominate CPU on hot
+    /// paths invoked millions of times per second) where the
     /// <see cref="RefreshPeriodMs"/> ms granularity is acceptable.
     /// </summary>
     /// <remarks>
