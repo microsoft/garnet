@@ -892,7 +892,10 @@ namespace Garnet.server
                                 while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
                                     SendAndReset();
 
-                                for (var resultIndex = 0; resultIndex < outputCount; resultIndex++)
+                                var writtenCount = 0;
+                                var resultIndex = 0;
+
+                                while (writtenCount < outputCount)
                                 {
                                     ReadOnlySpan<byte> elementData;
 
@@ -937,6 +940,9 @@ namespace Garnet.server
                                             var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
                                             remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
                                         }
+
+                                        resultIndex++;
+                                        continue;
                                     }
 
                                     while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
@@ -970,6 +976,9 @@ namespace Garnet.server
                                         var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
                                     }
+
+                                    resultIndex++;
+                                    writtenCount++;
                                 }
                             }
                         }
