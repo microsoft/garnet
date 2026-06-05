@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
+using Garnet.common;
 using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -33,6 +34,10 @@ namespace Garnet.server.Auth
         private bool _authorized;
         private DateTime _validFrom;
         private DateTime _validateTo;
+        // Tick-based copies of the validity window used on the hot path so IsAuthorized()
+        // can compare directly against CachedTime.UtcNowTicks without DateTime arithmetic.
+        private long _validFromTicks = long.MaxValue;
+        private long _validToTicks = long.MinValue;
         private readonly IReadOnlyCollection<string> _authorizedAppIds;
         private readonly IReadOnlyCollection<string> _audiences;
         private readonly IReadOnlyCollection<string> _issuers;
@@ -73,6 +78,8 @@ namespace Garnet.server.Auth
 
                 _validFrom = token.ValidFrom;
                 _validateTo = token.ValidTo;
+                _validFromTicks = _validFrom.Ticks;
+                _validToTicks = _validateTo.Ticks;
 
                 _authorized = IsIdentityAuthorized(identity, username);
                 _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);
@@ -84,6 +91,8 @@ namespace Garnet.server.Auth
                 _authorized = false;
                 _validFrom = DateTime.MinValue;
                 _validateTo = DateTime.MinValue;
+                _validFromTicks = long.MaxValue;
+                _validToTicks = long.MinValue;
                 _logger?.LogError(ex, "Authentication failed");
                 return false;
             }
@@ -133,8 +142,8 @@ namespace Garnet.server.Auth
 
         private bool IsAuthorized()
         {
-            var now = DateTime.UtcNow;
-            return _authorized && now >= _validFrom && now <= _validateTo;
+            var nowTicks = CachedTime.UtcNowTicks;
+            return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
 
         private static bool IsApplicationPrincipal(IDictionary<string, string> claims)
