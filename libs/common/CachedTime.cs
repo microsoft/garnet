@@ -14,10 +14,9 @@ namespace Garnet.common;
 /// <see cref="RefreshPeriodMs"/> ms granularity is acceptable.
 /// </summary>
 /// <remarks>
-/// Modeled after Redis's <c>server.mstime</c> cache. Use only when the
-/// callsite is on a hot path AND the bounded staleness is acceptable;
-/// for anything requiring sub-20ms precision call <see cref="DateTime.UtcNow"/>
-/// directly.
+/// Use only when the callsite is on a hot path AND the bounded staleness is
+/// acceptable; for anything requiring sub-<see cref="RefreshPeriodMs"/> ms
+/// precision call <see cref="DateTime.UtcNow"/> directly.
 /// </remarks>
 public static class CachedTime
 {
@@ -34,8 +33,10 @@ public static class CachedTime
 
     // Rooted in a static field so the Timer survives for process lifetime.
     private static readonly Timer timer = new Timer(
-        static _ => Volatile.Write(ref utcTicks, DateTime.UtcNow.Ticks),
+        static _ => UpdateCachedUtc(),
         state: null, dueTime: RefreshPeriodMs, period: RefreshPeriodMs);
+
+    private static void UpdateCachedUtc() => Volatile.Write(ref utcTicks, DateTime.UtcNow.Ticks);
 
     /// <summary>
     /// Most recently cached <see cref="DateTime.UtcNow"/> Ticks. May lag the
