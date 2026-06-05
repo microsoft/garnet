@@ -42,14 +42,12 @@ namespace Embedded.server
         public StoreWrapper StoreWrapper => storeWrapper;
 
         /// <summary>
-        /// Return a direct RESP session to this server, optionally backed by a
-        /// caller-supplied <paramref name="sender"/> (so tests/benchmarks can hold
-        /// a reference for response inspection). A fresh sender is created when null.
+        /// Return a direct RESP session to this server
         /// </summary>
-        internal RespServerSession GetRespSession(EmbeddedNetworkSender sender = null)
+        /// <returns>A new RESP server session</returns>
+        internal RespServerSession GetRespSession()
         {
-            sender ??= new EmbeddedNetworkSender();
-            return new RespServerSession(0, sender, storeWrapper, subscribeBroker: subscribeBroker, null, true);
+            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 
         internal RespServerSession[] GetRespSessions(int count)
