@@ -101,12 +101,14 @@ namespace BDN.benchmark.Operations
                     opts.AuthSettings = BuildAadAuthSettings(out aadAuthCommand);
                 }
 
+                EmbeddedNetworkSender aadSender = Params.useAad ? new EmbeddedNetworkSender() : null;
                 server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
-                session = server.GetRespSession();
+                session = server.GetRespSession(aadSender);
 
                 if (aadAuthCommand is not null)
                 {
                     SlowConsumeMessage(aadAuthCommand);
+                    VerifyAadAuthOk(aadSender.GetLastResponse());
                 }
             }
             finally
@@ -129,7 +131,7 @@ namespace BDN.benchmark.Operations
 
         // Builds an AAD auth settings + an AUTH RESP command carrying a freshly-minted,
         // in-process-signed JWT valid for 12 hours. Self-contained: no external IdP / no
-        // network IO; matches the production GarnetAadAuthenticator code path exactly.
+        // network IO.
         private static AadAuthenticationSettings BuildAadAuthSettings(out byte[] authCommand)
         {
             const string issuer = "https://bdn.benchmark.local/";
@@ -139,19 +141,27 @@ namespace BDN.benchmark.Operations
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("BDN.benchmark AAD signing key — used only for in-process JWT validation."));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var claims = new[] { new Claim("appidacr", "1"), new Claim("appid", appId) };
-            var jwt = new JwtSecurityTokenHandler().WriteToken(
-                new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(12), signingCredentials: creds));
+            var jwt = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(12), signingCredentials: creds));
 
-            var settings = new AadAuthenticationSettings(
-                [appId],
-                [audience],
-                [issuer],
-                new BdnIssuerSigningTokenProvider([key]),
-                validateUsername: false);
+            var settings = new AadAuthenticationSettings([appId], [audience], [issuer], new BdnIssuerSigningTokenProvider([key]), validateUsername: false);
 
             // RESP: AUTH default <jwt>
             authCommand = Encoding.UTF8.GetBytes($"*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n${jwt.Length}\r\n{jwt}\r\n");
             return settings;
+        }
+
+        // Hard verification that the BDN-built JWT actually authenticated the embedded
+        // session. Without this, an AUTH failure would silently leave the session in
+        // an unauthenticated state — every subsequent benchmark command would then be
+        // rejected with NOAUTH and the benchmark numbers would measure auth-rejection
+        // overhead rather than the authenticated hot path.
+        private static void VerifyAadAuthOk(ReadOnlySpan<byte> response)
+        {
+            ReadOnlySpan<byte> expected = "+OK\r\n"u8;
+            if (response.Length != expected.Length || !response.SequenceEqual(expected))
+            {
+                throw new InvalidOperationException($"BDN AAD setup: AUTH did not succeed. Expected '+OK\\r\\n', got: '{Encoding.UTF8.GetString(response)}'");
+            }
         }
 
         // Stub IssuerSigningTokenProvider that returns the pre-baked signing keys without
