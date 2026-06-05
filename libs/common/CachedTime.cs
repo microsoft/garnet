@@ -28,11 +28,6 @@ namespace Garnet.common
 
         private static long utcTicks = DateTime.UtcNow.Ticks;
 
-        // Rooted in a static field so the Timer survives for process lifetime. Callbacks
-        // can in principle overlap if the ThreadPool is starved, but the race is benign:
-        // both writers race a fresh DateTime.UtcNow.Ticks into the same long, and a
-        // briefly-stale (or briefly-backwards) cached value is exactly the bounded
-        // staleness this class already promises.
         private static readonly Timer timer = new Timer(static _ => UpdateCachedUtc(), state: null, dueTime: RefreshPeriodMs, period: RefreshPeriodMs);
 
         private static void UpdateCachedUtc() => Volatile.Write(ref utcTicks, DateTime.UtcNow.Ticks);
