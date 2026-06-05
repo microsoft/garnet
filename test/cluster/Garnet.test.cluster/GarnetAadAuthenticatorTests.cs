@@ -53,7 +53,7 @@ namespace Garnet.test.cluster
                     expires: tokenExpiry,
                     signingCredentials: tokenGenerator.SigningCredentials));
 
-            var coarseTime = new CoarseTimeProvider(timeProvider);
+            var coarseTime = CoarseTimeProvider.Create(timeProvider);
             var authenticator = new GarnetAadAuthenticator(
                 authorizedAppIds: new HashSet<string> { appId },
                 audiences: new HashSet<string> { audience },

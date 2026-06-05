@@ -8,34 +8,26 @@ namespace Garnet.common
 {
     /// <summary>
     /// A <see cref="TimeProvider"/> whose <see cref="GetUtcNow"/> returns a coarse,
-    /// cached value (refreshed every <see cref="RefreshPeriodMs"/> ms) so hot paths
-    /// can read the wall clock as a pure memory load. All other <see cref="TimeProvider"/>
+    /// cached value (refreshed every <see cref="RefreshPeriod"/>) so hot paths can
+    /// read the wall clock as a pure memory load. All other <see cref="TimeProvider"/>
     /// members delegate to the wrapped provider — only <see cref="GetUtcNow"/> is coarse.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// The cache refresh is scheduled via <see cref="TimeProvider.CreateTimer"/> on the
     /// wrapped provider, so a <c>FakeTimeProvider</c> used in tests will drive refreshes
     /// when its time is advanced — production and test code therefore exercise the same
-    /// hot path.
-    /// </para>
-    /// <para>
-    /// Every instance owns a refresh <see cref="ITimer"/>. To keep production at exactly
-    /// one process-wide Timer, callers MUST go through <see cref="Create"/> (which
-    /// returns the <see cref="System"/> singleton when handed <see cref="TimeProvider.System"/>)
-    /// instead of invoking the public constructor directly. The constructor is public
-    /// only so tests can wrap a custom <c>FakeTimeProvider</c> without ceremony.
-    /// </para>
+    /// hot path. Obtain instances through <see cref="Create"/>; it returns the
+    /// <see cref="System"/> singleton when handed <see cref="TimeProvider.System"/> so
+    /// production never spawns more than one background refresh Timer.
     /// </remarks>
     public sealed class CoarseTimeProvider : TimeProvider, IDisposable
     {
         /// <summary>
-        /// Refresh period in milliseconds. The cached value can lag the underlying
-        /// provider by approximately this many milliseconds (best-effort: actual lag
-        /// depends on Timer cadence, which can slip under GC pauses or ThreadPool
-        /// starvation).
+        /// Refresh cadence. The cached value can lag the underlying provider by
+        /// approximately this duration (best-effort: actual lag depends on Timer
+        /// cadence, which can slip under GC pauses or ThreadPool starvation).
         /// </summary>
-        public const int RefreshPeriodMs = 100;
+        public static readonly TimeSpan RefreshPeriod = TimeSpan.FromMilliseconds(100);
 
         /// <summary>
         /// Process-wide shared instance backed by <see cref="TimeProvider.System"/>.
@@ -64,16 +56,11 @@ namespace Garnet.common
             {
                 return System;
             }
+
             return new CoarseTimeProvider(timeProvider);
         }
 
-        /// <summary>
-        /// Constructs a new coarse time cache backed by <paramref name="timeProvider"/>
-        /// — always spawns a background refresh Timer. Prefer <see cref="Create"/>
-        /// for any non-test caller so passing <see cref="TimeProvider.System"/> reuses
-        /// the singleton instead of leaking a Timer.
-        /// </summary>
-        public CoarseTimeProvider(TimeProvider timeProvider)
+        private CoarseTimeProvider(TimeProvider timeProvider)
         {
             ArgumentNullException.ThrowIfNull(timeProvider);
             this.timeProvider = timeProvider;
@@ -81,14 +68,14 @@ namespace Garnet.common
             timer = timeProvider.CreateTimer(
                 static state => ((CoarseTimeProvider)state).Refresh(),
                 this,
-                TimeSpan.FromMilliseconds(RefreshPeriodMs),
-                TimeSpan.FromMilliseconds(RefreshPeriodMs));
+                RefreshPeriod,
+                RefreshPeriod);
         }
 
         private void Refresh() => Volatile.Write(ref utcTicks, timeProvider.GetUtcNow().UtcTicks);
 
         /// <summary>
-        /// Coarse, cached UTC time. May lag the underlying provider by ~<see cref="RefreshPeriodMs"/> ms.
+        /// Coarse, cached UTC time. May lag the underlying provider by ~<see cref="RefreshPeriod"/>.
         /// </summary>
         public override DateTimeOffset GetUtcNow() => new(Volatile.Read(ref utcTicks), TimeSpan.Zero);
 
