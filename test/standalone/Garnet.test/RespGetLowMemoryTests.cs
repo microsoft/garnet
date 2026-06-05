@@ -154,4 +154,47 @@ namespace Garnet.test
             }
         }
     }
+
+    /// <summary>
+    /// MGET must work on a low-memory (disk-backed) store even when scatter-gather is disabled, because
+    /// MGET always uses the scatter-gather batch regardless of the flag. Guards against reintroducing a
+    /// per-key blocking MGET path, which deadlocks when a read goes pending under the ReadWithPrefetch epoch.
+    /// </summary>
+    [TestFixture]
+    public class RespMGetLowMemoryNoSgTests : TestBase
+    {
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, getSG: false, disablePubSub: true);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public void MGetOnDiskCompletesWithoutScatterGatherFlag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 3_000; // Large enough that reads spill to disk and go pending.
+            var input = new KeyValuePair<RedisKey, RedisValue>[n];
+            for (var i = 0; i < n; i++)
+                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
+            ClassicAssert.IsTrue(db.StringSet(input));
+
+            var results = db.StringGet([.. input.Select(r => (RedisKey)r.Key)]);
+            for (var i = 0; i < n; i++)
+                ClassicAssert.AreEqual(input[i].Value, results[i]);
+        }
+    }
 }
