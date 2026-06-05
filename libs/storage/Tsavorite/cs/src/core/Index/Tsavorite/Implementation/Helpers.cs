@@ -170,9 +170,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == kInvalidAddress
-                ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx, newLogicalAddress);
+            // Latch-free read cache: the only structural CAS is on the hash-table entry. The new record's PreviousAddress is
+            // already the first main-log address (recSrc.LatestLogicalAddress), so CAS'ing it into the hash entry atomically
+            // commits the record and *detaches* (drops) any read-cache prefix from the reachable chain. We never splice into
+            // the read-cache/main-log boundary (no interior-record CAS). Dropped read-cache records are orphaned and reclaimed
+            // by ReadCacheEvict when their page is closed. This keeps the head monotonic (it only advances to the new record,
+            // never back to a superseded read-cache address), which is what makes the operation correct without a bucket latch.
+            var result = stackCtx.hei.TryCAS(newLogicalAddress);
             if (result)
                 newLogRecord.InfoRef.UnsealAndValidate();
             return result;
