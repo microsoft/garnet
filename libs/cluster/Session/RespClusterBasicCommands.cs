@@ -545,9 +545,8 @@ namespace Garnet.cluster
 
                 while (!remaining.IsEmpty)
                 {
-                    var space = (int)(dend - dcurr);
-                    var res = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
-                    Debug.Assert(res, "Should never fail to fit in output buffer");
+                    var space = Math.Min((int)(dend - dcurr), remaining.Length);
+                    _ = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
 
                     SendAndReset();
 
@@ -585,9 +584,8 @@ namespace Garnet.cluster
 
                 while (!remaining.IsEmpty)
                 {
-                    var space = (int)(dend - dcurr);
-                    var res = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
-                    Debug.Assert(res, "Should never fail to fit in output buffer");
+                    var space = Math.Min((int)(dend - dcurr), remaining.Length);
+                    _ = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
 
                     SendAndReset();
 
