@@ -30,22 +30,22 @@ public static class CachedTime
     /// </summary>
     public const int RefreshPeriodMs = 100;
 
-    private static long _utcTicks = DateTime.UtcNow.Ticks;
+    private static long utcTicks = DateTime.UtcNow.Ticks;
 
     // Rooted in a static field so the Timer survives for process lifetime.
-    private static readonly Timer _timer = new Timer(
-        static _ => Volatile.Write(ref _utcTicks, DateTime.UtcNow.Ticks),
+    private static readonly Timer timer = new Timer(
+        static _ => Volatile.Write(ref utcTicks, DateTime.UtcNow.Ticks),
         state: null, dueTime: RefreshPeriodMs, period: RefreshPeriodMs);
 
     /// <summary>
     /// Most recently cached <see cref="DateTime.UtcNow"/> Ticks. May lag the
     /// real wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
     /// </summary>
-    public static long UtcNowTicks => Volatile.Read(ref _utcTicks);
+    public static long UtcNowTicks => Volatile.Read(ref utcTicks);
 
     /// <summary>
     /// Most recently cached <see cref="DateTime.UtcNow"/>. May lag the real
     /// wall-clock by up to <see cref="RefreshPeriodMs"/> ms.
     /// </summary>
-    public static DateTime UtcNow => new DateTime(Volatile.Read(ref _utcTicks), DateTimeKind.Utc);
+    public static DateTime UtcNow => new DateTime(Volatile.Read(ref utcTicks), DateTimeKind.Utc);
 }
