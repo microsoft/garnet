@@ -33,6 +33,11 @@ namespace Embedded.server
         /// </summary>
         byte* bufferPtr;
 
+        // Tracks the offset/size of the most recent SendResponse(int, int) call so
+        // benchmark setup code can verify one-shot commands (e.g. AUTH) succeeded.
+        int lastResponseOffset;
+        int lastResponseSize;
+
         /// <summary>
         /// Create a new dummy network sender with a simple in-memory buffer
         /// </summary>
@@ -115,8 +120,16 @@ namespace Embedded.server
         /// <inheritdoc />
         public bool SendResponse(int offset, int size)
         {
+            lastResponseOffset = offset;
+            lastResponseSize = size;
             return true;
         }
+
+        /// <summary>
+        /// Bytes written by the most recent <see cref="SendResponse(int, int)"/> call.
+        /// Intended for benchmark setup-time verification of one-shot commands.
+        /// </summary>
+        public ReadOnlySpan<byte> GetLastResponse() => new(bufferPtr + lastResponseOffset, lastResponseSize);
 
         /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)

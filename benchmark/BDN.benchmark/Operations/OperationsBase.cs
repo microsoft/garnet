@@ -101,12 +101,14 @@ namespace BDN.benchmark.Operations
                     opts.AuthSettings = BuildAadAuthSettings(out aadAuthCommand);
                 }
 
+                EmbeddedNetworkSender aadSender = Params.useAad ? new EmbeddedNetworkSender() : null;
                 server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
-                session = server.GetRespSession();
+                session = server.GetRespSession(aadSender);
 
                 if (aadAuthCommand is not null)
                 {
                     SlowConsumeMessage(aadAuthCommand);
+                    VerifyAadAuthOk(aadSender.GetLastResponse());
                 }
             }
             finally
@@ -146,6 +148,20 @@ namespace BDN.benchmark.Operations
             // RESP: AUTH default <jwt>
             authCommand = Encoding.UTF8.GetBytes($"*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n${jwt.Length}\r\n{jwt}\r\n");
             return settings;
+        }
+
+        // Hard verification that the BDN-built JWT actually authenticated the embedded
+        // session. Without this, an AUTH failure would silently leave the session in
+        // an unauthenticated state — every subsequent benchmark command would then be
+        // rejected with NOAUTH and the benchmark numbers would measure auth-rejection
+        // overhead rather than the authenticated hot path.
+        private static void VerifyAadAuthOk(ReadOnlySpan<byte> response)
+        {
+            ReadOnlySpan<byte> expected = "+OK\r\n"u8;
+            if (response.Length != expected.Length || !response.SequenceEqual(expected))
+            {
+                throw new InvalidOperationException($"BDN AAD setup: AUTH did not succeed. Expected '+OK\\r\\n', got: '{Encoding.UTF8.GetString(response)}'");
+            }
         }
 
         // Stub IssuerSigningTokenProvider that returns the pre-baked signing keys without
