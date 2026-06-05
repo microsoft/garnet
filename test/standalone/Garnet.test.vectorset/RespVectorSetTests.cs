@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -715,6 +716,47 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(0, res4.Length,
                 "Should return 0 results since no vectors have year > 1990");
+        }
+
+        [Test]
+        public void VSIMCount()
+        {
+            const string VectorSet = "foo";
+            const int VectorCount = 100;
+            const int Select = 10;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete(VectorSet);
+
+            // Add first vector with year=1980
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var elementId = new byte[sizeof(int)];
+                BinaryPrimitives.WriteInt32LittleEndian(elementId, i);
+
+                var res = (int)db.Execute("VADD", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", elementId, "NOQUANT", "SETATTR", $"{{\"field\": {100 + i}}}"]);
+                ClassicAssert.AreEqual(1, res);
+            }
+
+            var vsimNoFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select]);
+            ClassicAssert.AreEqual(Select, vsimNoFilter.Length);
+
+            var vsimNoFilterWithAttribs = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select, "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(Select * 2, vsimNoFilterWithAttribs.Length);
+
+            var vsimNoFilterWithAttribsWithScores = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select, "WITHATTRIBS", "WITHSCORES"]);
+            ClassicAssert.AreEqual(Select * 3, vsimNoFilterWithAttribsWithScores.Length);
+
+            var vsimWithFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select, "FILTER", $".field >= 100 and .field <= {100 + (2 * Select)}"]);
+            ClassicAssert.AreEqual(Select, vsimWithFilter.Length);
+
+            var vsimWithFilterWithAttribs = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select, "FILTER", $".field >= 100 and .field <= {100 + (2 * Select)}", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(Select * 2, vsimWithFilterWithAttribs.Length);
+
+            var vsimWithFilterWithAttribsWithScores = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", Select, "FILTER", $".field >= 100 and .field <= {100 + (2 * Select)}", "WITHATTRIBS", "WITHSCORES"]);
+            ClassicAssert.AreEqual(Select * 3, vsimWithFilterWithAttribsWithScores.Length);
         }
 
         [Test]
