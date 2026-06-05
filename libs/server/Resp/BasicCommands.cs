@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -30,78 +29,36 @@ namespace Garnet.server
         private (GarnetStatus, StringOutput)[] pendingGetOutputArr;
 
         /// <summary>
-        /// Per-session pinned scratch buffer used by <see cref="NetworkGET_SG"/> to back
-        /// the <see cref="StringOutput"/> passed for each post-first-pending submission.
-        /// Each pending op reserves a fixed-size slot (<see cref="PendingScratchSlotSize"/>)
-        /// from this buffer; the Reader callback writes the RESP-encoded response into the
-        /// slot (the existing <c>CopyRespTo</c> direct-write fast path); the wrap-up loop
-        /// memcpy's each slot into the network buffer in batch order.
-        /// <para>
-        /// This replaces the previous design where each pending op rented a fresh
-        /// <see cref="System.Buffers.MemoryPool{T}"/> wrapper + <c>ArrayPool&lt;byte&gt;</c>
-        /// slice on the Reader callback — which dominated the disk-GET allocation profile
-        /// and added a global-pool round-trip per pending. Pinned via
-        /// <c>GC.AllocateArray(pinned: true)</c> so the cached <see cref="pendingScratchPtr"/>
-        /// is stable for the lifetime of the array; we re-pin on every grow.
-        /// </para>
-        /// </summary>
-        private byte[] pendingScratch;
-        private byte* pendingScratchPtr;
-        private int pendingScratchUsed;
-
-        /// <summary>
-        /// Per-slot reservation size in <see cref="pendingScratch"/>. Sized to cover a typical
-        /// small-value RESP response ("$&lt;3-digits&gt;\r\n&lt;value&gt;\r\n" for values up to ~120 B).
-        /// Pending responses that exceed this fall through to the existing
-        /// <see cref="System.Buffers.MemoryPool{T}"/> Rent path (rare); the overflowed
-        /// <c>IMemoryOwner&lt;byte&gt;</c> is disposed in the wrap-up loop via
-        /// <see cref="SendAndReset(System.Buffers.IMemoryOwner{byte},int)"/>.
+        /// Per-slot reservation size for a post-first-pending <see cref="NetworkGET_SG"/> response.
+        /// Sized to cover a typical small-value RESP response ("$&lt;3-digits&gt;\r\n&lt;value&gt;\r\n"
+        /// for values up to ~120 B). Responses that exceed this overflow to a rented
+        /// <see cref="System.Buffers.MemoryPool{T}"/> buffer (handled in the wrap-up loop).
         /// </summary>
         private const int PendingScratchSlotSize = 128;
 
         /// <summary>
-        /// Reserves the next <see cref="PendingScratchSlotSize"/>-byte slot in
-        /// <see cref="pendingScratch"/> and returns a <see cref="StringOutput"/> whose
-        /// <see cref="SpanByteAndMemory"/> points at it. If the scratch buffer is not large
-        /// enough for another slot, returns <c>default</c> — the Reader will then fall
-        /// through to its existing Rent path for that op. <see cref="pendingScratchUsed"/>
-        /// is still advanced so we can grow the scratch at end-of-batch to fit next time.
+        /// Reserves a fixed-size pinned slot from the session's <see cref="scratchBufferAllocator"/> and
+        /// returns a <see cref="StringOutput"/> pointing at it, used to back each post-first-pending
+        /// <see cref="NetworkGET_SG"/> submission. The Reader writes the RESP response into the slot via
+        /// the <c>IsSpanByte</c> fast path (values larger than the slot overflow to a rented buffer).
+        /// <para>
+        /// <see cref="ScratchBufferAllocator"/> slices stay valid across subsequent allocations until the
+        /// session's batch-end <c>Reset</c>, so every slot reserved in the issue loop survives until the
+        /// wrap-up loop reads it. This replaces a prior per-pending <see cref="System.Buffers.MemoryPool{T}"/>
+        /// rent (a global-pool round-trip and allocation on every pending op).
+        /// </para>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private StringOutput GetPendingScratchOutput()
         {
-            int off = pendingScratchUsed;
-            pendingScratchUsed = off + PendingScratchSlotSize;
-            if (pendingScratch != null && off + PendingScratchSlotSize <= pendingScratch.Length)
-                return StringOutput.FromPinnedPointer(pendingScratchPtr + off, PendingScratchSlotSize);
-            return default; // overflow — caller (Tsavorite Reader) will Rent
+            var slice = scratchBufferAllocator.CreateArgSlice(PendingScratchSlotSize);
+            return StringOutput.FromPinnedPointer(slice.ToPointer(), PendingScratchSlotSize);
         }
 
         /// <summary>
-        /// If <see cref="pendingScratchUsed"/> exceeded the current
-        /// <see cref="pendingScratch"/> capacity during the batch, allocate a larger pinned
-        /// buffer so the next batch fits without overflow. Reset the offset for the next
-        /// batch either way. Called from the wrap-up of <see cref="NetworkGET_SG"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ResetPendingScratch()
-        {
-            if (pendingScratch == null || pendingScratchUsed > pendingScratch.Length)
-            {
-                int newSize = pendingScratch?.Length ?? 4096;
-                while (newSize < pendingScratchUsed) newSize *= 2;
-                pendingScratch = GC.AllocateArray<byte>(newSize, pinned: true);
-                pendingScratchPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pendingScratch));
-            }
-            pendingScratchUsed = 0;
-        }
-
-        /// <summary>
-        /// Memcpy <paramref name="length"/> bytes from <paramref name="src"/> (typically a
-        /// <see cref="pendingScratch"/> slot) into the network send buffer starting at
-        /// <c>dcurr</c>, flushing via <c>SendAndReset</c> as needed when the network buffer
-        /// fills. Does not allocate or dispose anything — the scratch is owned by the
-        /// session and reused next batch.
+        /// Memcpy <paramref name="length"/> bytes from <paramref name="src"/> (a scratch slot) into the
+        /// network send buffer starting at <c>dcurr</c>, flushing via <c>Send</c> as needed when the
+        /// network buffer fills. Does not allocate or dispose anything.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void CopyToNetworkBuffer(byte* src, int length)
@@ -380,8 +337,8 @@ namespace Garnet.server
                 pendingGetOutputArr = outputArr;
                 Array.Clear(outputArr, 0, n);
 
-                // Grow pendingScratch if we exceeded it this batch; reset offset for next.
-                ResetPendingScratch();
+                // Scratch slots were reserved from scratchBufferAllocator; it is reset at the end of the
+                // network batch (RespServerSession.ProcessMessages), so nothing to release here.
             }
 
             if (c > 1)
