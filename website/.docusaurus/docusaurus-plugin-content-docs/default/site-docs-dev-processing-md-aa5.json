@@ -1,0 +1,28 @@
+{
+  "id": "dev/processing",
+  "title": "Processing Layer",
+  "description": "Messages to Garnet server are processed once the networking layer reads the incoming message and passes it to the RespServerSession class.",
+  "source": "@site/docs/dev/processing.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/processing",
+  "permalink": "/garnet/docs/dev/processing",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/processing.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "processing",
+    "sidebar_label": "Processing Layer",
+    "title": "Processing Layer"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Network Layer",
+    "permalink": "/garnet/docs/dev/network"
+  },
+  "next": {
+    "title": "Garnet API",
+    "permalink": "/garnet/docs/dev/garnet-api"
+  }
+}
