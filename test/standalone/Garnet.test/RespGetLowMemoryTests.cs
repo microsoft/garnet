@@ -64,6 +64,38 @@ namespace Garnet.test
             }
         }
 
+        // Mixed GET/SET pipeline: every GET is immediately followed by a SET, so the scatter-gather
+        // look-ahead must correctly decline to batch across the SET and the interleaved results must be
+        // exactly as issued. Exercises the cheap GET-prefix peek that rejects a non-GET next command.
+        [Test]
+        public void ScatterGatherMixedGetSetPipeline()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 100;
+            for (var i = 0; i < n; i++)
+                db.StringSet($"r{i}", $"val{i}");
+
+            var batch = db.CreateBatch();
+            var getTasks = new Task<RedisValue>[n];
+            var setTasks = new Task<bool>[n];
+            for (var i = 0; i < n; i++)
+            {
+                getTasks[i] = batch.StringGetAsync($"r{i}");
+                setTasks[i] = batch.StringSetAsync($"w{i}", $"x{i}");
+            }
+            batch.Execute();
+            Task.WaitAll([.. getTasks.Cast<Task>().Concat(setTasks)]);
+
+            for (var i = 0; i < n; i++)
+            {
+                ClassicAssert.AreEqual($"val{i}", (string)getTasks[i].Result);
+                ClassicAssert.IsTrue(setTasks[i].Result);
+                ClassicAssert.AreEqual($"x{i}", (string)db.StringGet($"w{i}"));
+            }
+        }
+
         [Test]
         [TestCase(30)]      // Probably completes sync
         [TestCase(300)]     // May be a mix

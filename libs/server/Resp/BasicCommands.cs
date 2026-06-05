@@ -87,7 +87,10 @@ namespace Garnet.server
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.serverOptions.EnableScatterGatherGet)
+            // Only take the scatter-gather path when the next command is itself a GET to batch with.
+            // A single (request/response) GET, or a GET followed by a non-GET, falls through to the simple
+            // path so it is as cheap as with sg-get off (no look-ahead, no scatter-gather setup).
+            if (storeWrapper.serverOptions.EnableScatterGatherGet && NextCommandMaybeGet())
                 return NetworkGET_SG(ref storageApi);
 
             if (useAsync)
@@ -1797,6 +1800,13 @@ namespace Garnet.server
 
         bool ParseGETAndKey(ref PinnedSpanByte key)
         {
+            // Speculative single 8-byte compare on the next command's RESP framing: skip the full parse +
+            // backoff when it cannot be a GET (e.g. the SET in a GET/SET pipeline, which is *3...), avoiding
+            // a double-parse of that command. A same-shaped command (e.g. TTL) is rejected by the full parse
+            // below, and a miss only forgoes batching — it is never incorrect.
+            if (!NextCommandMaybeGet())
+                return false;
+
             var oldEndReadHead = readHead = endReadHead;
             var cmd = ParseCommand(writeErrorOnFailure: true, out var success);
             if (!success || cmd != RespCommand.GET)
@@ -1808,6 +1818,18 @@ namespace Garnet.server
             key = parseState.GetArgSliceByRef(0);
             return true;
         }
+
+        /// <summary>
+        /// RESP framing of a 2-argument command whose first token is 3 bytes ("GET key"). Used as a single
+        /// 8-byte compare so the scatter-gather look-ahead can reject a non-GET next command (e.g. SET, which
+        /// is <c>*3...</c>) without a full parse.
+        /// </summary>
+        static ReadOnlySpan<byte> GetCommandRespPrefix => "*2\r\n$3\r\n"u8;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool NextCommandMaybeGet()
+            => bytesRead - endReadHead >= 8 &&
+               new ReadOnlySpan<byte>(recvBufferPtr + endReadHead, 8).SequenceEqual(GetCommandRespPrefix);
 
         private bool TryGetSimpleCommandInfo(string cmdName, out SimpleRespCommandInfo simpleCmdInfo)
         {
