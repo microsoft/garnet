@@ -21,9 +21,6 @@ namespace Device.benchmark
         [Option("device-type", Required = false, Default = DeviceType.Native, HelpText = "Device type (Native, FileStream, RandomAccess, LocalMemory). For LocalMemory, --file-name and --io-backend are ignored.")]
         public DeviceType DeviceType { get; set; }
 
-        [Option("local-memory-latency-ms", Required = false, Default = 0, HelpText = "DeviceType.LocalMemory: per-IO simulated latency in milliseconds.")]
-        public int LocalMemoryLatencyMs { get; set; }
-
         [Option("throttle-limit", Required = false, Default = 0, HelpText = "Max device-level in-flight ops (0 = no throttle). Note: for Native libaio the kernel io_context is only 128 slots wide — running with --throttle-limit 0 plus high QD (threads × batch > 128) floods the ring and the kernel returns EAGAIN per request (surfaced as Status::IOError=4). The benchmark reports these as errors; throughput uses successful completions only. Set to 128 (matches both the libaio io_context capacity and the io_uring SQ depth this build uses) to avoid flood.")]
         public int ThrottleLimit { get; set; }
 

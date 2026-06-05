@@ -54,7 +54,7 @@ namespace Device.benchmark
             Console.WriteLine("<<<<<<< Start Benchmark Configuration >>>>>>>>");
             if (opts.DeviceType == DeviceType.LocalMemory)
             {
-                Console.WriteLine($"Device Type: LocalMemory (latencyMs={opts.LocalMemoryLatencyMs})");
+                Console.WriteLine($"Device Type: LocalMemory");
             }
             else
             {
@@ -220,14 +220,13 @@ namespace Device.benchmark
                 if (capacity % segSize != 0)
                     capacity = ((capacity + segSize - 1) / segSize) * segSize;
                 int parallelism = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
-                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism}) latencyMs={opts.LocalMemoryLatencyMs}");
+                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism})");
                 return Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize,
-                    localMemoryLatencyMs: opts.LocalMemoryLatencyMs);
+                    localMemorySegmentSize: segSize);
             }
 
             var deviceType = opts.DeviceType;

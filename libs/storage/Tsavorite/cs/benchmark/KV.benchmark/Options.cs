@@ -115,10 +115,6 @@ namespace Tsavorite.kvbench
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
 
-        [Option("localmem-latency-ms", Required = false, Default = 0,
-            HelpText = "DeviceType.LocalMemory simulated per-IO latency in milliseconds (0 = none).")]
-        public int LocalMemLatencyMs { get; set; }
-
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
         public string DataPath { get; set; }

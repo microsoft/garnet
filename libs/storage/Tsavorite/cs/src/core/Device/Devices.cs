@@ -31,10 +31,9 @@ namespace Tsavorite.core
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
         /// <param name="numCompletionThreads">Number of background IO completion drain threads. For DeviceType.Native on Linux: each drainer is bound 1:1 to its own kernel io_context (libaio) or io_uring ring, and submitters distribute across rings via per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC ring fed by one submitter via per-thread routing. In both cases, raise this value when submitter concurrency exceeds the single-ring drain rate. Ignored otherwise.</param>
         /// <param name="localMemorySegmentSize">For DeviceType.LocalMemory: segment size in bytes (must divide <paramref name="capacity"/>). Default 1 GB. Ignored otherwise.</param>
-        /// <param name="localMemoryLatencyMs">For DeviceType.LocalMemory: simulated per-IO wall-clock latency in milliseconds (0 = none). Ignored otherwise.</param>
         /// <param name="logger"></param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, long localMemorySegmentSize = 1L << 30, int localMemoryLatencyMs = 0, ILogger logger = null)
+        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, long localMemorySegmentSize = 1L << 30, ILogger logger = null)
         {
             if (deviceType == DeviceType.Default)
             {
@@ -57,7 +56,6 @@ namespace Tsavorite.core
                     capacity: capacity,
                     sz_segment: localMemorySegmentSize,
                     parallelism: numCompletionThreads > 0 ? numCompletionThreads : System.Environment.ProcessorCount,
-                    latencyMs: localMemoryLatencyMs,
                     fileName: logPath ?? "/userspace/ram/storage"),
                 _ => throw new TsavoriteException($"Unsupported local device {deviceType}"),
             };
