@@ -1792,6 +1792,16 @@ namespace Garnet.server
                 endReadHead = readHead = oldEndReadHead;
                 return false;
             }
+
+            // Keys past the first bypass the per-command CanServeSlot in ProcessMessages. In cluster mode,
+            // verify this one here; if it is not servable, back off so the dispatch loop re-reads it and
+            // writes the -MOVED/-ASK redirect in order.
+            if (clusterSession != null && !CanServeSlotNoResponse(RespCommand.GET))
+            {
+                endReadHead = readHead = oldEndReadHead;
+                return false;
+            }
+
             key = parseState.GetArgSliceByRef(0);
             return true;
         }
