@@ -55,6 +55,12 @@ namespace Tsavorite.kvbench
             HelpText = "Warmup duration in seconds, discarded from results. 0 disables warmup.")]
         public int WarmupSec { get; set; }
 
+        // ===== Pipelining =====
+
+        [Option('b', "batch-size", Required = false, Default = 1024,
+            HelpText = "Run-phase batch depth: ops issued per chunk before an opportunistic drain. Mirrors Resp.benchmark -b.")]
+        public int BatchSize { get; set; }
+
         // ===== Reproducibility =====
 
         [Option('s', "seed", Required = false, Default = 211UL,

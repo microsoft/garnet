@@ -97,6 +97,9 @@ datasets touch few NAND dies and understate IOPS.
   **use 512** to reach peak IOPS on fast NVMe.
 - **`--device-completion-threads`** — native/localmemory drainer count (localmemory:
   one SPSC ring per thread).
+- **`-b` / `--batch-size`** — run-phase batch depth (ops issued per chunk before an
+  opportunistic non-blocking drain). Default 1024. In-flight is bounded by
+  `--device-throttle`, not by this, so it is largely throughput-neutral.
 - **`-n` keys / `-v` value-size / `--rumd` mix / `-t` threads / `-d` distribution.**
 
 ## Output
