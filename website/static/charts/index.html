@@ -188,6 +188,14 @@
             'Operations.ObjectOperations.ZAddRem(Params: None)',
             'Operations.ObjectOperations.LPushPop(Params: None)',
             'Lua.LuaScripts.Script3(Params: Managed,None)',
+            'Operations.BasicOperations.InlinePing(Params: AAD)',
+            'Operations.RawStringOperations.Set(Params: AAD)',
+            'Operations.RawStringOperations.GetFound(Params: AAD)',
+            'Operations.RawStringOperations.GetNotFound(Params: AAD)',
+            'Operations.RawStringOperations.Increment(Params: AAD)',
+            'Operations.RawStringOperations.IncrementBy(Params: AAD)',
+            'Operations.ObjectOperations.ZAddRem(Params: AAD)',
+            'Operations.ObjectOperations.LPushPop(Params: AAD)',
         ]).map(str => str.toLowerCase());;
 
         const BENCHMARK_SET_TYPE = Object.freeze({
