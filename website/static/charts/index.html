@@ -691,7 +691,7 @@
                         !FEATURED_BENCHMARKS.some(val => base.toLowerCase().includes(val.toLowerCase()))) {
                         continue;
                     } else if (SELECTED_BENCHMARK !== SELECTED_BENCHMARK_DEFAULT &&
-                        SELECTED_BENCHMARK.toLowerCase() !== benchName.toLowerCase()) {
+                        SELECTED_BENCHMARK.toLowerCase() !== base.toLowerCase()) {
                         continue;
                     }
 
@@ -760,6 +760,22 @@
             const selector = document.getElementById('benchmark-selector');
             selector.innerHTML = `<option value="${SELECTED_BENCHMARK_DEFAULT}" selected>All</option>`;
 
+            // Dedupe by base name so the dropdown lists one entry per benchmark (not per
+            // Params variant) — matches the grouped chart-per-base rendering. The
+            // SELECTED_BENCHMARK filter in renderBenchSet compares against the base.
+            const appendBaseOptions = (parent, benchNames) => {
+                const seen = new Set();
+                for (const benchName of benchNames) {
+                    const { base } = parseBenchmarkName(benchName);
+                    if (seen.has(base)) continue;
+                    seen.add(base);
+                    const option = document.createElement('option');
+                    option.value = base;
+                    option.textContent = base;
+                    parent.appendChild(option);
+                }
+            };
+
             if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
                 const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
                 for (const [name, benches] of featuredDataSets.entries()) {
@@ -771,22 +787,12 @@
                     optgroup.label = name;
                     selector.appendChild(optgroup);
 
-                    for (const benchName of benches) {
-                        const option = document.createElement('option');
-                        option.value = benchName;
-                        option.textContent = benchName;
-                        optgroup.appendChild(option);
-                    }
+                    appendBaseOptions(optgroup, benches);
                 }
             } else {
                 const selectedDataSet = dataSets.find(ds => ds.name === SELECTED_BENCHMARK_SET);
                 if (selectedDataSet) {
-                    for (const benchName of selectedDataSet.dataSet.keys()) {
-                        const option = document.createElement('option');
-                        option.value = benchName;
-                        option.textContent = benchName;
-                        selector.appendChild(option);
-                    }
+                    appendBaseOptions(selector, [...selectedDataSet.dataSet.keys()]);
                 }
             }
         }
