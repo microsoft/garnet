@@ -252,6 +252,10 @@
         });
 
         const SELECTED_BENCHMARK_DEFAULT = "SELECT_BENCHMARK";
+        // Sentinel prefix used on option values for the "(All benchmarks in this group)"
+        // entry surfaced inside each FEATURED optgroup. Detected by the benchmark-selector
+        // change handler to switch the Benchmark Group dropdown to that matrix entry.
+        const GROUP_OPTION_PREFIX = "GROUP:";
 
         // Filters
 
@@ -804,6 +808,14 @@
                     optgroup.label = name;
                     selector.appendChild(optgroup);
 
+                    // Selectable group-header option: clicking it switches the Benchmark
+                    // Group dropdown to this matrix entry so the chart view focuses on
+                    // just that set (HTML optgroup labels aren't clickable on their own).
+                    const groupOption = document.createElement('option');
+                    groupOption.value = `${GROUP_OPTION_PREFIX}${name}`;
+                    groupOption.textContent = `(All benchmarks in this group)`;
+                    optgroup.appendChild(groupOption);
+
                     appendBaseOptions(optgroup, benches);
                 }
             } else {
@@ -934,6 +946,22 @@
         });
 
         document.getElementById('benchmark-selector').addEventListener('change', function () {
+            // Group-header option: switch Benchmark Group dropdown to this matrix entry
+            // and reset Benchmark to "All" so the chart view focuses on the picked set.
+            if (this.value.startsWith(GROUP_OPTION_PREFIX)) {
+                const groupName = this.value.slice(GROUP_OPTION_PREFIX.length);
+                const setSelector = document.getElementById('benchmark-set-selector');
+                if (setSelector.querySelector(`option[value="${groupName}"]`)) {
+                    setSelector.value = groupName;
+                    SELECTED_BENCHMARK_SET = groupName;
+                }
+                SELECTED_BENCHMARK = SELECTED_BENCHMARK_DEFAULT;
+                populateBenchmarkSelector();
+                renderAllCharts();
+                updateUrlParams();
+                return;
+            }
+
             SELECTED_BENCHMARK = this.value;
 
             renderAllCharts();
