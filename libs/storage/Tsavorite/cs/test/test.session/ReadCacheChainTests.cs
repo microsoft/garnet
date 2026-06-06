@@ -49,10 +49,6 @@ namespace Tsavorite.test.ReadCacheTests
         const long SpliceInExistingKey = HighChainKey - HashMod;
         const long ImmutableSplitKey = NumKeys / 2;
 
-        // This is the record after the first readcache record we insert; it lets us limit the range to ReadCacheEvict
-        // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
-        long readCacheBelowMidChainKeyEvictionAddress;
-
         [SetUp]
         public void Setup()
         {
@@ -142,8 +138,6 @@ namespace Tsavorite.test.ReadCacheTests
                     ClassicAssert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
                 ClassicAssert.IsTrue(status.Found, status.ToString());
-                if (keyNum < MidChainKey)
-                    readCacheBelowMidChainKeyEvictionAddress = store.ReadCache.TailAddress;
             }
 
             // Pass2: non-PENDING reads from the cache

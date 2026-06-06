@@ -214,6 +214,15 @@ invalidated the read-cache source in place after such an update — and during a
 splice/promotion race — without decrementing, which leaked read-cache heap from the
 tracker; removing those in-place invalidations fixed it.)
 
+There is one in-place exception: an **RMW `CopyUpdate`** whose source is a read-cache
+object record clears and disposes that source's value slot in place (the record stays
+`Valid`; only the value is freed). It must decrement the **read-cache** tracker — the
+allocator that *owns* the source record (`recSrc.AllocatorBase`), since that is where
+the value heap was charged at promotion — not the main-log tracker. Eviction later
+recomputes the now-zero value heap for the still-`Valid` record, so there is no
+double-decrement. (Crediting the main-log tracker here was a latent bug: it leaked the
+read-cache tracker and under-counted the main log.)
+
 ## Checkpointing
 
 `SkipReadCacheBucket` runs during the index checkpoint over a copy of each bucket
