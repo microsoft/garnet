@@ -172,47 +172,23 @@
 
         // Constants
 
-        // Featured benchmarks: base names only — the chart renderer attracts all
-        // (Params: ...) variants for each base into a single multi-line chart.
         const FEATURED_BENCHMARKS = Object.freeze([
-            'Operations.BasicOperations.InlinePing',
-            'Operations.RawStringOperations.Set',
-            'Operations.RawStringOperations.GetFound',
-            'Operations.RawStringOperations.GetNotFound',
-            'Operations.RawStringOperations.Increment',
-            'Operations.RawStringOperations.IncrementBy',
-            'Network.BasicOperations.InlinePing',
-            'Network.RawStringOperations.Set',
-            'Network.RawStringOperations.GetFound',
-            'Network.RawStringOperations.GetNotFound',
-            'Network.RawStringOperations.Increment',
-            'Network.RawStringOperations.IncrementBy',
-            'Operations.ObjectOperations.ZAddRem',
-            'Operations.ObjectOperations.LPushPop',
-            'Lua.LuaScripts.Script3',
-        ]).map(str => str.toLowerCase());
-
-        // Stable per-Params colors; unknown variants cycle through the tail of the palette.
-        const PARAMS_PALETTE = ['#178600', '#1f77b4', '#ff7f0e', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
-        const PARAMS_COLOR_INDEX = { 'none': 0, 'acl': 1, 'aof': 2, 'aad': 3 };
-        const _extraParamsIdx = new Map();
-        function colorForParams(params) {
-            const key = (params || 'none').toLowerCase();
-            let idx = PARAMS_COLOR_INDEX[key];
-            if (idx === undefined) {
-                if (!_extraParamsIdx.has(key)) _extraParamsIdx.set(key, 4 + _extraParamsIdx.size);
-                idx = _extraParamsIdx.get(key);
-            }
-            return PARAMS_PALETTE[idx % PARAMS_PALETTE.length];
-        }
-
-        // "<base>(Params: <p>)" → { base, params }; null params for legacy entries.
-        function parseBenchmarkName(fullName) {
-            const i = fullName.lastIndexOf('(Params:'), j = fullName.lastIndexOf(')');
-            return i >= 0 && j > i
-                ? { base: fullName.slice(0, i).trim(), params: fullName.slice(i + 8, j).trim() }
-                : { base: fullName, params: null };
-        }
+            'Operations.BasicOperations.InlinePing(Params: None)',
+            'Operations.RawStringOperations.Set(Params: None)',
+            'Operations.RawStringOperations.GetFound(Params: None)',
+            'Operations.RawStringOperations.GetNotFound(Params: None)',
+            'Operations.RawStringOperations.Increment(Params: None)',
+            'Operations.RawStringOperations.IncrementBy(Params: None)',
+            'Network.BasicOperations.InlinePing(Params: None)',
+            'Network.RawStringOperations.Set(Params: None)',
+            'Network.RawStringOperations.GetFound(Params: None)',
+            'Network.RawStringOperations.GetNotFound(Params: None)',
+            'Network.RawStringOperations.Increment(Params: None)',
+            'Network.RawStringOperations.IncrementBy(Params: None)',
+            'Operations.ObjectOperations.ZAddRem(Params: None)',
+            'Operations.ObjectOperations.LPushPop(Params: None)',
+            'Lua.LuaScripts.Script3(Params: Managed,None)',
+        ]).map(str => str.toLowerCase());;
 
         const BENCHMARK_SET_TYPE = Object.freeze({
             FEATURED: "FEATURED",
@@ -547,76 +523,84 @@
         }
 
         function renderAllCharts() {
-            // One chart per base benchmark; each Params variant is its own line so
-            // cross-variant regressions are visible on the same plot.
-            function renderGraph(parent, baseName, variants /* Map<params|null, datapoints[]> */) {
-                const titleElem = document.createElement('h5');
-                titleElem.className = 'text-center mb-2 mt-3 text-body-secondary';
-                const leafIdx = baseName.lastIndexOf('.');
-                titleElem.textContent = leafIdx >= 0 ? baseName.slice(leafIdx + 1) : baseName;
-                titleElem.title = baseName;
-                parent.appendChild(titleElem);
-
+            function renderGraph(parent, name, dataset) {
                 const canvas = document.createElement('canvas');
-                canvas.setAttribute('data-graph-name', baseName);
+                canvas.setAttribute('data-graph-name', name);
                 parent.appendChild(canvas);
 
-                // Union all commits across variants; newer variants (e.g. AAD) start
-                // partway through and render as gaps that spanGaps bridges.
-                const commitMap = new Map();
-                for (const dps of variants.values()) {
-                    for (const d of dps) if (!commitMap.has(d.commit.id)) commitMap.set(d.commit.id, d);
-                }
-                const orderedCommits = [...commitMap.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
-                const labels = orderedCommits.map(d => d.commit.id.slice(0, 7));
-
-                // Sort variants for deterministic color assignment (None first, then alpha).
-                const sortedVariants = [...variants.entries()].sort((a, b) => {
-                    const ak = (a[0] || 'none').toLowerCase(), bk = (b[0] || 'none').toLowerCase();
-                    return ak === 'none' ? -1 : bk === 'none' ? 1 : ak.localeCompare(bk);
-                });
-                const datasets = sortedVariants.map(([params, dps]) => {
-                    const byCommit = new Map(dps.map(d => [d.commit.id, d]));
-                    const color = colorForParams(params);
-                    return {
-                        label: params || '(no params)',
-                        data: orderedCommits.map(d => byCommit.get(d.commit.id)?.bench.value ?? null),
-                        borderColor: color,
-                        backgroundColor: color + '60',
-                        spanGaps: true,
-                    };
-                });
-
-                const unit = sortedVariants[0]?.[1][0]?.bench.unit ?? '';
-                const lookupDp = item => sortedVariants[item.datasetIndex][1].find(d => d.commit.id === orderedCommits[item.index].commit.id);
+                const color = TOOL_COLORS[dataset.length > 0 ? dataset[0].tool : '_'];
+                const data = {
+                    labels: dataset.map(d => d.commit.id.slice(0, 7)),
+                    datasets: [
+                        {
+                            label: name,
+                            data: dataset.map(d => d.bench.value),
+                            borderColor: color,
+                            backgroundColor: color + '60', // Add alpha for #rrggbbaa
+                        }
+                    ],
+                };
                 const options = {
                     animation: false,
                     scales: {
-                        xAxes: [{ scaleLabel: { display: true, labelString: 'commit' } }],
-                        yAxes: [{ scaleLabel: { display: true, labelString: unit }, ticks: { beginAtZero: true } }],
+                        xAxes: [
+                            {
+                                scaleLabel: {
+                                    display: true,
+                                    labelString: 'commit',
+                                },
+                            }
+                        ],
+                        yAxes: [
+                            {
+                                scaleLabel: {
+                                    display: true,
+                                    labelString: dataset.length > 0 ? dataset[0].bench.unit : '',
+                                },
+                                ticks: {
+                                    beginAtZero: true,
+                                }
+                            }
+                        ],
                     },
                     tooltips: {
                         callbacks: {
                             afterTitle: items => {
-                                const c = orderedCommits[items[0].index].commit;
-                                return '\n' + c.message + '\n\n' + c.timestamp + ' committed by @' + c.committer.username + '\n';
+                                const { index } = items[0];
+                                const data = dataset[index];
+                                return '\n' + data.commit.message + '\n\n' + data.commit.timestamp + ' committed by @' + data.commit.committer.username + '\n';
                             },
                             label: item => {
-                                const params = sortedVariants[item.datasetIndex][0];
-                                const range = lookupDp(item)?.bench.range;
-                                return (params || '(no params)') + ': ' + item.value + ' ' + unit + (range ? ' (' + range + ')' : '');
+                                let label = item.value;
+                                const { range, unit } = dataset[item.index].bench;
+                                label += ' ' + unit;
+                                if (range) {
+                                    label += ' (' + range + ')';
+                                }
+                                return label;
                             },
                             afterLabel: item => {
-                                const extra = lookupDp(item)?.bench.extra;
+                                const { extra } = dataset[item.index].bench;
                                 return extra ? '\n' + extra : '';
-                            },
-                        },
+                            }
+                        }
                     },
-                    legend: { display: datasets.length > 1 },
-                    onClick: (_e, els) => { if (els.length) window.open(orderedCommits[els[0]._index].commit.url, '_blank'); },
+                    onClick: (_mouseEvent, activeElems) => {
+                        if (activeElems.length === 0) {
+                            return;
+                        }
+                        // XXX: Undocumented. How can we know the index?
+                        const index = activeElems[0]._index;
+                        const url = dataset[index].commit.url;
+                        window.open(url, '_blank');
+                    },
                 };
 
-                new Chart(canvas, { type: 'line', data: { labels, datasets }, options });
+                new Chart(canvas, {
+                    type: 'line',
+                    data,
+                    options,
+                });
             }
 
             function renderBenchSet(name, benchSet, main) {
@@ -634,21 +618,16 @@
                 graphsElem.className = 'vstack gap-3';
                 setElem.appendChild(graphsElem);
 
-                // Group bench entries by base name; each group → one multi-line chart.
-                const grouped = new Map();
                 for (const [benchName, benches] of benchSet.entries()) {
-                    const { base, params } = parseBenchmarkName(benchName);
                     if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED &&
-                        !FEATURED_BENCHMARKS.some(val => base.toLowerCase().includes(val))) continue;
-                    if (SELECTED_BENCHMARK !== SELECTED_BENCHMARK_DEFAULT &&
-                        SELECTED_BENCHMARK.toLowerCase() !== base.toLowerCase()) continue;
+                        !FEATURED_BENCHMARKS.some(val => benchName.toLowerCase().includes(val.toLowerCase()))) {
+                        continue;
+                    } else if (SELECTED_BENCHMARK !== SELECTED_BENCHMARK_DEFAULT &&
+                        SELECTED_BENCHMARK.toLowerCase() !== benchName.toLowerCase()) {
+                        continue;
+                    }
 
-                    if (!grouped.has(base)) grouped.set(base, new Map());
-                    grouped.get(base).set(params, benches);
-                }
-
-                for (const [baseName, variants] of grouped.entries()) {
-                    renderGraph(graphsElem, baseName, variants);
+                    renderGraph(graphsElem, benchName, benches)
                 }
             }
 
@@ -708,20 +687,6 @@
             const selector = document.getElementById('benchmark-selector');
             selector.innerHTML = `<option value="${SELECTED_BENCHMARK_DEFAULT}" selected>All</option>`;
 
-            // Dedupe by base name — one entry per benchmark, not per Params variant.
-            const appendBaseOptions = (parent, benchNames) => {
-                const seen = new Set();
-                for (const benchName of benchNames) {
-                    const { base } = parseBenchmarkName(benchName);
-                    if (seen.has(base)) continue;
-                    seen.add(base);
-                    const option = document.createElement('option');
-                    option.value = base;
-                    option.textContent = base;
-                    parent.appendChild(option);
-                }
-            };
-
             if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
                 const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
                 for (const [name, benches] of featuredDataSets.entries()) {
@@ -733,12 +698,22 @@
                     optgroup.label = name;
                     selector.appendChild(optgroup);
 
-                    appendBaseOptions(optgroup, benches);
+                    for (const benchName of benches) {
+                        const option = document.createElement('option');
+                        option.value = benchName;
+                        option.textContent = benchName;
+                        optgroup.appendChild(option);
+                    }
                 }
             } else {
                 const selectedDataSet = dataSets.find(ds => ds.name === SELECTED_BENCHMARK_SET);
                 if (selectedDataSet) {
-                    appendBaseOptions(selector, [...selectedDataSet.dataSet.keys()]);
+                    for (const benchName of selectedDataSet.dataSet.keys()) {
+                        const option = document.createElement('option');
+                        option.value = benchName;
+                        option.textContent = benchName;
+                        selector.appendChild(option);
+                    }
                 }
             }
         }
