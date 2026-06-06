@@ -568,9 +568,26 @@
             // its own colored line so a regression in one variant (e.g. AAD) is visible
             // alongside the others (e.g. None) on the same plot.
             function renderGraph(parent, baseName, variants /* Map<params|null, datapoints[]> */) {
+                // Wrap each chart in its own block with a sub-heading. Without this, when
+                // a Benchmark Group selection renders multiple base benchmarks (e.g. all
+                // InlinePing / Set / GetFound under Operations.BasicOperations), the
+                // surrounding h4 shows the matrix entry only and individual charts are
+                // visually indistinguishable. The sub-heading uses the leaf name
+                // (everything after the last '.') because the parent h4 already carries
+                // the package context.
+                const wrapper = document.createElement('div');
+                parent.appendChild(wrapper);
+
+                const titleElem = document.createElement('h5');
+                titleElem.className = 'text-center mb-2 mt-3 text-body-secondary';
+                const leafIdx = baseName.lastIndexOf('.');
+                titleElem.textContent = leafIdx >= 0 ? baseName.slice(leafIdx + 1) : baseName;
+                titleElem.title = baseName; // hover shows the fully-qualified name
+                wrapper.appendChild(titleElem);
+
                 const canvas = document.createElement('canvas');
                 canvas.setAttribute('data-graph-name', baseName);
-                parent.appendChild(canvas);
+                wrapper.appendChild(canvas);
 
                 // Union of all commits across variants, ordered by commit date ascending.
                 // New variants (e.g. AAD added in PR #1859) have shorter histories — for
