@@ -1,0 +1,28 @@
+{
+  "id": "dev/custom-commands",
+  "title": "Garnet Custom Commands",
+  "description": "Overview",
+  "source": "@site/docs/dev/custom-commands.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/custom-commands",
+  "permalink": "/garnet/docs/dev/custom-commands",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/custom-commands.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "custom-commands",
+    "sidebar_label": "Custom Commands",
+    "title": "Garnet Custom Commands"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/dev/transactions"
+  },
+  "next": {
+    "title": "Logical Databases",
+    "permalink": "/garnet/docs/dev/multi-db"
+  }
+}

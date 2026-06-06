@@ -1,0 +1,28 @@
+{
+  "id": "welcome/releases",
+  "title": "Releases",
+  "description": "GitHub",
+  "source": "@site/docs/welcome/releases.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/releases",
+  "permalink": "/garnet/docs/welcome/releases",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/releases.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "releases",
+    "sidebar_label": "Releases",
+    "title": "Releases"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Features",
+    "permalink": "/garnet/docs/welcome/features"
+  },
+  "next": {
+    "title": "Compatibility",
+    "permalink": "/garnet/docs/welcome/compatibility"
+  }
+}

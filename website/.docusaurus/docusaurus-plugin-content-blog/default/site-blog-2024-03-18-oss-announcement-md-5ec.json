@@ -1,0 +1,62 @@
+{
+  "permalink": "/garnet/blog/msr-blog-announcement",
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/blog/2024-03-18-oss-announcement.md",
+  "source": "@site/blog/2024-03-18-oss-announcement.md",
+  "title": "OSS Announcement",
+  "description": "The Microsoft Research Blog has just published a new post introducing Garnet. Check it out here. Have fun!",
+  "date": "2024-03-18T00:00:00.000Z",
+  "tags": [
+    {
+      "inline": true,
+      "label": "garnet",
+      "permalink": "/garnet/blog/tags/garnet"
+    },
+    {
+      "inline": true,
+      "label": "oss",
+      "permalink": "/garnet/blog/tags/oss"
+    },
+    {
+      "inline": true,
+      "label": "announcement",
+      "permalink": "/garnet/blog/tags/announcement"
+    },
+    {
+      "inline": true,
+      "label": "msr",
+      "permalink": "/garnet/blog/tags/msr"
+    }
+  ],
+  "readingTime": 0.2,
+  "hasTruncateMarker": false,
+  "authors": [
+    {
+      "name": "Badrish Chandramouli",
+      "title": "Partner Research Manager, Microsoft Research",
+      "url": "https://badrish.net",
+      "imageURL": "https://badrish.net/assets/icons/badrish4.jpg",
+      "key": "badrishc",
+      "page": null
+    }
+  ],
+  "frontMatter": {
+    "slug": "msr-blog-announcement",
+    "title": "OSS Announcement",
+    "authors": "badrishc",
+    "tags": [
+      "garnet",
+      "oss",
+      "announcement",
+      "msr"
+    ]
+  },
+  "unlisted": false,
+  "prevItem": {
+    "title": "ETags, When and How",
+    "permalink": "/garnet/blog/etags-when-and-how"
+  },
+  "nextItem": {
+    "title": "A Brief History of Garnet",
+    "permalink": "/garnet/blog/brief-history"
+  }
+}
