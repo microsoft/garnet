@@ -97,6 +97,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ScatterGatherMixedGetTtlPipeline()
+        {
+            // GET followed by a same-shaped 3-byte command (TTL) must not be mis-batched as a GET: the
+            // dispatch gate verifies the GET token, so TTL falls through to its own handler and returns correctly.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 100;
+            for (var i = 0; i < n; i++)
+            {
+                db.StringSet($"r{i}", $"val{i}");
+                if (i % 2 == 0)
+                    db.KeyExpire($"r{i}", TimeSpan.FromMinutes(10));
+            }
+
+            var batch = db.CreateBatch();
+            var getTasks = new Task<RedisValue>[n];
+            var ttlTasks = new Task<TimeSpan?>[n];
+            for (var i = 0; i < n; i++)
+            {
+                getTasks[i] = batch.StringGetAsync($"r{i}");
+                ttlTasks[i] = batch.KeyTimeToLiveAsync($"r{i}");
+            }
+            batch.Execute();
+            Task.WaitAll([.. getTasks.Cast<Task>().Concat(ttlTasks)]);
+
+            for (var i = 0; i < n; i++)
+            {
+                ClassicAssert.AreEqual($"val{i}", (string)getTasks[i].Result);
+                if (i % 2 == 0)
+                    ClassicAssert.IsTrue(ttlTasks[i].Result > TimeSpan.Zero);
+                else
+                    ClassicAssert.IsNull(ttlTasks[i].Result);
+            }
+        }
+
+        [Test]
         [TestCase(30)]      // Probably completes sync
         [TestCase(300)]     // May be a mix
         [TestCase(3_000)]   // Definitely completes async

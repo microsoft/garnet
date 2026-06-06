@@ -23,7 +23,7 @@ namespace Tsavorite.core
         /// <param name="deviceType">Device type</param>
         /// <param name="preallocateFile">Whether we try to pre-allocate the file on creation</param>
         /// <param name="deleteOnClose">Delete files on close</param>
-        /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit. Required (must be &gt; 0) for <see cref="DeviceType.LocalMemory"/>.</param>
+        /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit. For <see cref="DeviceType.LocalMemory"/> a value &lt;= 0 (or CAPACITY_UNSPECIFIED) defaults to a large bounded capacity (segments are allocated lazily).</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
