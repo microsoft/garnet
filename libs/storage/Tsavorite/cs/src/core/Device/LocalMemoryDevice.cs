@@ -51,15 +51,25 @@ namespace Tsavorite.core
         private readonly Thread[] processors;
         private readonly SpscRing<IORequestLocalMemory>[] rings;
 
-        // Per-submitter-thread ring routing. Each submitter thread is permanently
-        // assigned a ring index on first use. With per-thread routing each ring
-        // sees a single producer in the common case (#submitter threads <=
-        // parallelism), making the ring effectively SPSC. When more producers
-        // share a ring, SpscRing.Enqueue handles them natively via fetch-and-add
+        // Per-submitter-thread ring routing. Each submitter thread caches a ring index on
+        // first use. With per-thread routing each ring sees a single producer in the common
+        // case (#submitter threads <= parallelism), making the ring effectively SPSC. When
+        // more producers share a ring, SpscRing.Enqueue handles them natively via fetch-and-add
         // on its tail counter — no per-ring lock needed.
+        //
+        // The cache is [ThreadStatic] (one slot per thread, process-wide), so a thread that
+        // submitted to another LocalMemoryDevice instance may carry that instance's index here.
+        // Enqueue therefore validates the cached index against THIS instance's parallelism and
+        // reassigns when it is out of range — a single unsigned compare on the hot path.
         [ThreadStatic]
         private static int t_ringIdxPlusOne;
         private int nextRingIdx;
+
+        // Sentinel stored in t_ringIdxPlusOne on a processor (drain) thread (see ProcessorLoop). A
+        // re-entrant Enqueue from within a completion callback on that thread then executes inline
+        // rather than posting to the bounded ring only this thread drains — see Enqueue. Distinct from
+        // "unset" (0) and any valid idx+1 (>= 1), so it is recognized with the same single TLS read.
+        private const int ProcessorThreadRingIdx = int.MinValue;
 
         // When capacity is unspecified, cap the segment-pointer arrays at this many segments
         // (≈ 32 KB of overhead per array at 4096 entries). Segments themselves are still lazily
@@ -194,8 +204,25 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Enqueue(void* src, void* dst, uint bytes, DeviceIOCompletionCallback callback, object context)
         {
-            int idx = t_ringIdxPlusOne - 1;
-            if (idx < 0)
+            int idxPlusOne = t_ringIdxPlusOne;
+
+            // Re-entrant submit from a completion callback running on a drain thread (e.g. Tsavorite's
+            // synchronous flush-chain WriteAsync invoked from req.callback). Execute inline rather than
+            // posting to the bounded ring this same thread drains — otherwise, if the ring is full, the
+            // thread would spin forever in WaitForSlotEmpty waiting for itself to drain (self-deadlock).
+            // No latency model on this rare internal path; exceptions propagate to the re-entrant caller.
+            if (idxPlusOne == ProcessorThreadRingIdx)
+            {
+                Buffer.MemoryCopy(src, dst, bytes, bytes);
+                callback(0, bytes, context);
+                return;
+            }
+
+            // Validate against THIS instance's parallelism: a single unsigned compare catches both
+            // the unset slot (-1 after the decrement) and a stale index cached while submitting to
+            // another instance with larger parallelism. Either way we (re)assign a valid ring index.
+            int idx = idxPlusOne - 1;
+            if ((uint)idx >= (uint)parallelism)
                 idx = AssignRingIdx();
 
             var req = new IORequestLocalMemory
@@ -225,6 +252,10 @@ namespace Tsavorite.core
 
         private void ProcessorLoop(SpscRing<IORequestLocalMemory> ring)
         {
+            // Mark this as a drain thread: a re-entrant Enqueue from within a completion callback below
+            // executes inline instead of blocking on a ring only this thread can drain (see Enqueue).
+            t_ringIdxPlusOne = ProcessorThreadRingIdx;
+
             while (!ring.IsStopped)
             {
                 if (ring.TryDequeue(out var req))
@@ -248,7 +279,11 @@ namespace Tsavorite.core
                     }
 
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
-                    req.callback(0, req.bytes, req.context);
+                    // Guard the callback inline (no helper — a try/catch blocks JIT inlining, so factoring
+                    // this would add a call on the hot drain path). A faulty callback must not kill the
+                    // dedicated drain thread: that would wedge the bounded ring (producers block forever).
+                    try { req.callback(0, req.bytes, req.context); }
+                    catch (Exception ex) { Debug.WriteLine($"LocalMemoryDevice completion callback threw: {ex}"); }
                 }
                 else
                 {
@@ -263,11 +298,19 @@ namespace Tsavorite.core
             while (ring.TryDequeue(out var req))
             {
                 Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
-                req.callback(0, req.bytes, req.context);
+                try { req.callback(0, req.bytes, req.context); }
+                catch (Exception ex) { Debug.WriteLine($"LocalMemoryDevice completion callback threw: {ex}"); }
             }
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Precondition: no IO request targeting <paramref name="segment"/> may be in flight. The backing
+        /// array is pinned (no move) but nulling the last reference here makes it collectable, and a queued
+        /// request holds only a raw pointer into it. Callers satisfy this because truncation only removes head
+        /// segments below the begin address while IO targets the tail; a removed segment therefore has no
+        /// outstanding requests.
+        /// </remarks>
         public override void RemoveSegment(int segment)
         {
             if ((uint)segment >= (uint)maxSegments) return;
