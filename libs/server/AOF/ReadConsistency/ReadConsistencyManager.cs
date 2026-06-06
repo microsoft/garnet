@@ -124,6 +124,7 @@ namespace Garnet.server
                 replicaReadSessionContext.sessionVersion = CurrentVersion;
                 replicaReadSessionContext.lastVirtualSublogIdx = -1;
                 replicaReadSessionContext.maximumSessionSequenceNumber = 0;
+                replicaReadSessionContext.ResetCachedSublogMax();
             }
         }
 
@@ -138,19 +139,23 @@ namespace Garnet.server
         void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             var virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
+            var initOrSameSublog = replicaReadSessionContext.lastVirtualSublogIdx == -1 || replicaReadSessionContext.lastVirtualSublogIdx == virtualSublogIdx;
+            var mssn = replicaReadSessionContext.maximumSessionSequenceNumber;
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastVirtualSublogIdx != -1 && replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
+            if (!initOrSameSublog && mssn >= replicaReadSessionContext.cachedSublogMax[virtualSublogIdx])
             {
+                // Refresh cached view
+                var sketchMaxValue = vsrs[virtualSublogIdx].Max;
+                replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = sketchMaxValue;
+
                 // Optimistic check without lock
-                while (replicaReadSessionContext.maximumSessionSequenceNumber >= GetSublogFrontierSequenceNumber(keyHash))
+                if (mssn >= sketchMaxValue)
                 {
-                    vsrs[virtualSublogIdx].WaitForSequenceNumber(
-                        keyHash,
-                        replicaReadSessionContext.maximumSessionSequenceNumber,
-                        timeout,
-                        ct);
+                    vsrs[virtualSublogIdx].WaitForSequenceNumber(mssn, timeout, ct);
+                    // Refresh after wait
+                    replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = vsrs[virtualSublogIdx].Max;
                 }
             }
 

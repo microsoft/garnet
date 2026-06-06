@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 26)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct ReplicaReadSessionContext
     {
         /// <summary>
@@ -37,6 +37,24 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(24)]
         public short lastVirtualSublogIdx;
+
+        /// <summary>
+        /// Per-sublog cached maximum sequence numbers. Avoids repeated volatile reads of the
+        /// shared sketchMax value when the cached value already satisfies the read requirement.
+        /// Shared across batch/session context copies (same backing array).
+        /// </summary>
+        [FieldOffset(32)]
+        public long[] cachedSublogMax;
+
+        /// <summary>
+        /// Resets the cached per-sublog max values (e.g., on version change).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void ResetCachedSublogMax()
+        {
+            if (cachedSublogMax != null)
+                Array.Clear(cachedSublogMax);
+        }
     }
 
     public class ReadSessionState : IDisposable
@@ -106,7 +124,8 @@ namespace Garnet.server
         {
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
-            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
+            var sublogMax = new long[serverOptions.AofVirtualSublogCount];
+            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1, cachedSublogMax = sublogMax };
             consistentReadCts = new();
             readTimeout = serverOptions.ReplicaSyncTimeout;
         }

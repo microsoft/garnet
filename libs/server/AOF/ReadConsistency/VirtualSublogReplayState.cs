@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
@@ -20,7 +21,16 @@ namespace Garnet.server
         const int MaxSpinCount = 64;
 
         readonly long[] sketch = new long[SketchSlotSize];
-        long sketchMaxValue;
+
+        /// <summary>
+        /// Explicit definition to minimize cache invalidation
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = 128)]
+        sealed class SublogReplayStateMax
+        {
+            [FieldOffset(64)] public long Value;
+        }
+        readonly SublogReplayStateMax sketchMax = new();
 
         /// <summary>
         /// Lock protecting the intrusive waiter list.
@@ -32,7 +42,7 @@ namespace Garnet.server
         /// </summary>
         WaiterNode waiterHead;
 
-        public readonly long Max => sketchMaxValue;
+        public readonly long Max => sketchMax.Value;
 
         public VirtualSublogReplayState()
         {
@@ -40,7 +50,7 @@ namespace Garnet.server
             if ((size & (size - 1)) != 0)
                 throw new InvalidOperationException($"Size ({SketchSlotSize}) must be a power of 2");
             Array.Clear(sketch);
-            sketchMaxValue = 0;
+            sketchMax.Value = 0;
             waiterHead = null;
         }
 
@@ -53,7 +63,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetFrontierSequenceNumber(long hash)
             => Math.Max(Volatile.Read(ref Unsafe.AsRef(in sketch[GetSketchSlot(hash)])),
-                        Volatile.Read(ref Unsafe.AsRef(in sketchMaxValue)));
+                        Volatile.Read(ref Unsafe.AsRef(in sketchMax.Value)));
 
         /// <summary>
         /// Gets the sequence number associated with the specified hash key.
@@ -68,7 +78,7 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateMaxSequenceNumber(long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref sketchMax.Value, sequenceNumber, out _);
             SignalWaiters();
         }
 
@@ -79,7 +89,7 @@ namespace Garnet.server
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
             _ = Utility.MonotonicUpdate(ref sketch[GetSketchSlot(hash)], sequenceNumber, out _);
-            _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref sketchMax.Value, sequenceNumber, out _);
             SignalWaiters();
         }
 
@@ -94,7 +104,7 @@ namespace Garnet.server
 
             lock (@lock)
             {
-                var currentMax = Volatile.Read(ref sketchMaxValue);
+                var currentMax = Volatile.Read(ref sketchMax.Value);
                 while (waiterHead != null && waiterHead.TargetSequenceNumber < currentMax)
                 {
                     var node = waiterHead;
@@ -108,16 +118,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Waits until the session's frontier sequence number for the specified hash reaches or exceeds
-        /// the given maximum sequence number.
+        /// Waits until the sublog's maximum sequence number exceeds the given session maximum.
         /// </summary>
-        public void WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, TimeSpan timeout, CancellationToken ct)
+        public void WaitForSequenceNumber(long maximumSessionSequenceNumber, TimeSpan timeout, CancellationToken ct)
         {
             // Phase 1: SpinWait — fast path when replay is keeping up
             var spinner = new SpinWait();
             for (var i = 0; i < MaxSpinCount; i++)
             {
-                if (maximumSessionSequenceNumber < GetFrontierSequenceNumber(hash))
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
                     return;
                 spinner.SpinOnce(sleep1Threshold: -1);
             }
@@ -129,7 +138,7 @@ namespace Garnet.server
             lock (@lock)
             {
                 // Double-check after acquiring lock
-                if (maximumSessionSequenceNumber < GetFrontierSequenceNumber(hash))
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
                     return;
                 InsertWaiter(node);
             }
