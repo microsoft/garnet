@@ -80,18 +80,13 @@ namespace Garnet.common
 
             PooledBuffer buf;
 
-            // Fast path: thread-local LIFO.
-            if (Tsavorite.core.ThreadLocalCache<PooledBuffer>.TryRent(out buf))
+            // Fast path: thread-local LIFO; fall back to the global queue, then a fresh wrapper.
+            if (!Tsavorite.core.ThreadLocalCache<PooledBuffer>.TryRent(out buf))
             {
-                // nothing — got it
-            }
-            else if (globalPool.TryDequeue(out buf))
-            {
-                Interlocked.Decrement(ref retainedCount);
-            }
-            else
-            {
-                buf = new PooledBuffer(this);
+                if (globalPool.TryDequeue(out buf))
+                    Interlocked.Decrement(ref retainedCount);
+                else
+                    buf = new PooledBuffer(this);
             }
 
             buf.Init(minBufferSize);
