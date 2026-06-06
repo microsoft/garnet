@@ -63,7 +63,8 @@ namespace Tsavorite.core
                         stackCtx.recSrc.SetAllocator(readcacheBase);
                         stackCtx.recSrc.SetHasReadCacheSrc();
 
-                        // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
+                        // Read() does not need to continue past the found record; updaters continue the walk to find
+                        // latestLogicalAddress (the main-log address below the read-cache prefix that the detach CAS targets).
                         if (!alwaysFindLatestLA)
                             return true;
                     }

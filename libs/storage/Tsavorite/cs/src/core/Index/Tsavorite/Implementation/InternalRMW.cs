@@ -618,6 +618,11 @@ namespace Tsavorite.core
                                 // partial clear (value only, key stays) and expecting trigger implementers
                                 // to know that nuance is error-prone. The remaining key overflow (if any)
                                 // is decremented later by OnEvict when the sealed page is evicted.
+                                //
+                                // Decrement the tracker of the allocator that OWNS the source record
+                                // (recSrc.AllocatorBase): hlog for a main-log source, but the read cache for
+                                // a read-cache source — the value heap was charged there at promotion, so
+                                // crediting hlog would leak the read-cache tracker and under-count hlog.
                                 if (srcMemLogRecord.DataHeader.ValueIsObject)
                                 {
                                     var valueObject = srcMemLogRecord.ValueObject;
@@ -625,7 +630,7 @@ namespace Tsavorite.core
                                     {
                                         var valueHeap = valueObject.HeapMemorySize;
                                         if (valueHeap != 0)
-                                            hlogBase.logSizeTracker?.IncrementSize(-valueHeap);
+                                            stackCtx.recSrc.AllocatorBase.logSizeTracker?.IncrementSize(-valueHeap);
                                         valueObject.Dispose();
                                     }
                                 }

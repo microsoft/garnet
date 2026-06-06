@@ -71,7 +71,10 @@ namespace Tsavorite.test
             public new class Serializer : BinaryObjectSerializer<IHeapObject>
             {
                 public override void Deserialize(out IHeapObject obj) => obj = new TrackedObjectValue { value = reader.ReadInt32() };
-                public override void Serialize(IHeapObject obj) => writer.Write(((TrackedObjectValue)obj).value);
+                // Cast to the base TestObjectValue: an RMW CopyUpdater produces a plain TestObjectValue for the new
+                // record, which can be flushed/serialized in tests that mix promoted TrackedObjectValue sources with
+                // RMW-updated values. Both expose the same `value` field.
+                public override void Serialize(IHeapObject obj) => writer.Write(((TestObjectValue)obj).value);
             }
         }
 
@@ -643,23 +646,31 @@ namespace Tsavorite.test
                 "Read-cache flush must not route through main-log OnEvict");
         }
 
+        internal enum ReadCacheUpdateOp { Upsert, RMW }
+
         /// <summary>
         /// Read-cache heap-size accounting parity. Every byte of heap a promoted read-cache record adds to
         /// the read-cache <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> (at copy-to-read-cache
         /// time, via <c>UpdateSize(add: true)</c>) must be removed again when that record leaves memory (at
-        /// page-close eviction, via <c>EvictRecordsInRange</c>). In particular, a value-changing update
-        /// (Upsert) over a key that is currently cached in the read cache must NOT leak the cached record's
-        /// heap from the tracker.
+        /// page-close eviction, via <c>EvictRecordsInRange</c>, or — for RMW CopyUpdate — at the in-place
+        /// source-value clear). In particular, a value-changing update over a key that is currently cached in
+        /// the read cache must NOT leak the cached record's heap from the read-cache tracker.
         ///
-        /// Regression for a latent read-cache heap-tracker leak: the old splice design invalidated the
-        /// read-cache source record in-place after such an update (<c>PostCopyToTail</c> -> <c>SetInvalidAtomic</c>).
-        /// <c>EvictRecordsInRange</c> skips Invalid records (it assumes their heap was already decremented at the
-        /// invalidation site), so the <c>+UpdateSize</c> from promotion was never matched by a decrement and the
-        /// read-cache tracker drifted upward without bound. The latch-free detach design leaves the orphaned
-        /// source Valid, so eviction decrements it normally and the tracker returns to zero.
+        /// Two value-changing paths are exercised:
+        /// <list type="bullet">
+        /// <item><b>Upsert</b> (blind): detaches the read-cache prefix; the orphaned source stays Valid with
+        /// its value intact and is decremented at page-close eviction. Regression for a latent leak in the old
+        /// splice design, which invalidated the read-cache source in place (<c>PostCopyToTail</c> ->
+        /// <c>SetInvalidAtomic</c>); since <c>EvictRecordsInRange</c> skips Invalid records, the
+        /// <c>+UpdateSize</c> from promotion was never matched and the tracker drifted upward.</item>
+        /// <item><b>RMW</b> (CopyUpdate): clears and disposes the read-cache source value object in place and
+        /// must decrement the <i>read-cache</i> tracker (the allocator that owns the source), not the main-log
+        /// tracker. Regression for crediting the wrong tracker, which leaked the read-cache tracker and
+        /// under-counted the main-log tracker.</item>
+        /// </list>
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void ReadCacheHeapSizeTrackerReturnsToZeroAfterUpdateAndEvict()
+        public void ReadCacheHeapSizeTrackerReturnsToZeroAfterUpdateAndEvict([Values] ReadCacheUpdateOp updateOp)
         {
             // Tear down the default main-log-only store and recreate with read cache enabled.
             store.Dispose(); store = null;
@@ -709,16 +720,33 @@ namespace Tsavorite.test
             ClassicAssert.Greater(heapAfterPromote, 0,
                 "Promoting heap-bearing records into the read cache must increase tracked heap");
 
-            // Value-changing update over every read-cached key. Each Upsert finds the read-cache record as its
-            // source (HasReadCacheSrc) and publishes a new main-log record, detaching the read-cache prefix.
-            for (int i = 0; i < n; i++) Upsert(i, i + 1000);
+            // Value-changing update over every read-cached key. Each operation finds the read-cache record as
+            // its source (HasReadCacheSrc) and publishes a new main-log record, detaching the read-cache prefix.
+            // Upsert leaves the orphaned source value intact; RMW CopyUpdate clears/disposes it in place.
+            using (var s = NewSession())
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (updateOp == ReadCacheUpdateOp.Upsert)
+                    {
+                        _ = s.BasicContext.Upsert(new TestObjectKey { key = i }, new TrackedObjectValue { value = i + 1000 }, 0);
+                    }
+                    else
+                    {
+                        var input = new TestObjectInput { value = i + 1000 };
+                        var output = new TestObjectOutput();
+                        _ = s.BasicContext.RMW(new TestObjectKey { key = i }, ref input, ref output, 0);
+                    }
+                }
+            }
 
-            // Evict the entire read cache. Every promoted record (now orphaned by the detach) must have its heap
-            // decremented exactly once, so the tracker returns to zero with no leak.
+            // Evict the entire read cache. Every promoted record must have had its value heap decremented
+            // exactly once (at the RMW clear, or here at page-close eviction for the Upsert orphans), so the
+            // read-cache tracker returns to zero with no leak and no double-decrement.
             store.ReadCache.FlushAndEvict(wait: true);
 
             ClassicAssert.AreEqual(0, store.ReadCache.HeapSizeBytes,
-                $"Read-cache heap tracker leaked after update+evict: expected 0 but was {store.ReadCache.HeapSizeBytes} (promoted {heapAfterPromote})");
+                $"Read-cache heap tracker leaked after {updateOp}+evict: expected 0 but was {store.ReadCache.HeapSizeBytes} (promoted {heapAfterPromote})");
         }
 
         #endregion
