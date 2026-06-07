@@ -2292,6 +2292,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Per-thread growth ceiling for the <see cref="AsyncGetFromDiskResult{TContext}"/> cache.
+        /// The success-path Rent (issue) and Return (drain) both run on the worker thread, so a
+        /// per-thread cache sized to the peak in-flight read depth keeps the cycle off the shared
+        /// queue — whose cross-thread head/tail traffic otherwise caps scaling on fast devices.
+        /// Covers deep pipelined batches; deeper bursts spill to the shared queue (correct, just slower).
+        /// </summary>
+        const int AsyncResultThreadCacheMax = 8192;
+
+        /// <summary>
         /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
         /// pool after the worker has consumed its <c>context</c> field in
         /// <see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>.
@@ -2303,10 +2312,9 @@ namespace Tsavorite.core
             // SectorAlignedMemory / DiskLogRecord references across rentals.
             result.context = default;
 
-            // TLS first; on overflow fall back to the shared queue. The queue is
-            // bounded externally by device.ThrottleLimit in-flight IOs, so it never
-            // grows unbounded in steady state.
-            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result))
+            // TLS first (grows to the peak in-flight depth); only a burst beyond
+            // AsyncResultThreadCacheMax spills to the shared queue.
+            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result, AsyncResultThreadCacheMax))
                 asyncGetFromDiskResultPool.Enqueue(result);
         }
 

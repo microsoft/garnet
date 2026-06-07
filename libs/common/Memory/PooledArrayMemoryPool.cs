@@ -30,7 +30,7 @@ namespace Garnet.common
     /// </para>
     /// <para>
     /// Memory ceiling (wrappers only; underlying byte[] are owned by ArrayPool):
-    /// <c>num_unique_threads × <see cref="Tsavorite.core.ThreadLocalCache{T}.Capacity"/> × sizeof(wrapper)</c>
+    /// <c>num_unique_threads × <see cref="Tsavorite.core.ThreadLocalCache{T}.InitialCapacity"/> × sizeof(wrapper)</c>
     /// + <c><see cref="MaxRetainedWrappers"/> × sizeof(wrapper)</c>. With ~160 threads on an 80-core
     /// box that is roughly 660 KB — flat and independent of session count, batch size, or workload.
     /// </para>
