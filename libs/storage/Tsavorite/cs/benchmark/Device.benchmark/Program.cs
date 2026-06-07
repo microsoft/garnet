@@ -45,8 +45,75 @@ namespace Device.benchmark
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
 
+            if (string.Equals(opts.Mode, "epochmicro", StringComparison.OrdinalIgnoreCase))
+            {
+                RunEpochMicro(opts);
+                return;
+            }
+
             PrintBenchMarkSummary(opts);
             SetupDeviceBenchmark(opts);
+        }
+
+        // Pure LightEpoch scaling probe: no device, no handoff. Each thread spins Resume/Suspend
+        // (per-op, like BasicContext.Read) or holds the epoch and spins ProtectAndDrain (--epoch-hold).
+        static void RunEpochMicro(Options opts)
+        {
+            Console.WriteLine($"[epochmicro] mode={(opts.EpochHold ? "hold+ProtectAndDrain" : "per-op Resume/Suspend")}");
+            foreach (var threads in opts.NumThreads)
+            {
+                var epoch = new LightEpoch();
+                var start = new ManualResetEventSlim(false);
+                var timeUp = new ManualResetEventSlim(false);
+                var done = new System.Threading.CountdownEvent(threads);
+                long[] counts = new long[threads];
+                bool hold = opts.EpochHold;
+                var ws = new Thread[threads];
+                for (int t = 0; t < threads; t++)
+                {
+                    int ti = t;
+                    ws[t] = new Thread(() =>
+                    {
+                        start.Wait();
+                        long c = 0;
+                        if (hold)
+                        {
+                            epoch.Resume();
+                            while (!timeUp.IsSet)
+                            {
+                                for (int i = 0; i < 1000; i++) epoch.ProtectAndDrain();
+                                c += 1000;
+                            }
+                            epoch.Suspend();
+                        }
+                        else
+                        {
+                            while (!timeUp.IsSet)
+                            {
+                                for (int i = 0; i < 1000; i++) { epoch.Resume(); epoch.Suspend(); }
+                                c += 1000;
+                            }
+                        }
+                        counts[ti] = c;
+                        done.Signal();
+                    })
+                    { IsBackground = false };
+                    ws[t].Start();
+                }
+                Thread.Sleep(100);
+                var sw = Stopwatch.StartNew();
+                start.Set();
+                Thread.Sleep(opts.Runtime * 1000);
+                timeUp.Set();
+                done.Wait();
+                sw.Stop();
+                foreach (var w in ws) w.Join();
+                long total = 0;
+                foreach (var c in counts) total += c;
+                double mops = total / sw.Elapsed.TotalSeconds / 1e6;
+                Console.WriteLine($"[epochmicro t={threads}] {mops:F2} M epoch-ops/sec ({total} in {sw.Elapsed.TotalSeconds:F2}s)");
+                epoch.Dispose();
+            }
         }
 
         static void PrintBenchMarkSummary(Options opts)
@@ -94,6 +161,18 @@ namespace Device.benchmark
             // Fill device with FileSize bytes of data using a larger temporary buffer
             FillDeviceWithTestData(device, opts);
 
+            // Keyed mode: build the shared, read-only key->address dictionary once.
+            long[] keyToAddr = null;
+            bool keyed = string.Equals(opts.Mode, "keyed", StringComparison.OrdinalIgnoreCase);
+            if (keyed)
+            {
+                long sectorCount = opts.FileSize / opts.SectorSize;
+                keyToAddr = new long[opts.Keys];
+                for (long i = 0; i < opts.Keys; i++)
+                    keyToAddr[i] = (i % sectorCount) * opts.SectorSize;
+                Console.WriteLine($"[keyed] keys={opts.Keys} sectors={sectorCount} copy-out={opts.CopyOut}");
+            }
+
             Console.WriteLine("Starting benchmark...");
             int[] numThreads = [.. opts.NumThreads];
             int[] batchSizes = [.. opts.BatchSize];
@@ -112,13 +191,19 @@ namespace Device.benchmark
                     Interlocked.Exchange(ref totalCompletedOk, 0);
                     Interlocked.Exchange(ref totalErrors, 0);
                     for (int i = 0; i < ErrorCounts.Length; i++) Interlocked.Exchange(ref ErrorCounts[i], 0);
-                    BenchWorker[] bworkers = new BenchWorker[threads];
+                    BenchWorkerBase[] bworkers = new BenchWorkerBase[threads];
+                    var epochMode = opts.EpochHold ? KeyedHandoffWorker.EpochMode.Hold
+                        : opts.Epoch ? KeyedHandoffWorker.EpochMode.PerOp
+                        : KeyedHandoffWorker.EpochMode.Off;
+                    LightEpoch epoch = (keyed && epochMode != KeyedHandoffWorker.EpochMode.Off) ? new LightEpoch() : null;
                     for (int t = 0; t < threads; t++)
                     {
                         int threadIndex = t;
 
                         doneEvents[t] = new ManualResetEventSlim(false);
-                        bworkers[t] = new BenchWorker(batchSize, t, opts.SectorSize, opts.FileSize, ExpectedData, device, startEvent, timeUpEvent, doneEvents[threadIndex]);
+                        bworkers[t] = keyed
+                            ? new KeyedHandoffWorker(batchSize, t, opts.SectorSize, opts.Keys, opts.CopyOut, epochMode, keyToAddr, epoch, device, startEvent, timeUpEvent, doneEvents[threadIndex])
+                            : new BenchWorker(batchSize, t, opts.SectorSize, opts.FileSize, ExpectedData, device, startEvent, timeUpEvent, doneEvents[threadIndex]);
                         workers[t] = new Thread(() => bworkers[threadIndex].Run());
                         workers[t].IsBackground = false;
                         workers[t].Start();
@@ -182,6 +267,7 @@ namespace Device.benchmark
                         Console.WriteLine();
                     }
                     Thread.Sleep(2000);
+                    epoch?.Dispose();
                 }
             }
         }

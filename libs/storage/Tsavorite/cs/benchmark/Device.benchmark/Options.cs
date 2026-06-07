@@ -41,5 +41,20 @@ namespace Device.benchmark
 
         [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }
+
+        [Option("mode", Required = false, Default = "raw", HelpText = "Worker model: 'raw' (random-sector reads, device ceiling) or 'keyed' (dictionary key->address + readyResponses handoff modelling Tsavorite Read()->CompletePending(), no Tsavorite engine).")]
+        public string Mode { get; set; }
+
+        [Option("keys", Required = false, Default = 10_000_000L, HelpText = "Keyed mode: number of keys in the shared key->address dictionary.")]
+        public long Keys { get; set; }
+
+        [Option("copy-out", Required = false, Default = false, HelpText = "Keyed mode: memcpy the read sector into a per-op output buffer in the completion continuation (models Tsavorite's Reader copy).")]
+        public bool CopyOut { get; set; }
+
+        [Option("epoch", Required = false, Default = false, HelpText = "Keyed mode: Resume/Suspend a shared LightEpoch per op (and ProtectAndDrain in CompletePending), exactly like BasicContext.Read. Isolates the epoch-protection cost.")]
+        public bool Epoch { get; set; }
+
+        [Option("epoch-hold", Required = false, Default = false, HelpText = "Keyed mode: hold the shared LightEpoch across the whole chunk (Resume once per chunk, ProtectAndDrain per drain, Suspend once) instead of per op. Tests whether batching epoch protection restores scalability.")]
+        public bool EpochHold { get; set; }
     }
 }

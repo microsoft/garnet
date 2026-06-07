@@ -33,7 +33,7 @@ namespace Device.benchmark
         }
     }
 
-    class BenchWorker
+    class BenchWorker : BenchWorkerBase
     {
         readonly int batchSize, sectorSize;
         readonly Random threadRnd;
@@ -43,14 +43,9 @@ namespace Device.benchmark
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
         readonly ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
 
-        // Per-worker (single-writer-from-processor-thread) counters. Avoid the cache-line
-        // ping-pong of incrementing Program.totalCompletedOk on every callback when many
-        // processor threads are active. Each worker's ops are routed to a stable single
-        // processor by the device (per-thread SPSC routing), so the processor that writes
-        // these counters is unique per worker.
-        internal long localCompletedOk;
-        internal long localErrors;
-        internal readonly long[] localErrorCounts = new long[256];
+        // Per-worker (single-writer-from-processor-thread) counters live on BenchWorkerBase.
+        // Each worker's ops are routed to a stable single processor by the device (per-thread
+        // SPSC routing), so the processor that writes these counters is unique per worker.
 
         public BenchWorker(int batchSize, int threadId, int sectorSize, long fileSize, byte[] expectedData, IDevice device, ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {
@@ -101,7 +96,7 @@ namespace Device.benchmark
             _benchmarkPool.Enqueue((BenchmarkOperation)ctx);
         }
 
-        public unsafe void Run()
+        public override unsafe void Run()
         {
             long localTotalSubmitted = 0;
             try
