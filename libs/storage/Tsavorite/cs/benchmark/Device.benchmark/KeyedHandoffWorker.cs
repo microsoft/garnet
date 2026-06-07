@@ -59,7 +59,8 @@ namespace Device.benchmark
 
         internal enum EpochMode { Off, PerOp, Hold }
 
-        readonly int batchSize, sectorSize;
+        readonly int batchSize, sectorSize, drainWork;
+        readonly bool drainOnCb;
         readonly long numKeys;
         readonly bool copyOut, bigCtx, poolCtx, tlsBufPool;
         readonly EpochMode epochMode;
@@ -79,10 +80,12 @@ namespace Device.benchmark
 
         public KeyedHandoffWorker(int batchSize, int threadId, int sectorSize, long numKeys, bool copyOut,
             bool bigCtx, bool poolCtx, bool tlsBufPool, EpochMode epochMode, SharedKeyed shared, LightEpoch epoch, IDevice device,
-            ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
+            ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent, int drainWork = 0, bool drainOnCb = false)
         {
             this.batchSize = batchSize;
             this.sectorSize = sectorSize;
+            this.drainWork = drainWork;
+            this.drainOnCb = drainOnCb;
             this.numKeys = numKeys;
             this.copyOut = copyOut;
             this.bigCtx = bigCtx;
@@ -125,6 +128,10 @@ namespace Device.benchmark
                 if (errorCode < (uint)localErrorCounts.Length)
                     localErrorCounts[errorCode]++;
             }
+            // --drain-on-cb: run the heavy per-op completion cost HERE (on the device completion
+            // thread, parallelised across all completion threads) instead of on the run thread.
+            // Models moving ContinuePendingRead off the session thread.
+            if (drainOnCb && drainWork != 0) Thread.SpinWait(drainWork);
             readyResponses.Enqueue(op);
         }
 
@@ -133,6 +140,11 @@ namespace Device.benchmark
             device.TryComplete();
             while (readyResponses.TryDequeue(out var op))
             {
+                // Model the run-thread completion cost (Tsavorite's ContinuePendingRead: re-hash,
+                // TryFindRecordInMemory, Reader copy). A heavy per-op drain lengthens the drain phase,
+                // which stops feeding the device ring and lets the completion thread park — the
+                // out-of-phase handoff that caps real kv.bench.
+                if (drainWork != 0 && !drainOnCb) Thread.SpinWait(drainWork);
                 ioPending.Remove(op.id);
                 if (bigCtx) bigPending.Remove(op.id);
                 if (poolCtx) { ctxPool.Push(op.ctx); op.ctx = null; }

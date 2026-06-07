@@ -71,5 +71,11 @@ namespace Device.benchmark
 
         [Option("buf-pool-tls", Required = false, Default = false, HelpText = "Keyed mode: like --buf-pool but the pool is PER-WORKER (models a per-session buffer pool). Tests the fix: same Get/Return churn, no cross-thread sharing.")]
         public bool BufPoolTls { get; set; }
+
+        [Option("drain-work", Required = false, Default = 0, HelpText = "Keyed mode: Thread.SpinWait(N) per completed op in the run-thread drain, modelling Tsavorite's ContinuePendingRead cost. A heavy drain lengthens the drain phase, underfeeds the device ring, and reproduces the real-engine completion-thread park/wake falloff. 0 = none.")]
+        public int DrainWork { get; set; }
+
+        [Option("drain-on-cb", Required = false, Default = false, HelpText = "Keyed mode: run --drain-work ON the device completion thread (parallelised across all completion threads) instead of the run thread. Models moving ContinuePendingRead off the session thread; tests whether complete-side completion restores scalability under a heavy per-op drain.")]
+        public bool DrainOnCb { get; set; }
     }
 }

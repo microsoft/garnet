@@ -220,7 +220,7 @@ namespace Device.benchmark
 
                         doneEvents[t] = new ManualResetEventSlim(false);
                         bworkers[t] = keyed
-                            ? new KeyedHandoffWorker(batchSize, t, opts.SectorSize, opts.Keys, opts.CopyOut, opts.BigCtx, opts.PoolCtx, opts.BufPoolTls, epochMode, shared, epoch, device, startEvent, timeUpEvent, doneEvents[threadIndex])
+                            ? new KeyedHandoffWorker(batchSize, t, opts.SectorSize, opts.Keys, opts.CopyOut, opts.BigCtx, opts.PoolCtx, opts.BufPoolTls, epochMode, shared, epoch, device, startEvent, timeUpEvent, doneEvents[threadIndex], opts.DrainWork, opts.DrainOnCb)
                             : new BenchWorker(batchSize, t, opts.SectorSize, opts.FileSize, ExpectedData, device, startEvent, timeUpEvent, doneEvents[threadIndex]);
                         workers[t] = new Thread(() => bworkers[threadIndex].Run());
                         workers[t].IsBackground = false;
