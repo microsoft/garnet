@@ -34,7 +34,7 @@ namespace Tsavorite.test
             // Use 4096 to match the strictest device.SectorSize we expect on any modern
             // hardware (4Kn or 512e drives). Matches HardeningSectorSize used in the
             // IDevice_ contract tests below.
-            bufferPool = new SectorAlignedBufferPool(1, 4096);
+            bufferPool = SectorAlignedBufferPool.Shared;
             semaphore = new SemaphoreSlim(0);
         }
 

@@ -71,7 +71,7 @@ namespace Garnet.cluster
 
 
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
-            pool = new(1, (int)clusterConfigDevice.SectorSize);
+            pool = SectorAlignedBufferPool.Shared;
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 

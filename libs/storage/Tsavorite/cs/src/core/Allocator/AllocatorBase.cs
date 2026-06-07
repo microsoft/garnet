@@ -763,7 +763,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         protected internal virtual void Initialize()
         {
-            bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
+            // The shared pool aligns every buffer to SectorAlignedBufferPool.SectorSize; require the
+            // device sector to divide it so a pooled buffer is always a valid device-IO target.
+            Debug.Assert(SectorAlignedBufferPool.SectorSize % sectorSize == 0,
+                $"device sector size {sectorSize} must divide the buffer pool alignment {SectorAlignedBufferPool.SectorSize}");
+            bufferPool ??= SectorAlignedBufferPool.Shared;
             var firstValidAddress = FirstValidAddress;
 
             if (BufferSize > 0)
@@ -1716,12 +1720,9 @@ namespace Tsavorite.core
             if (alignedFileOffset + alignedReadLength > pageEndInFile)
                 alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
 
-            // Rent the read-destination buffer with clearOnReturn=false: the device read
-            // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
-            // and downstream consumers bound their access by valid_offset / available_bytes,
-            // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
-            // bandwidth per pending read).
-            var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
+            // The device read fully overwrites [aligned_pointer .. aligned_pointer + alignedReadLength)
+            // and consumers bound their access by valid_offset / available_bytes, so skip zeroing.
+            var record = bufferPool.GetUninitializedForDeviceRead((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;

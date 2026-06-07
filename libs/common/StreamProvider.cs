@@ -49,7 +49,7 @@ namespace Garnet.common
         public Stream Read(string path)
         {
             using var device = GetDevice(path);
-            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = SectorAlignedBufferPool.Shared;
             ReadInto(device, pool, 0, out var buffer, MaxConfigFileSizeAligned);
             pool.Free();
 
@@ -63,7 +63,7 @@ namespace Garnet.common
         {
             using var device = GetDevice(path);
             var bytesToWrite = GetBytesToWrite(data, device);
-            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = SectorAlignedBufferPool.Shared;
 
             // Get a sector-aligned buffer from the pool and copy _buffer into it.
             var buffer = pool.Get((int)bytesToWrite);

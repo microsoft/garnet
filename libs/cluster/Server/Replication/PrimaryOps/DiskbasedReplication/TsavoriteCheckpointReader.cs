@@ -125,7 +125,7 @@ namespace Garnet.cluster
         private FileDataSource CreateFileDataSource(CheckpointFileType type, Guid token, long startOffset, long endOffset)
         {
             var device = CreateCheckpointDevice(type, token);
-            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            bufferPool ??= SectorAlignedBufferPool.Shared;
             var maxBatchSize = Math.Min(FileDataSource.DefaultBatchSize, GetMaxBatchSize(type, clusterProvider.serverOptions));
 
             return new FileDataSource(

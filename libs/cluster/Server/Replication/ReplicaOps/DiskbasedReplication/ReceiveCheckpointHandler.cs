@@ -64,7 +64,7 @@ namespace Garnet.cluster
                 // On retry, this may reopen an existing file from a previous failed attempt.
                 // This is safe because chunks are streamed from the start, overwriting any partial data.
                 var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
-                bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                bufferPool ??= SectorAlignedBufferPool.Shared;
                 activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
             }
 
@@ -161,7 +161,7 @@ namespace Garnet.cluster
                         // On retry, this may reopen an existing file from a previous failed attempt.
                         // This is safe because chunks are streamed from the start, overwriting any partial data.
                         var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
-                        bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                        bufferPool ??= SectorAlignedBufferPool.Shared;
                         activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
                         break;
                     default:

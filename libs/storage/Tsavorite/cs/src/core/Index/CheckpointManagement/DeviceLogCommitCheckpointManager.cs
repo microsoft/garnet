@@ -382,7 +382,7 @@ namespace Tsavorite.core
         protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                bufferPool = SectorAlignedBufferPool.Shared;
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
@@ -415,7 +415,7 @@ namespace Tsavorite.core
         protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                bufferPool = SectorAlignedBufferPool.Shared;
 
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));

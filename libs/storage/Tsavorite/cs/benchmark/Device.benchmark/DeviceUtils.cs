@@ -9,7 +9,7 @@ namespace Device.benchmark
 {
     internal static class DeviceUtils
     {
-        static readonly SectorAlignedBufferPool pool = new SectorAlignedBufferPool(1, 512);
+        static readonly SectorAlignedBufferPool pool = SectorAlignedBufferPool.Shared;
 
         /// <summary>
         /// Note: pads the bytes with zeros to achieve sector alignment

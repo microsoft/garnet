@@ -122,7 +122,7 @@ namespace Tsavorite.core
         public RandomAccessLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false, ILogger logger = null)
             : base(filename, GetSectorSize(filename), capacity)
         {
-            pool = new(1, 1);
+            pool = SectorAlignedBufferPool.Shared;
             ThrottleLimit = 120;
 
             string path = new FileInfo(filename).Directory.FullName;
