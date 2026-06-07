@@ -161,16 +161,34 @@ namespace Device.benchmark
             // Fill device with FileSize bytes of data using a larger temporary buffer
             FillDeviceWithTestData(device, opts);
 
-            // Keyed mode: build the shared, read-only key->address dictionary once.
-            long[] keyToAddr = null;
+            // Keyed mode: build the shared key->address map (and optional shared buffer pool) once.
+            SharedKeyed shared = null;
             bool keyed = string.Equals(opts.Mode, "keyed", StringComparison.OrdinalIgnoreCase);
             if (keyed)
             {
                 long sectorCount = opts.FileSize / opts.SectorSize;
-                keyToAddr = new long[opts.Keys];
+                shared = new SharedKeyed { keyToAddr = new long[opts.Keys] };
                 for (long i = 0; i < opts.Keys; i++)
-                    keyToAddr[i] = (i % sectorCount) * opts.SectorSize;
-                Console.WriteLine($"[keyed] keys={opts.Keys} sectors={sectorCount} copy-out={opts.CopyOut}");
+                    shared.keyToAddr[i] = (i % sectorCount) * opts.SectorSize;
+
+                if (opts.HashIndex)
+                {
+                    long cap = 1;
+                    while (cap < opts.Keys * 2) cap <<= 1;
+                    shared.hashMask = (int)(cap - 1);
+                    shared.htKey = new long[cap];
+                    shared.htAddr = new long[cap];
+                    for (long i = 0; i < opts.Keys; i++)
+                    {
+                        ulong h = (ulong)i * 0x9E3779B97F4A7C15UL; h ^= h >> 29;
+                        int j = (int)h & shared.hashMask;
+                        while (shared.htKey[j] != 0) j = (j + 1) & shared.hashMask;
+                        shared.htKey[j] = i + 1;
+                        shared.htAddr[j] = (i % sectorCount) * opts.SectorSize;
+                    }
+                }
+                if (opts.BufPool) shared.bufPool = new System.Collections.Concurrent.ConcurrentQueue<IntPtr>();
+                Console.WriteLine($"[keyed] keys={opts.Keys} sectors={sectorCount} copy-out={opts.CopyOut} hash-index={opts.HashIndex} big-ctx={opts.BigCtx} pool-ctx={opts.PoolCtx} buf-pool={opts.BufPool}");
             }
 
             Console.WriteLine("Starting benchmark...");
@@ -202,7 +220,7 @@ namespace Device.benchmark
 
                         doneEvents[t] = new ManualResetEventSlim(false);
                         bworkers[t] = keyed
-                            ? new KeyedHandoffWorker(batchSize, t, opts.SectorSize, opts.Keys, opts.CopyOut, epochMode, keyToAddr, epoch, device, startEvent, timeUpEvent, doneEvents[threadIndex])
+                            ? new KeyedHandoffWorker(batchSize, t, opts.SectorSize, opts.Keys, opts.CopyOut, opts.BigCtx, opts.PoolCtx, opts.BufPoolTls, epochMode, shared, epoch, device, startEvent, timeUpEvent, doneEvents[threadIndex])
                             : new BenchWorker(batchSize, t, opts.SectorSize, opts.FileSize, ExpectedData, device, startEvent, timeUpEvent, doneEvents[threadIndex]);
                         workers[t] = new Thread(() => bworkers[threadIndex].Run());
                         workers[t].IsBackground = false;

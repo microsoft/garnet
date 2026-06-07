@@ -11,54 +11,85 @@ using Tsavorite.core;
 namespace Device.benchmark
 {
     /// <summary>
-    /// Scaffolding that models Tsavorite's pending-read handoff WITHOUT the Tsavorite engine
-    /// (no hash chains, no log allocator). It keeps only the structures the
-    /// Read()->CompletePending() pattern needs:
-    ///   * a shared, read-only key->address dictionary (stands in for the hash index),
-    ///   * a per-worker pending dictionary + readyResponses queue, where the device completion
-    ///     thread enqueues finished ops and the worker thread drains them in CompletePending, and
-    ///   * (optionally) the shared LightEpoch, either Resumed/Suspended per op (like BasicContext.Read)
-    ///     or held across the whole chunk.
-    /// Layers are toggled by flags so we can see which one breaks device.bench's scalability.
+    /// Shared, read-only-at-run state for the keyed scaffolding: the key->address map (direct array
+    /// or open-addressing hash table) and an optional shared read-buffer pool.
+    /// </summary>
+    sealed class SharedKeyed
+    {
+        public long[] keyToAddr;                       // direct array (default)
+        public long[] htKey, htAddr;                   // open-addressing hash table (--hash-index)
+        public int hashMask;
+        public ConcurrentQueue<IntPtr> bufPool;        // shared read-buffer pool (--buf-pool)
+
+        public long Lookup(long key)
+        {
+            if (htKey is null)
+                return keyToAddr[key];
+            // Tsavorite-style hash walk: mix, then probe the shared table.
+            ulong h = (ulong)key * 0x9E3779B97F4A7C15UL;
+            h ^= h >> 29;
+            int i = (int)h & hashMask;
+            while (htKey[i] != key + 1) i = (i + 1) & hashMask;
+            return htAddr[i];
+        }
+    }
+
+    /// <summary>
+    /// Scaffolding that models Tsavorite's pending-read path WITHOUT the Tsavorite engine. Each layer
+    /// is a toggle so we can see which one breaks device.bench's scalability:
+    ///   handoff (dict + readyResponses) | --hash-index | --big-ctx (PendingContext-sized struct) |
+    ///   --pool-ctx (pooled AsyncIOContext) | --buf-pool (shared SectorAlignedBufferPool) | epoch.
     /// </summary>
     sealed unsafe class KeyedHandoffWorker : BenchWorkerBase
     {
+        // ~192-byte struct modelling PendingContext stored by value in ioPendingRequests.
+        struct BigCtx { public void* buf; public fixed long pad[23]; }
+
+        // Pooled per-op context modelling AsyncIOContext (a rented class).
+        sealed class Ctx { public long id; public void* record; public long a, b, c, d, e; }
+
         sealed class Op
         {
             public long id;
-            public void* buffer;     // device read destination (sector-aligned)
-            public void* output;     // optional copy-out destination (models Reader copy)
+            public void* buffer;     // own buffer (used when not --buf-pool)
+            public void* output;     // optional copy-out destination
+            public IntPtr readBuf;   // buffer actually handed to ReadAsync (own or pool-rented)
+            public Ctx ctx;          // rented context (when --pool-ctx)
         }
 
-        // off = no epoch; perOp = Resume/Suspend each op (BasicContext.Read); hold = Resume once per chunk.
         internal enum EpochMode { Off, PerOp, Hold }
 
         readonly int batchSize, sectorSize;
         readonly long numKeys;
-        readonly bool copyOut;
+        readonly bool copyOut, bigCtx, poolCtx, tlsBufPool;
         readonly EpochMode epochMode;
         readonly IDevice device;
-        readonly long[] keyToAddr;       // shared, read-only: key -> device byte offset
-        readonly LightEpoch epoch;       // shared; null when epochMode == Off
+        readonly SharedKeyed shared;
+        readonly LightEpoch epoch;
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
         readonly uint seed;
 
-        // Per-worker handoff state (mirrors Tsavorite's per-session ExecutionContext).
         readonly ConcurrentQueue<Op> readyResponses = new();
         readonly Dictionary<long, Op> ioPending = new();
+        readonly Dictionary<long, BigCtx> bigPending = new();
         readonly Stack<Op> pool = new();
+        readonly Stack<Ctx> ctxPool = new();
+        readonly Stack<IntPtr> myBufPool = new();   // per-worker buffer pool (--buf-pool-tls)
         long nextId;
 
         public KeyedHandoffWorker(int batchSize, int threadId, int sectorSize, long numKeys, bool copyOut,
-            EpochMode epochMode, long[] keyToAddr, LightEpoch epoch, IDevice device,
+            bool bigCtx, bool poolCtx, bool tlsBufPool, EpochMode epochMode, SharedKeyed shared, LightEpoch epoch, IDevice device,
             ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {
             this.batchSize = batchSize;
             this.sectorSize = sectorSize;
             this.numKeys = numKeys;
             this.copyOut = copyOut;
+            this.bigCtx = bigCtx;
+            this.poolCtx = poolCtx;
+            this.tlsBufPool = tlsBufPool;
             this.epochMode = epochMode;
-            this.keyToAddr = keyToAddr;
+            this.shared = shared;
             this.epoch = epoch;
             this.device = device;
             this.startEvent = startEvent;
@@ -67,16 +98,24 @@ namespace Device.benchmark
             this.seed = (uint)(threadId + 1);
             for (int i = 0; i < batchSize; i++)
             {
-                var op = new Op
+                pool.Push(new Op
                 {
                     buffer = NativeMemory.AlignedAlloc((nuint)sectorSize, (nuint)sectorSize),
                     output = copyOut ? NativeMemory.AlignedAlloc((nuint)sectorSize, (nuint)sectorSize) : null,
-                };
-                pool.Push(op);
+                });
+                if (poolCtx) ctxPool.Push(new Ctx());
             }
         }
 
-        // Device completion thread runs this: hand the finished op off to the worker thread.
+        IntPtr RentBuf(void* ownBuffer)
+        {
+            if (tlsBufPool)
+                return myBufPool.TryPop(out var tp) ? tp : (IntPtr)NativeMemory.AlignedAlloc((nuint)sectorSize, (nuint)sectorSize);
+            if (shared.bufPool is null)
+                return (IntPtr)ownBuffer;
+            return shared.bufPool.TryDequeue(out var p) ? p : (IntPtr)NativeMemory.AlignedAlloc((nuint)sectorSize, (nuint)sectorSize);
+        }
+
         void Callback(uint errorCode, uint numBytes, object ctx)
         {
             var op = (Op)ctx;
@@ -89,35 +128,44 @@ namespace Device.benchmark
             readyResponses.Enqueue(op);
         }
 
-        // Drain finished ops back to the pool (the Read continuation). Caller owns epoch protection.
         void DrainReady()
         {
             device.TryComplete();
             while (readyResponses.TryDequeue(out var op))
             {
                 ioPending.Remove(op.id);
-                if (copyOut)
-                    Buffer.MemoryCopy(op.buffer, op.output, sectorSize, sectorSize);
+                if (bigCtx) bigPending.Remove(op.id);
+                if (poolCtx) { ctxPool.Push(op.ctx); op.ctx = null; }
+                if (tlsBufPool) myBufPool.Push(op.readBuf);
+                else if (shared.bufPool is not null) shared.bufPool.Enqueue(op.readBuf);
+                if (copyOut) Buffer.MemoryCopy((void*)op.readBuf, op.output, sectorSize, sectorSize);
                 localCompletedOk++;
                 pool.Push(op);
             }
         }
 
-        // Issue the device read for a reserved op. Caller owns epoch protection.
         void IssueRead(Op op, long key)
         {
+            long addr = shared.Lookup(key);
             op.id = nextId++;
+            op.readBuf = RentBuf(op.buffer);
             ioPending[op.id] = op;
+            if (bigCtx) bigPending[op.id] = new BigCtx { buf = (void*)op.readBuf };
+            if (poolCtx)
+            {
+                var c = ctxPool.Count > 0 ? ctxPool.Pop() : new Ctx();
+                c.id = op.id; c.record = (void*)op.readBuf; c.a = addr; c.b = op.id; c.c = c.d = c.e = addr;
+                op.ctx = c;
+            }
             while (device.Throttle()) Thread.Yield();
-            device.ReadAsync((ulong)keyToAddr[key], (IntPtr)op.buffer, (uint)sectorSize, Callback, op);
+            device.ReadAsync((ulong)addr, op.readBuf, (uint)sectorSize, Callback, op);
         }
 
         public override void Run()
         {
             uint x = seed == 0 ? 1u : seed, y = 362436069u, z = 521288629u, w = 88675123u;
             long submitted = 0;
-            bool hold = epochMode == EpochMode.Hold;
-            bool perOp = epochMode == EpochMode.PerOp;
+            bool hold = epochMode == EpochMode.Hold, perOp = epochMode == EpochMode.PerOp;
             try
             {
                 startEvent.Wait();
@@ -125,7 +173,6 @@ namespace Device.benchmark
                 {
                     if (hold) { epoch.Resume(); epoch.ProtectAndDrain(); }
                     DrainReady();
-
                     for (int i = 0; i < batchSize; i++)
                     {
                         Op op;
@@ -138,7 +185,7 @@ namespace Device.benchmark
                         uint t = x ^ (x << 11);
                         x = y; y = z; z = w;
                         w = (w ^ (w >> 19)) ^ (t ^ (t >> 8));
-                        long key = (long)(((ulong)w * (ulong)numKeys) >> 32);  // Lemire fast-mod into [0,numKeys)
+                        long key = (long)(((ulong)w * (ulong)numKeys) >> 32);
 
                         if (perOp)
                         {
@@ -152,7 +199,6 @@ namespace Device.benchmark
                         }
                         submitted++;
                     }
-
                     if (hold) epoch.Suspend();
                 }
             }

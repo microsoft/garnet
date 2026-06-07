@@ -56,5 +56,20 @@ namespace Device.benchmark
 
         [Option("epoch-hold", Required = false, Default = false, HelpText = "Keyed mode: hold the shared LightEpoch across the whole chunk (Resume once per chunk, ProtectAndDrain per drain, Suspend once) instead of per op. Tests whether batching epoch protection restores scalability.")]
         public bool EpochHold { get; set; }
+
+        [Option("hash-index", Required = false, Default = false, HelpText = "Keyed mode: resolve key->address through a shared open-addressing hash table (models Tsavorite's hash index walk) instead of a direct array.")]
+        public bool HashIndex { get; set; }
+
+        [Option("big-ctx", Required = false, Default = false, HelpText = "Keyed mode: insert/remove a ~192-byte struct per op in a per-worker dictionary (models the PendingContext stored in ioPendingRequests).")]
+        public bool BigCtx { get; set; }
+
+        [Option("pool-ctx", Required = false, Default = false, HelpText = "Keyed mode: rent/return a per-op context object from a per-worker pool (models the pooled AsyncIOContext).")]
+        public bool PoolCtx { get; set; }
+
+        [Option("buf-pool", Required = false, Default = false, HelpText = "Keyed mode: rent/return the read buffer from a SHARED pool per op (models Tsavorite's single per-allocator SectorAlignedBufferPool) instead of a per-op fixed buffer.")]
+        public bool BufPool { get; set; }
+
+        [Option("buf-pool-tls", Required = false, Default = false, HelpText = "Keyed mode: like --buf-pool but the pool is PER-WORKER (models a per-session buffer pool). Tests the fix: same Get/Return churn, no cross-thread sharing.")]
+        public bool BufPoolTls { get; set; }
     }
 }
