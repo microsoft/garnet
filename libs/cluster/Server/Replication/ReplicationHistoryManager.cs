@@ -147,11 +147,6 @@ namespace Garnet.cluster
         /// </summary>
         public void TryUpdateForFailover()
         {
-            if (!clusterProvider.serverOptions.EnableFastCommit)
-            {
-                storeWrapper.appendOnlyFile?.Log.Commit();
-                storeWrapper.appendOnlyFile?.Log.WaitForCommit();
-            }
             while (true)
             {
                 var replicationOffset2 = storeWrapper.appendOnlyFile.Log.CommittedUntilAddress;

@@ -8,7 +8,10 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     public struct PageHeader
     {
-        const ushort CurrentVersion = 1;
+        /// <summary>Current version of <see cref="PageHeader"/></summary>
+        const ushort CurrentHeaderVersion = 0;
+        /// <summary>Current version of <see cref="RecordInfo"/>, <see cref="RecordDataHeader"/>, and layout of objects on the page</summary>
+        const ushort CurrentRecordVersion = 0;
 
         /// <summary>The number of bits in the size of the struct. Currently set to make <see cref="Size"/> the size that the 0'th page offset was in earlier versions; 64 bytes</summary>
         internal const int SizeBits = 6;
@@ -18,10 +21,10 @@ namespace Tsavorite.core
 
         /// <summary>Version of this page header.</summary>
         [FieldOffset(0)]
-        internal ushort version;
+        internal ushort headerVersion;
 
         [FieldOffset(sizeof(ushort))]
-        internal ushort unusedUshort1;
+        internal ushort recordVersion;
 
         [FieldOffset(sizeof(int))]
         internal int unusedInt1;
@@ -51,7 +54,8 @@ namespace Tsavorite.core
         internal void Initialize()
         {
             this = default;
-            version = CurrentVersion;
+            headerVersion = CurrentHeaderVersion;
+            recordVersion = CurrentRecordVersion;
             objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
         }
 
@@ -68,13 +72,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// Get the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="segmentBits">The number of bits in the object log's segments.</param>
         internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits)
             => objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
 
         public override readonly string ToString()
-            => $"ver {version}, lowObjLogPos {objectLogLowestPositionWord}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
+            => $"HeaderVer {headerVersion}, RecordVer {recordVersion}, lowObjLogPos {objectLogLowestPositionWord}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
     }
 }

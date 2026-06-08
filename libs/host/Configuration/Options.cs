@@ -64,7 +64,7 @@ namespace Garnet
         public string LogMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2).")]
+        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2; minimum 512).")]
         public string PageSize { get; set; }
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
@@ -100,7 +100,7 @@ namespace Garnet
         public string ReadCacheMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
+        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2; minimum 512).")]
         public string ReadCachePageSize { get; set; }
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
@@ -193,12 +193,16 @@ namespace Garnet
         public bool? EnableAOF { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit")]
+        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit. Must be at least twice AofPageSize.")]
         public string AofMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes (rounds down to power of 2). Must be at least twice the main-log PageSize, since an AOF entry can be as large as the underlying main-log record being written; object commands like LPUSH/HSET can push this even higher. When you raise this, also raise --aof-memory to at least 2x this value.")]
         public string AofPageSize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("aof-segment-size", Required = false, HelpText = "Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated.")]
+        public string AofSegmentSize { get; set; }
 
         [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
@@ -236,7 +240,7 @@ namespace Garnet
         [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
         public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
-        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
+        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss; recommended for production use), Scan - scan old pages and move live records to tail (no data loss; NOT RECOMMENDED - builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use; prefer Lookup)")]
         public LogCompactionType CompactionType { get; set; }
 
         [OptionValidation]
@@ -385,9 +389,6 @@ namespace Garnet
         [Option("checkpoint-throttle-delay", Required = false, HelpText = "Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync")]
         public int CheckpointThrottleFlushDelayMs { get; set; }
 
-        [OptionValidation]
-        [Option("fast-commit", Required = false, HelpText = "Use FastCommit when writing AOF.")]
-        public bool? EnableFastCommit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("fast-commit-throttle", Required = false, HelpText = "Throttle FastCommit to write metadata once every K commits.")]
@@ -480,6 +481,17 @@ namespace Garnet
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
+        [Option("device-io-backend", Required = false, HelpText = "Linux-only IO backend for DeviceType=Native: Default (=libaio), Libaio, or Uring (io_uring). The shipped native library is built with -DUSE_URING=ON and requires liburing.so.2 at load time for all backends; a -DUSE_URING=OFF rebuild only needs libaio.")]
+        public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
+        public int? DeviceCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, 65536)]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends.")]
+        public int? DeviceThrottleLimit { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -559,9 +571,11 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
-        [IntRangeValidation(1, int.MaxValue, isRequired: false)]
-        [Option("value-overflow-threshold", Required = false, HelpText = "The length at which a value string becomes an overflow byte[]")]
-        public int ValueOverflowThreshold { get; set; }
+        // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
+        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
+        [MemorySizeValidation(isRequired: false)]
+        [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
+        public string ValueOverflowThreshold { get; set; }
 
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
@@ -776,12 +790,11 @@ namespace Garnet
                     throw new Exception("Revivification cannot specify RevivifiableFraction without specifying bins.");
             }
 
-            // For backwards compatibility
-            if (CompactionType == LogCompactionType.ShiftForced)
+            // Warn users who explicitly opt into Scan compaction about the memory-spike cost.
+            // Scan builds a temporary parallel KV index proportional to the keyspace; Lookup is the recommended alternative.
+            if (CompactionType == LogCompactionType.Scan)
             {
-                logger?.LogWarning("Compaction type ShiftForced is deprecated. Use Shift instead along with CompactionForceDelete.");
-                CompactionType = LogCompactionType.Shift;
-                CompactionForceDelete = true;
+                logger?.LogWarning("Compaction type Scan builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use. Use Lookup instead unless you have a specific reason for Scan.");
             }
 
             if (SlowLogThreshold > 0)
@@ -790,8 +803,6 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
-            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
-                throw new Exception("Cannot use sharded-log without FastCommit!");
 
             if (!EnableAOF.GetValueOrDefault())
             {
@@ -848,6 +859,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
@@ -864,7 +876,6 @@ namespace Garnet
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
-                EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
@@ -892,7 +903,12 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(
+                        deviceType: deviceType,
+                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
+                        logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -908,6 +924,9 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
+                DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
+                DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,10 +14,8 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.LockTests
 {
     using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    public class BasicLockTests : AllureTestBase
+    public class BasicLockTests : TestBase
     {
         internal class Functions : SimpleLongSimpleFunctions
         {

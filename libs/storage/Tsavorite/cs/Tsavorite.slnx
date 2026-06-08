@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN-Tsavorite.Benchmark/BDN-Tsavorite.benchmark.csproj" />
+    <Project Path="benchmark/KV.benchmark/KV.benchmark.csproj" />
     <Project Path="benchmark/YCSB.benchmark/YCSB.benchmark.csproj" />
   </Folder>
   <Folder Name="/src/core/">
@@ -11,5 +12,11 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Tsavorite.test.csproj" />
+    <Project Path="test/test.recordops/Tsavorite.test.recordops.csproj" />
+    <Project Path="test/test.session/Tsavorite.test.session.csproj" />
+    <Project Path="test/test.session.context/Tsavorite.test.session.context.csproj" />
+    <Project Path="test/test.hlog/Tsavorite.test.hlog.csproj" />
+    <Project Path="test/test.recovery/Tsavorite.test.recovery.csproj" />
+    <Project Path="test/test.stress/Tsavorite.test.stress.csproj" />
   </Folder>
 </Solution>

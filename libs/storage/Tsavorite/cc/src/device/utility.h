@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <string>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace FASTER {
 namespace core {
 
@@ -66,6 +70,24 @@ class Utility {
 
   static constexpr inline bool IsPowerOfTwo(uint64_t x) {
     return (x > 0) && ((x & (x - 1)) == 0);
+  }
+
+  /// Count trailing zeros of a uint64_t. Caller MUST ensure x != 0; passing zero is undefined
+  /// behavior for the underlying intrinsics (`__builtin_ctzll(0)` is UB on GCC/Clang, and
+  /// `_BitScanForward64` is unspecified for zero input on MSVC). Returns the bit position of
+  /// the lowest set bit. Used to derive segment_shift_ from a known-power-of-2 segment_size.
+  ///
+  /// uint32_t return avoids the implicit-promotion gotcha when used as a shift count (a uint8_t
+  /// shift count would zero-extend through int and bite on values > 31, though for shift counts
+  /// 0..63 it would happen to work — we just keep it explicit).
+  static inline uint32_t CountTrailingZeros64(uint64_t x) {
+#if defined(_MSC_VER)
+    unsigned long idx;
+    _BitScanForward64(&idx, x);   // UB if x == 0; caller guarantees non-zero
+    return static_cast<uint32_t>(idx);
+#else
+    return static_cast<uint32_t>(__builtin_ctzll(x));
+#endif
   }
 };
 

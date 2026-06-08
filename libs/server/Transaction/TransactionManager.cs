@@ -527,7 +527,7 @@ namespace Garnet.server
             if (proc.customProcKeyHashCollection == null)
             {
                 // Used with parallel replay, this BitVector will track which replay tasks should participate in the parallel replay of this custom proc.
-                proc.replayTaskAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorBytes))];
+                proc.replayTaskAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes))];
                 var physicalSublogIdx = appendOnlyFile.Log.GetPhysicalSublogIdx(keyHash);
                 var replayIdx = appendOnlyFile.Log.GetReplayTaskIdx(keyHash);
 
@@ -561,7 +561,7 @@ namespace Garnet.server
                 return;
 
             // Initialize only for multi-log
-            virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorBytes))];
+            virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes))];
 
             // If sharded log is enabled calculate sublog access bitmap
             for (var i = 0; i < txnKeysParseState.Count; i++)

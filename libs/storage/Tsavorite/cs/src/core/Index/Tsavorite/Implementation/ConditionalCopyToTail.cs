@@ -93,6 +93,9 @@ namespace Tsavorite.core
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord));
+            // Plumb the source logical address so PostCopyToTail can name per-flush snapshot files
+            // (used by RangeIndex's BfTree compaction path).
+            pendingContext.originalAddress = currentAddress;
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             OperationStatus status;

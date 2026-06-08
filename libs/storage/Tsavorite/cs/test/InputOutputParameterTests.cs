@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
-using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,10 +12,8 @@ namespace Tsavorite.test.InputOutputParameterTests
 {
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
-
-    [AllureNUnit]
     [TestFixture]
-    class InputOutputParameterTests : AllureTestBase
+    class InputOutputParameterTests : TestBase
     {
         const int AddValue = 10_000;
         const int MultValue = 100;

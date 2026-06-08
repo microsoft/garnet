@@ -27,7 +27,7 @@ namespace Tsavorite.core
 #endif
         {
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
-            logRecord.InfoRef.WriteInfo(inNewVersion, previousAddress);
+            logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);
             log._wrapper.InitializeRecord(key, logicalAddress, in sizeInfo, ref logRecord);
             return logRecord;
         }

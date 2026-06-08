@@ -188,8 +188,8 @@ namespace Garnet
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
-            if (opts.EnableCluster && opts.EnableRangeIndexPreview)
-                throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
+            if (opts.ReplicaDisklessSync && opts.EnableRangeIndexPreview)
+                throw new GarnetException("Range Index (preview) is not supported in cluster diskless mode.");
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
@@ -308,18 +308,37 @@ namespace Garnet
             CustomCommandManager customCommandManager)
         {
             var removeOutdated = !serverOptions.EnableCluster;
-            var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
-            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
-                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
-            var aof = CreateAOF(dbId);
+            // Two-roots layout for RangeIndex files:
+            //  riLogRoot — log-tied (working file + per-flush snapshots), co-located with hlog.
+            //              Falls back through LogDir → CheckpointDir → cwd, mirroring Tsavorite's
+            //              CheckpointBaseDirectory chain so RangeIndex works without storage tier.
+            //  cprDir    — checkpoint-tied (per-token snapshots live under <token>/rangeindex/),
+            //              alongside Tsavorite's cpr-checkpoints/<token>/info.dat etc.
+            // Construct the manager only when the feature is enabled. When disabled, the
+            // store wrapper / triggers / functions hold a null reference, and Tsavorite's
+            // record-trigger gates (CallOnFlush etc.) return false → zero per-op overhead.
+            RangeIndexManager rangeIndexManager = null;
+            if (serverOptions.EnableRangeIndexPreview)
+            {
+                var logRootBase = serverOptions.LogDir
+                                  ?? serverOptions.CheckpointDir
+                                  ?? Directory.GetCurrentDirectory();
+                var riLogRoot = Path.Combine(logRootBase ?? string.Empty, "Store", "rangeindex");
+                var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(dbId), "cpr-checkpoints");
 
+                rangeIndexManager = new RangeIndexManager(
+                    riLogRoot: riLogRoot, cprDir: cprDir,
+                    storeEpoch: storeEpoch,
+                    logger: loggerFactory?.CreateLogger("RangeIndexManager"));
+            }
             var vectorManager = new VectorManager(
                 dbId,
                 serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var aof = CreateAOF(dbId);
 
             return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
@@ -348,7 +367,7 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, RangeIndexManager rangeIndexManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, RangeIndexManager rangeIndexManager, VectorManager vectorManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
@@ -373,7 +392,7 @@ namespace Garnet
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager))
+                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)

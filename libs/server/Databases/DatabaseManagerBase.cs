@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -304,10 +304,13 @@ namespace Garnet.server
         /// <param name="truncateAof">Truncate AOF log</param>
         protected static void FlushDatabase(GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
         {
-            db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            using (db.VectorManager?.BeginFlush())
+            {
+                db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
 
-            if (truncateAof)
-                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
+                if (truncateAof)
+                    db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
+            }
         }
 
         /// <summary>
@@ -473,17 +476,11 @@ namespace Garnet.server
         private ValueTask CompactionCommitAofAsync(GarnetDatabase db)
         {
             // If we are the primary, we commit the AOF.
-            // If we are the replica, we commit the AOF only if fast commit is disabled
-            // because we do not want to clobber AOF addresses.
             // TODO: replica should instead wait until the next AOF commit is done via primary
             if (StoreWrapper.serverOptions.EnableAOF)
             {
-                if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
-                {
-                    if (!StoreWrapper.serverOptions.EnableFastCommit && db.AppendOnlyFile != null)
-                        return db.AppendOnlyFile.Log.CommitAsync();
-                }
-                else
+                // Replica does not commit here because it would clobber AOF addresses.
+                if (!(StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica()))
                 {
                     if (db.AppendOnlyFile != null)
                         return db.AppendOnlyFile.Log.CommitAsync();
@@ -556,7 +553,7 @@ namespace Garnet.server
             using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress, db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
             while (iter1.GetNext())
             {
-                if (!iter1.Info.ValueIsObject)
+                if (!iter1.DataHeader.ValueIsObject)
                     continue;
 
                 var valueObject = iter1.ValueObject;

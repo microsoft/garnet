@@ -20,21 +20,18 @@ namespace Garnet.server
         Shift,
 
         /// <summary>
-        /// Shift the begin address without compacting active records (data loss)
-        /// Immediately deletes files - do not use if you plan to recover after failure.
+        /// Lookup each record in compaction range, for record liveness checking using hash chain - no data loss
+        /// (to delete actual data files from disk, take a checkpoint after compaction).
+        /// Recommended for production use.
         /// </summary>
-        ShiftForced,
+        Lookup,
 
         /// <summary>
         /// Scan from untilAddress to read-only address to check for record liveness checking - no data loss
-        /// (to delete actual data files from disk, take a checkpoint after compaction)
+        /// (to delete actual data files from disk, take a checkpoint after compaction).
+        /// NOT RECOMMENDED: this strategy builds a temporary parallel KV index proportional to the keyspace,
+        /// causing significant transient memory use. Prefer Lookup.
         /// </summary>
         Scan,
-
-        /// <summary>
-        /// Lookup each record in compaction range, for record liveness checking using hash chain - no data loss
-        /// (to delete actual data files from disk, take a checkpoint after compaction)
-        /// </summary>
-        Lookup,
     }
 }

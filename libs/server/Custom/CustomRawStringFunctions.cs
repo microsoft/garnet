@@ -104,5 +104,14 @@ namespace Garnet.server
         /// <param name="readInfo">Advanced arguments</param>
         /// <returns>True if done, false if not found</returns>
         public abstract bool Reader(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo);
+
+
+        /// <summary>
+        /// Called when a read command does not find a value.
+        /// 
+        /// Default implementation writes a null value (either _\r\n or $-1\r\n for RESP 3 or 2 respectively).
+        /// </summary>
+        public virtual void NotFound(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        => writer.WriteNull();
     }
 }

@@ -10,7 +10,7 @@ description = "C FFI wrapper over bf-tree for Garnet P/Invoke interop"
 crate-type = ["cdylib"]
 
 [dependencies]
-bf-tree = "0.4"
+bf-tree = "0.5"
 
 [profile.release]
 opt-level = 3

@@ -112,28 +112,29 @@ namespace Garnet.server
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <param name="entry"></param>
-            internal unsafe void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
+            internal void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
 
             /// <summary>
-            /// This method will perform one of the followin
+            /// This method will perform one of the following
             ///     1. TxnStart: Create a new transaction group
             ///     2. TxnCommit: Replay or buffer transaction group depending if we are in fuzzyRegion. 
             ///     3. TxnAbort: Clear corresponding sublog replay buffer.
             ///     4. Default: Add an operation to an existing transaction group
             /// </summary>
-            /// <param name="sublogIdx"></param>
+            /// <param name="virtualSublogIdx"></param>
             /// <param name="ptr"></param>
             /// <param name="length"></param>
             /// <param name="asReplica"></param>
+            /// <param name="logAddressSequenceNumber"></param>
             /// <returns>Returns true if a txn operation was processed and added otherwise false</returns>
             /// <exception cref="GarnetException"></exception>
-            internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica)
+            internal bool AddOrReplayTransactionOperation(int virtualSublogIdx, byte* ptr, int length, bool asReplica, long logAddressSequenceNumber = 0)
             {
                 var header = *(AofHeader*)ptr;
-                var shardedHeader = default(AofShardedHeader);
-                var replayContext = GetReplayContext(sublogIdx);
-                // First try to process this as an existing transaction
-                if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
+                var replayContext = GetReplayContext(virtualSublogIdx);
+                // Process operation as part of a transaction if it belongs to the same sessionId and
+                // there is already a transaction group associated with it.
+                if (aofReplayContext[virtualSublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
                 {
                     switch (header.opType)
                     {
@@ -141,8 +142,7 @@ namespace Garnet.server
                             throw new GarnetException("No nested transactions expected");
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
-                            shardedHeader = *(AofShardedHeader*)ptr;
-                            aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                            UpdateMaxSequenceNumberFromHeader();
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -150,12 +150,12 @@ namespace Garnet.server
                                 // If in fuzzy region we want to record the commit marker and
                                 // buffer the transaction group for later replay
                                 var commitMarker = new ReadOnlySpan<byte>(ptr, length);
-                                aofReplayContext[sublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
+                                aofReplayContext[virtualSublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
                             }
                             else
                             {
                                 // Otherwise process transaction group immediately
-                                ProcessTransactionGroup(sublogIdx, ptr, asReplica, group);
+                                ProcessTransactionGroup(virtualSublogIdx, ptr, asReplica, group, logAddressSequenceNumber);
                             }
 
                             // We want to clear and remove in both cases to make space for next txn from session
@@ -170,8 +170,8 @@ namespace Garnet.server
 
                     void ClearSessionTxn()
                     {
-                        aofReplayContext[sublogIdx].activeTxns[header.sessionID].Clear();
-                        _ = aofReplayContext[sublogIdx].activeTxns.Remove(header.sessionID);
+                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Clear();
+                        _ = aofReplayContext[virtualSublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
                     return true;
@@ -181,24 +181,67 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessCount = !serverOptions.MultiLogEnabled ? 0 : (*(AofTransactionHeader*)ptr).participantCount;
-                        aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
+                        var headerType = header.HeaderType;
+                        short logAccessCount = 0;
+                        long startSeqNum = 0;
+                        if (serverOptions.MultiLogEnabled)
+                        {
+                            switch (headerType)
+                            {
+                                case AofHeaderType.SingleLogTransactionHeader:
+                                    logAccessCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
+                                    startSeqNum = logAddressSequenceNumber;
+                                    break;
+                                case AofHeaderType.ShardedLogTransactionHeader:
+                                    logAccessCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                                    startSeqNum = (*(AofShardedHeader*)ptr).sequenceNumber;
+                                    break;
+                                default:
+                                    // BasicHeader from SL-era AOF: all replay tasks participate
+                                    logAccessCount = (short)serverOptions.AofReplayTaskCount;
+                                    startSeqNum = logAddressSequenceNumber;
+                                    break;
+                            }
+                        }
+                        aofReplayContext[virtualSublogIdx].AddTransactionGroup(header.sessionID, virtualSublogIdx, (byte)logAccessCount, startSeqNum);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
                         // We encountered a transaction end without start - this could happen because we truncated the AOF
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
-                        shardedHeader = *(AofShardedHeader*)ptr;
-                        aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        UpdateMaxSequenceNumberFromHeader();
                         break;
                     default:
                         // Continue processing
                         return false;
                 }
 
-                // Processed this record succesfully
+                // Processed this record successfully
                 return true;
+
+                // U
+                void UpdateMaxSequenceNumberFromHeader()
+                {
+                    var headerType = (*(AofHeader*)ptr).HeaderType;
+                    long sequenceNumber;
+                    switch (headerType)
+                    {
+                        case AofHeaderType.BasicHeader:
+                        case AofHeaderType.SingleLogTransactionHeader:
+                            sequenceNumber = logAddressSequenceNumber;
+                            break;
+                        case AofHeaderType.ShardedHeader:
+                            sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
+                            break;
+                        case AofHeaderType.ShardedLogTransactionHeader:
+                            sequenceNumber = (*(AofShardedLogTransactionHeader*)ptr).shardedHeader.sequenceNumber;
+                            break;
+                        default:
+                            throw new GarnetException($"Unexpected header type {headerType}");
+                    }
+                    aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, sequenceNumber);
+                }
             }
 
             /// <summary>
@@ -238,12 +281,13 @@ namespace Garnet.server
             /// <param name="sublogIdx"></param>
             /// <param name="ptr"></param>
             /// <param name="asReplica"></param>
-            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica)
+            /// <param name="entryAddress">Log address of the commit entry</param>
+            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, long entryAddress = 0)
             {
                 Debug.Assert(aofReplayContext[sublogIdx].txnGroupBuffer != null);
                 // Process transaction groups in FIFO order
                 var txnGroup = aofReplayContext[sublogIdx].txnGroupBuffer.Dequeue();
-                ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup);
+                ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup, entryAddress);
             }
 
             /// <summary>
@@ -253,7 +297,8 @@ namespace Garnet.server
             /// <param name="ptr"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
-            internal void ProcessTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, TransactionGroup txnGroup)
+            /// <param name="entryAddress">Log address of the commit entry</param>
+            internal void ProcessTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, TransactionGroup txnGroup, long entryAddress = 0)
             {
                 var replayContext = GetReplayContext(sublogIdx);
                 if (!asReplica)
@@ -265,7 +310,9 @@ namespace Garnet.server
                         replayContext.StringBasicContext,
                         replayContext.ObjectBasicContext,
                         replayContext.UnifiedBasicContext,
-                        txnGroup, asReplica);
+                        txnGroup,
+                        asReplica,
+                        entryAddress);
                 }
                 else
                 {
@@ -274,28 +321,73 @@ namespace Garnet.server
                     // Start by saving transaction keys for locking
                     SaveTransactionGroupKeysToLock(txnManager, txnGroup);
 
-                    // Start transaction
-                    _ = txnManager.Run(internal_txn: true);
-
-                    // Process in parallel transaction group
-                    ProcessTransactionGroupOperations(
-                        aofProcessor,
-                        txnManager.StringTransactionalContext,
-                        txnManager.ObjectTransactionalContext,
-                        txnManager.UnifiedTransactionalContext,
-                        txnGroup,
-                        asReplica);
-
-                    // Wait for all participating subtasks to complete replay unless singleLog
                     if (serverOptions.MultiLogEnabled)
                     {
-                        var shardedHeader = *(AofShardedHeader*)ptr;
-                        // Synchronize replay of txn
+                        var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
+                        long commitSeqNum;
+                        short partCount;
+                        var sessionId = (*(AofHeader*)ptr).sessionID;
+
+                        if (headerType == AofHeaderType.SingleLogTransactionHeader)
+                        {
+                            commitSeqNum = entryAddress;
+                            partCount = (*(AofSingleLogTransactionHeader*)ptr).participantCount;
+                        }
+                        else if (headerType == AofHeaderType.ShardedLogTransactionHeader)
+                        {
+                            var shardedHeader = *(AofShardedHeader*)ptr;
+                            commitSeqNum = shardedHeader.sequenceNumber;
+                            partCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                        }
+                        else
+                        {
+                            // BasicHeader from SL-era AOF: all replay tasks participate
+                            commitSeqNum = entryAddress;
+                            partCount = (short)serverOptions.AofReplayTaskCount;
+                        }
+
+                        // Acquire-barrier: synchronize all participants before locking using TxnStart sequence number
                         ProcessSynchronizedOperation(
                             sublogIdx,
-                            ptr,
-                            shardedHeader.basicHeader.sessionID,
+                            txnGroup.StartSequenceNumber,
+                            partCount,
+                            sessionId,
                             null);
+
+                        // Start transaction (acquires locks)
+                        _ = txnManager.Run(internal_txn: true);
+
+                        // Process transaction group operations
+                        ProcessTransactionGroupOperations(
+                            aofProcessor,
+                            txnManager.StringTransactionalContext,
+                            txnManager.ObjectTransactionalContext,
+                            txnManager.UnifiedTransactionalContext,
+                            txnGroup,
+                            asReplica,
+                            entryAddress);
+
+                        // Release-barrier: synchronize all participants before committing using TxnCommit sequence number
+                        ProcessSynchronizedOperation(
+                            sublogIdx,
+                            commitSeqNum,
+                            partCount,
+                            sessionId,
+                            null);
+                    }
+                    else
+                    {
+                        // Single-log: no synchronization needed
+                        _ = txnManager.Run(internal_txn: true);
+
+                        ProcessTransactionGroupOperations(
+                            aofProcessor,
+                            txnManager.StringTransactionalContext,
+                            txnManager.ObjectTransactionalContext,
+                            txnManager.UnifiedTransactionalContext,
+                            txnGroup,
+                            asReplica,
+                            entryAddress);
                     }
 
                     // Commit (NOTE: need to ensure that we do not write to log here)
@@ -319,7 +411,7 @@ namespace Garnet.server
                 // Process transaction
                 static void ProcessTransactionGroupOperations<TStringContext, TObjectContext, TUnifiedContext>(AofProcessor aofProcessor,
                         TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
-                        TransactionGroup txnGroup, bool asReplica)
+                        TransactionGroup txnGroup, bool asReplica, long entryAddress = 0)
                     where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
                     where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
                     where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
@@ -339,7 +431,8 @@ namespace Garnet.server
                                 unifiedContext,
                                 entryPtr,
                                 entry.Length,
-                                asReplica: asReplica);
+                                asReplica: asReplica,
+                                logAddressSequenceNumber: entryAddress);
                         }
                     }
                 }
@@ -351,7 +444,8 @@ namespace Garnet.server
             /// <param name="sublogIdx"></param>
             /// <param name="id"></param>
             /// <param name="ptr"></param>
-            internal void ReplayStoredProc(int sublogIdx, byte id, byte* ptr)
+            /// <param name="entryAddress">Log address of the entry, used for single-physical-log mode</param>
+            internal void ReplayStoredProc(int sublogIdx, byte id, byte* ptr, long entryAddress = 0)
             {
                 if (!serverOptions.MultiLogEnabled)
                 {
@@ -359,26 +453,47 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var shardedHeader = *(AofShardedHeader*)ptr;
-                    // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
-                    CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
+                    var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
+                    long sequenceNumber;
+                    short participantCount;
+                    int sessionId = (*(AofHeader*)ptr).sessionID;
+
+                    if (headerType == AofHeaderType.SingleLogTransactionHeader)
+                    {
+                        var singleLogHeader = *(AofSingleLogTransactionHeader*)ptr;
+                        sequenceNumber = entryAddress;
+                        participantCount = singleLogHeader.participantCount;
+                    }
+                    else if (headerType == AofHeaderType.ShardedLogTransactionHeader)
+                    {
+                        var shardedHeader = *(AofShardedHeader*)ptr;
+                        sequenceNumber = shardedHeader.sequenceNumber;
+                        participantCount = (*(AofShardedLogTransactionHeader*)ptr).participantCount;
+                    }
+                    else
+                    {
+                        // BasicHeader from SL-era AOF: all replay tasks participate
+                        sequenceNumber = entryAddress;
+                        participantCount = (short)serverOptions.AofReplayTaskCount;
+                    }
 
                     // Synchronized processing of stored proc operation
                     ProcessSynchronizedOperation(
                         sublogIdx,
-                        ptr,
-                        shardedHeader.basicHeader.sessionID,
-                        () => { StoredProcRunnerWrapper(sublogIdx, id, ptr); return Task.CompletedTask; }
+                        sequenceNumber,
+                        participantCount,
+                        sessionId,
+                        () => { StoredProcRunnerWrapper(sublogIdx, id, ptr, sequenceNumber); return Task.CompletedTask; }
                     );
 
                     // Wrapper for store proc runner used for multi-log synchronization
-                    void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr)
+                    void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr, long seqNum)
                     {
                         // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                         CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
                         // Update timestamps for associated keys
-                        customProcKeyHashTracker?.UpdateSequenceNumber(shardedHeader.sequenceNumber);
+                        customProcKeyHashTracker?.UpdateSequenceNumber(seqNum);
 
                         // Replay StoredProc
                         StoredProcRunnerBase(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
@@ -404,18 +519,16 @@ namespace Garnet.server
             /// Unified method to process operations that require synchronization across sublogs
             /// </summary>
             /// <param name="sublogIdx">SublogIdx</param>
-            /// <param name="ptr">Pointer to the AOF entry</param>
+            /// <param name="sequenceNumber">Sequence number or entry address for ordering</param>
+            /// <param name="participantCount">Number of participating replay tasks</param>
             /// <param name="barrierId">Unique barrier ID for this operation type</param>
             /// <param name="operation">The operation to execute</param>
-            internal void ProcessSynchronizedOperation(int sublogIdx, byte* ptr, int barrierId, Func<Task> operation)
+            internal void ProcessSynchronizedOperation(int sublogIdx, long sequenceNumber, short participantCount, int barrierId, Func<Task> operation)
             {
                 Debug.Assert(serverOptions.MultiLogEnabled);
 
-                // Extract extended header info and validate header
-                var txnHeader = *(AofTransactionHeader*)ptr;
-
                 // Synchronize execution across sublogs
-                var leaderBarrier = GetBarrier(barrierId, txnHeader);
+                var leaderBarrier = GetBarrier(barrierId, sequenceNumber, participantCount);
                 var isLeader = leaderBarrier.TrySignalOrWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
@@ -447,7 +560,7 @@ namespace Garnet.server
                     // The leader will always perform a cleanup
                     if (isLeader)
                     {
-                        if (!TryRemoveBarrier(barrierId, txnHeader, out _))
+                        if (!TryRemoveBarrier(barrierId, sequenceNumber))
                             removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
 
                         // Release participants if any
@@ -464,22 +577,28 @@ namespace Garnet.server
                 if (removeBarrierException != null)
                     throw removeBarrierException;
 
-                // Update timestamp
-                aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
+                // Transaction replay consistency invariant:
+                // Updating the sequence number before the operation executes preserves prefix consistency —
+                // it signals that replay has reached this log position, matching the standalone operation model.
+                // Atomicity is currently preserved through coordinated locking (acquire-barrier before writes,
+                // release-barrier after commit), preventing readers from observing partial transaction state.
+                // Alternatively, atomicity could be preserved without locking by relying on the read protocol
+                // to re-read keys as they are updated; in that model, write-set replay must NOT advance the
+                // sequence number — only the commit marker should update it.
+                aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, sequenceNumber);
 
                 // Get barrier helper
-                LeaderBarrier GetBarrier(int sessionId, AofTransactionHeader txnHeader)
+                LeaderBarrier GetBarrier(int sessionId, long seqNum, short partCount)
                 {
-                    // Use session ID and txn ID as the barrier key to prevent conflicts between transactions from the same session that access disjoint logs
-                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnHeader.shardedHeader.sequenceNumber };
-                    return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarrier(txnHeader.participantCount));
+                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = seqNum };
+                    return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarrier(partCount));
                 }
 
                 // Remove barrier helper
-                bool TryRemoveBarrier(int sessionId, AofTransactionHeader txnHeader, out LeaderBarrier eventBarrier)
+                bool TryRemoveBarrier(int sessionId, long seqNum)
                 {
-                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnHeader.shardedHeader.sequenceNumber };
-                    return leaderBarriers.TryRemove(barrierID, out eventBarrier);
+                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = seqNum };
+                    return leaderBarriers.TryRemove(barrierID, out _);
                 }
             }
         }

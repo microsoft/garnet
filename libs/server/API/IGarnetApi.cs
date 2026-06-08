@@ -2077,10 +2077,12 @@ namespace Garnet.server
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
-        /// Iterate the contents of the store (pull based)
+        /// Delete every live key whose hash slot is in <paramref name="slots"/>.
+        /// Uses lookup-based iteration (no <c>tempKv</c>); preserves pull-iterator semantics —
+        /// every matched live key is deleted, including expired-but-not-yet-tombstoned records.
         /// </summary>
-        /// <returns></returns>
-        public ITsavoriteScanIterator IterateStore();
+        /// <param name="slots">Hash slot set to delete.</param>
+        public void DeleteSlotKeys(HashSet<int> slots);
 
         #endregion
 

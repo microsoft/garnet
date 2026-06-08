@@ -212,6 +212,8 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            var removed = 0;
+
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -220,12 +222,14 @@ namespace Garnet.server
                 if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
-                output.result1++;
+                removed++;
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
                 this.UpdateSize(value, false);
             }
+
+            output.result1 = removed;
         }
 
         private void SortedSetLength(ref ObjectOutput output)
@@ -852,8 +856,9 @@ namespace Garnet.server
             {
                 var result = Persist(item.ToArray());
                 writer.WriteInt32(result);
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -898,8 +903,9 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.result1++;
             }
+
+            output.result1 = numFields;
         }
 
         private void SortedSetExpire(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -915,8 +921,9 @@ namespace Garnet.server
             {
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
                 writer.WriteInt32(result);
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         private void SortedSetCollect(ref ObjectInput input, ref ObjectOutput output)

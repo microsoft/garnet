@@ -1249,7 +1249,15 @@ namespace Garnet.common
             var recordLength = *(int*)ptr;
             ptr += sizeof(int);
 
-            // 2. The record starts immediately after the length prefix.
+            // 2. Validate record fits within the payload boundary.
+            // Use subtraction instead of ptr + recordLength to avoid pointer arithmetic overflow.
+            if (recordLength < 0 || recordLength > end - ptr)
+            {
+                recordSpan = default;
+                return false;
+            }
+
+            // 3. The record starts immediately after the length prefix.
             recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, recordLength);
 
             ptr += recordLength;
