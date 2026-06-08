@@ -103,13 +103,26 @@ namespace Tsavorite.kvbench
                 System.Console.WriteLine(
                     $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}{(opts.DeviceInlineCompletion ? " (inline completion)" : "")}");
 
+                // LocalMemoryDevice has no Throttle() override; its per-ring SPSC backpressure (the producer
+                // blocks when its ring is full) IS the in-flight bound. So map --device-throttle onto the ring
+                // capacity (rounded up to a power of two) — this actually caps in-flight, with no contended
+                // device-wide numPending counter. 0 = device default ring.
+                int localMemRing = 0;
+                if (opts.DeviceThrottle > 0)
+                {
+                    localMemRing = 1;
+                    while (localMemRing < opts.DeviceThrottle)
+                        localMemRing <<= 1;
+                }
+
                 dev = Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize);
-                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
+                    localMemorySegmentSize: segSize,
+                    localMemoryRingCapacity: localMemRing);
+                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;   // reflect intent in reporting (LocalMemory enforces it via the ring)
                 return dev;
             }
 
