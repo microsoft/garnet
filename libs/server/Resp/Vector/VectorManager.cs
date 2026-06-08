@@ -432,7 +432,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = this.quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                 }
 
                 return VectorManagerResult.OK;
