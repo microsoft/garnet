@@ -25,6 +25,8 @@ namespace Garnet.test.cluster
     [TestFixture]
     public class GarnetAadAuthenticatorTests
     {
+        // Microsoft Entra tenant ID — a public identifier (NOT a secret), used only to
+        // construct the issuer URL for test-only JWTs signed by a locally-generated key.
         private const string Issuer = "https://sts.windows.net/975f013f-7f24-47e8-a7d3-abc4752bf346/";
 
         private static (GarnetAadAuthenticator authenticator, CoarseTimeProvider coarseTime, string token, string objId) BuildAuthenticator(
