@@ -20,12 +20,10 @@ namespace Garnet.server.Auth.Settings
         private bool _validateUsername;
         private bool _disposed;
 
-        // Coarse-time cache passed to every authenticator we create. Obtained via
-        // CoarseTimeProvider.Create: returns the process-wide singleton when no override
-        // was supplied (or when TimeProvider.System was passed explicitly), so production
-        // configurations never spawn a per-settings Timer. We dispose unconditionally —
-        // CoarseTimeProvider.Dispose() is a no-op on the singleton.
-        private readonly CoarseTimeProvider _coarseTime;
+        // TimeProvider used as the wall-clock source by every authenticator we create.
+        // Defaults to CoarseTimeProvider.Instance (the process-wide cached singleton) so
+        // production callers get the cached hot-path read; tests can inject a fake.
+        private readonly TimeProvider _timeProvider;
 
         /// <summary>
         /// Constructor
@@ -35,7 +33,7 @@ namespace Garnet.server.Auth.Settings
         /// <param name="issuers">Allowed issuers</param>
         /// <param name="signingTokenProvider">Signing token provider</param>
         /// <param name="validateUsername"> whether to validate username or not. </param>
-        /// <param name="timeProvider"> Optional shared wall-clock source. When non-null and not <see cref="TimeProvider.System"/>, drives a per-settings coarse-time cache (disposed with the settings). Defaults to <see cref="TimeProvider.System"/>. </param>
+        /// <param name="timeProvider"> Optional wall-clock source. Defaults to <see cref="CoarseTimeProvider.Instance"/> — the process-wide cached singleton — when null. </param>
         public AadAuthenticationSettings(string[] authorizedAppIds, string[] audiences, string[] issuers, IssuerSigningTokenProvider signingTokenProvider, bool validateUsername = false, TimeProvider timeProvider = null)
         {
             if (authorizedAppIds == null || authorizedAppIds.Length == 0)
@@ -64,7 +62,7 @@ namespace Garnet.server.Auth.Settings
             _signingTokenProvider = signingTokenProvider;
             _validateUsername = validateUsername;
 
-            _coarseTime = CoarseTimeProvider.Create(timeProvider);
+            _timeProvider = timeProvider ?? CoarseTimeProvider.Instance;
         }
 
         /// <summary>
@@ -73,7 +71,7 @@ namespace Garnet.server.Auth.Settings
         /// <param name="storeWrapper">The main store the authenticator will be associated with.</param>
         public IGarnetAuthenticator CreateAuthenticator(StoreWrapper storeWrapper)
         {
-            return new GarnetAadAuthenticator(_authorizedAppIds, _audiences, _issuers, _signingTokenProvider, _validateUsername, storeWrapper.logger, _coarseTime);
+            return new GarnetAadAuthenticator(_authorizedAppIds, _audiences, _issuers, _signingTokenProvider, _validateUsername, storeWrapper.logger, _timeProvider);
         }
 
         /// <summary>
@@ -88,7 +86,6 @@ namespace Garnet.server.Auth.Settings
                 {
                     _signingTokenProvider?.Dispose();
                     _signingTokenProvider = null;
-                    _coarseTime.Dispose();
                 }
 
                 _disposed = true;
