@@ -74,7 +74,7 @@ namespace Tsavorite.test
             internal int stopAt;
             internal int valueUpdateTag = 0;
             private int lastKey = -1;
-            internal HashSet<int> gapKeys = [];
+            internal HashSet<int> gapKeys = null;
 
             public ObjectPushIterationTestFunctions()
             {
@@ -87,21 +87,26 @@ namespace Tsavorite.test
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 if (keyMultToValue > 0)
                     ClassicAssert.AreEqual(logRecord.Key.AsRef<TestObjectKey>().key * keyMultToValue, ((TestObjectValue)logRecord.ValueObject).value);
-                if (valueUpdateTag == 0)
+                if (gapKeys is not null)
                 {
-                    // Pass one: initial iteration; search for gaps.
-                    if (lastKey != -1)
+                    if (valueUpdateTag == 0)
                     {
-                        for (var gapKey = lastKey + 1; gapKey < key; gapKey++)
-                            _ = gapKeys.Add(gapKey);
+                        // Pass one: initial iteration; search for gaps.
+                        if (lastKey != -1)
+                        {
+                            Assert.That(lastKey < key, $"Out-of-sequence key order in Scan; lastKey = {lastKey}, key = {key}, numRecords = {numRecords}, recordMetadata.Address = {recordMetadata.Address}");
+
+                            for (var gapKey = lastKey + 1; gapKey < key; gapKey++)
+                                _ = gapKeys.Add(gapKey);
+                        }
+                        lastKey = key;
                     }
-                    lastKey = key;
-                }
-                else
-                {
-                    // Pass two: gap iteration; verify updates for gap keys.
-                    ClassicAssert.AreEqual(key * keyMultToValue + valueUpdateTag, ((TestObjectValue)logRecord.ValueObject).value);
-                    gapKeys.Remove(key);
+                    else
+                    {
+                        // Pass two: gap iteration; verify updates for gap keys.
+                        ClassicAssert.AreEqual(key + valueUpdateTag, ((TestObjectValue)logRecord.ValueObject).value);
+                        gapKeys.Remove(key);
+                    }
                 }
                 return stopAt != ++numRecords;
             }
@@ -229,14 +234,13 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        //[Repeat(3000)]
         public void ObjectIterationPushLockTest([Values(1, 2, 4, 8)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
         {
             InternalSetup(largeMemory);
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
-            long end;
+            long endAfterInitialPopulation;
 
             const int valueInsertTag = 0x34000;
             const int valueUpdateTag = 0x70000;
@@ -246,18 +250,23 @@ namespace Tsavorite.test
                 using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
                 ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
+                var end = endAfterInitialPopulation;
                 if (scanMode == ScanMode.Scan)
+                {
+                    // Scan does a two-pass approach
+                    scanIteratorFunctions.gapKeys = [];
                     Assert.That(store.Log.Scan(ref scanIteratorFunctions, start, end), Is.True, $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
+                }
                 else
                     Assert.That(session.Iterate(ref scanIteratorFunctions), Is.True, $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
 
                 if (scanMode == ScanMode.Scan && !largeMemory && updateThreads > 0)
                 {
                     // Scan with updates and without largeMemory will cause RCU and sealed records. Depending on races, we may miss some in the intitial iteration.
-                    Assert.That(scanIteratorFunctions.numRecords + scanIteratorFunctions.gapKeys.Count, Is.EqualTo(totalRecords));
+                    Assert.That(scanIteratorFunctions.numRecords + scanIteratorFunctions.gapKeys.Count, Is.EqualTo(totalRecords), $"Unexpected record count; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}, gap keys = {scanIteratorFunctions.gapKeys.Count}");
                     if (scanIteratorFunctions.gapKeys.Count > 0)
                     {
-                        // We missed some records; verify we missed them becasue they were RCU'd, in which case the "miss" was the Sealed record.
+                        // We missed some records; verify they were RCU'd, in which case the "miss" was the Sealed record.
                         start = end;
                         end = store.Log.TailAddress;
                         scanIteratorFunctions.valueUpdateTag = valueUpdateTag;
@@ -294,7 +303,7 @@ namespace Tsavorite.test
                     var status = bContext.Upsert(key1, value);
                     Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
-                end = store.Log.TailAddress;
+                endAfterInitialPopulation = store.Log.TailAddress;
             }
 
             List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
