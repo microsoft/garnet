@@ -32,23 +32,25 @@ namespace Garnet.common
         /// </summary>
         public static readonly CoarseTimeProvider Instance = new();
 
-        // MUST stay declared before `timer`: C# initializes static fields in textual
-        // order, and timer's callback reads utcTicks via a static reference.
-        //
-        // Cached as `long ticks` (not `DateTimeOffset`) for atomic read/write: `long`
-        // is 8 bytes and naturally aligned, so reads/writes are atomic on every
-        // platform we target. Volatile.Read/Write give us release/acquire ordering
-        // so updates propagate promptly across cores. We pay the cost of
-        // reconstructing a DateTimeOffset on every read (~1 ns range-check) in
-        // exchange for tearing-free, ordering-correct access.
-        private static long utcTicks = TimeProvider.System.GetUtcNow().UtcTicks;
+        // Cached as a heap-allocated Snapshot so readers can do a single atomic
+        // reference load (Volatile.Read on a reference is always atomic) and then
+        // copy the immutable DateTimeOffset out of it — no struct tearing, no
+        // DateTimeOffset constructor / range-check on the read path. The Timer
+        // allocates one Snapshot per refresh tick (~24 B/s, gen-0).
+        private sealed class Snapshot
+        {
+            public readonly DateTimeOffset Value;
+            public Snapshot(DateTimeOffset value) => Value = value;
+        }
+
+        private static Snapshot snapshot = new(TimeProvider.System.GetUtcNow());
 
         // Process-wide background refresh. Held in a static field to keep it rooted
         // for process lifetime — the cache is shared by every CoarseTimeProvider
         // instance, so there is exactly one refresh Timer regardless of how many
         // instances are constructed.
         private static readonly ITimer timer = TimeProvider.System.CreateTimer(
-            static _ => Volatile.Write(ref utcTicks, TimeProvider.System.GetUtcNow().UtcTicks),
+            static _ => Volatile.Write(ref snapshot, new Snapshot(TimeProvider.System.GetUtcNow())),
             null,
             RefreshPeriod,
             RefreshPeriod);
@@ -64,22 +66,22 @@ namespace Garnet.common
         /// <summary>
         /// Coarse, cached UTC time. May lag the wall clock by ~<see cref="RefreshPeriod"/>.
         /// </summary>
-        public override DateTimeOffset GetUtcNow() => new(Volatile.Read(ref utcTicks), TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Volatile.Read(ref snapshot).Value;
 
         /// <summary>
         /// Coarse, cached UTC time as a <see cref="DateTime"/>. Convenience wrapper
         /// around <see cref="GetUtcNow"/> for callers that want a <see cref="DateTime"/>
         /// directly.
         /// </summary>
-        public DateTime UtcNow => new(Volatile.Read(ref utcTicks), DateTimeKind.Utc);
+        public DateTime UtcNow => Volatile.Read(ref snapshot).Value.UtcDateTime;
 
         /// <summary>
-        /// Ticks of the coarse, cached UTC time. Reading this is a single memory load
-        /// — preferred on hot paths over <see cref="UtcNow"/> / <see cref="GetUtcNow"/>
-        /// because it skips <see cref="DateTime"/>'s Kind-bit masking on comparison and
-        /// avoids the <see cref="DateTimeOffset"/> struct construction.
+        /// Ticks of the coarse, cached UTC time. Reading this is a single ref load
+        /// plus a field read — preferred on hot paths over <see cref="UtcNow"/> /
+        /// <see cref="GetUtcNow"/> because it skips <see cref="DateTime"/>'s Kind-bit
+        /// masking on comparison.
         /// </summary>
-        public long UtcNowTicks => Volatile.Read(ref utcTicks);
+        public long UtcNowTicks => Volatile.Read(ref snapshot).Value.UtcTicks;
 
         // The remaining TimeProvider surface delegates to TimeProvider.System — only
         // GetUtcNow is coarse. We intentionally do NOT cache monotonic time or wrap
