@@ -501,7 +501,10 @@ namespace Garnet.server
                 else
                 {
                     if (consistentReadActive)
+                    {
                         SwitchActiveDatabaseSession(databaseSessions.Map[0]);
+                        consistentReadActive = false;
+                    }
                     txnSkip = false;
                     ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
                     txnSkip = txnManager.IsSkippingOperations();
