@@ -223,7 +223,7 @@ namespace Garnet.server
         /// <param name="hash"></param>
         /// <param name="batchReadContext"></param>
         /// <returns></returns>
-        public bool PreBatchKeyConsistentRead(long hash, ref ReplicaReadSessionContext batchReadContext)
+        public bool PostBatchKeyConsistentReadValidate(long hash, ref ReplicaReadSessionContext batchReadContext)
         {
             var keySequenceNumber = GetKeySequenceNumber(hash);
             var mSSN = batchReadContext.maximumSessionSequenceNumber;
