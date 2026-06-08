@@ -92,9 +92,9 @@ namespace Tsavorite.core
         /// <param name="latencyUs">Per-IO simulated wall-clock latency in microseconds (0 = none). Microsecond
         /// granularity models modern low-latency devices (single-digit microsecond NVMe).</param>
         /// <param name="sector_size">Sector size for device (default 512).</param>
-        /// <param name="ringCapacity">Per-ring slot count (power of two). Defaults to 4096.</param>
+        /// <param name="ringCapacity">Per-ring slot count (power of two), which is the device's per-submitter in-flight bound (the producer blocks when its ring is full). Defaults to 1024 — deep enough to pipeline yet small enough that the in-flight read-buffer working set stays cache-resident (a larger ring measurably regresses throughput by saturating memory bandwidth).</param>
         /// <param name="fileName">Virtual path used as the device identifier.</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyUs = 0, uint sector_size = 512, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyUs = 0, uint sector_size = 512, int ringCapacity = 1024, string fileName = "/userspace/ram/storage")
             : base(fileName, sector_size, capacity > 0 ? capacity : checked(sz_segment * DefaultMaxSegments))
         {
             if (sz_segment <= 0) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be > 0");

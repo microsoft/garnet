@@ -57,7 +57,7 @@ namespace Tsavorite.core
                     capacity: capacity,
                     sz_segment: localMemorySegmentSize,
                     parallelism: numCompletionThreads < 0 ? System.Environment.ProcessorCount : numCompletionThreads,
-                    ringCapacity: localMemoryRingCapacity > 0 ? localMemoryRingCapacity : 4096,
+                    ringCapacity: localMemoryRingCapacity > 0 ? localMemoryRingCapacity : 1024,
                     fileName: logPath ?? "/userspace/ram/storage"),
                 _ => throw new TsavoriteException($"Unsupported local device {deviceType}"),
             };
