@@ -44,6 +44,11 @@ namespace Garnet.server
 
         public readonly long Max => sketchMax.Value;
 
+        /// <summary>
+        /// Reference to the max value for Volatile.Read access from external callers.
+        /// </summary>
+        public ref long MaxRef => ref sketchMax.Value;
+
         public VirtualSublogReplayState()
         {
             var size = SketchSlotSize;

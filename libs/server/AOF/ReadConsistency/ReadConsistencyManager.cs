@@ -55,6 +55,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Gets the maximum replayed sequence number for a single physical sublog
+        /// by reading the max across all its virtual sublogs.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Physical sublog index.</param>
+        /// <returns>The maximum sequence number observed across all virtual sublogs for this physical sublog.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetPhysicalSublogMax(int physicalSublogIdx)
+        {
+            var replayTaskCount = serverOptions.AofReplayTaskCount;
+            var startIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, 0);
+            long max = 0;
+            for (var rt = 0; rt < replayTaskCount; rt++)
+                max = Math.Max(max, Volatile.Read(ref vsrs[startIdx + rt].MaxRef));
+            return max;
+        }
+
+        /// <summary>
         /// Get frontier sequence number for provided hash
         /// NOTE: Frontier sequence number is maximum sequence number between key specific sequence number and maximum observed sublog sequence number
         /// </summary>
