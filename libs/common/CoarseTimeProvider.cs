@@ -27,7 +27,7 @@ namespace Garnet.common
         /// approximately this duration (best-effort: actual lag depends on Timer
         /// cadence, which can slip under GC pauses or ThreadPool starvation).
         /// </summary>
-        public static readonly TimeSpan RefreshPeriod = TimeSpan.FromMilliseconds(100);
+        public static readonly TimeSpan RefreshPeriod = TimeSpan.FromSeconds(1);
 
         /// <summary>
         /// Process-wide shared instance backed by <see cref="TimeProvider.System"/>.
