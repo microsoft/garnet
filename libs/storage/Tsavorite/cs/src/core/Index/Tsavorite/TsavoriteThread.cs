@@ -104,9 +104,19 @@ namespace Tsavorite.core
             var op = (PendingIoContext<TInput, TOutput, TContext>)request;
             Debug.Assert(op.completionEvent is null, "completion-event ops are signaled synchronously and never drained here");
 
-            var repended = false;
+            var stillPending = false;   // a disk-chain reissue reused this same op; it is back in flight
+            var repended = false;       // a re-pend issued a distinct fresh op; this (old) op is done
             try
             {
+                // Verify the device read on the run thread (the completion thread only enqueued the raw buffer).
+                // On an incomplete record or key mismatch this re-issues the next chain read on this same op; the
+                // op is then back in flight, so leave it pending and let its next completion drain it.
+                if (!hlogBase.TryVerifyOrReissuePendingRead(ref request))
+                {
+                    stillPending = true;
+                    return;
+                }
+
                 var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref op.pendingContext, out var newRequest);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
@@ -132,20 +142,24 @@ namespace Tsavorite.core
             }
             finally
             {
-                if (!repended)
+                // A chain-walk reissue left this op in flight (still pending), so skip return/decrement entirely.
+                if (!stillPending)
                 {
-                    // Terminal completion OR an exception during completion processing: dispose this op's context
-                    // exactly once (returns the input container and disposes the disk record).
-                    OnDisposeDiskRecord(ref op.pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
-                    op.pendingContext.Dispose();
+                    if (!repended)
+                    {
+                        // Terminal completion OR an exception during completion processing: dispose this op's context
+                        // exactly once (returns the input container and disposes the disk record).
+                        OnDisposeDiskRecord(ref op.pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
+                        op.pendingContext.Dispose();
+                    }
+                    // DisposeRecord is idempotent (record is nulled after the first call), so this safely frees the op's
+                    // raw read buffer on the exception path where InternalCompletePendingRequestFromContext did not reach it.
+                    op.DisposeRecord();
+                    sessionFunctions.Ctx.ReturnAsyncIOContext(op);
+                    // Decrement AFTER any re-pend has incremented its fresh op, so the count is never transiently
+                    // zero across a hop and is decremented exactly once even if completion processing threw.
+                    sessionFunctions.Ctx.pendingCount--;
                 }
-                // DisposeRecord is idempotent (record is nulled after the first call), so this safely frees the op's
-                // raw read buffer on the exception path where InternalCompletePendingRequestFromContext did not reach it.
-                op.DisposeRecord();
-                sessionFunctions.Ctx.ReturnAsyncIOContext(op);
-                // Decrement here, AFTER any re-pend has incremented its fresh op, so the count is never transiently
-                // zero across a hop and is decremented exactly once even if completion processing threw.
-                sessionFunctions.Ctx.pendingCount--;
             }
         }
 

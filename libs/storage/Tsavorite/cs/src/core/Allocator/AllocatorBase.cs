@@ -2169,6 +2169,33 @@ namespace Tsavorite.core
             return false;
         }
 
+        /// <summary>
+        /// Verify a pending read's record and, on an incomplete record or key mismatch, re-issue the next disk
+        /// read on the SAME op (walking the disk hash chain). Returns true if the op is resolved and ready for
+        /// completion (full record with a key match, or walked below the resolvable range); false if a new IO was
+        /// issued and the op is therefore still pending. Shared by the synchronous iterator/scan path (called on
+        /// the device completion thread) and the asynchronous run-thread drain (<see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>).
+        /// </summary>
+        internal bool TryVerifyOrReissuePendingRead(ref AsyncIOContext ctx)
+        {
+            if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
+            {
+                // Either we had an incomplete record (re-read the current record) or the key didn't match (read the
+                // previous record in the chain). If that address is in range, issue the read; else fall through to
+                // "IO complete" and let ContinuePending* detect the below-range case.
+                ctx.logicalAddress = prevAddressToRead;
+                if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
+                {
+                    _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    ctx.DisposeRecord();
+                    // Re-issue this same op (a reference), repopulating its read buffer; all fields propagate.
+                    AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
@@ -2177,61 +2204,45 @@ namespace Tsavorite.core
 
             // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
             var ctx = (AsyncIOContext)context;
+
+            // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset),
+            // so subtract valid_offset from the device's reported transfer count (total bytes written from aligned_pointer).
+            Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
+                $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
+            Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
+                $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
+            ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
+
+            if (ctx.record.available_bytes >= RecordInfo.Size)
+            {
+                var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
+                Debug.Assert(!recordInfo.Invalid,
+                    $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
+            }
+
+            if (ctx.completionEvent is null)
+            {
+                // Asynchronous path: keep the completion thread minimal — record the device result and hand the op
+                // to the run thread via the per-session ready queue. The run-thread drain verifies the record,
+                // walks the disk chain, and runs ContinuePending*; it returns the op to the per-session pool.
+                ctx.callbackQueue.Enqueue(ctx);
+                return;
+            }
+
+            // Synchronous iterator/scan path: verify and walk the disk chain here, then signal the waiter, which
+            // reads ctx.diskLogRecord directly after Wait().
             try
             {
-                // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset), so we must subtract
-                // valid_offset from the device's reported transfer count (which is total bytes written into the aligned buffer starting at aligned_pointer).
-                Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
-                    $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
-                Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
-                    $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
-                ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
-
-                if (ctx.record.available_bytes >= RecordInfo.Size)
-                {
-                    var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
-                    Debug.Assert(!recordInfo.Invalid,
-                        $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
-                }
-
-                if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
-                {
-                    // Either we had an incomplete record and we're re-reading the current record, or the record Key didn't match and we're reading the previous record
-                    // in the chain. If the record to read is in the range to resolve then issue the read, else fall through to signal "IO complete".
-                    ctx.logicalAddress = prevAddressToRead;
-                    if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                    {
-                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
-                        ctx.DisposeRecord();
-                        // Reread re-issues this same AsyncIOContext (a reference), repopulating its read buffer; all
-                        // fields propagate into the new IO. No separate wrapper to rent/return.
-                        AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
-                        return;
-                    }
-                }
-
-                // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                if (ctx.completionEvent is not null)
-                {
-                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the waiter.
-                    ctx.completionEvent.Set(ctx);
-                }
-                else
-                {
-                    // Transfer ownership of the op to the worker via the per-session ready queue; the worker
-                    // consumes it in InternalCompletePendingRequest and returns it to the per-session pool.
-                    ctx.callbackQueue.Enqueue(ctx);
-                }
+                if (!TryVerifyOrReissuePendingRead(ref ctx))
+                    return;   // re-issued; the next completion will signal the waiter
+                ctx.completionEvent.Set(ctx);
             }
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
                 _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
-                if (ctx.completionEvent is not null)
-                    ctx.completionEvent.SetException(e);
-                else
-                    throw;
+                ctx.completionEvent.SetException(e);
             }
         }
 
