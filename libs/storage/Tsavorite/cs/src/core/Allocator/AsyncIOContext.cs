@@ -10,16 +10,14 @@ namespace Tsavorite.core
     using static LogAddress;
 
     /// <summary>
-    /// Async IO context for PMM. Reference type so per-pending-IO storage (the
-    /// <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper, completion-event slot,
-    /// dictionary values) holds an 8-byte reference rather than a ~112-byte struct with
-    /// 5+ object refs. The previous struct-typed implementation caused
-    /// <c>Buffer.BulkMoveWithWriteBarrier</c> on every <c>asyncResult.context = context</c>
-    /// store, which carried JIT-inserted GC poll loops eating ~18% of the worker thread's
-    /// CPU at single-thread libaio random reads (each barrier-set in the bulk-move had a
-    /// chance of taking the slow path, and there were ~5 ref fields per copy).
+    /// Async IO context for PMM. Reference type so per-pending-IO storage (the per-session ready queue,
+    /// completion-event slot, dictionary values) holds an 8-byte reference rather than a ~112-byte struct
+    /// with 5+ object refs. The previous struct-typed implementation caused
+    /// <c>Buffer.BulkMoveWithWriteBarrier</c> on every context store, which carried JIT-inserted GC poll
+    /// loops eating ~18% of the worker thread's CPU at single-thread libaio random reads (each barrier-set
+    /// in the bulk-move had a chance of taking the slow path, and there were ~5 ref fields per copy).
     /// </summary>
-    public sealed class AsyncIOContext
+    public class AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -55,9 +53,10 @@ namespace Tsavorite.core
         public SectorAlignedMemory objBuffer;
 
         /// <summary>
-        /// Callback queue
+        /// Per-session ready queue this IO completes into. The completion thread enqueues this
+        /// instance directly (no wrapper), and the run thread drains it in CompletePending.
         /// </summary>
-        internal AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> callbackQueue;
+        internal AsyncQueue<AsyncIOContext> callbackQueue;
 
         /// <summary>
         /// Synchronous completion event

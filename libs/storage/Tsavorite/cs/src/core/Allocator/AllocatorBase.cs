@@ -203,18 +203,6 @@ namespace Tsavorite.core
         internal SectorAlignedBufferPool bufferPool;
 
         /// <summary>
-        /// Pool of <see cref="AsyncGetFromDiskResult{TContext}"/> wrappers used by the
-        /// pending-read path (one per in-flight IO). The wrapper is the <c>object context</c>
-        /// passed to <c>IDevice.ReadAsync</c>, so pooling it removes the only
-        /// per-IO heap allocation on the steady-state read path. Bounded by
-        /// <c>device.ThrottleLimit</c> in-flight IOs, so the pool naturally settles around
-        /// that size; the underlying <c>ConcurrentQueue</c> is fine here because pool
-        /// churn is strictly bounded — no segment growth in steady state.
-        /// </summary>
-        readonly System.Collections.Concurrent.ConcurrentQueue<AsyncGetFromDiskResult<AsyncIOContext>>
-            asyncGetFromDiskResultPool = new();
-
-        /// <summary>
         /// Cached delegate for <see cref="AsyncGetFromDiskCallback"/>. The C# compiler does
         /// not cache method-group conversions to delegates for <em>instance</em> methods
         /// (only for static), so without this field every <see cref="AsyncGetFromDisk"/>
@@ -1682,9 +1670,9 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            var asyncResult = RentAsyncGetFromDiskResult();
-            asyncResult.context = context;
-            device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
+            // The AsyncIOContext is itself the object-context handed to the device; it is carried back to
+            // the completion callback and (for async ops) on to the run thread via readyResponses.
+            device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
         /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/> - simple read context version. Used by TsavoriteLog.</summary>
@@ -2187,14 +2175,8 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
-            var ctx = result.context;
-            // poolReturn=true means we own this wrapper's lifetime and will return it to
-            // the pool ourselves (e.g., reread path, exception path, completion-event path).
-            // On the success+callbackQueue path we transfer ownership to the worker by
-            // enqueueing the wrapper reference; the worker returns it to the pool after
-            // it consumes result.context in InternalCompletePendingRequest.
-            var poolReturn = true;
+            // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
+            var ctx = (AsyncIOContext)context;
             try
             {
                 // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset), so we must subtract
@@ -2221,9 +2203,8 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
-                        // Reread: ctx is the same AsyncIOContext instance (a reference). AsyncGetFromDisk rents a
-                        // fresh wrapper and carries ctx into it, so all fields propagate into the new IO. The old
-                        // wrapper is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
+                        // Reread re-issues this same AsyncIOContext (a reference), repopulating its read buffer; all
+                        // fields propagate into the new IO. No separate wrapper to rent/return.
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2232,18 +2213,14 @@ namespace Tsavorite.core
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
                 {
-                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the
-                    // waiter. The wrapper is returned to the pool in the finally below (poolReturn stays true).
+                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the waiter.
                     ctx.completionEvent.Set(ctx);
                 }
                 else
                 {
-                    // Write modified ctx back to the wrapper and transfer ownership to the
-                    // worker via the per-session ready queue. The worker reads result.context
-                    // in InternalCompletePendingRequest and returns the wrapper to the pool.
-                    result.context = ctx;
-                    poolReturn = false;
-                    ctx.callbackQueue.Enqueue(result);
+                    // Transfer ownership of the op to the worker via the per-session ready queue; the worker
+                    // consumes it in InternalCompletePendingRequest and returns it to the per-session pool.
+                    ctx.callbackQueue.Enqueue(ctx);
                 }
             }
             catch (Exception e)
@@ -2256,66 +2233,6 @@ namespace Tsavorite.core
                 else
                     throw;
             }
-            finally
-            {
-                // Single return point for the wrapper. ReturnAsyncGetFromDiskResult clears
-                // result.context before enqueueing, keeping pooled wrappers free of stale
-                // SectorAlignedMemory / DiskLogRecord refs. The success-via-callbackQueue path
-                // opts out (poolReturn=false) because it transfers wrapper ownership to the
-                // worker, which returns it via ReturnAsyncGetFromDiskResult after consuming
-                // result.context in InternalCompletePendingRequest.
-                if (poolReturn)
-                    ReturnAsyncGetFromDiskResult(result);
-            }
-        }
-
-        // Two-tier pool for AsyncGetFromDiskResult wrappers. The TLS fast path
-        // (see <see cref="ThreadLocalCache{T}"/>) absorbs the Get/Return cycles
-        // a single worker thread issues back-to-back, eliminating the CAS on the
-        // shared ConcurrentQueue's head/tail cache line under heavy worker
-        // contention. On thread-local cache miss/full we fall back to the shared
-        // queue, which is still allocation-free in steady state because the total
-        // number of in-flight wrappers is bounded by the device throttle.
-
-        /// <summary>
-        /// Two-tier rent: thread-local LIFO first, then shared ConcurrentQueue,
-        /// finally allocate a fresh wrapper.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal AsyncGetFromDiskResult<AsyncIOContext> RentAsyncGetFromDiskResult()
-        {
-            if (ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryRent(out var result))
-                return result;
-            if (asyncGetFromDiskResultPool.TryDequeue(out result))
-                return result;
-            return new AsyncGetFromDiskResult<AsyncIOContext>();
-        }
-
-        /// <summary>
-        /// Per-thread growth ceiling for the <see cref="AsyncGetFromDiskResult{TContext}"/> cache.
-        /// The success-path Rent (issue) and Return (drain) both run on the worker thread, so a
-        /// per-thread cache sized to the peak in-flight read depth keeps the cycle off the shared
-        /// queue — whose cross-thread head/tail traffic otherwise caps scaling on fast devices.
-        /// Covers deep pipelined batches; deeper bursts spill to the shared queue (correct, just slower).
-        /// </summary>
-        const int AsyncResultThreadCacheMax = 8192;
-
-        /// <summary>
-        /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
-        /// pool after the worker has consumed its <c>context</c> field in
-        /// <see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ReturnAsyncGetFromDiskResult(AsyncGetFromDiskResult<AsyncIOContext> result)
-        {
-            // Clear the captured ctx so a pooled wrapper doesn't transitively retain
-            // SectorAlignedMemory / DiskLogRecord references across rentals.
-            result.context = default;
-
-            // TLS first (grows to the peak in-flight depth); only a burst beyond
-            // AsyncResultThreadCacheMax spills to the shared queue.
-            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result, AsyncResultThreadCacheMax))
-                asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>

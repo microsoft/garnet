@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -133,32 +132,29 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
                 pendingContext.id = sessionCtx.totalPending++;
 
-                // Store the PendingContext struct directly in the dictionary's inline entry array. A reference
-                // wrapper was measured to be net slower here: it cannot avoid the struct copy (the entry sites
-                // build the context on the stack, so it is copied in either way) and adds pool rent/return plus a
-                // heap indirection on every dictionary access.
-                sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+                // The pending op carries the PendingContext directly (no ioPendingRequests dictionary). Rent the
+                // op and copy the context onto it; for non-conditional ops clear the new op's diskLogRecord so its
+                // completion's TransferFrom sees an unset slot (CONDITIONAL_* keep it as their copy/push source).
+                // On re-pend, `pendingContext` is the previous op's context, so copying it here moves the input /
+                // requestKey ownership to this fresh op — the drain then clears the old op without disposing them.
+                var op = sessionCtx.RentAsyncIOContext();
+                op.pendingContext = pendingContext;
                 if (!pendingContext.IsConditionalOp)
-                {
-                    // We may have come from an already-pending operation; keep the diskLogRecord on the caller's
-                    // `pendingContext` (for disposal) but clear it on the dictionary copy so the next completion's
-                    // TransferFrom sees an unset slot. CONDITIONAL_* ops instead keep it as their copy/push source.
-                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
-                }
+                    op.pendingContext.diskLogRecord = default;
 
-                // Issue asynchronous I/O request. AsyncIOContext is a class — rent or allocate one instance,
-                // fill its fields directly (each field-set is a single store, no Buffer.BulkMoveWithWriteBarrier).
-                request = sessionCtx.RentAsyncIOContext();
-                request.id = pendingContext.id;
-
+                // Fill the device-facing fields directly (each set is a single store, no Buffer.BulkMoveWithWriteBarrier).
+                op.id = pendingContext.id;
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
-                request.requestKey = pendingContext.requestKey;
-                request.logicalAddress = pendingContext.logicalAddress;
-                request.minAddress = pendingContext.minAddress;
-                request.record = null;
-                request.callbackQueue = sessionCtx.readyResponses;
+                op.requestKey = pendingContext.requestKey;
+                op.logicalAddress = pendingContext.logicalAddress;
+                op.minAddress = pendingContext.minAddress;
+                op.record = null;
+                op.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, request);
+                // Count the op as pending before issuing; the drain decrements when this op completes.
+                sessionCtx.pendingCount++;
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, op);
+                request = op;
                 return new(StatusCode.Pending);
             }
             else
