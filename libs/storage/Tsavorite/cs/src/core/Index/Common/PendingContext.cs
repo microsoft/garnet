@@ -167,10 +167,12 @@ namespace Tsavorite.core
                         // Stack<IHeapContainer<PinnedSpanByte>>; reinterpret the reference without a
                         // CLR type check.
                         var spanByteInput = Unsafe.As<TInput, PinnedSpanByte>(ref input);
-                        if (spanByteInput.IsEmpty)
+                        if (spanByteInput.IsEmpty && type == OperationType.READ)
                         {
                             // Empty input carries no bytes; a SpanByteHeapContainer would rent a wrapper only to
                             // early-return without a buffer. Use the shared empty container (no rent, no-op Dispose).
+                            // Restricted to reads: a read never writes through the input ref, so sharing one
+                            // immutable default across sessions is safe (RMW could write input, so it still rents).
                             IHeapContainer<PinnedSpanByte> empty = EmptyHeapContainer<PinnedSpanByte>.Instance;
                             this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref empty);
                         }
