@@ -70,12 +70,12 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public override async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
+        public override Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
             if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_TcpNetworkHandlerBase_Start_Server);
-            await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
+            return base.StartAsync(tlsOptions, remoteEndpointName, token);
         }
 
         /// <inheritdoc />
@@ -136,9 +136,9 @@ namespace Garnet.common
                 if (!socket.ReceiveAsync(receiveEventArgs))
                 {
                     if (useTLS)
-                        Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
                     else
-                        Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
                 }
             }
             catch (Exception ex)

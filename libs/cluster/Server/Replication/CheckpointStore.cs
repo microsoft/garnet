@@ -7,7 +7,6 @@ using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -278,23 +277,8 @@ namespace Garnet.cluster
                 RecoveredReplicationId = null;
                 if (fileToken == default) return;
                 var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
-                var pageSizeBits = clusterProvider.serverOptions.PageSizeBits();
 
-                using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
-                {
-                    if (deltaFileDevice is not null)
-                    {
-                        deltaFileDevice.Initialize(-1);
-                        if (deltaFileDevice.GetFileSize(0) > 0)
-                        {
-                            var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
-                            deltaLog.InitializeForReads();
-                            ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1, ref recoveredSafeAofAddress, out RecoveredReplicationId);
-                            return;
-                        }
-                    }
-                }
-                ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1, ref recoveredSafeAofAddress, out RecoveredReplicationId);
+                ckptManager.GetCheckpointCookieMetadata(fileToken, ref recoveredSafeAofAddress, out RecoveredReplicationId);
             }
         }
 

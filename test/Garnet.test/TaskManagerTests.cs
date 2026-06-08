@@ -16,7 +16,7 @@ namespace Garnet.test
     internal class TaskManagerTests : AllureTestBase
     {
         [Test]
-        public void TestBasicRegisterAndRun()
+        public async Task TestBasicRegisterAndRunAsync()
         {
             using var taskManager = new TaskManager();
             var taskStarted = new SemaphoreSlim(0);
@@ -30,11 +30,11 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(taskStarted.Wait(TimeSpan.FromSeconds(5)), "Task should start within timeout");
             _ = taskCanComplete.Release();
-            ClassicAssert.IsTrue(taskManager.Wait(TaskType.IndexAutoGrowTask));
+            ClassicAssert.IsTrue(await taskManager.WaitAsync(TaskType.IndexAutoGrowTask));
         }
 
         [Test]
-        public void TestDoubleRegistration()
+        public async Task TestDoubleRegistrationAsync()
         {
             using var taskManager = new TaskManager();
             var taskStarted = new SemaphoreSlim(0);
@@ -49,7 +49,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(taskStarted.Wait(TimeSpan.FromSeconds(5)), "Task should start within timeout");
             _ = taskCanComplete.Release();
 
-            ClassicAssert.IsTrue(taskManager.Wait(TaskType.IndexAutoGrowTask));
+            ClassicAssert.IsTrue(await taskManager.WaitAsync(TaskType.IndexAutoGrowTask));
             ClassicAssert.AreEqual(1, startedCounter);
 
             async Task DummyTask(CancellationToken token)
@@ -83,23 +83,23 @@ namespace Garnet.test
             if (cancelTaskPlacementCategory == TaskPlacementCategory.Replica)
             {
                 // Cancel tasks based on replica placement category
-                await taskManager.Cancel(cancelTaskPlacementCategory).ConfigureAwait(false);
+                await taskManager.CancelAsync(cancelTaskPlacementCategory).ConfigureAwait(false);
 
                 // Tasks not of replica category so they should keep running
                 ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.AofSizeLimitTask));
 
                 // Cancel all tasks
-                await taskManager.Cancel(TaskPlacementCategory.All).ConfigureAwait(false);
+                await taskManager.CancelAsync(TaskPlacementCategory.All).ConfigureAwait(false);
             }
             else
             {
                 // Cancel tasks based on placement category
-                await taskManager.Cancel(cancelTaskPlacementCategory).ConfigureAwait(false);
+                await taskManager.CancelAsync(cancelTaskPlacementCategory).ConfigureAwait(false);
             }
 
             // Both tasks should complete and be removed since they are in primary category
-            ClassicAssert.IsFalse(taskManager.Wait(TaskType.AofSizeLimitTask));
-            ClassicAssert.IsFalse(taskManager.Wait(TaskType.IndexAutoGrowTask));
+            ClassicAssert.IsFalse(await taskManager.WaitAsync(TaskType.AofSizeLimitTask));
+            ClassicAssert.IsFalse(await taskManager.WaitAsync(TaskType.IndexAutoGrowTask));
 
             async Task PrimaryCategoryTask(CancellationToken token)
             {

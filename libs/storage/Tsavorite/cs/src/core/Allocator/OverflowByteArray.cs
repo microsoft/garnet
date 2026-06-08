@@ -78,6 +78,17 @@ namespace Tsavorite.core
         /// <summary>Span of all data, including before and after offsets; this is for aligned Read from the device.</summary>
         internal readonly Span<byte> AlignedReadSpan => Array.AsSpan(OverflowHeader.Size);
 
+        /// <summary>
+        /// Get a <see cref="System.Memory{T}"/> view over the value bytes (between <see cref="StartOffset"/> and the end-offset).
+        /// </summary>
+        /// <remarks>
+        /// The returned <see cref="System.Memory{T}"/> aliases the underlying byte[]; consumers that need a stable native pointer
+        /// (e.g. for SIMD operations) should call <see cref="System.Memory{T}.Pin"/> for the duration of the operation, otherwise
+        /// GC compaction may relocate the array.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Memory<byte> AsMemory() => Array.AsMemory(StartOffset, Length);
+
         /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
         internal OverflowByteArray(byte[] data) => Array = data;
 

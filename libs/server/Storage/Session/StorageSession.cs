@@ -17,7 +17,6 @@ namespace Garnet.server
     {
         int bitmapBufferSize = 1 << 15;
         SectorAlignedMemory sectorAlignedMemoryBitmap;
-        readonly long HeadAddress;
 
         /// <summary>
         /// Session Contexts for main store
@@ -146,7 +145,6 @@ namespace Garnet.server
             vectorBasicContext = vectorSession.BasicContext;
             vectorTransactionalContext = vectorSession.TransactionalContext;
 
-            HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 

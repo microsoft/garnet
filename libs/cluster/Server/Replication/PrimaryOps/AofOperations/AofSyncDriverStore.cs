@@ -21,26 +21,18 @@ namespace Garnet.cluster
             readonly int physicalSublogIdx = physicalSublogIdx;
             readonly AofSyncDriverStore store = store;
 
-            internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
+            internal void SafeTailPageShiftCallback(long oldTailAddress, long newTailAddress)
             {
-                var oldPage = oldTailAddress >> store.logPageSizeBits;
-                var newPage = newTailAddress >> store.logPageSizeBits;
-
-                // Call truncate only once per page
-                if (oldPage != newPage)
-                {
-                    // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
-                    // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
-                    var truncateUntilAddress = store.clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressAbove(physicalSublogIdx, newTailAddress, numPagesAbove: 2);
-                    if (truncateUntilAddress > 0)
-                        _ = store.SafeTruncateAof(truncateUntilAddress, physicalSublogIdx);
-                }
+                // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
+                // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
+                var truncateUntilAddress = store.clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressAbove(physicalSublogIdx, newTailAddress, numPagesAbove: 2);
+                if (truncateUntilAddress > 0)
+                    _ = store.SafeTruncateAof(truncateUntilAddress, physicalSublogIdx);
             }
         }
 
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
-        readonly int logPageSizeBits, logPageSizeMask;
 
         AofSyncDriver[] syncDrivers;
         int numDrivers;
@@ -58,15 +50,12 @@ namespace Garnet.cluster
             numDrivers = 0;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
-                logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-                var logPageSize = 1 << logPageSizeBits;
-                logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     for (var i = 0; i < clusterProvider.serverOptions.AofPhysicalSublogCount; i++)
                     {
                         var logShiftTailCallback = new LogShiftTailCallback(i, this);
-                        clusterProvider.storeWrapper.appendOnlyFile.Log.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
+                        clusterProvider.storeWrapper.appendOnlyFile.Log.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailPageShiftCallback);
                     }
                 }
             }
@@ -96,8 +85,9 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
-                    if (syncDrivers[i].PreviousAddress[physicalSublogIdx] < TruncatedUntil)
-                        TruncatedUntil = syncDrivers[i].PreviousAddress[physicalSublogIdx];
+                    var prevAddress = syncDrivers[i].GetPreviousAddress(physicalSublogIdx);
+                    if (prevAddress < TruncatedUntil)
+                        TruncatedUntil = prevAddress;
                 }
 
                 // Inform that we have logically truncatedUntil
@@ -126,7 +116,7 @@ namespace Garnet.cluster
         /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
         /// </summary>
         /// <param name="truncateUntil"></param>
-        public void SafeTruncateAof(AofAddress truncateUntil)
+        public void SafeTruncateAof(in AofAddress truncateUntil)
         {
             _lock.WriteLock();
 
@@ -175,7 +165,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="PrimaryReplicationOffset"></param>
         /// <returns></returns>
-        public List<RoleInfo> GetReplicaInfo(AofAddress PrimaryReplicationOffset)
+        public List<RoleInfo> GetReplicaInfo(in AofAddress PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
             List<RoleInfo> replicaInfo = new(numDrivers);

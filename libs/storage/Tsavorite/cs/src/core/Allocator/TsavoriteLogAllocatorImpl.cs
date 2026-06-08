@@ -23,16 +23,14 @@ namespace Tsavorite.core
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
         }
 
-        /// <inheritdoc/>
-        public override void Reset()
+        /// <inheritdoc />
+        protected override void FreeAllAllocatedPages()
         {
-            base.Reset();
             for (var index = 0; index < BufferSize; index++)
             {
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
         }
 
         /// <summary>

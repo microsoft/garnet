@@ -311,6 +311,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public SpanByteAndMemory ValueSpanByteAndMemory => CurrentIter.ValueSpanByteAndMemory;
+
+        /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;
 
         /// <inheritdoc/>

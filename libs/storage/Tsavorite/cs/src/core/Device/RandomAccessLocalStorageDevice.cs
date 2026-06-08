@@ -166,11 +166,7 @@ namespace Tsavorite.core
                 _ = Interlocked.Increment(ref numPending);
                 storageAccessContextPool = GetOrAddHandle(segmentId).Item1;
 
-                var task = storageAccessContextPool.GetAsync();
-                if (task.IsCompletedSuccessfully)
-                    storageAccessContext = task.Result;
-                else
-                    storageAccessContext = await task.ConfigureAwait(false);
+                storageAccessContext = await storageAccessContextPool.GetAsync().ConfigureAwait(false);
 
                 unsafe
                 {
@@ -229,11 +225,7 @@ namespace Tsavorite.core
                 _ = Interlocked.Increment(ref numPending);
                 storageAccessContextPool = GetOrAddHandle(segmentId).Item2;
 
-                var task = storageAccessContextPool.GetAsync();
-                if (task.IsCompletedSuccessfully)
-                    storageAccessContext = task.Result;
-                else
-                    storageAccessContext = await task.ConfigureAwait(false);
+                storageAccessContext = await storageAccessContextPool.GetAsync().ConfigureAwait(false);
 
                 unsafe
                 {

@@ -210,15 +210,15 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITOP:
-                    var outPtr = output.SpanByteAndMemory.SpanByte.ToPointer();
-
-                    if (srcLogRecord.IsPinnedValue)
-                        *(long*)outPtr = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
-                    else
-                        fixed (byte* valuePtr = value)
-                            *(long*)outPtr = ((IntPtr)valuePtr).ToInt64();
-
-                    *(int*)(outPtr + sizeof(long)) = value.Length;
+                    // Expose the value as a SpanByteAndMemory: inline values point directly at log memory
+                    // (stable under the unsafe context); overflow values come back as a no-copy borrowed
+                    // Memory<byte> that the caller pins for the duration of BITOP execution. For values
+                    // sourced from a DiskLogRecord (pending completion of a disk read), the inline
+                    // SectorAlignedMemory recordBuffer would be returned to the pool when the
+                    // DiskLogRecord is disposed; the getter handles that by copying inline values into a
+                    // pooled IMemoryOwner before returning, so the SpanByteAndMemory returned here is
+                    // always safe to use beyond this callback.
+                    output.SpanByteAndMemory = srcLogRecord.ValueSpanByteAndMemory;
                     return;
 
                 case RespCommand.BITFIELD:
@@ -253,36 +253,43 @@ namespace Garnet.server
 
                 case RespCommand.PFCOUNT:
                 case RespCommand.PFMERGE:
+                    // Caller (HyperLogLogOps) provides a sector-aligned destination buffer sized to
+                    // HyperLogLog.DefaultHLL.DenseBytes. Validate signature AND size before the copy
+                    // so a corrupted/oversized value cannot overflow the destination.
+                    var pfDstPtr = output.SpanByteAndMemory.SpanByte.ToPointer();
+                    var pfDstCapacity = output.SpanByteAndMemory.SpanByte.Length;
+
                     bool isValid;
                     if (srcLogRecord.IsPinnedValue)
                     {
                         isValid = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length);
-                        if (isValid)
-                            Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.ToPointer(), value.Length, value.Length);
                     }
                     else
                     {
                         fixed (byte* valuePtr = value)
-                        {
                             isValid = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length);
-                            if (isValid)
-                                Buffer.MemoryCopy(valuePtr, output.SpanByteAndMemory.SpanByte.ToPointer(), value.Length, value.Length);
-                        }
                     }
 
-                    if (!isValid)
+                    // Surface invalid OR oversized as the -1 sentinel; the caller already checks for it.
+                    if (!isValid || value.Length > pfDstCapacity)
                     {
-                        *(long*)output.SpanByteAndMemory.SpanByte.ToPointer() = -1;
+                        *(long*)pfDstPtr = -1;
                         return;
                     }
 
-                    if (value.Length <= output.SpanByteAndMemory.Length)
+                    // Pass the actual destination capacity to MemoryCopy so the bounds check is meaningful.
+                    if (srcLogRecord.IsPinnedValue)
                     {
-                        output.SpanByteAndMemory.SpanByte.Length = value.Length;
-                        return;
+                        Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, pfDstPtr, pfDstCapacity, value.Length);
+                    }
+                    else
+                    {
+                        fixed (byte* valuePtr = value)
+                            Buffer.MemoryCopy(valuePtr, pfDstPtr, pfDstCapacity, value.Length);
                     }
 
-                    throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
+                    output.SpanByteAndMemory.SpanByte.Length = value.Length;
+                    return;
 
                 case RespCommand.TTL:
                     var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);

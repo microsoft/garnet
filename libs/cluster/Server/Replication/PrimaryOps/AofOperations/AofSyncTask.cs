@@ -163,18 +163,18 @@ namespace Garnet.cluster
                 garnetClient.Throttle();
             }
 
-            public async Task RunAofSyncTask(AofSyncDriver aofSyncDriver)
+            public async Task RunAofSyncTaskAsync(AofSyncDriver aofSyncDriver)
             {
                 var enteredMonitor = false;
                 try
                 {
                     enteredMonitor = aofSyncDriver.activeWorkerMonitor.TryEnter();
                     if (!enteredMonitor)
-                        ExceptionUtils.ThrowException(new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}"));
+                        ExceptionUtils.ThrowException(new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTaskAsync)}"));
 
                     logger?.LogInformation(
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
-                        nameof(AofSyncTask.RunAofSyncTask),
+                        nameof(AofSyncTask.RunAofSyncTaskAsync),
                         physicalSublogIdx,
                         remoteNodeId,
                         startAddress);
@@ -199,7 +199,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "[{sublogIdx}]({method})", physicalSublogIdx, nameof(RunAofSyncTask));
+                    logger?.LogError(ex, "[{sublogIdx}]({method})", physicalSublogIdx, nameof(RunAofSyncTaskAsync));
                 }
                 finally
                 {

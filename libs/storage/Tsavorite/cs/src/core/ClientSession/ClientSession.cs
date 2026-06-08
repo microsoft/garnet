@@ -128,6 +128,23 @@ namespace Tsavorite.core
         public long Version => ctx.version;
 
         /// <summary>
+        /// The current head address of the underlying store's main log. Reads the live value, so it
+        /// reflects any updates from log eviction or page advancement. Callers that compare snapshots
+        /// (e.g. before vs. after a pending I/O completion) should hold epoch protection so that the
+        /// addresses they read remain meaningful.
+        /// </summary>
+        public long HeadAddress => store.Log.HeadAddress;
+
+        /// <summary>
+        /// The current head address of the underlying store's read cache, or 0 if the read cache is
+        /// not configured. Reads the live value. Callers that capture pointers into records returned
+        /// by <c>Read</c> must check this in addition to <see cref="HeadAddress"/>: a synchronously
+        /// returned pointer can live in the read cache (when the record was cached on a prior disk
+        /// read), and that page can be evicted independently of the main log.
+        /// </summary>
+        public long ReadCacheHeadAddress => store.ReadCache?.HeadAddress ?? 0;
+
+        /// <summary>
         /// Dispose session
         /// </summary>
         public void Dispose()

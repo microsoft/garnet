@@ -28,7 +28,7 @@ namespace Garnet.server
         internal readonly string version;
         internal readonly string redisProtocolVersion;
         readonly IGarnetServer[] servers;
-        internal readonly long startupTime;
+        internal readonly long startupTimestamp;
 
         /// <summary>
         /// Default database (DB 0)
@@ -205,7 +205,7 @@ namespace Garnet.server
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.servers = servers;
-            this.startupTime = DateTimeOffset.UtcNow.Ticks;
+            this.startupTimestamp = Stopwatch.GetTimestamp();
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
@@ -381,34 +381,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Take checkpoint of all active databases
+        /// Take checkpoint of all active databases (or a specified database)
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="logger">Logger</param>
+        /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, ILogger logger = null,
-            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, logger, token);
-
-        /// <summary>
-        /// Take checkpoint of all active database IDs or a specified database ID
-        /// </summary>
-        /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
         /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
-            if (dbId == -1)
-            {
-                return databaseManager.TakeCheckpoint(background, logger, token);
-            }
+            if (dbId > 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
 
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
-
-            return databaseManager.TakeCheckpoint(background, dbId, logger, token);
+            return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);
         }
 
         /// <summary>
@@ -417,7 +402,7 @@ namespace Garnet.server
         /// <param name="entryTime"></param>
         /// <param name="dbId"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
+        public async Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
@@ -482,33 +467,6 @@ namespace Garnet.server
 
             this.databaseManager.EnqueueCommit(entryType, version, dbId);
         }
-
-        /// <summary>
-        /// Commit AOF for all active databases
-        /// </summary>
-        /// <param name="spinWait">True if should wait until all commits complete</param>
-        /// <returns>false if config prevents committing to AOF</returns>
-        internal bool CommitAOF(bool spinWait)
-        {
-            if (!serverOptions.EnableAOF)
-            {
-                return false;
-            }
-
-            var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return true;
-
-            task.GetAwaiter().GetResult();
-
-            return true;
-        }
-
-        /// <summary>
-        /// Wait for commits from all active databases
-        /// </summary>
-        /// <returns>false if config prevents committing to AOF</returns>
-        internal bool WaitForCommit() =>
-            WaitForCommitAsync().GetAwaiter().GetResult();
 
         /// <summary>
         /// Asynchronously wait for commits from all active databases
@@ -659,7 +617,7 @@ namespace Garnet.server
         /// </summary>
         public void ResetRevivificationStats() => databaseManager.ResetRevivificationStats();
 
-        async Task AutoCheckpointBasedOnAofSizeLimit(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
+        async Task AutoCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
         {
             try
             {
@@ -681,7 +639,7 @@ namespace Garnet.server
             }
         }
 
-        async Task CommitTask(int commitFrequencyMs, CancellationToken token = default, ILogger logger = null)
+        async Task CommitTaskAsync(int commitFrequencyMs, CancellationToken token = default, ILogger logger = null)
         {
             try
             {
@@ -708,7 +666,7 @@ namespace Garnet.server
             }
         }
 
-        async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
+        async Task CompactionTaskAsync(int compactionFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(compactionFrequencySecs > 0);
             try
@@ -717,7 +675,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.DoCompaction(token, logger);
+                    await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
 
                     if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
@@ -733,7 +691,7 @@ namespace Garnet.server
             }
         }
 
-        async Task ObjectCollectTask(int objectCollectFrequencySecs, CancellationToken token = default)
+        async Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(objectCollectFrequencySecs > 0);
             try
@@ -763,7 +721,7 @@ namespace Garnet.server
             }
         }
 
-        async Task ExpiredKeyDeletionScanTask(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
+        async Task ExpiredKeyDeletionScanTaskAsync(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
             try
@@ -800,7 +758,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async Task IndexAutoGrowTask(CancellationToken token)
+        private async Task IndexAutoGrowTaskAsync(CancellationToken token)
         {
             try
             {
@@ -812,12 +770,12 @@ namespace Garnet.server
 
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token).ConfigureAwait(false);
 
-                    allIndexesMaxedOut = databaseManager.GrowIndexesIfNeeded(token);
+                    allIndexesMaxedOut = await databaseManager.GrowIndexesIfNeededAsync(token).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
+                logger?.LogError(ex, $"{nameof(IndexAutoGrowTaskAsync)} exception received");
             }
         }
 
@@ -943,18 +901,18 @@ namespace Garnet.server
         /// Suspend background task that may interfere with the replicas AOF
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendPrimaryOnlyTasks()
+        public Task SuspendPrimaryOnlyTasksAsync()
         {
-            await taskManager.Cancel(TaskPlacementCategory.Primary).ConfigureAwait(false);
+            return taskManager.CancelAsync(TaskPlacementCategory.Primary);
         }
 
         /// <summary>
         /// Suspend background task that may interfere with the primary store.
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendReplicaOnlyTasks()
+        public Task SuspendReplicaOnlyTasksAsync()
         {
-            await taskManager.Cancel(TaskPlacementCategory.Replica);
+            return taskManager.CancelAsync(TaskPlacementCategory.Replica);
         }
 
         /// <summary>
@@ -966,27 +924,27 @@ namespace Garnet.server
             if (serverOptions.AofSizeLimit.Length > 0)
             {
                 var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
+                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
             }
 
             if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
             {
-                taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
+                taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(serverOptions.CommitFrequencyMs, token, logger));
             }
 
             if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
             {
-                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
             {
-                taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTaskAsync(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTaskAsync(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
             }
         }
 
@@ -1009,7 +967,7 @@ namespace Garnet.server
         {
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTask(token));
+                taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTaskAsync(token));
             }
         }
     }

@@ -131,9 +131,9 @@ namespace Garnet.server
         }
 
         private void CreateAndRunIntraPageParallelReplayTasks()
-            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(async () => await ContinuousBackgroundReplay(i, physicalSublog).ConfigureAwait(false)))];
+            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => ContinuousBackgroundReplayAsync(i, physicalSublog)))];
 
-        internal async Task ContinuousBackgroundReplay(int replayTaskIdx, TsavoriteLog replaySublog)
+        internal async Task ContinuousBackgroundReplayAsync(int replayTaskIdx, TsavoriteLog replaySublog)
         {
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
             while (!cts.Token.IsCancellationRequested)
@@ -146,23 +146,25 @@ namespace Garnet.server
                 { }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplay));
-                    cts.Cancel();
+                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
 
-                unsafe
+                try
                 {
-                    var record = replayBatchContext.Record;
-                    var recordLength = replayBatchContext.RecordLength;
-                    var currentAddress = replayBatchContext.CurrentAddress;
-                    var nextAddress = replayBatchContext.NextAddress;
-                    var isProtected = replayBatchContext.IsProtected;
-                    var ptr = record;
-
-                    var maxSequenceNumber = 0L;
-                    try
+                    unsafe
                     {
+
+                        var record = replayBatchContext.Record;
+                        var recordLength = replayBatchContext.RecordLength;
+                        var currentAddress = replayBatchContext.CurrentAddress;
+                        var nextAddress = replayBatchContext.NextAddress;
+                        var isProtected = replayBatchContext.IsProtected;
+                        var ptr = record;
+
+                        var maxSequenceNumber = 0L;
+
                         // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
                         while (ptr < record + recordLength)
                         {
@@ -202,17 +204,17 @@ namespace Garnet.server
                         // Update max sequence number for this virtual sublog which is mapped
                         appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
                     }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplay));
-                        cts.Cancel();
-                        break;
-                    }
-                    finally
-                    {
-                        // Signal work completion after processing
-                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
-                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
+                    break;
+                }
+                finally
+                {
+                    // Signal work completion after processing
+                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                 }
             }
         }
@@ -223,7 +225,7 @@ namespace Garnet.server
         /// Starts a background task to replay and recover data until a specified address or when cancellation is requested.
         /// </summary>
         /// <returns>A Task representing the asynchronous recovery operation.</returns>
-        public Task CreateRecoverTask()
+        public Task CreateRecoverTaskAsync()
         {
             return Task.Run(async () =>
             {

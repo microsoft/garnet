@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -367,7 +368,8 @@ namespace Garnet.server
                         sublogIdx,
                         ptr,
                         shardedHeader.basicHeader.sessionID,
-                        () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
+                        () => { StoredProcRunnerWrapper(sublogIdx, id, ptr); return Task.CompletedTask; }
+                    );
 
                     // Wrapper for store proc runner used for multi-log synchronization
                     void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr)
@@ -405,7 +407,7 @@ namespace Garnet.server
             /// <param name="ptr">Pointer to the AOF entry</param>
             /// <param name="barrierId">Unique barrier ID for this operation type</param>
             /// <param name="operation">The operation to execute</param>
-            internal void ProcessSynchronizedOperation(int sublogIdx, byte* ptr, int barrierId, Action operation)
+            internal void ProcessSynchronizedOperation(int sublogIdx, byte* ptr, int barrierId, Func<Task> operation)
             {
                 Debug.Assert(serverOptions.MultiLogEnabled);
 
@@ -432,7 +434,12 @@ namespace Garnet.server
                     {
                         // Only one replay task will win and execute the following operation
                         if (operation != null)
-                            operation();
+                        {
+                            var opTask = operation();
+
+                            // No choice but to block here, cannot move off thread
+                            AsyncUtils.BlockingWait(opTask);
+                        }
                     }
                 }
                 finally

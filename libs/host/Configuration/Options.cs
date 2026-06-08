@@ -131,10 +131,6 @@ namespace Garnet
         [Option("no-pubsub", Required = false, HelpText = "Disable pub/sub feature on server.")]
         public bool? DisablePubSub { get; set; }
 
-        [OptionValidation]
-        [Option("incsnap", Required = false, HelpText = "Enable incremental snapshots.")]
-        public bool? EnableIncrementalSnapshots { get; set; }
-
         [MemorySizeValidation]
         [Option("pubsub-pagesize", Required = false, HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
         public string PubSubPageSize { get; set; }
@@ -204,7 +200,7 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
-        [IntRangeValidation(1, 64, isRequired: false)]
+        [IntRangeValidation(1, AofAddress.MaxSublogCount, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
 
@@ -231,14 +227,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
         public int AofSizeLimitEnforceFrequencySecs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-refresh-freq", Required = false, HelpText = "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
-        public int AofReplicationRefreshFrequencyMs { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("subscriber-refresh-freq", Required = false, HelpText = "Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.")]
-        public int SubscriberRefreshFrequencyMs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
@@ -735,7 +723,7 @@ namespace Garnet
             if (ClusterAnnounceIp != null)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
                 if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
                     endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
                     listenEp.Port == announceEp.Port &&
@@ -844,7 +832,6 @@ namespace Garnet
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
-                EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
@@ -861,7 +848,6 @@ namespace Garnet
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
-                AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,

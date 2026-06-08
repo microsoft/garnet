@@ -16,7 +16,19 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (srcLogRecord.Info.ValueIsObject)
+            var info = srcLogRecord.Info;
+
+            // Fast path for simple GET on a normal inline string key with no optional fields.
+            // HasOptionalOrObjectFields is false iff: KeyIsInline, ValueIsInline, !HasETag, !HasExpiration (implies !ValueIsObject).
+            // RecordType 0 means normal string (not VectorSet or RangeIndex).
+            // This avoids expiry checks (no expiration), type-safety checks, ETag handling, and custom command dispatch.
+            if (input.arg1 < 0 && !info.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0)
+            {
+                CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                return true;
+            }
+
+            if (info.ValueIsObject)
             {
                 readInfo.Action = ReadAction.WrongType;
                 return false;

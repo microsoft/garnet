@@ -266,19 +266,59 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Set log shift tail callbacks
+        /// Gets the tail address for a specific sublog without copying the entire AofAddress struct.
         /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="SafeTailShiftCallback"></param>
-        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The tail address of the specified sublog.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetTailAddress(int sublogIdx)
         {
             if (singleLog != null)
             {
-                singleLog.log.SafeTailShiftCallback = SafeTailShiftCallback;
+                Debug.Assert(sublogIdx == 0);
+                return singleLog.log.TailAddress;
             }
             else
             {
-                shardedLog.sublog[sublogIdx].SafeTailShiftCallback = SafeTailShiftCallback;
+                Debug.Assert(sublogIdx < shardedLog.Length);
+                return shardedLog.sublog[sublogIdx].TailAddress;
+            }
+        }
+
+        /// <summary>
+        /// Gets the begin address for a specific sublog without copying the entire AofAddress struct.
+        /// </summary>
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The begin address of the specified sublog.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetBeginAddress(int sublogIdx)
+        {
+            if (singleLog != null)
+            {
+                Debug.Assert(sublogIdx == 0);
+                return singleLog.log.BeginAddress;
+            }
+            else
+            {
+                Debug.Assert(sublogIdx < shardedLog.Length);
+                return shardedLog.sublog[sublogIdx].BeginAddress;
+            }
+        }
+
+        /// <summary>
+        /// Set log shift tail callbacks
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="safeTailPageShiftCallback"></param>
+        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> safeTailPageShiftCallback)
+        {
+            if (singleLog != null)
+            {
+                singleLog.log.SafeTailPageShiftCallback = safeTailPageShiftCallback;
+            }
+            else
+            {
+                shardedLog.sublog[sublogIdx].SafeTailPageShiftCallback = safeTailPageShiftCallback;
             }
         }
 

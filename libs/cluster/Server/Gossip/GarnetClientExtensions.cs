@@ -22,7 +22,7 @@ namespace Garnet.cluster
         /// <param name="data"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static Task<MemoryResult<byte>> Gossip(this GarnetClient client, Memory<byte> data, CancellationToken cancellationToken = default)
+        public static Task<MemoryResult<byte>> GossipAsync(this GarnetClient client, Memory<byte> data, CancellationToken cancellationToken = default)
             => client.ExecuteForMemoryResultWithCancellationAsync(GarnetClient.CLUSTER, [GOSSIP, data], cancellationToken);
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace Garnet.cluster
         /// <param name="data"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static Task<MemoryResult<byte>> GossipWithMeet(this GarnetClient client, Memory<byte> data, CancellationToken cancellationToken = default)
+        public static Task<MemoryResult<byte>> GossipWithMeetAsync(this GarnetClient client, Memory<byte> data, CancellationToken cancellationToken = default)
             => client.ExecuteForMemoryResultWithCancellationAsync(GarnetClient.CLUSTER, [GOSSIP, WITHMEET, data], cancellationToken);
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Garnet.cluster
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <seealso cref="T:Garnet.client.GarnetClientSession.NetworkClusterFailStopWrites"/>
-        public static async Task<string> ExecuteClusterFailStopWrites(this GarnetClient client, Memory<byte> nodeid, CancellationToken cancellationToken = default)
+        public static async Task<string> ExecuteClusterFailStopWritesAsync(this GarnetClient client, Memory<byte> nodeid, CancellationToken cancellationToken = default)
             => await client.ExecuteForStringResultWithCancellationAsync(GarnetClient.CLUSTER, [CmdStrings.failstopwrites.ToArray(), nodeid], cancellationToken).ConfigureAwait(false);
 
         /// <summary>
@@ -54,7 +54,7 @@ namespace Garnet.cluster
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <seealso cref="M:Garnet.client.GarnetClientSession.NetworkClusterFailReplicationOffset"/>
-        public static async Task<string> ExecuteClusterFailReplicationOffset(this GarnetClient client, AofAddress primaryReplicationOffset, CancellationToken cancellationToken = default)
+        public static async Task<string> ExecuteClusterFailReplicationOffsetAsync(this GarnetClient client, AofAddress primaryReplicationOffset, CancellationToken cancellationToken = default)
         {
             var args = new Memory<byte>[] {
                 CmdStrings.failreplicationoffset.ToArray(),
@@ -72,7 +72,7 @@ namespace Garnet.cluster
         /// <param name="channel">A span containing the channel name to which the message will be published.</param>
         /// <param name="message">A span containing the message to publish to the channel.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        public static void ExecuteClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
-            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
+        public static void ExecuteClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, Span<byte> channel, Span<byte> message, CancellationToken cancellationToken = default)
+            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, channel, message, cancellationToken);
     }
 }

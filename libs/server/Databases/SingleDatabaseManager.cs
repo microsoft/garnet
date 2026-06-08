@@ -108,46 +108,38 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
+            if (dbId != -1 && dbId != 0)
+                throw new ArgumentOutOfRangeException(nameof(dbId), dbId, "SingleDatabaseManager only supports dbId 0.");
+
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result;
-
-                            if (storeTailAddress.HasValue)
-                                defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                            defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(defaultDatabase.Id);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
-
+            var checkpointTask = TakeCheckpointHelperAsync(defaultDatabase, logger, token);
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
-        }
 
-        /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
-        {
-            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
 
-            return TakeCheckpoint(background, logger, token);
+                    if (storeTailAddress.HasValue)
+                        defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+
+                    defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                }
+                finally
+                {
+                    ResumeCheckpoints(defaultDatabase.Id);
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -188,7 +180,7 @@ namespace Garnet.server
             var aofSize = StoreWrapper.AofSize();
             if (aofSize <= aofSizeLimit) return;
 
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!await TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).ConfigureAwait(false))
                 return;
 
             try
@@ -269,11 +261,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
+        public override ValueTask DoCompactionAsync(CancellationToken token = default, ILogger logger = null) => DoCompactionAsync(defaultDatabase);
 
         /// <inheritdoc/>
-        public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
-            GrowIndexesIfNeeded(defaultDatabase);
+        public override ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default) =>
+            GrowIndexesIfNeededAsync(defaultDatabase);
 
         /// <inheritdoc/>
         public override void ExecuteObjectCollection() =>

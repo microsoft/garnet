@@ -72,11 +72,6 @@ namespace Garnet.server
         public string AofPageSize = "4m";
 
         /// <summary>
-        /// AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
-        /// </summary>
-        public int AofReplicationRefreshFrequencyMs = 10;
-
-        /// <summary>
         /// Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.
         /// </summary>
         public int AofPhysicalSublogCount = 1;
@@ -90,11 +85,6 @@ namespace Garnet.server
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
         /// </summary>
         public int AofTailWitnessFreqMs = 100;
-
-        /// <summary>
-        /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
-        /// </summary>
-        public int SubscriberRefreshFrequencyMs = 0;
 
         /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
@@ -246,19 +236,9 @@ namespace Garnet.server
         public bool QuietMode = false;
 
         /// <summary>
-        /// SAVE and BGSAVE: Enable incremental snapshots, try to write only changes compared to base snapshot
-        /// </summary>
-        public bool EnableIncrementalSnapshots = false;
-
-        /// <summary>
         /// SAVE and BGSAVE: We will take a full (index + log) checkpoint when ReadOnlyAddress of log increases by this amount, from the last full checkpoint.
         /// </summary>
         public long FullCheckpointLogInterval = 1L << 30;
-
-        /// <summary>
-        /// SAVE and BGSAVE: Limit on size of delta log for incremental snapshot, we perform a non-incremental checkpoint after this limit is reached.
-        /// </summary>
-        public long IncrementalSnapshotLogSizeLimit = 1L << 30;
 
         /// <summary>
         /// SAVE and BGSAVE: Use fold-over checkpoints instead of snapshots.
@@ -819,7 +799,6 @@ namespace Garnet.server
                     PageSizeBits = AofPageSizeBits(),
                     LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
-                    SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                     FastCommitMode = EnableFastCommit,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,

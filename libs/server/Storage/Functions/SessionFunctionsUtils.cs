@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -93,13 +94,14 @@ namespace Garnet.server
                 ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            RecordSizeInfo sizeInfo = new();
+            RecordSizeInfo sizeInfo;
 
             if (logRecord.Info.ValueIsInline && (expiration == 0 || logRecord.Info.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                 if (!logRecord.TrySetPinnedValueSpan(newValue, valueAddress, ref valueLength))
                     return false;
+                sizeInfo = new();
             }
             else
             {
@@ -159,6 +161,7 @@ namespace Garnet.server
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void UpdateExpiration(ref LogRecord logRecord, long expiration)
         {
             if (expiration != 0)

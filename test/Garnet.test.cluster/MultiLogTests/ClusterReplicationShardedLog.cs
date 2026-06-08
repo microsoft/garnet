@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -174,7 +175,7 @@ namespace Garnet.test.cluster.MultiLogTests
 
         [Test, Order(2)]
         [Category("REPLICATION")]
-        public void ClusterReplicationShardedLogRecover()
+        public async Task ClusterReplicationShardedLogRecoverAsync()
         {
             var primary_count = 1;
             var primaryNodeIndex = 0;
@@ -200,7 +201,7 @@ namespace Garnet.test.cluster.MultiLogTests
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             var expectedKeys = (string[])primaryServer.Execute("KEYS", ["*"]);
-            context.nodes[primaryNodeIndex].Store.CommitAOF();
+            await context.nodes[primaryNodeIndex].Store.CommitAOFAsync(default).ConfigureAwait(false);
 
             // Shutdown node
             context.nodes[primaryNodeIndex].Dispose(false);

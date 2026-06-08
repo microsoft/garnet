@@ -59,6 +59,45 @@ namespace Tsavorite.core
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not Overflow; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
         OverflowByteArray ValueOverflow { get; set; }
 
+        /// <summary>
+        /// Expose the value bytes through the <see cref="SpanByteAndMemory"/> abstraction.
+        /// </summary>
+        /// <remarks>
+        /// <para>The shape and lifetime of the returned <see cref="SpanByteAndMemory"/> depend on
+        /// the source record:
+        /// <list type="bullet">
+        /// <item><description><b>In-memory <see cref="LogRecord"/>, inline value</b> — returns a
+        /// <see cref="SpanByteAndMemory.SpanByte"/> pointing directly at the allocator's main log
+        /// memory (no copy). The pointer is valid <em>only while the enclosing epoch / unsafe
+        /// context is held</em>; once the epoch is released the page may be evicted and the
+        /// pointer becomes invalid.</description></item>
+        /// <item><description><b><see cref="DiskLogRecord"/>, inline value</b> — the bytes are
+        /// copied into a pooled <see cref="System.Buffers.IMemoryOwner{T}"/> returned in
+        /// <see cref="SpanByteAndMemory.Memory"/>. The underlying
+        /// <see cref="SectorAlignedMemory"/> <c>recordBuffer</c> is returned to its pool when the
+        /// <see cref="DiskLogRecord"/> is disposed (e.g. at the end of pending completion or when
+        /// a scan iterator advances), so the inline pointer would otherwise dangle; the copy
+        /// makes the returned <see cref="SpanByteAndMemory.Memory"/> safe beyond the callback /
+        /// iterator scope.</description></item>
+        /// <item><description><b>Overflow value</b> (either record type) — returns a no-copy
+        /// <see cref="BorrowedMemoryOwner"/> wrapping the underlying GC-managed byte[]. The array
+        /// stays rooted via the <see cref="System.Memory{T}"/> reference inside the owner, so the
+        /// contents survive disposal of the source record (and do not require epoch protection).
+        /// </description></item>
+        /// </list>
+        /// </para>
+        /// <para>Consumers that need a stable native pointer (e.g. for SIMD operations) into the
+        /// <see cref="SpanByteAndMemory.Memory"/> path MUST call <see cref="System.Memory{T}.Pin"/>
+        /// on it and hold the resulting <see cref="System.Buffers.MemoryHandle"/> for the duration
+        /// of the operation, otherwise GC compaction may relocate the underlying array.</para>
+        /// <para>The caller owns the returned <see cref="SpanByteAndMemory.Memory"/> (when set)
+        /// and is responsible for disposing it. <see cref="BorrowedMemoryOwner"/>'s
+        /// <see cref="System.IDisposable.Dispose"/> is a no-op; pooled owners returned for the
+        /// inline <see cref="DiskLogRecord"/> path return their buffer to the pool on dispose.</para>
+        /// <para>Throws if the value is an object.</para>
+        /// </remarks>
+        SpanByteAndMemory ValueSpanByteAndMemory { get; }
+
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }
 
