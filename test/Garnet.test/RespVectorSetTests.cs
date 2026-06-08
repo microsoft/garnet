@@ -3,11 +3,13 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.common;
@@ -2400,6 +2402,121 @@ namespace Garnet.test
                     ClassicAssert.IsEmpty(embRes);
                 }
             }
+        }
+
+        [TestCase(VectorQuantType.NoQuant)]
+        [TestCase(VectorQuantType.Bin)]
+        [TestCase(VectorQuantType.Q8)]
+        [TestCase(VectorQuantType.XNoQuant_I8)]
+        [TestCase(VectorQuantType.XNoQuant_U8)]
+        [TestCase(VectorQuantType.XBin_I8)]
+        [TestCase(VectorQuantType.XBin_U8)]
+        [CancelAfter(30_000)]
+        public async Task WithQuantizationBackfillAsync(VectorQuantType quantType, CancellationToken cancellation)
+        {
+            const int Vectors = 10_000;
+            const int Dimensions = 64;
+            const string Key = nameof(WithQuantizationBackfillAsync);
+            const int Count = 30;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+            var quantTableStart = vectorManager.QuantizationRequestsProcessed;
+            var quantBackfillStart = vectorManager.QuantizationBackfillsProcessed;
+
+            var idBytes = new byte[sizeof(int)];
+            for (var id = 0; id < Vectors; id++)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                var values = new float[Dimensions];
+                values.AsSpan().Fill((byte)id % 128);
+
+                var vaddArgs = new List<object>() { Key };
+
+                var format = (VectorValueType)(id % 4);
+                ClassicAssert.IsTrue(Enum.IsDefined(format));
+
+                switch (format)
+                {
+                    // Treat this as VALUES
+                    case VectorValueType.Invalid:
+                        vaddArgs.AddRange(["VALUES", Dimensions.ToString()]);
+                        for (var i = 0; i < values.Length; i++)
+                        {
+                            vaddArgs.Add(values[i].ToString());
+                        }
+                        break;
+                    case VectorValueType.FP32:
+                        vaddArgs.Add("FP32");
+                        vaddArgs.Add(MemoryMarshal.AsBytes(values.AsSpan()).ToArray());
+                        break;
+                    case VectorValueType.XI8:
+                        vaddArgs.Add("XI8");
+                        vaddArgs.Add(values.Select(static t => (byte)t).ToArray());
+                        break;
+                    case VectorValueType.XU8:
+                        vaddArgs.Add("XU8");
+                        vaddArgs.Add(values.Select(static t => (byte)t).ToArray());
+                        break;
+                    default:
+                        ClassicAssert.Fail($"Unexpected format: {format}");
+                        break;
+                }
+
+                vaddArgs.Add(idBytes);
+
+                vaddArgs.Add(quantType.ToString());
+
+                var res = (int)await db.ExecuteAsync("VADD", vaddArgs.ToArray()).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, res);
+            }
+
+            // Wait for quantization to complete
+            var noQuantizationNeeded = quantType.ToString().Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantType == VectorQuantType.Q8;
+            var quantizationExpected = !noQuantizationNeeded;
+            if (quantizationExpected)
+            {
+                // We expect 1 _succesful_ table build
+                while (vectorManager.QuantizationRequestsProcessed != (quantTableStart + 1))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+
+                // No explicit config is set, so we expect Environment.ProcessorCount _successful_ backfills after the table build
+                while (vectorManager.QuantizationBackfillsProcessed != (quantBackfillStart + Environment.ProcessorCount))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+            }
+
+            // Check all vectors still present
+            for (var id = 0; id < Vectors; id++)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                var expectedValues = new float[Dimensions];
+                expectedValues.AsSpan().Fill((byte)id % 128);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
+                ClassicAssert.AreEqual(Dimensions, vembRes.Length);
+
+                for (var i = 0; i < vembRes.Length; i++)
+                {
+                    var actual = (byte)float.Parse(vembRes[i]);
+                    var expected = (byte)expectedValues[i];
+                    ClassicAssert.AreEqual(expected, actual);
+                }
+
+                // Search should find the included id
+                var vsimRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+                ClassicAssert.AreEqual(Count, vsimRes.Length);
+            }
+
+            // TODO: Assert all the vectors have quantized equivalents
         }
 
         /// <summary>

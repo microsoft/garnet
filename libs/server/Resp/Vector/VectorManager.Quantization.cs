@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,19 @@ namespace Garnet.server
 
         private readonly Channel<QuantizationState> quantizationChannel;
         private readonly Task[] quantizationTasks;
+
+        private int quantizationRequestsProcessed;
+        private int quantizationBackfillsProcessed;
+
+        /// <summary>
+        /// For testing purposes, the number of <see cref="QuantizationStep.BuildQuantizationTable"/> requests processed by <see cref="StartQuantizationTasks"/> tasks.
+        /// </summary>
+        internal int QuantizationRequestsProcessed => quantizationRequestsProcessed;
+
+        /// <summary>
+        /// For testing purposes, the number of <see cref="QuantizationStep.BackfillQuantizedVectors"/> requests processed by <see cref="StartQuantizationTasks"/> tasks.
+        /// </summary>
+        internal int QuantizationBackfillsProcessed => quantizationBackfillsProcessed;
 
         /// <summary>
         /// Populate <see cref="quantizationTasks"/> with running tasks for handling any quantization requests.
@@ -84,6 +98,8 @@ namespace Garnet.server
                                             case QuantizationStep.BuildQuantizationTable:
                                                 if (self.Service.BuildQuantizationTable(context, indexPtr))
                                                 {
+                                                    _ = Interlocked.Increment(ref self.quantizationRequestsProcessed);
+
                                                     // Schedule backfill after quantization table is available
                                                     for (var i = 0; i < self.quantizationTasks.Length; i++)
                                                     {
@@ -95,6 +111,8 @@ namespace Garnet.server
 
                                             case QuantizationStep.BackfillQuantizedVectors:
                                                 self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTasks.Length);
+
+                                                _ = Interlocked.Increment(ref self.quantizationBackfillsProcessed);
                                                 break;
                                             default:
                                                 self.logger?.LogError("Unexpected step: {step}", state.Step);
