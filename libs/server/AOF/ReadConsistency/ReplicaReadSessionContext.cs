@@ -168,7 +168,7 @@ namespace Garnet.server
         public void PostSingleKeyConsistentReadCallback()
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PostSingleKeyConsistentReadCallback)}");
             try
             {
                 appendOnlyFile.readConsistencyManager.PostSingleKeyConsistentRead(ref replicaReadContext);
@@ -186,7 +186,7 @@ namespace Garnet.server
         public void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreBatchKeyConsistentReadCallback)}");
             try
             {
                 var keyCount = parameters.Length;
@@ -224,7 +224,7 @@ namespace Garnet.server
         public bool PostBatchKeyConsistentReadCallback(int keyCount)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PostBatchKeyConsistentReadCallback)}");
             try
             {
                 var consistencyManager = appendOnlyFile.readConsistencyManager;
