@@ -94,10 +94,14 @@ namespace Tsavorite.kvbench
                 long needSegments = (approxBytes + segSize - 1) / segSize + 4;
                 long capacity = needSegments * segSize;
 
-                int parallelism = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount;
+                // Inline completion => parallelism 0 (no completion threads/rings). Otherwise the configured
+                // count, or ProcessorCount when unset.
+                int parallelism = opts.DeviceInlineCompletion
+                    ? 0
+                    : (opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount);
 
                 System.Console.WriteLine(
-                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}");
+                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}{(opts.DeviceInlineCompletion ? " (inline completion)" : "")}");
 
                 dev = Devices.CreateLogDevice(
                     logPath: null,

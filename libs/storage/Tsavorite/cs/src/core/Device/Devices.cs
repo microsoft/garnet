@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
-        /// <param name="numCompletionThreads">Number of background IO completion drain threads. For DeviceType.Native on Linux: each drainer is bound 1:1 to its own kernel io_context (libaio) or io_uring ring, and submitters distribute across rings via per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC ring fed by one submitter via per-thread routing. In both cases, raise this value when submitter concurrency exceeds the single-ring drain rate. Ignored otherwise.</param>
+        /// <param name="numCompletionThreads">Number of background IO completion drain threads. For DeviceType.Native on Linux: each drainer is bound 1:1 to its own kernel io_context (libaio) or io_uring ring, and submitters distribute across rings via per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC ring fed by one submitter via per-thread routing; pass 0 for inline completion (copy + callback run on the submitting thread, no rings/threads) or a negative value to default to <see cref="System.Environment.ProcessorCount"/>. In both cases, raise this value when submitter concurrency exceeds the single-ring drain rate. Ignored otherwise.</param>
         /// <param name="localMemorySegmentSize">For DeviceType.LocalMemory: segment size in bytes (must divide <paramref name="capacity"/>). Default 1 GB. Ignored otherwise.</param>
         /// <param name="logger"></param>
         /// <returns>Device instance</returns>
@@ -55,7 +55,7 @@ namespace Tsavorite.core
                 DeviceType.LocalMemory => new LocalMemoryDevice(
                     capacity: capacity,
                     sz_segment: localMemorySegmentSize,
-                    parallelism: numCompletionThreads > 0 ? numCompletionThreads : System.Environment.ProcessorCount,
+                    parallelism: numCompletionThreads < 0 ? System.Environment.ProcessorCount : numCompletionThreads,
                     fileName: logPath ?? "/userspace/ram/storage"),
                 _ => throw new TsavoriteException($"Unsupported local device {deviceType}"),
             };

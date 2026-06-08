@@ -121,6 +121,13 @@ namespace Tsavorite.kvbench
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
 
+        [Option("device-inline-completion", Required = false, Default = false,
+            HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
+                       "completion threads or rings; copy + callback run synchronously). Isolates the " +
+                       "per-op work from the cross-thread run-thread->completion-thread handoff. " +
+                       "Overrides --device-completion-threads.")]
+        public bool DeviceInlineCompletion { get; set; }
+
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
         public string DataPath { get; set; }

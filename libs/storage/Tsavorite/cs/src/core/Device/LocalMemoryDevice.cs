@@ -46,8 +46,12 @@ namespace Tsavorite.core
         private readonly bool latencyEnabled;
 
         // IO processor threads — one per submission ring. Each processor drains exactly
-        // one ring (SPSC consumer side).
+        // one ring (SPSC consumer side). When inlineCompletion is set (parallelism == 0) there
+        // are no rings or threads: ReadAsync/WriteAsync run the copy + completion callback
+        // synchronously on the caller's thread. This models a device with zero handoff cost and
+        // isolates the cross-thread run-thread→completion-thread handoff from the per-op work.
         private readonly int parallelism;
+        private readonly bool inlineCompletion;
         private readonly Thread[] processors;
         private readonly SpscRing<IORequestLocalMemory>[] rings;
 
@@ -82,7 +86,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity of <c>sz_segment * DefaultMaxSegments</c> (segments are still allocated lazily, so this only sizes the per-segment lookup arrays). When &gt; 0 it must be a multiple of <paramref name="sz_segment"/>.</param>
         /// <param name="sz_segment">Size in bytes of each segment.</param>
-        /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Must be &gt;= 1.</param>
+        /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Pass 0 for
+        /// <em>inline completion</em>: no IO threads or rings — the copy and completion callback run
+        /// synchronously on the submitting thread (zero cross-thread handoff). Must be &gt;= 0.</param>
         /// <param name="latencyUs">Per-IO simulated wall-clock latency in microseconds (0 = none). Microsecond
         /// granularity models modern low-latency devices (single-digit microsecond NVMe).</param>
         /// <param name="sector_size">Sector size for device (default 512).</param>
@@ -93,7 +99,7 @@ namespace Tsavorite.core
         {
             if (sz_segment <= 0) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be > 0");
             if (sz_segment > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be <= int.MaxValue");
-            if (parallelism < 1) throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 1");
+            if (parallelism < 0) throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 0 (0 = inline completion)");
             if (latencyUs < 0) throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
             if (ringCapacity <= 0 || (ringCapacity & (ringCapacity - 1)) != 0)
                 throw new ArgumentOutOfRangeException(nameof(ringCapacity), "ringCapacity must be a positive power of two");
@@ -105,6 +111,7 @@ namespace Tsavorite.core
             this.sz_segment = sz_segment;
             maxSegments = checked((int)(Capacity / sz_segment));
             this.parallelism = parallelism;
+            inlineCompletion = parallelism == 0;
 
             latencyTimestampTicks = latencyUs > 0
                 ? (long)((double)latencyUs * Stopwatch.Frequency / 1_000_000.0)
@@ -115,21 +122,30 @@ namespace Tsavorite.core
             segmentArrays = new byte[maxSegments][];
             segmentPtrs = new byte*[maxSegments];
 
-            rings = new SpscRing<IORequestLocalMemory>[parallelism];
-            processors = new Thread[parallelism];
-            for (int i = 0; i < parallelism; i++)
+            if (inlineCompletion)
             {
-                rings[i] = new SpscRing<IORequestLocalMemory>(ringCapacity);
-                int local = i;
-                processors[i] = new Thread(() => ProcessorLoop(rings[local]))
+                // No rings or processor threads: ReadAsync/WriteAsync complete inline (see Enqueue).
+                rings = [];
+                processors = [];
+            }
+            else
+            {
+                rings = new SpscRing<IORequestLocalMemory>[parallelism];
+                processors = new Thread[parallelism];
+                for (int i = 0; i < parallelism; i++)
                 {
-                    IsBackground = true,
-                    Name = $"TsavoriteLocalMemIO-{local}",
-                };
-                processors[i].Start();
+                    rings[i] = new SpscRing<IORequestLocalMemory>(ringCapacity);
+                    int local = i;
+                    processors[i] = new Thread(() => ProcessorLoop(rings[local]))
+                    {
+                        IsBackground = true,
+                        Name = $"TsavoriteLocalMemIO-{local}",
+                    };
+                    processors[i].Start();
+                }
             }
 
-            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
+            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} inline={inlineCompletion} latencyUs={latencyUs} ringCapacity={ringCapacity}");
         }
 
         /// <summary>
@@ -196,6 +212,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Enqueue(void* src, void* dst, uint bytes, DeviceIOCompletionCallback callback, object context)
         {
+            // Inline completion (parallelism == 0): copy and fire the callback synchronously on the
+            // caller's thread — no ring, no handoff. Exceptions propagate to the caller (matching the
+            // re-entrant inline path below).
+            if (inlineCompletion)
+            {
+                if (latencyEnabled)
+                    WaitLatency(Stopwatch.GetTimestamp());
+                Buffer.MemoryCopy(src, dst, bytes, bytes);
+                callback(0, bytes, context);
+                return;
+            }
+
             int idxPlusOne = t_ringIdxPlusOne;
 
             // Re-entrant submit from a completion callback running on a drain thread (e.g. Tsavorite's
@@ -233,6 +261,25 @@ namespace Tsavorite.core
             rings[idx].Enqueue(req);
         }
 
+        // Block until startTimestamp + latency elapses: Sleep while >1ms remains (Thread.Sleep is too
+        // coarse for finer waits), then busy-spin the sub-millisecond remainder so microsecond-scale
+        // latencies release close to on time.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WaitLatency(long startTimestamp)
+        {
+            long deadline = startTimestamp + latencyTimestampTicks;
+            while (true)
+            {
+                long remainingTicks = deadline - Stopwatch.GetTimestamp();
+                if (remainingTicks <= 0)
+                    break;
+                if (remainingTicks > oneMsTicks)
+                    Thread.Sleep(1);
+                else
+                    Thread.SpinWait(16);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private int AssignRingIdx()
         {
@@ -253,22 +300,7 @@ namespace Tsavorite.core
                 if (ring.TryDequeue(out var req))
                 {
                     if (latencyEnabled)
-                    {
-                        // Release the IO at startTimestamp + latency. Sleep only while more than ~1ms
-                        // remains (Thread.Sleep is too coarse for finer waits); busy-spin the sub-millisecond
-                        // remainder so microsecond-scale latencies release close to on time.
-                        long deadline = req.startTimestamp + latencyTimestampTicks;
-                        while (true)
-                        {
-                            long remainingTicks = deadline - Stopwatch.GetTimestamp();
-                            if (remainingTicks <= 0)
-                                break;
-                            if (remainingTicks > oneMsTicks)
-                                Thread.Sleep(1);
-                            else
-                                Thread.SpinWait(16);
-                        }
-                    }
+                        WaitLatency(req.startTimestamp);
 
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
                     // Guard the callback inline (no helper — a try/catch blocks JIT inlining, so factoring
