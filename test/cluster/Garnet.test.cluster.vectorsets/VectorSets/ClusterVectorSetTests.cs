@@ -138,7 +138,7 @@ namespace Garnet.test.cluster
                     vectorAddData[i] = (byte)(vectorAddData[i - 1] + 1);
                 }
             }
-            if (vectorFormatParsed == VectorValueType.XI8)
+            else if (vectorFormatParsed == VectorValueType.XI8)
             {
                 var sbytes = new sbyte[75];
                 sbytes[0] = 1;
