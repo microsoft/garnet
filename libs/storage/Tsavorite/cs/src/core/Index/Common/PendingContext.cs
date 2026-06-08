@@ -167,15 +167,25 @@ namespace Tsavorite.core
                         // Stack<IHeapContainer<PinnedSpanByte>>; reinterpret the reference without a
                         // CLR type check.
                         var spanByteInput = Unsafe.As<TInput, PinnedSpanByte>(ref input);
-                        var spanBytePool = Unsafe.As<Stack<IHeapContainer<PinnedSpanByte>>>(pool);
-                        if (spanBytePool.TryPop(out var rented))
+                        if (spanByteInput.IsEmpty)
                         {
-                            Unsafe.As<SpanByteHeapContainer>(rented).Initialize(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool);
-                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref rented);
+                            // Empty input carries no bytes; a SpanByteHeapContainer would rent a wrapper only to
+                            // early-return without a buffer. Use the shared empty container (no rent, no-op Dispose).
+                            IHeapContainer<PinnedSpanByte> empty = EmptyHeapContainer<PinnedSpanByte>.Instance;
+                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref empty);
                         }
                         else
                         {
-                            this.input = new SpanByteHeapContainer(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool) as IHeapContainer<TInput>;
+                            var spanBytePool = Unsafe.As<Stack<IHeapContainer<PinnedSpanByte>>>(pool);
+                            if (spanBytePool.TryPop(out var rented))
+                            {
+                                Unsafe.As<SpanByteHeapContainer>(rented).Initialize(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool);
+                                this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref rented);
+                            }
+                            else
+                            {
+                                this.input = new SpanByteHeapContainer(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool) as IHeapContainer<TInput>;
+                            }
                         }
                     }
                     else

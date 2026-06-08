@@ -20,6 +20,22 @@ namespace Tsavorite.core
     }
 
     /// <summary>
+    /// Shared do-nothing heap container for an empty input. An empty input carries no bytes, so there is
+    /// nothing to copy onto the heap and nothing to release: <see cref="Get"/> returns a reference to an
+    /// immutable default value and <see cref="Dispose"/> is a no-op. Reused as a process-wide singleton via
+    /// <see cref="Instance"/>, so a pending operation with empty input does not rent a per-session wrapper.
+    /// The backing value is never written (an empty input is read-only), so sharing it across sessions is safe.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal sealed class EmptyHeapContainer<T> : IHeapContainer<T>
+    {
+        internal static readonly EmptyHeapContainer<T> Instance = new();
+        private T value;
+        public ref T Get() => ref value;
+        public void Dispose() { }
+    }
+
+    /// <summary>
     /// Heap container for standard C# objects (non-variable-length).
     /// </summary>
     /// <remarks>
