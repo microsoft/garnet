@@ -2449,6 +2449,7 @@ namespace Garnet.test
         public async Task WithQuantizationBackfillAsync(
             [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8)] VectorQuantType quantType,
             [Values(false, true)] bool concurrentAdds,
+            [Values(false, true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
             const int Vectors = 5_000;
@@ -2466,6 +2467,55 @@ namespace Garnet.test
                     dbs[i] = connections[i].GetDatabase(0);
                 }
 
+                using var cts = new CancellationTokenSource();
+
+                Task searchTask;
+                if (concurrentSearches)
+                {
+                    searchTask =
+                        Task.Run(
+                            async () =>
+                            {
+                                var idBytes = new byte[sizeof(int)];
+
+                                var id = 0;
+
+                                while (!cts.IsCancellationRequested)
+                                {
+                                    var db = dbs[id % dbs.Length];
+
+                                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                                    var expectedValues = new float[Dimensions];
+                                    expectedValues.AsSpan().Fill((byte)id % 128);
+
+                                    // Perform a search, but ignore response since we don't know what we'll find
+                                    _ = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+
+                                    // Get embedding, if not null check for validiting
+                                    var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
+                                    if (vembRes.Length > 0)
+                                    {
+                                        ClassicAssert.AreEqual(Dimensions, vembRes.Length);
+                                        for (var i = 0; i < vembRes.Length; i++)
+                                        {
+                                            var actual = (byte)float.Parse(vembRes[i]);
+                                            var expected = (byte)expectedValues[i];
+                                            ClassicAssert.AreEqual(expected, actual);
+                                        }
+                                    }
+
+                                    id = (id + 1) % Vectors;
+                                }
+                            },
+                            cancellation
+                        );
+                }
+                else
+                {
+                    searchTask = Task.CompletedTask;
+                }
+
                 var addTasks = new List<Task<RedisResult>>();
 
                 var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
@@ -2473,9 +2523,9 @@ namespace Garnet.test
                 var quantTableStart = vectorManager.QuantizationRequestsProcessed;
                 var quantBackfillStart = vectorManager.QuantizationBackfillsProcessed;
 
-                var idBytes = new byte[sizeof(int)];
                 for (var id = 0; id < Vectors; id++)
                 {
+                    var idBytes = new byte[sizeof(int)];
                     BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
 
                     var db = dbs[id % connections.Length];
@@ -2543,6 +2593,10 @@ namespace Garnet.test
                         ClassicAssert.AreEqual(1, res);
                     }
                 }
+
+                // Wait for concurrent searches (if any) to complete
+                cts.Cancel();
+                await searchTask.ConfigureAwait(false);
 
                 // Wait for quantization to complete
                 var noQuantizationNeeded = quantType.ToString().Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantType == VectorQuantType.Q8;
