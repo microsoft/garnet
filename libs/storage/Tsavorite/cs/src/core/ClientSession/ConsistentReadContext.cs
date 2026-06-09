@@ -162,9 +162,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
-            var status = BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+            var status = await BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token).ConfigureAwait(false);
             Session.functions.PostSingleKeyConsistentReadCallback();
-            return await status.ConfigureAwait(false);
+            return status;
         }
 
         /// <inheritdoc/>

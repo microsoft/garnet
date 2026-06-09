@@ -215,19 +215,34 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => TransactionalContext.CompletePending(wait, spinWaitForCommit);
+        {
+            var status = TransactionalContext.CompletePending(wait, spinWaitForCommit);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => TransactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+        {
+            var status = TransactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => TransactionalContext.CompletePendingAsync(waitForCommit, token);
+        public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            await TransactionalContext.CompletePendingAsync(waitForCommit, token).ConfigureAwait(false);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+        }
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => TransactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+        public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            var status = await TransactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token).ConfigureAwait(false);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
