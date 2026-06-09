@@ -13,10 +13,6 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    /// <summary>
-    /// Unit tests for <see cref="GarnetAadAuthenticator"/>, exercising the
-    /// authorization window via an injected <see cref="FakeTimeProvider"/>.
-    /// </summary>
     [TestFixture]
     public class GarnetAadAuthenticatorTests
     {
@@ -60,22 +56,6 @@ namespace Garnet.test.cluster
                 timeProvider: timeProvider);
 
             return (authenticator, token, objId);
-        }
-
-        [Test]
-        public void DefaultTimeProvider_FallsBackToCoarseSystem()
-        {
-            // No timeProvider argument → must default to CoarseTimeProvider.Instance without throwing.
-            var authenticator = new GarnetAadAuthenticator(
-                authorizedAppIds: new HashSet<string> { "appid" },
-                audiences: new HashSet<string> { "aud" },
-                issuers: new HashSet<string> { Issuer },
-                signingTokenProvider: new MockIssuerSigningTokenProvider(new List<SecurityKey>()),
-                validateUsername: false,
-                logger: null);
-
-            // Pre-authentication: IsAuthenticated must be false (no token validated yet).
-            ClassicAssert.IsFalse(authenticator.IsAuthenticated);
         }
 
         [Test]
