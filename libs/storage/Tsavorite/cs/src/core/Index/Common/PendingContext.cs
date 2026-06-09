@@ -170,11 +170,11 @@ namespace Tsavorite.core
                         if (spanByteInput.IsEmpty && type == OperationType.READ)
                         {
                             // Empty input carries no bytes; a SpanByteHeapContainer would rent a wrapper only to
-                            // early-return without a buffer. Use the shared empty container (no rent, no-op Dispose).
-                            // Restricted to reads: a read never writes through the input ref, so sharing one
-                            // immutable default across sessions is safe (RMW could write input, so it still rents).
-                            IHeapContainer<PinnedSpanByte> empty = EmptyHeapContainer<PinnedSpanByte>.Instance;
-                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref empty);
+                            // early-return without a buffer. Use the session's reusable empty container (no rent).
+                            // Restricted to reads: a read is not expected to write through the input ref. The
+                            // container is per-session (not process-wide) and resets on Dispose, so even a callback
+                            // that does write cannot leak into another session or the next op.
+                            this.input = sessionFunctions.Ctx.EmptyInputContainer;
                         }
                         else
                         {

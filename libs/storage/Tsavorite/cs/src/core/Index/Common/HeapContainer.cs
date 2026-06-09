@@ -20,19 +20,19 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Shared do-nothing heap container for an empty input. An empty input carries no bytes, so there is
-    /// nothing to copy onto the heap and nothing to release: <see cref="Get"/> returns a reference to an
-    /// immutable default value and <see cref="Dispose"/> is a no-op. Reused as a process-wide singleton via
-    /// <see cref="Instance"/>, so a pending operation with empty input does not rent a per-session wrapper.
-    /// The backing value is never written (an empty input is read-only), so sharing it across sessions is safe.
+    /// Do-nothing heap container for an empty input. An empty input carries no bytes, so there is nothing
+    /// to copy onto the heap and nothing to release. Reused per session (see
+    /// <c>TsavoriteExecutionContext.EmptyInputContainer</c>) rather than per pending op, so an empty-input
+    /// read does not rent a wrapper. <see cref="Get"/> exposes the backing value by <c>ref</c>; although an
+    /// empty read input is not expected to be written, <see cref="Dispose"/> resets it to default so a
+    /// callback that does write through the ref cannot affect the next op reusing this container.
     /// </summary>
     /// <typeparam name="T"></typeparam>
     internal sealed class EmptyHeapContainer<T> : IHeapContainer<T>
     {
-        internal static readonly EmptyHeapContainer<T> Instance = new();
         private T value;
         public ref T Get() => ref value;
-        public void Dispose() { }
+        public void Dispose() => value = default;
     }
 
     /// <summary>

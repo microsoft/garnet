@@ -75,6 +75,13 @@ namespace Tsavorite.core
         // "unset" (0) and any valid idx+1 (>= 1), so it is recognized with the same single TLS read.
         private const int ProcessorThreadRingIdx = int.MinValue;
 
+        // The device instance whose ProcessorLoop is running on this thread. The sentinel above is
+        // process-wide, so it must be paired with an identity check: inline-complete only when the
+        // re-entrant submit targets the SAME instance this thread drains. A submit to a DIFFERENT
+        // LocalMemoryDevice must route through that instance's ring (no self-deadlock risk there).
+        [ThreadStatic]
+        private static LocalMemoryDevice t_processorOwner;
+
         // When capacity is unspecified, cap the segment-pointer arrays at this many segments
         // (≈ 32 KB of overhead per array at 4096 entries). Segments themselves are still lazily
         // allocated, so this bounds the upper limit of data that can be stored, not the working
@@ -226,12 +233,14 @@ namespace Tsavorite.core
 
             int idxPlusOne = t_ringIdxPlusOne;
 
-            // Re-entrant submit from a completion callback running on a drain thread (e.g. Tsavorite's
-            // synchronous flush-chain WriteAsync invoked from req.callback). Execute inline rather than
-            // posting to the bounded ring this same thread drains — otherwise, if the ring is full, the
-            // thread would spin forever in WaitForSlotEmpty waiting for itself to drain (self-deadlock).
-            // No latency model on this rare internal path; exceptions propagate to the re-entrant caller.
-            if (idxPlusOne == ProcessorThreadRingIdx)
+            // Re-entrant submit from a completion callback running on THIS instance's drain thread (e.g.
+            // Tsavorite's synchronous flush-chain WriteAsync invoked from req.callback). Execute inline
+            // rather than posting to the bounded ring this same thread drains — otherwise, if the ring is
+            // full, the thread would spin forever in WaitForSlotEmpty waiting for itself to drain
+            // (self-deadlock). The owner check is required because the sentinel is process-wide: a submit
+            // from another LocalMemoryDevice's drain thread has no self-deadlock risk and must route through
+            // this instance's ring below. No latency model on this rare internal path; exceptions propagate.
+            if (idxPlusOne == ProcessorThreadRingIdx && ReferenceEquals(t_processorOwner, this))
             {
                 Buffer.MemoryCopy(src, dst, bytes, bytes);
                 callback(0, bytes, context);
@@ -241,9 +250,15 @@ namespace Tsavorite.core
             // Validate against THIS instance's parallelism: a single unsigned compare catches both
             // the unset slot (-1 after the decrement) and a stale index cached while submitting to
             // another instance with larger parallelism. Either way we (re)assign a valid ring index.
-            int idx = idxPlusOne - 1;
-            if ((uint)idx >= (uint)parallelism)
+            // The sentinel reaches here only for a cross-instance re-entrant submit (same-instance
+            // re-entrancy inlined above). Treat the sentinel, the unset slot (0), and any stale
+            // out-of-range index as "needs a fresh ring for this instance". The short-circuit guards the
+            // sentinel (int.MinValue) so the index computation never underflows.
+            int idx;
+            if (idxPlusOne <= 0 || (uint)(idxPlusOne - 1) >= (uint)parallelism)
                 idx = AssignRingIdx();
+            else
+                idx = idxPlusOne - 1;
 
             var req = new IORequestLocalMemory
             {
@@ -294,6 +309,7 @@ namespace Tsavorite.core
             // Mark this as a drain thread: a re-entrant Enqueue from within a completion callback below
             // executes inline instead of blocking on a ring only this thread can drain (see Enqueue).
             t_ringIdxPlusOne = ProcessorThreadRingIdx;
+            t_processorOwner = this;
 
             while (!ring.IsStopped)
             {

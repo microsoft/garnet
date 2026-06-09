@@ -56,6 +56,14 @@ namespace Tsavorite.core
             /// the pool naturally settles around the in-flight pending IO count.
             /// </summary>
             public readonly Stack<IHeapContainer<TInput>> heapContainerPool;
+
+            // Per-session reusable container for an empty read input. Scoped per session (not process-wide)
+            // so a read-completion callback that writes through its ref TInput cannot leak into another
+            // session; the container resets to default on Dispose for intra-session reuse safety. Lazily
+            // created — only empty-input pending reads use it.
+            private EmptyHeapContainer<TInput> emptyInputContainer;
+            internal EmptyHeapContainer<TInput> EmptyInputContainer => emptyInputContainer ??= new();
+
             internal RevivificationStats RevivificationStats = new();
             public bool isAcquiredTransactional;
 
