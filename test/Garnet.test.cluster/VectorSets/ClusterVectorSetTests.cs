@@ -854,7 +854,29 @@ namespace Garnet.test.cluster
                             for (var i = 0; i < expected.Length; i++)
                             {
                                 var s = (byte)float.Parse(fromSecondary[i]);
-                                ClassicAssert.AreEqual(expected[i], s, $"Full response as string: {Encoding.UTF8.GetString([.. fromSecondary.Select(static x => (byte)float.Parse(x))])}");
+
+                                if (expected[i] != s)
+                                {
+                                    var actual = fromSecondary.Select(f => (byte)float.Parse(f)).ToArray();
+                                    int? matchesId = null;
+                                    for (var otherId = 0; otherId < vectors.Length; otherId++)
+                                    {
+                                        if (vectors[otherId].SequenceEqual(actual))
+                                        {
+                                            matchesId = otherId;
+                                            break;
+                                        }
+                                    }
+
+                                    if (matchesId != null)
+                                    {
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); matches vector with Id = {matchesId.Value}");
+                                    }
+                                    else
+                                    {
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); does not match any expected vector");
+                                    }
+                                }
                             }
                         }
                         else
