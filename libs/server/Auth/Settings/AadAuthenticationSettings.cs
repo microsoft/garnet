@@ -1,9 +1,8 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
-using Garnet.common;
 using Garnet.server.Auth.Aad;
 
 namespace Garnet.server.Auth.Settings
@@ -20,11 +19,6 @@ namespace Garnet.server.Auth.Settings
         private bool _validateUsername;
         private bool _disposed;
 
-        // TimeProvider used as the wall-clock source by every authenticator we create.
-        // Defaults to CoarseTimeProvider.Instance (the process-wide cached singleton) so
-        // production callers get the cached hot-path read; tests can inject a fake.
-        private readonly TimeProvider _timeProvider;
-
         /// <summary>
         /// Constructor
         /// </summary>
@@ -33,8 +27,7 @@ namespace Garnet.server.Auth.Settings
         /// <param name="issuers">Allowed issuers</param>
         /// <param name="signingTokenProvider">Signing token provider</param>
         /// <param name="validateUsername"> whether to validate username or not. </param>
-        /// <param name="timeProvider"> Optional wall-clock source. Defaults to <see cref="CoarseTimeProvider.Instance"/> — the process-wide cached singleton — when null. </param>
-        public AadAuthenticationSettings(string[] authorizedAppIds, string[] audiences, string[] issuers, IssuerSigningTokenProvider signingTokenProvider, bool validateUsername = false, TimeProvider timeProvider = null)
+        public AadAuthenticationSettings(string[] authorizedAppIds, string[] audiences, string[] issuers, IssuerSigningTokenProvider signingTokenProvider, bool validateUsername = false)
         {
             if (authorizedAppIds == null || authorizedAppIds.Length == 0)
             {
@@ -61,8 +54,6 @@ namespace Garnet.server.Auth.Settings
             _issuers = new HashSet<string>(issuers, StringComparer.OrdinalIgnoreCase);
             _signingTokenProvider = signingTokenProvider;
             _validateUsername = validateUsername;
-
-            _timeProvider = timeProvider ?? CoarseTimeProvider.Instance;
         }
 
         /// <summary>
@@ -71,7 +62,7 @@ namespace Garnet.server.Auth.Settings
         /// <param name="storeWrapper">The main store the authenticator will be associated with.</param>
         public IGarnetAuthenticator CreateAuthenticator(StoreWrapper storeWrapper)
         {
-            return new GarnetAadAuthenticator(_authorizedAppIds, _audiences, _issuers, _signingTokenProvider, _validateUsername, storeWrapper.logger, _timeProvider);
+            return new GarnetAadAuthenticator(_authorizedAppIds, _audiences, _issuers, _signingTokenProvider, _validateUsername, storeWrapper.logger);
         }
 
         /// <summary>
