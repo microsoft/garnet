@@ -2452,7 +2452,7 @@ namespace Garnet.test
             [Values(false, true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
-            const int Vectors = 5_000;
+            const int Vectors = 10_000;
             const int Dimensions = 64;
             const string Key = nameof(WithQuantizationBackfillAsync);
             const int Count = 30;
@@ -2469,60 +2469,67 @@ namespace Garnet.test
 
                 using var cts = new CancellationTokenSource();
 
-                Task<int> searchTask;
+                List<Task<int>> searchTasks;
                 if (concurrentSearches)
                 {
-                    searchTask =
-                        Task.Run(
-                            async () =>
-                            {
-                                var idBytes = new byte[sizeof(int)];
+                    searchTasks = [];
 
-                                var id = 0;
-
-                                var count = 0;
-
-                                while (!cts.IsCancellationRequested)
+                    for (var i = 0; i < connections.Length; i++)
+                    {
+                        var searchTask =
+                            Task.Run(
+                                async () =>
                                 {
-                                    var db = dbs[id % dbs.Length];
+                                    var idBytes = new byte[sizeof(int)];
 
-                                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+                                    var count = 0;
 
-                                    var expectedValues = new float[Dimensions];
-                                    expectedValues.AsSpan().Fill((byte)id % 128);
-
-                                    // Perform a search, but ignore response since we don't know what we'll find
-                                    var searchRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
-
-                                    // Get embedding, if not null check for validiting
-                                    var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
-                                    if (vembRes.Length > 0)
+                                    var ix = 0;
+                                    while (!cts.IsCancellationRequested)
                                     {
-                                        ClassicAssert.AreEqual(Dimensions, vembRes.Length);
-                                        for (var i = 0; i < vembRes.Length; i++)
+                                        var db = dbs[ix % dbs.Length];
+                                        ix++;
+
+                                        var id = Random.Shared.Next(Vectors);
+
+                                        BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                                        var expectedValues = new float[Dimensions];
+                                        expectedValues.AsSpan().Fill((byte)id % 128);
+
+                                        // Perform a search, but ignore response since we don't know what we'll find
+                                        var searchRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+
+                                        // Get embedding, if not null check for validiting
+                                        var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
+                                        if (vembRes.Length > 0)
                                         {
-                                            var actual = (byte)float.Parse(vembRes[i]);
-                                            var expected = (byte)expectedValues[i];
-                                            ClassicAssert.AreEqual(expected, actual);
+                                            ClassicAssert.AreEqual(Dimensions, vembRes.Length);
+                                            for (var i = 0; i < vembRes.Length; i++)
+                                            {
+                                                var actual = (byte)float.Parse(vembRes[i]);
+                                                var expected = (byte)expectedValues[i];
+                                                ClassicAssert.AreEqual(expected, actual);
+                                            }
+                                        }
+
+                                        if (searchRes != null && searchRes.Length > 0 && vembRes.Length > 0)
+                                        {
+                                            count++;
                                         }
                                     }
 
-                                    if (searchRes != null && searchRes.Length > 0 && vembRes.Length > 0)
-                                    {
-                                        count++;
-                                    }
+                                    return count;
+                                },
+                                cancellation
+                            );
 
-                                    id = (id + 1) % Vectors;
-                                }
-
-                                return count;
-                            },
-                            cancellation
-                        );
+                        searchTasks.Add(searchTask);
+                    }
                 }
                 else
                 {
-                    searchTask = Task.FromResult(0);
+                    searchTasks = [];
                 }
 
                 var addTasks = new List<Task<RedisResult>>();
@@ -2607,9 +2614,12 @@ namespace Garnet.test
                 if (concurrentSearches)
                 {
                     cts.Cancel();
-                    var successes = await searchTask.ConfigureAwait(false);
+                    var successes = await Task.WhenAll(searchTasks).ConfigureAwait(false);
 
-                    ClassicAssert.IsTrue(successes > 0);
+                    foreach (var s in successes)
+                    {
+                        ClassicAssert.IsTrue(s > 0);
+                    }
                 }
 
                 // Wait for quantization to complete
