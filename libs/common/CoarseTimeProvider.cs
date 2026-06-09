@@ -33,25 +33,25 @@ namespace Garnet.common
         public static readonly CoarseTimeProvider Instance = new();
 
         // Heap-allocated wrapper around the cached DateTimeOffset. A reference load
-        // is always atomic on .NET (Volatile.Read on a reference); a multi-word
-        // DateTimeOffset struct copy is not. Wrapping in a class lets readers do
-        // a single atomic reference load and copy the immutable struct out — no
-        // tearing, no DateTimeOffset constructor on the read path. The Timer
-        // allocates one DateTimeOffsetSnapshot per refresh tick.
+        // is always atomic on .NET (and `volatile` gives it acquire semantics); a
+        // multi-word DateTimeOffset struct copy is not. Wrapping in a class lets
+        // readers do a single atomic reference load and copy the immutable struct
+        // out — no tearing, no DateTimeOffset constructor on the read path. The
+        // Timer allocates one DateTimeOffsetSnapshot per refresh tick.
         private sealed class DateTimeOffsetSnapshot
         {
             public readonly DateTimeOffset Value;
             public DateTimeOffsetSnapshot(DateTimeOffset value) => Value = value;
         }
 
-        private static DateTimeOffsetSnapshot snapshot = new(TimeProvider.System.GetUtcNow());
+        private static volatile DateTimeOffsetSnapshot snapshot = new(TimeProvider.System.GetUtcNow());
 
         // Process-wide background refresh. Held in a static field to keep it rooted
         // for process lifetime — the cache is shared by every CoarseTimeProvider
         // instance, so there is exactly one refresh Timer regardless of how many
         // instances are constructed.
         private static readonly ITimer timer = TimeProvider.System.CreateTimer(
-            static _ => Volatile.Write(ref snapshot, new DateTimeOffsetSnapshot(TimeProvider.System.GetUtcNow())),
+            static _ => snapshot = new DateTimeOffsetSnapshot(TimeProvider.System.GetUtcNow()),
             null,
             RefreshPeriod,
             RefreshPeriod);
@@ -67,14 +67,14 @@ namespace Garnet.common
         /// <summary>
         /// Coarse, cached UTC time. May lag the wall clock by ~<see cref="RefreshPeriod"/>.
         /// </summary>
-        public override DateTimeOffset GetUtcNow() => Volatile.Read(ref snapshot).Value;
+        public override DateTimeOffset GetUtcNow() => snapshot.Value;
 
         /// <summary>
         /// Coarse, cached UTC time as a <see cref="DateTime"/>. Convenience wrapper
         /// around <see cref="GetUtcNow"/> for callers that want a <see cref="DateTime"/>
         /// directly.
         /// </summary>
-        public DateTime UtcNow => Volatile.Read(ref snapshot).Value.UtcDateTime;
+        public DateTime UtcNow => snapshot.Value.UtcDateTime;
 
         // Only GetUtcNow is coarse. The remaining TimeProvider members (GetTimestamp,
         // TimestampFrequency, LocalTimeZone, CreateTimer) inherit the base class's
