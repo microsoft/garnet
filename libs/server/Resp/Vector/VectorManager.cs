@@ -1006,5 +1006,73 @@ namespace Garnet.server
         {
             Debug.Assert(ActiveThreadSession != null, "Should have StorageSession by now");
         }
+
+        // DEBUG HACK HACK
+        public byte[] GetInternalId(ulong context, byte[] externalId)
+        {
+            using var session = (RespServerSession)getTempSession();
+
+            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            {
+                throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+            }
+
+            ActiveThreadSession = session.storageSession;
+            var pin = GCHandle.Alloc(externalId, GCHandleType.Pinned);
+            try
+            {
+                Span<byte> internalId = stackalloc byte[sizeof(int)];
+                SpanByteAndMemory internalIdBytes = new(SpanByte.FromPinnedSpan(internalId));
+
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, externalId, ref internalIdBytes))
+                {
+                    throw new GarnetException("No internal id map");
+                }
+
+                var ret = internalIdBytes.AsReadOnlySpan().ToArray();
+                internalIdBytes.Memory?.Dispose();
+
+                return ret;
+            }
+            finally
+            {
+                pin.Free();
+                ActiveThreadSession = null;
+            }
+        }
+
+        public byte[] GetFullVector(ulong context, byte[] externalId)
+        {
+            using var session = (RespServerSession)getTempSession();
+
+            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            {
+                throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+            }
+
+            ActiveThreadSession = session.storageSession;
+            var pin = GCHandle.Alloc(externalId, GCHandleType.Pinned);
+            try
+            {
+                Span<byte> fullVector = stackalloc byte[4 * 1024];
+                SpanByteAndMemory fullVectorBytes = new(SpanByte.FromPinnedSpan(fullVector));
+
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, externalId, ref fullVectorBytes))
+                {
+                    throw new GarnetException("No full vector stored");
+                }
+
+                var ret = fullVectorBytes.AsReadOnlySpan().ToArray();
+                fullVectorBytes.Memory?.Dispose();
+
+                return ret;
+            }
+            finally
+            {
+                pin.Free();
+                ActiveThreadSession = null;
+            }
+        }
+        // END DEBUG
     }
 }
