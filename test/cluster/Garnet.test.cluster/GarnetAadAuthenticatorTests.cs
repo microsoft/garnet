@@ -81,9 +81,6 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(auth.Authenticate(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(objId)));
             ClassicAssert.IsTrue(auth.IsAuthenticated, "token should be valid immediately after authentication");
 
-            // Advancing the FakeTimeProvider immediately changes the time IsAuthorized observes
-            // (no cache between FakeTimeProvider and the authenticator's GetUtcNow call).
-            // JwtSecurityToken truncates ValidTo to whole seconds, so step past the boundary.
             timeProvider.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(2));
 
             ClassicAssert.IsFalse(auth.IsAuthenticated, "IsAuthenticated must observe the advanced clock");
