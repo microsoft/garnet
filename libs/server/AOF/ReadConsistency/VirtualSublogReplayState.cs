@@ -114,8 +114,7 @@ namespace Garnet.server
                 {
                     var node = waiterHead;
                     waiterHead = node.Next;
-                    if (waiterHead != null)
-                        waiterHead.Prev = null;
+                    _ = (waiterHead?.Prev = null);
                     node.Next = null;
                     node.Signal.Set();
                 }
@@ -142,10 +141,20 @@ namespace Garnet.server
 
             lock (@lock)
             {
-                // Double-check after acquiring lock
-                if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
-                    return;
+                // Insert first, then re-check: if an updater raced with us
+                // (SignalWaiters saw waiterHead == null before we inserted),
+                // we catch it here and unlink before blocking.
                 InsertWaiter(node);
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
+                {
+                    // Unlink directly — we already hold the lock
+                    if (node.Prev != null)
+                        node.Prev.Next = node.Next;
+                    else if (waiterHead == node)
+                        waiterHead = node.Next;
+                    _ = (node.Next?.Prev = node.Prev);
+                    return;
+                }
             }
 
             try
