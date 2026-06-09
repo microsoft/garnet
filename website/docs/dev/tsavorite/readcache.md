@@ -32,13 +32,24 @@ key's chain has the form:
 - Read-cache addresses carry a high bit (`RecordInfo.kIsReadCacheBitMask`, the top
   bit of the 48-bit address); `LogAddress.IsReadCache` / `AbsoluteAddress` test and
   strip it.
-- **The read-cache records form a contiguous prefix at the head**, above all
+- **The read-cache records form a contiguous prefix at the chain head**, above all
   main-log records. Many components rely on this invariant (`FindInReadCache`, the
   read path, and checkpoint's `SkipReadCacheBucket`).
-- Within the prefix, **addresses strictly decrease** walking down: `rcN` (highest /
-  newest, at the head) … `rc1` (lowest / oldest, at the read-cache/main-log
-  boundary). The read cache is a circular log, so **eviction reclaims the lowest
-  (oldest) addresses** — i.e. the boundary records `rc1`, `rc2`, … first.
+- Within the prefix, **addresses strictly decrease** walking down the chain: `rcN`
+  (newest) is the chain head and has the **highest** read-cache address; `rc1`
+  (oldest) has the **lowest** read-cache address and sits at the read-cache/main-log
+  boundary. The read cache is a circular log, so **eviction reclaims the lowest
+  (oldest) addresses** — the boundary records `rc1`, `rc2`, … first.
+
+> **Terminology — two opposite "heads".** The **chain head** (the record the hash
+> entry points to) is the *newest* read-cache record, at the **highest** read-cache
+> address — nearest the log **`TailAddress`**, where new records are allocated. The
+> allocator's **`HeadAddress`** is the **lowest** in-memory address — the eviction
+> frontier at the *opposite* end of the address range, nearest the oldest record
+> `rc1`. So a new record is allocated at the log **tail** (high address) and linked at
+> the **chain head**; eviction reclaims from the log **head** (low address).
+> Throughout this doc, "head" and "Monotonic-Head" refer to the linked-list chain
+> head; "`HeadAddress`" refers to the allocator's low-address eviction frontier.
 
 ## The single linearization point: CAS only on the hash entry
 
