@@ -2469,7 +2469,7 @@ namespace Garnet.test
 
                 using var cts = new CancellationTokenSource();
 
-                Task searchTask;
+                Task<int> searchTask;
                 if (concurrentSearches)
                 {
                     searchTask =
@@ -2479,6 +2479,8 @@ namespace Garnet.test
                                 var idBytes = new byte[sizeof(int)];
 
                                 var id = 0;
+
+                                var count = 0;
 
                                 while (!cts.IsCancellationRequested)
                                 {
@@ -2490,7 +2492,7 @@ namespace Garnet.test
                                     expectedValues.AsSpan().Fill((byte)id % 128);
 
                                     // Perform a search, but ignore response since we don't know what we'll find
-                                    _ = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+                                    var searchRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
 
                                     // Get embedding, if not null check for validiting
                                     var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
@@ -2505,15 +2507,22 @@ namespace Garnet.test
                                         }
                                     }
 
+                                    if (searchRes != null && searchRes.Length > 0 && vembRes.Length > 0)
+                                    {
+                                        count++;
+                                    }
+
                                     id = (id + 1) % Vectors;
                                 }
+
+                                return count;
                             },
                             cancellation
                         );
                 }
                 else
                 {
-                    searchTask = Task.CompletedTask;
+                    searchTask = Task.FromResult(0);
                 }
 
                 var addTasks = new List<Task<RedisResult>>();
@@ -2595,8 +2604,13 @@ namespace Garnet.test
                 }
 
                 // Wait for concurrent searches (if any) to complete
-                cts.Cancel();
-                await searchTask.ConfigureAwait(false);
+                if (concurrentSearches)
+                {
+                    cts.Cancel();
+                    var successes = await searchTask.ConfigureAwait(false);
+
+                    ClassicAssert.IsTrue(successes > 0);
+                }
 
                 // Wait for quantization to complete
                 var noQuantizationNeeded = quantType.ToString().Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantType == VectorQuantType.Q8;
@@ -2619,6 +2633,7 @@ namespace Garnet.test
                 // Check all vectors still present
                 for (var id = 0; id < Vectors; id++)
                 {
+                    var idBytes = new byte[sizeof(int)];
                     var db = dbs[id % dbs.Length];
 
                     BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);

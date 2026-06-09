@@ -854,7 +854,7 @@ namespace Garnet.test.cluster
                             for (var i = 0; i < expected.Length; i++)
                             {
                                 var s = (byte)float.Parse(fromSecondary[i]);
-                                ClassicAssert.AreEqual(expected[i], s);
+                                ClassicAssert.AreEqual(expected[i], s, $"Full response as string: {Encoding.UTF8.GetString([.. fromSecondary.Select(static x => (byte)float.Parse(x))])}");
                             }
                         }
                         else
