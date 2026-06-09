@@ -18,7 +18,7 @@ namespace Garnet.common
         public static readonly TimeSpan RefreshPeriod = TimeSpan.FromSeconds(1);
 
         /// <summary>
-        /// Shared instance for callers that want to avoid an allocation.
+        /// Shared instance.
         /// </summary>
         public static readonly CoarseTimeProvider Instance = new();
 
