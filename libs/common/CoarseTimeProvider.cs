@@ -15,9 +15,6 @@ namespace Garnet.common
     /// </summary>
     public sealed class CoarseTimeProvider : TimeProvider
     {
-        /// <summary>
-        /// Refresh cadence. Cached value can lag the wall clock by ~this duration.
-        /// </summary>
         public static readonly TimeSpan RefreshPeriod = TimeSpan.FromSeconds(1);
 
         /// <summary>
