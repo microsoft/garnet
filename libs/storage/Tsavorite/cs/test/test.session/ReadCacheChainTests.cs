@@ -45,8 +45,8 @@ namespace Tsavorite.test.ReadCacheTests
         const long NumKeys = HighChainKey + HashMod - 1;
 
         // Insert into chain.
-        const long SpliceInNewKey = HighChainKey + HashMod * 2;
-        const long SpliceInExistingKey = HighChainKey - HashMod;
+        const long ChainInsertNewKey = HighChainKey + HashMod * 2;
+        const long ChainInsertExistingKey = HighChainKey - HashMod;
         const long ImmutableSplitKey = NumKeys / 2;
 
         [SetUp]
@@ -284,7 +284,7 @@ namespace Tsavorite.test.ReadCacheTests
             return (la, pa);
         }
 
-        void VerifySplicedInKey(TestSpanByteKey expectedKey)
+        void VerifyChainInsertedKey(TestSpanByteKey expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
@@ -484,7 +484,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromCTTTest()
+        public void ChainInsertFromCTTTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -500,14 +500,14 @@ namespace Tsavorite.test.ReadCacheTests
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(wait: true);
 
-            VerifySplicedInKey(key);
+            VerifyChainInsertedKey(key);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion)
+        public void ChainInsertFromUpsertTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -521,25 +521,25 @@ namespace Tsavorite.test.ReadCacheTests
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
-                keyNum = SpliceInExistingKey;
+                keyNum = ChainInsertExistingKey;
                 var status = bContext.Upsert(key, value.Set(keyNum + ValueAdd));
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
-                keyNum = SpliceInNewKey;
+                keyNum = ChainInsertNewKey;
                 var status = bContext.Upsert(key, value.Set(keyNum + ValueAdd));
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
-            VerifySplicedInKey(key);
+            VerifyChainInsertedKey(key);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion)
+        public void ChainInsertFromRMWTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -555,20 +555,20 @@ namespace Tsavorite.test.ReadCacheTests
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
                 // Existing key
-                keyNum = SpliceInExistingKey;
+                keyNum = ChainInsertExistingKey;
                 var status = bContext.RMW(key, ref input);
 
-                // If OnDisk, this used the readcache entry for its source and then invalidated it.
+                // If OnDisk, this used the readcache entry for its source, then detached (dropped) the readcache prefix.
                 ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 if (recordRegion == RecordRegion.OnDisk)
                 {
                     // Latch-free read cache: a value-changing update detaches (drops) the readcache prefix, so the
                     // updated key's readcache entry is no longer in the chain (it is re-promoted on its next read).
-                    AssertNotInReadCache(SpliceInExistingKey);
+                    AssertNotInReadCache(ChainInsertExistingKey);
                 }
 
                 { // New key
-                    keyNum = SpliceInNewKey;
+                    keyNum = ChainInsertNewKey;
                     status = bContext.RMW(key, ref input);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
@@ -580,19 +580,19 @@ namespace Tsavorite.test.ReadCacheTests
             }
             else
             {
-                keyNum = SpliceInNewKey;
+                keyNum = ChainInsertNewKey;
                 var status = bContext.RMW(key, ref input);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
-            VerifySplicedInKey(key);
+            VerifyChainInsertedKey(key);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion)
+        public void ChainInsertFromDeleteTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -604,18 +604,18 @@ namespace Tsavorite.test.ReadCacheTests
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
-                keyNum = SpliceInExistingKey;
+                keyNum = ChainInsertExistingKey;
                 var status = bContext.Delete(key);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
-                keyNum = SpliceInNewKey;
+                keyNum = ChainInsertNewKey;
                 var status = bContext.Delete(key);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
-            VerifySplicedInKey(key);
+            VerifyChainInsertedKey(key);
         }
 
         [Test]
