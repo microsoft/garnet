@@ -84,6 +84,10 @@ namespace Garnet.server.Auth
 
                 _validFrom = token.ValidFrom;
                 _validateTo = token.ValidTo;
+
+                // token.ValidFrom / ValidTo are expected to be UTC. Build a DateTimeOffset
+                // with a zero offset so a non-UTC DateTime throws here instead of silently
+                // miscomparing against UtcTicks on every IsAuthorized call.
                 _validFromTicks = new DateTimeOffset(_validFrom, TimeSpan.Zero).UtcTicks;
                 _validToTicks = new DateTimeOffset(_validateTo, TimeSpan.Zero).UtcTicks;
 
