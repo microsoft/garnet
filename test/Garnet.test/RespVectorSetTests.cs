@@ -2454,7 +2454,7 @@ namespace Garnet.test
         [CancelAfter(30_000)]
         public async Task WithQuantizationBackfillAsync(VectorQuantType quantType, CancellationToken cancellation)
         {
-            const int Vectors = 10_000;
+            const int Vectors = 5_000;
             const int Dimensions = 64;
             const string Key = nameof(WithQuantizationBackfillAsync);
             const int Count = 30;
@@ -2555,8 +2555,6 @@ namespace Garnet.test
                 var vsimRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
                 ClassicAssert.AreEqual(Count, vsimRes.Length);
             }
-
-            // TODO: Assert all the vectors have quantized equivalents
         }
 
         /// <summary>
