@@ -35,9 +35,8 @@ namespace Garnet.server.Auth
         private DateTime _validFrom;
         private DateTime _validateTo;
 
-        // Tick projections of the validity window used on the hot path. Comparing longs
-        // skips DateTime's per-call Kind-bit masking — measured ~4x faster than the
-        // DateTime path even after CoarseTimeProvider eliminates the UtcNow syscall.
+        // Tick projections of the validity window used on the hot path —
+        // comparing longs is ~4x faster than comparing DateTimes.
         private long _validFromTicks = long.MaxValue;
         private long _validToTicks = long.MinValue;
 
@@ -47,10 +46,8 @@ namespace Garnet.server.Auth
         private readonly IssuerSigningTokenProvider _signingTokenProvider;
         private readonly bool _validateUsername;
 
-        // Injected wall-clock source. Production passes CoarseTimeProvider.Instance
-        // (the process-wide cached singleton — GetUtcNow is a static field load);
-        // tests pass a FakeTimeProvider so advancing the fake's clock immediately
-        // changes the time observed by IsAuthorized.
+        // Injected wall-clock source. Production passes CoarseTimeProvider.Instance;
+        // tests pass a FakeTimeProvider for deterministic clock control.
         private readonly TimeProvider _timeProvider;
 
         private readonly ILogger _logger;
