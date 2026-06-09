@@ -129,9 +129,9 @@ namespace Tsavorite.test
             LocalMemory
         }
 
-        internal const int DefaultLocalMemoryDeviceLatencyMs = 20;   // latencyMs only applies to DeviceType = LocalMemory
+        internal const int DefaultLocalMemoryDeviceLatencyUs = 20_000;   // latencyUs only applies to DeviceType = LocalMemory
 
-        internal static IDevice CreateTestDevice(TestDeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false, bool omitSegmentIdFromFilename = false)
+        internal static IDevice CreateTestDevice(TestDeviceType testDeviceType, string filename, int latencyUs = DefaultLocalMemoryDeviceLatencyUs, bool deleteOnClose = false, bool omitSegmentIdFromFilename = false)
         {
             IDevice device = null;
             bool preallocateFile = false;
@@ -155,9 +155,9 @@ namespace Tsavorite.test
                 case TestDeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, true, capacity, recoverDevice);
                     break;
-                // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
+                // Emulated higher latency storage device - takes a disk latency arg (latencyUs) and emulates an IDevice using main memory, serving data at specified latency
                 case TestDeviceType.LocalMemory:
-                    device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs);  // 64 MB (1L << 26) is enough for our test cases
+                    device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyUs: latencyUs);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 

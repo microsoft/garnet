@@ -399,7 +399,7 @@ namespace Garnet
         public int NetworkSendThrottleMax { get; set; }
 
         [OptionValidation]
-        [Option("sg-get", Required = false, HelpText = "Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO.")]
+        [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
         public bool? EnableScatterGatherGet { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
@@ -907,7 +907,7 @@ namespace Garnet
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
-                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
+                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 FastAofTruncate = GetFastAofTruncate(logger),

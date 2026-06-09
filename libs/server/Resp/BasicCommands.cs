@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -28,12 +29,42 @@ namespace Garnet.server
         private (GarnetStatus, StringOutput)[] pendingGetOutputArr;
 
         /// <summary>
+        /// Per-slot reservation size for a post-first-pending <see cref="NetworkGET_SG"/> response.
+        /// Sized to cover a typical small-value RESP response ("$&lt;3-digits&gt;\r\n&lt;value&gt;\r\n"
+        /// for values up to ~120 B). Responses that exceed this overflow to a rented
+        /// <see cref="System.Buffers.MemoryPool{T}"/> buffer (handled in the wrap-up loop).
+        /// </summary>
+        private const int PendingScratchSlotSize = 128;
+
+        /// <summary>
+        /// Reserves a fixed-size pinned slot from the session's <see cref="scratchBufferAllocator"/> and
+        /// returns a <see cref="StringOutput"/> pointing at it, used to back each post-first-pending
+        /// <see cref="NetworkGET_SG"/> submission. The Reader writes the RESP response into the slot via
+        /// the <c>IsSpanByte</c> fast path (values larger than the slot overflow to a rented buffer).
+        /// <para>
+        /// <see cref="ScratchBufferAllocator"/> slices stay valid across subsequent allocations until the
+        /// session's batch-end <c>Reset</c>, so every slot reserved in the issue loop survives until the
+        /// wrap-up loop reads it. This replaces a prior per-pending <see cref="System.Buffers.MemoryPool{T}"/>
+        /// rent (a global-pool round-trip and allocation on every pending op).
+        /// </para>
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private StringOutput GetPendingScratchOutput()
+        {
+            var slice = scratchBufferAllocator.CreateArgSlice(PendingScratchSlotSize);
+            return StringOutput.FromPinnedPointer(slice.ToPointer(), PendingScratchSlotSize);
+        }
+
+        /// <summary>
         /// GET
         /// </summary>
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.serverOptions.EnableScatterGatherGet)
+            // Only take the scatter-gather path when the next command is itself a GET to batch with.
+            // A single (request/response) GET, or a GET followed by a non-GET, falls through to the simple
+            // path so it is as cheap as with sg-get off (no look-ahead, no scatter-gather setup).
+            if (enableScatterGatherGet && NextCommandMaybeGet())
                 return NetworkGET_SG(ref storageApi);
 
             if (useAsync)
@@ -178,8 +209,15 @@ namespace Garnet.server
             StringInput input = new(RespCommand.GET, arg1: -1);
             var firstPending = -1;
             (GarnetStatus, StringOutput)[] outputArr = pendingGetOutputArr;
+            // Initial output points at the current network buffer position. Used for the
+            // prefix-sync path and (if it goes pending) the first pending op — which is the
+            // only pending op whose response lands directly in the network buffer.
             var output = GetStringOutput();
             var c = 0;
+
+            // Savepoint so the scratch slots this call reserves are reclaimed on return, rather than
+            // accumulating across GET runs within a network batch (slots are dead after the wrap-up).
+            var scratchOffset = scratchBufferAllocator.ScratchBufferOffset;
 
             for (; ; c++)
             {
@@ -195,7 +233,11 @@ namespace Garnet.server
                 if (isPending)
                 {
                     SetResult(c, ref firstPending, ref outputArr, status, default);
-                    output = new StringOutput();
+                    // After the first pending, every subsequent op (sync or pending) writes
+                    // into a per-session scratch slot via the Reader's existing IsSpanByte
+                    // fast path. The wrap-up loop memcpy's slots into the network buffer in
+                    // batch order.
+                    output = GetPendingScratchOutput();
                 }
                 else
                 {
@@ -210,7 +252,7 @@ namespace Garnet.server
                         else
                         {
                             SetResult(c, ref firstPending, ref outputArr, status, output);
-                            output = new StringOutput();
+                            output = GetPendingScratchOutput();
                         }
                     }
                     else
@@ -224,7 +266,7 @@ namespace Garnet.server
                         else
                         {
                             SetResult(c, ref firstPending, ref outputArr, status, output);
-                            output = new StringOutput();
+                            output = GetPendingScratchOutput();
                         }
                     }
                 }
@@ -235,15 +277,38 @@ namespace Garnet.server
                 // First complete all pending ops
                 _ = storageApi.GET_CompletePending(outputArr, true);
 
-                // Write the outputs to network buffer
+                // Write the outputs to network buffer in batch order. The first pending slot
+                // (i==0) is special: its Reader wrote directly into the network buffer at the
+                // dcurr that was captured at submission time, so we just advance dcurr to
+                // commit those bytes (the IsSpanByte fast path). All other slots were
+                // scratch-backed: memcpy them into the network buffer.
                 var n = c - firstPending;
                 for (var i = 0; i < n; i++)
                 {
                     var status = outputArr[i].Item1;
-                    output = outputArr[i].Item2;
+                    var sbm = outputArr[i].Item2.SpanByteAndMemory;
                     if (status == GarnetStatus.OK)
                     {
-                        ProcessOutput(output.SpanByteAndMemory);
+                        if (i == 0)
+                        {
+                            // First pending: data is already in the network buffer at dcurr.
+                            ProcessOutput(sbm);
+                        }
+                        else if (sbm.IsSpanByte)
+                        {
+                            // Scratch slot: write it into the network buffer (flushing if it is full).
+                            // The slot is at most PendingScratchSlotSize, well under the network buffer,
+                            // so this succeeds after at most one flush.
+                            var slot = new ReadOnlySpan<byte>(sbm.SpanByte.ToPointer(), sbm.Length);
+                            while (!RespWriteUtils.TryWriteDirect(slot, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            // Overflow path: Reader couldn't fit the response in the scratch
+                            // slot and rented a heap buffer instead. Copy + dispose.
+                            SendAndReset(sbm.Memory, sbm.Length);
+                        }
                     }
                     else
                     {
@@ -256,6 +321,11 @@ namespace Garnet.server
                 // references to disposed StringOutput.SpanByteAndMemory.Memory wrappers.
                 pendingGetOutputArr = outputArr;
                 Array.Clear(outputArr, 0, n);
+
+                // The scratch slots are dead now that they have been copied to the network buffer;
+                // rewind the allocator to its entry savepoint so subsequent commands in this network
+                // batch reuse the space instead of growing on top of it.
+                scratchBufferAllocator.TryRewindToOffset(scratchOffset);
             }
 
             if (c > 1)
@@ -1708,6 +1778,12 @@ namespace Garnet.server
 
         bool ParseGETAndKey(ref PinnedSpanByte key)
         {
+            // Speculative small compare on the next command's RESP framing (including the GET token): skip the
+            // full parse + backoff when it cannot be a GET (e.g. the SET in a GET/SET pipeline, or a same-shaped
+            // TTL/DEL), avoiding a double-parse. A miss only forgoes batching — it is never incorrect.
+            if (!NextCommandMaybeGet())
+                return false;
+
             var oldEndReadHead = readHead = endReadHead;
             var cmd = ParseCommand(writeErrorOnFailure: true, out var success);
             if (!success || cmd != RespCommand.GET)
@@ -1716,9 +1792,32 @@ namespace Garnet.server
                 endReadHead = readHead = oldEndReadHead;
                 return false;
             }
+
+            // Keys past the first bypass the per-command CanServeSlot in ProcessMessages. In cluster mode,
+            // verify this one here; if it is not servable, back off so the dispatch loop re-reads it and
+            // writes the -MOVED/-ASK redirect in order.
+            if (clusterSession != null && !CanServeSlotNoResponse(RespCommand.GET))
+            {
+                endReadHead = readHead = oldEndReadHead;
+                return false;
+            }
+
             key = parseState.GetArgSliceByRef(0);
             return true;
         }
+
+        /// <summary>
+        /// RESP framing of <c>GET key</c> up to and including the command token: <c>*2\r\n$3\r\nGET\r\n</c>.
+        /// Used as a single small compare so the scatter-gather look-ahead rejects any non-GET next command —
+        /// both a different shape (e.g. SET, which is <c>*3...</c>) and a same-shaped 3-byte command (e.g. TTL,
+        /// DEL) — without a full parse. Lowercase <c>get</c> simply misses and forgoes batching (never incorrect).
+        /// </summary>
+        static ReadOnlySpan<byte> GetCommandRespPrefix => "*2\r\n$3\r\nGET\r\n"u8;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool NextCommandMaybeGet()
+            => bytesRead - endReadHead >= GetCommandRespPrefix.Length &&
+               new ReadOnlySpan<byte>(recvBufferPtr + endReadHead, GetCommandRespPrefix.Length).SequenceEqual(GetCommandRespPrefix);
 
         private bool TryGetSimpleCommandInfo(string cmdName, out SimpleRespCommandInfo simpleCmdInfo)
         {

@@ -15,7 +15,6 @@
   </Folder>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
-    <Project Path="benchmark/Device.benchmark/Device.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>
   <Folder Name="/hosting/" />

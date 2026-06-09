@@ -26,7 +26,6 @@ namespace Tsavorite.core
         /// 4 KB reads). With a 128-byte speculative read, the sector-aligned IO is typically 1 sector (and up to 2 sectors when the
         /// record begins near the end of a sector), and usually captures a full small record with no re-read.
         /// Records larger than what fits in the speculative read trigger a precise re-read via VerifyRecordFromDiskCallback with the
-        /// Records larger than what fits in the speculative read trigger a precise re-read via VerifyRecordFromDiskCallback with the
         /// now-known recordLength, same as before — the cost is one extra IO per multi-sector record, which is a fair trade against
         /// avoiding the NAND-crossing penalty on every small-record IO.</summary>
         internal const int InitialIOSize = 128;
