@@ -37,21 +37,21 @@ namespace Garnet.common
         // DateTimeOffset struct copy is not. Wrapping in a class lets readers do
         // a single atomic reference load and copy the immutable struct out — no
         // tearing, no DateTimeOffset constructor on the read path. The Timer
-        // allocates one Snapshot per refresh tick.
-        private sealed class Snapshot
+        // allocates one DateTimeOffsetSnapshot per refresh tick.
+        private sealed class DateTimeOffsetSnapshot
         {
             public readonly DateTimeOffset Value;
-            public Snapshot(DateTimeOffset value) => Value = value;
+            public DateTimeOffsetSnapshot(DateTimeOffset value) => Value = value;
         }
 
-        private static Snapshot snapshot = new(TimeProvider.System.GetUtcNow());
+        private static DateTimeOffsetSnapshot snapshot = new(TimeProvider.System.GetUtcNow());
 
         // Process-wide background refresh. Held in a static field to keep it rooted
         // for process lifetime — the cache is shared by every CoarseTimeProvider
         // instance, so there is exactly one refresh Timer regardless of how many
         // instances are constructed.
         private static readonly ITimer timer = TimeProvider.System.CreateTimer(
-            static _ => Volatile.Write(ref snapshot, new Snapshot(TimeProvider.System.GetUtcNow())),
+            static _ => Volatile.Write(ref snapshot, new DateTimeOffsetSnapshot(TimeProvider.System.GetUtcNow())),
             null,
             RefreshPeriod,
             RefreshPeriod);
