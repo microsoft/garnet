@@ -32,10 +32,11 @@ namespace Garnet.common
         /// </summary>
         public static readonly CoarseTimeProvider Instance = new();
 
-        // Cached as a heap-allocated Snapshot so readers can do a single atomic
-        // reference load (Volatile.Read on a reference is always atomic) and then
-        // copy the immutable DateTimeOffset out of it — no struct tearing, no
-        // DateTimeOffset constructor / range-check on the read path. The Timer
+        // Heap-allocated wrapper around the cached DateTimeOffset. A reference load
+        // is always atomic on .NET (Volatile.Read on a reference); a 12-byte
+        // DateTimeOffset struct copy is not. Wrapping in a class lets readers do
+        // a single atomic reference load and copy the immutable struct out — no
+        // tearing, no DateTimeOffset constructor on the read path. The Timer
         // allocates one Snapshot per refresh tick (~24 B/s, gen-0).
         private sealed class Snapshot
         {
@@ -75,25 +76,8 @@ namespace Garnet.common
         /// </summary>
         public DateTime UtcNow => Volatile.Read(ref snapshot).Value.UtcDateTime;
 
-        /// <summary>
-        /// Ticks of the coarse, cached UTC time. Reading this is a single ref load
-        /// plus a field read — preferred on hot paths over <see cref="UtcNow"/> /
-        /// <see cref="GetUtcNow"/> because it skips <see cref="DateTime"/>'s Kind-bit
-        /// masking on comparison.
-        /// </summary>
-        public long UtcNowTicks => Volatile.Read(ref snapshot).Value.UtcTicks;
-
-        // The remaining TimeProvider surface delegates to TimeProvider.System — only
-        // GetUtcNow is coarse. We intentionally do NOT cache monotonic time or wrap
-        // timers; callers that need either get the accurate underlying behaviour.
-        /// <inheritdoc/>
-        public override long GetTimestamp() => TimeProvider.System.GetTimestamp();
-        /// <inheritdoc/>
-        public override long TimestampFrequency => TimeProvider.System.TimestampFrequency;
-        /// <inheritdoc/>
-        public override TimeZoneInfo LocalTimeZone => TimeProvider.System.LocalTimeZone;
-        /// <inheritdoc/>
-        public override ITimer CreateTimer(TimerCallback callback, object state, TimeSpan dueTime, TimeSpan period)
-            => TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+        // Only GetUtcNow is coarse. The remaining TimeProvider members (GetTimestamp,
+        // TimestampFrequency, LocalTimeZone, CreateTimer) inherit the base class's
+        // default implementation, which is equivalent to TimeProvider.System.
     }
 }

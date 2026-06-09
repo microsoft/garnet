@@ -45,8 +45,8 @@ namespace Garnet.test
 
             for (var i = 0; i < 10; i++)
             {
-                ClassicAssert.AreEqual(a.UtcNowTicks, b.UtcNowTicks, "Instances must read from the shared static cache");
-                ClassicAssert.AreEqual(a.UtcNowTicks, CoarseTimeProvider.Instance.UtcNowTicks);
+                ClassicAssert.AreEqual(a.GetUtcNow().UtcTicks, b.GetUtcNow().UtcTicks, "Instances must read from the shared static cache");
+                ClassicAssert.AreEqual(a.GetUtcNow().UtcTicks, CoarseTimeProvider.Instance.GetUtcNow().UtcTicks);
             }
         }
 
@@ -70,14 +70,13 @@ namespace Garnet.test
         [Test]
         public void AccessorsAgreeAtSnapshot()
         {
-            // UtcNowTicks, UtcNow.Ticks, and GetUtcNow().UtcTicks must all read the same
-            // underlying cached value. Loop to catch a tick-boundary refresh between reads.
+            // UtcNow.Ticks and GetUtcNow().UtcTicks must read the same underlying cached
+            // value. Loop to catch a tick-boundary refresh between reads.
             for (var i = 0; i < 32; i++)
             {
-                var ticks = CoarseTimeProvider.Instance.UtcNowTicks;
                 var utcNow = CoarseTimeProvider.Instance.UtcNow.Ticks;
                 var getUtcNow = CoarseTimeProvider.Instance.GetUtcNow().UtcTicks;
-                if (ticks == utcNow && utcNow == getUtcNow) return;
+                if (utcNow == getUtcNow) return;
             }
             Assert.Fail("Accessors never agreed across 32 reads — cache is unstable.");
         }
@@ -89,7 +88,7 @@ namespace Garnet.test
             // the abstract base and still hit the cached path through the virtual dispatch.
             TimeProvider asBase = CoarseTimeProvider.Instance;
             var viaVirtual = asBase.GetUtcNow().UtcTicks;
-            var viaInstance = CoarseTimeProvider.Instance.UtcNowTicks;
+            var viaInstance = CoarseTimeProvider.Instance.GetUtcNow().UtcTicks;
             ClassicAssert.AreEqual(viaInstance, viaVirtual, "Virtual dispatch must hit the cached override, not the base");
         }
 
@@ -130,9 +129,9 @@ namespace Garnet.test
             // observe a refresh is a real wall-clock wait. RefreshPeriod is 1s — sleep 3s
             // to absorb Timer slack and ThreadPool latency. We only assert forward progress
             // (no upper bound) so CI ThreadPool starvation cannot turn this into a flake.
-            var before = CoarseTimeProvider.Instance.UtcNowTicks;
+            var before = CoarseTimeProvider.Instance.GetUtcNow().UtcTicks;
             Thread.Sleep(TimeSpan.FromSeconds(3));
-            var after = CoarseTimeProvider.Instance.UtcNowTicks;
+            var after = CoarseTimeProvider.Instance.GetUtcNow().UtcTicks;
             ClassicAssert.Greater(after, before, "Cache must advance after >1 refresh period");
         }
     }
