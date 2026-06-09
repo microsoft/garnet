@@ -37,7 +37,7 @@ namespace Garnet.common
         // DateTimeOffset struct copy is not. Wrapping in a class lets readers do
         // a single atomic reference load and copy the immutable struct out — no
         // tearing, no DateTimeOffset constructor on the read path. The Timer
-        // allocates one Snapshot per refresh tick (~24 B/s, gen-0).
+        // allocates one Snapshot per refresh tick.
         private sealed class Snapshot
         {
             public readonly DateTimeOffset Value;
