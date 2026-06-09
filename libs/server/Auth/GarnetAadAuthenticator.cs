@@ -46,8 +46,6 @@ namespace Garnet.server.Auth
         private readonly IssuerSigningTokenProvider _signingTokenProvider;
         private readonly bool _validateUsername;
 
-        // Injected wall-clock source. Production passes CoarseTimeProvider.Instance;
-        // tests pass a FakeTimeProvider for deterministic clock control.
         private readonly TimeProvider _timeProvider;
 
         private readonly ILogger _logger;
