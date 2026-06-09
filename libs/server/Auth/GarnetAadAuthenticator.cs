@@ -36,7 +36,7 @@ namespace Garnet.server.Auth
         private DateTime _validateTo;
 
         // Tick projections of the validity window used on the hot path —
-        // comparing longs is ~4x faster than comparing DateTimes.
+        // comparing longs is faster than comparing DateTimes.
         private long _validFromTicks = long.MaxValue;
         private long _validToTicks = long.MinValue;
 
