@@ -84,11 +84,11 @@ lost-update A-B-A described later.
 
 ## Operations
 
-### Read promotion (insert at head)
+### Read promotion (insert at chain head)
 
 When a pending read brings a record in from disk (or copies from the immutable
 region), `TryCopyToReadCache` allocates a fresh read-cache record, copies the value,
-sets its `PreviousAddress` to the current head, and **CAS's it into the hash entry**
+sets its `PreviousAddress` to the current chain head, and **CAS's it into the hash entry**
 (`hei.TryCAS`). If the CAS loses to a concurrent insert it is abandoned (read-cache
 population is best-effort). Read promotion is *value-preserving*: it caches the
 current committed value.
