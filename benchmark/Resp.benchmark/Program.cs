@@ -289,15 +289,19 @@ namespace Resp.benchmark
                 if (!opts.SkipLoad)
                     bench.LoadData(keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
 
-                foreach (var BatchSize in opts.BatchSize)
-                    bench.Run(
-                        opts.Op,
-                        opts.TotalOps,
-                        threadBench, runTime: TimeSpan.FromSeconds(opts.RunTime),
-                        keyLen: keyLen,
-                        valueLen: valueLen,
-                        BatchSize: BatchSize,
-                        ttl: opts.Ttl);
+                // --runtime 0 seeds the keyspace only; skip the run phase.
+                if (opts.RunTime != 0)
+                {
+                    foreach (var BatchSize in opts.BatchSize)
+                        bench.Run(
+                            opts.Op,
+                            opts.TotalOps,
+                            threadBench, runTime: TimeSpan.FromSeconds(opts.RunTime),
+                            keyLen: keyLen,
+                            valueLen: valueLen,
+                            BatchSize: BatchSize,
+                            ttl: opts.Ttl);
+                }
             }
         }
 

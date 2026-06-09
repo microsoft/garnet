@@ -77,5 +77,31 @@ namespace Garnet.server
             csvi.waitForStableSlot = false;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
+
+        /// <summary>
+        /// Verifies, without writing a redirect, that the key(s) in the parse state for <paramref name="cmd"/>
+        /// are servable by this node. Returns true if servable. Used by the scatter-gather GET loop, where keys
+        /// past the first bypass the per-command <see cref="CanServeSlot"/> in ProcessMessages.
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <returns></returns>
+        bool CanServeSlotNoResponse(RespCommand cmd)
+        {
+            Debug.Assert(clusterSession != null);
+
+            cmd = cmd.NormalizeForACLs();
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))
+                return false;
+
+            if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
+                return true;
+
+            csvi.keySpecs = cmdInfo.KeySpecs;
+            csvi.isSubCommand = cmdInfo.IsSubCommand;
+            csvi.readOnly = cmd.IsReadOnly();
+            csvi.sessionAsking = SessionAsking;
+            csvi.waitForStableSlot = false;
+            return !clusterSession.NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref dcurr, ref dend);
+        }
     }
 }

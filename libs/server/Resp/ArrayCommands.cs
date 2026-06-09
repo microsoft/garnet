@@ -24,18 +24,13 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
-            if (storeWrapper.serverOptions.EnableScatterGatherGet)
-            {
-                MGetReadArgBatch_SG batch = new(this);
-
-                storageApi.ReadWithPrefetch(ref batch);
-                batch.CompletePending(ref storageApi);
-            }
-            else
-            {
-                MGetReadArgBatch<TGarnetApi> batch = new(ref storageApi, this);
-                storageApi.ReadWithPrefetch(ref batch);
-            }
+            // Always use the scatter-gather batch: it issues all reads (with prefetch), letting any that
+            // miss memory go pending, then drains them together. The alternative of completing each pending
+            // read inline is both slower (serialized disk IO) and unsafe (it would complete pending while the
+            // ReadWithPrefetch epoch is held).
+            MGetReadArgBatch_SG batch = new(this);
+            storageApi.ReadWithPrefetch(ref batch);
+            batch.CompletePending(ref storageApi);
 
             return true;
         }

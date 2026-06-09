@@ -390,7 +390,7 @@ namespace Tsavorite.test
         [Category(SmokeTestCategory)]
         public void InsDelIns_LocalMemory()
         {
-            using var LogDevice = new LocalMemoryDevice(capacity: SegmentSize, sz_segment: SegmentSize, parallelism: 1, sector_size: 64U, latencyMs: 0, fileName: Path.Combine(MethodTestDir, "test.log"));
+            using var LogDevice = new LocalMemoryDevice(capacity: SegmentSize, sz_segment: SegmentSize, parallelism: 1, sector_size: 64U, latencyUs: 0, fileName: Path.Combine(MethodTestDir, "test.log"));
             RunTest(LogDevice);
         }
 

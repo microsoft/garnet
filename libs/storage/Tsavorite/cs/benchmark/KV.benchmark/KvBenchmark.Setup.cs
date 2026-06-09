@@ -82,6 +82,33 @@ namespace Tsavorite.kvbench
             int numCt = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : 1;
             IDevice dev;
 
+            // LocalMemory: RAM-backed device modelling a syscall-free "fast IO" backend, used to
+            // measure the upper bound of Tsavorite throughput. Capacity is sized to fit the
+            // expected log tail (Keys * (8B key + ValueSize + 16B header)) rounded up to a
+            // multiple of segment size, plus 4 extra segments for in-flight slack.
+            if (devType == DeviceType.LocalMemory)
+            {
+                long segSize = opts.ResolvedSegmentSizeBytes;
+                long perRecord = 8 + opts.ValueSize + 16;
+                long approxBytes = checked(opts.Keys * perRecord);
+                long needSegments = (approxBytes + segSize - 1) / segSize + 4;
+                long capacity = needSegments * segSize;
+
+                int parallelism = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount;
+
+                System.Console.WriteLine(
+                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}");
+
+                dev = Devices.CreateLogDevice(
+                    logPath: null,
+                    deviceType: DeviceType.LocalMemory,
+                    capacity: capacity,
+                    numCompletionThreads: parallelism,
+                    localMemorySegmentSize: segSize);
+                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
+                return dev;
+            }
+
             if (devType == DeviceType.Native && OperatingSystem.IsLinux())
             {
                 dev = new NativeStorageDevice(logPath,

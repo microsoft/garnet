@@ -23,7 +23,7 @@ namespace Tsavorite.test.LowMemory
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: Path.Join(MethodTestDir, "test.log"));
+            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyUs: DefaultLocalMemoryDeviceLatencyUs, fileName: Path.Join(MethodTestDir, "test.log"));
             _ = Directory.CreateDirectory(MethodTestDir);
             store1 = new(new()
             {
