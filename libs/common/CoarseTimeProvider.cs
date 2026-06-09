@@ -33,7 +33,7 @@ namespace Garnet.common
         public static readonly CoarseTimeProvider Instance = new();
 
         // Heap-allocated wrapper around the cached DateTimeOffset. A reference load
-        // is always atomic on .NET (Volatile.Read on a reference); a 12-byte
+        // is always atomic on .NET (Volatile.Read on a reference); a multi-word
         // DateTimeOffset struct copy is not. Wrapping in a class lets readers do
         // a single atomic reference load and copy the immutable struct out — no
         // tearing, no DateTimeOffset constructor on the read path. The Timer
