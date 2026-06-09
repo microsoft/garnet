@@ -84,8 +84,8 @@ namespace Garnet.server.Auth
 
                 _validFrom = token.ValidFrom;
                 _validateTo = token.ValidTo;
-                _validFromTicks = _validFrom.Ticks;
-                _validToTicks = _validateTo.Ticks;
+                _validFromTicks = new DateTimeOffset(_validFrom, TimeSpan.Zero).UtcTicks;
+                _validToTicks = new DateTimeOffset(_validateTo, TimeSpan.Zero).UtcTicks;
 
                 _authorized = IsIdentityAuthorized(identity, username);
                 _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);

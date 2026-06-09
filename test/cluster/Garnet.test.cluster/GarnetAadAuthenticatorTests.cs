@@ -14,11 +14,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Unit tests for <see cref="GarnetAadAuthenticator"/> covering the
+    /// Unit tests for <see cref="GarnetAadAuthenticator"/>, exercising the
     /// authorization window via an injected <see cref="FakeTimeProvider"/>.
-    /// Same code path as production — <see cref="GarnetAadAuthenticator.IsAuthenticated"/>
-    /// always reads from the injected <see cref="TimeProvider"/>; advancing the
-    /// fake's clock immediately changes the time the authenticator observes.
     /// </summary>
     [TestFixture]
     public class GarnetAadAuthenticatorTests
