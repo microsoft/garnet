@@ -149,12 +149,12 @@ When the `ReadCache` is enabled, records from the `ReadCache` are inserted into 
 
 As a terminology note, the sub-chain of r#### records is referred to as the `ReadCache` prefix chain of that hash chain.
 
-If the key is found in the readcache, then the `RecordSource<TKey, TValue>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the following steps happen:
-- The new version of the record is "spliced in" to the tag chain after the readcache prefix
-- The readcache "source" record is invalidated.
+If the key is found in the readcache, then the `RecordSource<TStoreFunctions, TAllocator>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the new record is published with a **single CAS on the `HashBucketEntry`** that detaches the readcache prefix:
+- The new main-log record is written with its `PreviousAddress` already pointing at the first main-log record below the readcache prefix.
+- CAS'ing it into the `HashBucketEntry` atomically commits the update and **detaches (drops) the entire readcache prefix** from the reachable chain. The dropped records are orphaned and reclaimed by `ReadCacheEvict` when their pages are closed; no interior record is mutated and no readcache record is individually invalidated.
 
-Using the above example and assuming an update of r8000, the resulting chain would be:
-- `HashTable` -> r8000 (invalid) -> r7000 -> mxxxx (new) -> m4000 -> m3000 -> m...
-- In this example, note that the record address spaces are totally different between the main log and readcache; "xxxx" is used as the "new address" to symbolize this.
+Using the above example and assuming an update of the key cached at r8000, the resulting chain would be:
+- `HashTable` -> mxxxx (new) -> m4000 -> m3000 -> m...
+- The **entire** readcache prefix (r8000, r7000) is detached, not just r8000. Note that the record address spaces are totally different between the main log and readcache; "xxxx" is used as the "new address" to symbolize this.
 
-This splicing operation requires that we deal with updates at the tail of the tag chain (in the `HashEntryInfo`) as well as at the splice point. This cannot be done as a single atomic operation. To handle this, we check if another session added a readcache entry from a pending read while we were inserting a record at the tail of the log. If so, the new readcache record must be invalidated (see `ReadCacheCheckTailAfterSplice`).
+Because the only structural mutation is the single `HashBucketEntry` CAS, this operation is latch-free with respect to readcache structure: a competing readcache promotion (or another update) for the same key contends on the same `HashBucketEntry` word, so the loser of the CAS retries and observes the winner. See the [read cache design doc](./readcache.md) for the full latch-free model.
