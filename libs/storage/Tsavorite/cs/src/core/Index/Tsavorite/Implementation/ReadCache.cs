@@ -138,7 +138,8 @@ namespace Tsavorite.core
                 }
 
                 // curReadCachePhysicalAddress is the read-cache record we are currently examining; we look ahead from it to the next record.
-                var curReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress));
+                // GetPhysicalAddress strips the read-cache bit internally (via GetPageOfAddress -> AbsoluteAddress), so pass the raw address.
+                var curReadCachePhysicalAddress = readcacheBase.GetPhysicalAddress(stackCtx.recSrc.LatestLogicalAddress);
 
                 var recordInfo = LogRecord.GetInfo(curReadCachePhysicalAddress);
                 if (!IsReadCache(recordInfo.PreviousAddress))

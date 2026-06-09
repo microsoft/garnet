@@ -139,7 +139,9 @@ read-cache records in the page range being closed and **keeps the survivors abov
 range in place**, by CAS'ing the lowest surviving record's `PreviousAddress` forward
 to skip the evicted records (and CAS'ing the hash entry only when the evicted record
 is the head). The evicted records are stamped `PreviousAddress = kTempInvalidAddress`
-*after* they are unlinked.
+*after* they are unlinked; this is bookkeeping for the linear `ReadCacheEvict` page
+scan (so it skips records already unlinked, or CAS-failed promotions), **not** a signal
+read by chain walkers.
 
 This is the **one** place an existing record's `PreviousAddress` is mutated, and it is
 safe lock-free for two reasons:
@@ -150,10 +152,17 @@ safe lock-free for two reasons:
    record (same value `V`). Both yield the same result — there is no stale-vs-new
    mismatch a concurrent promotion could resurrect (a promotion during eviction would
    insert the **same** value `V`).
-2. **It coordinates with concurrent walkers via `kTempInvalidAddress` + restart**, not
-   the lock: a walker that has already advanced into an evicted record sees
-   `PreviousAddress <= kTempInvalidAddress`, waits for eviction
-   (`ReadCacheNeedToWaitForEviction`), and restarts the chain from the hash entry.
+2. **Concurrent walkers are coordinated by epoch + `HeadAddress`, not by reading the
+   evicted pointers.** Eviction runs as a *deferred* drain-list action
+   (`OnPagesClosedWorker`), and `readcache.HeadAddress` is published *before* that
+   action is queued. So a walker either (a) reaches a record below `HeadAddress` and is
+   sent to wait + restart by `ReadCacheNeedToWaitForEviction`
+   (`SpinWaitUntilRecordIsClosed`), or (b) holds an epoch that gates the eviction action
+   until it drains — so a record it is currently examining is not unlinked underneath
+   it, and epoch protection keeps the page alive while it reads. A walker therefore
+   never observes a half-unlinked record. (`SkipReadCache` walks the same chain
+   *without* any `kTempInvalidAddress` check and is correct, which confirms the stamp is
+   not part of walker coordination.)
 
 Eviction keeps the head untouched except to advance it monotonically toward the main
 log when the head record itself is evicted — so it never restores a superseded head
