@@ -600,7 +600,7 @@ namespace Garnet.server
             {
                 logger?.LogWarning("Error indicating response from vector service {found}", found);
                 outputIdFormat = VectorIdFormat.Invalid;
-                errorMsg = default;
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Error indicating response from vector service {found}");
                 return VectorManagerResult.BadParams;
             }
 
