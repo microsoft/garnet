@@ -32,10 +32,9 @@ namespace Garnet.common
             RefreshPeriod);
 
         /// <summary>
-        /// Constructs a <see cref="CoarseTimeProvider"/>. Instances hold no state — all
-        /// reads route through the shared static cache.
+        /// Private to enforce singleton usage via <see cref="Instance"/>.
         /// </summary>
-        public CoarseTimeProvider() { }
+        private CoarseTimeProvider() { }
 
         /// <summary>
         /// Coarse, cached UTC time. May lag the wall clock by ~<see cref="RefreshPeriod"/>.
