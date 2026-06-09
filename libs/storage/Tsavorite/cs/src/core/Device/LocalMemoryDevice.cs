@@ -80,7 +80,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor.
         /// </summary>
-        /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity (segments are still allocated lazily, so this only sizes the per-segment lookup arrays).</param>
+        /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity of <c>sz_segment * DefaultMaxSegments</c> (segments are still allocated lazily, so this only sizes the per-segment lookup arrays). When &gt; 0 it must be a multiple of <paramref name="sz_segment"/>.</param>
         /// <param name="sz_segment">Size in bytes of each segment.</param>
         /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Must be &gt;= 1.</param>
         /// <param name="latencyUs">Per-IO simulated wall-clock latency in microseconds (0 = none). Microsecond
@@ -97,21 +97,13 @@ namespace Tsavorite.core
             if (latencyUs < 0) throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
             if (ringCapacity <= 0 || (ringCapacity & (ringCapacity - 1)) != 0)
                 throw new ArgumentOutOfRangeException(nameof(ringCapacity), "ringCapacity must be a positive power of two");
-
-            // capacity <= 0 (including CAPACITY_UNSPECIFIED == -1): default to DefaultMaxSegments;
-            // segments are lazily allocated so the only cost of a generous max is the byte[][]/byte*[]
-            // pointer arrays.
-            if (capacity <= 0)
-            {
-                capacity = checked(sz_segment * DefaultMaxSegments);
-            }
-            else if (capacity % sz_segment != 0)
-            {
+            if (capacity > 0 && capacity % sz_segment != 0)
                 throw new ArgumentException("capacity must be a multiple of sz_segment", nameof(capacity));
-            }
 
+            // base.Capacity already holds the effective capacity (the caller's value when > 0, else the
+            // lazily-backed sz_segment * DefaultMaxSegments default passed to the base ctor above).
             this.sz_segment = sz_segment;
-            maxSegments = checked((int)(capacity / sz_segment));
+            maxSegments = checked((int)(Capacity / sz_segment));
             this.parallelism = parallelism;
 
             latencyTimestampTicks = latencyUs > 0
@@ -137,7 +129,7 @@ namespace Tsavorite.core
                 processors[i].Start();
             }
 
-            Debug.WriteLine($"LocalMemoryDevice: capacity={capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
+            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
         }
 
         /// <summary>
