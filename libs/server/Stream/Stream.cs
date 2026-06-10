@@ -52,6 +52,7 @@ namespace Garnet.server
         XTRIM,
         XSETID,
         XREAD,
+        XLAST,
         XINFO_STREAM,
         XINFO_GROUPS,
         XINFO_CONSUMERS,
@@ -290,9 +291,80 @@ namespace Garnet.server
                 case StreamOperation.XLEN:
                     OperateXLen(ref output, respProtocolVersion);
                     return true;
+                case StreamOperation.XRANGE:
+                case StreamOperation.XREVRANGE:
+                    OperateXRange(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XDEL:
+                    OperateXDel(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XTRIM:
+                    OperateXTrim(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XLAST:
+                    ReadLastEntry(ref output.SpanByteAndMemory, respProtocolVersion);
+                    return true;
                 default:
                     throw new NotSupportedException($"Stream operation {input.header.StreamOp} is not yet dispatched through Operate.");
             }
+        }
+
+        /// <summary>XRANGE/XREVRANGE: parseState = [key, start, end, (COUNT, n)].</summary>
+        void OperateXRange(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var isReverse = input.header.StreamOp == StreamOperation.XREVRANGE;
+            var startId = input.parseState.GetArgSliceByRef(1).ToString();
+            var endId = input.parseState.GetArgSliceByRef(2).ToString();
+            var count = -1;
+            if (input.parseState.Count > 3)
+            {
+                var countStr = input.parseState.GetArgSliceByRef(4).ToString();
+                if (!int.TryParse(countStr, out count))
+                {
+                    using var w = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                    w.WriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                    return;
+                }
+            }
+            ReadRange(startId, endId, count, ref output.SpanByteAndMemory, respProtocolVersion, isReverse);
+        }
+
+        /// <summary>XDEL: parseState = [key, id, id, ...]. Replies with the count deleted.</summary>
+        void OperateXDel(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var deleted = 0;
+            for (var i = 1; i < input.parseState.Count; i++)
+            {
+                if (DeleteEntry(input.parseState.GetArgSliceByRef(i)))
+                    deleted++;
+            }
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64(deleted);
+        }
+
+        /// <summary>XTRIM: parseState = [key, MAXLEN|MINID, [~], threshold].</summary>
+        void OperateXTrim(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var trimType = input.parseState.GetArgSliceByRef(1).ToString().ToUpper();
+            var approximate = false;
+            var trimArgIndex = 2;
+            if (input.parseState.Count > 3 && input.parseState.GetArgSliceByRef(2).ToString() == "~")
+            {
+                approximate = true;
+                trimArgIndex++;
+            }
+            var trimArg = input.parseState.GetArgSliceByRef(trimArgIndex);
+            var optType = trimType switch
+            {
+                "MAXLEN" => StreamTrimOpts.MAXLEN,
+                "MINID" => StreamTrimOpts.MINID,
+                _ => StreamTrimOpts.NONE,
+            };
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            if (!Trim(trimArg, optType, out var entriesTrimmed, approximate))
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            else
+                writer.WriteInt64((long)entriesTrimmed);
         }
 
         /// <summary>

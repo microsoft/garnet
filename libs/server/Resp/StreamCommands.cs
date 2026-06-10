@@ -22,48 +22,31 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_WRONG_NUM_ARGS);
             }
 
-            int argsParsed = 0;
-
             // Parse the stream key.
             var key = parseState.GetArgSliceByRef(0);
-            argsParsed++;
 
-            bool noMkStream = false;
-            if (argsParsed < parseState.Count && parseState.GetArgSliceByRef(argsParsed).ReadOnlySpan.SequenceEqual("NOMKSTREAM"u8))
+            var idIndex = 1;
+            var options = StreamAddOptions.None;
+            if (parseState.GetArgSliceByRef(idIndex).ReadOnlySpan.SequenceEqual("NOMKSTREAM"u8))
             {
-                noMkStream = true;
-                argsParsed++;
+                options = StreamAddOptions.NoMkStream;
+                idIndex++;
             }
 
-            // Parse the id. We parse as string for easy pattern matching.
-            var idGiven = parseState.GetArgSliceByRef(argsParsed);
+            // The object receives [id, field1, value1, ...]; NOMKSTREAM rides in arg1.
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XADD };
+            var input = new ObjectInput(header, ref parseState, startIdx: idIndex, arg1: (int)options);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            // parse past the ID
-            argsParsed++;
-
-            // get the number of the remaining key-value pairs
-            var numPairs = parseState.Count - argsParsed;
-
-            // grab the rest of the input that will mainly be k-v pairs as entry to the stream.
-            byte* vPtr = parseState.GetArgSliceByRef(argsParsed).ptr - sizeof(int);
-            int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
-            var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
-            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                cachedStream.AddEntry(idGiven, numPairs, streamDataSpan, ref _output, respProtocolVersion);
+                // NOMKSTREAM and the stream does not exist — reply with null.
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
-            else
-            {
-                streamManager.StreamAdd(key, idGiven, noMkStream, streamDataSpan, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
-                // since we added to a new stream that was not in the cache, try adding it to the cache
-                if (lastStream != null)
-                {
-                    sessionStreamCache.TryAddStreamToCache(lastStreamKey, lastStream);
-                }
-            }
-            ProcessOutput(_output);
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -80,20 +63,19 @@ namespace Garnet.server
             // parse the stream key. 
             var key = parseState.GetArgSliceByRef(0);
 
-            ulong streamLength;
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XLEN };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            // check if the stream exists in cache 
-            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            var status = storageSession.StreamObjectRead(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                streamLength = cachedStream.Length();
+                // Non-existent stream is treated as empty.
+                while (!RespWriteUtils.TryWriteInt64(0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
-            else
-            {
-                streamLength = streamManager.StreamLength(key);
-            }
-            // write back result
-            while (!RespWriteUtils.TryWriteInt64((long)streamLength, ref dcurr, dend))
-                SendAndReset();
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -115,47 +97,19 @@ namespace Garnet.server
             // parse the stream key 
             var key = parseState.GetArgSliceByRef(0);
 
-            // parse start and end IDs
-            var startId = parseState.GetArgSliceByRef(1).ToString();
-            var endId = parseState.GetArgSliceByRef(2).ToString();
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = isReverse ? StreamOperation.XREVRANGE : StreamOperation.XRANGE };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            int count = -1;
-            if (parseState.Count > 3)
+            var status = storageSession.StreamObjectRead(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                // parse the count argument
-                var countStr = parseState.GetArgSliceByRef(4).ToString();
-                if (!int.TryParse(countStr, out count))
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }
-            }
-
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
-            bool success = false;
-            // check if the stream exists in cache
-            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
-            {
-                cachedStream.ReadRange(startId, endId, count, ref _output, respProtocolVersion, isReverse);
-                success = true;
-            }
-            else
-            {
-                success = streamManager.StreamRange(key, startId, endId, count, ref _output, respProtocolVersion, isReverse);
-            }
-            if (success)
-            {
-                // _ = ProcessOutputWithHeader(_output);
-                ProcessOutput(_output);
-            }
-            else
-            {
-                //return empty array
+                // return empty array
                 while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -174,37 +128,20 @@ namespace Garnet.server
 
             // parse the stream key
             var key = parseState.GetArgSliceByRef(0);
-            int deletedCount = 0;
 
-            // for every id, parse and delete the stream entry
-            for (int i = 1; i < parseState.Count; i++)
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XDEL };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                // parse the id as string
-                var idGiven = parseState.GetArgSliceByRef(i);
-
-                bool deleted;
-                // check if the stream exists in cache
-                if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
-                {
-                    deleted = cachedStream.DeleteEntry(idGiven);
-                }
-                else
-                {
-                    // delete the entry in the stream from the streamManager
-                    deleted = streamManager.StreamDelete(key, idGiven, out StreamObject lastStream);
-                    if (lastStream != null)
-                    {
-                        // since we deleted from a stream that was not in the cache, try adding it to the cache
-                        sessionStreamCache.TryAddStreamToCache(key.ToArray(), lastStream);
-                    }
-                }
-
-                deletedCount = deleted ? deletedCount + 1 : deletedCount;
+                // Nothing to delete from a non-existent stream.
+                while (!RespWriteUtils.TryWriteInt64(0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
-
-            // write back the number of entries deleted
-            while (!RespWriteUtils.TryWriteInt64(deletedCount, ref dcurr, dend))
-                SendAndReset();
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -220,44 +157,20 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var trimType = parseState.GetArgSliceByRef(1).ToString().ToUpper();
-            bool approximate = false;
-            int trimArgIndex = 2;
-            // Check for optional ~
-            if (parseState.Count > 3 && parseState.GetArgSliceByRef(2).ToString() == "~")
-            {
-                approximate = true;
-                trimArgIndex++;
-            }
-            var trimArg = parseState.GetArgSliceByRef(trimArgIndex);
 
-            ulong entriesTrimmed = 0;
-            StreamTrimOpts optType = StreamTrimOpts.NONE;
-            switch (trimType)
-            {
-                case "MAXLEN":
-                    optType = StreamTrimOpts.MAXLEN;
-                    break;
-                case "MINID":
-                    optType = StreamTrimOpts.MINID;
-                    break;
-            }
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XTRIM };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            bool result;
-            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                result = cachedStream.Trim(trimArg, optType, out entriesTrimmed, approximate);
+                // Trimming a non-existent stream removes nothing.
+                while (!RespWriteUtils.TryWriteInt64(0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
-            else
-            {
-                result = streamManager.StreamTrim(key, trimArg, optType, out entriesTrimmed, approximate);
-            }
-            if (!result)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
-            while (!RespWriteUtils.TryWriteInt64((long)entriesTrimmed, ref dcurr, dend))
-                SendAndReset();
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -275,32 +188,19 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XLAST };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            bool success = false;
-            // check if the stream exists in cache
-            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            var status = storageSession.StreamObjectRead(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
-                cachedStream.ReadLastEntry(ref _output, respProtocolVersion);
-                success = true;
-            }
-            else
-            {
-                success = streamManager.StreamLast(key, ref _output, respProtocolVersion);
-            }
-
-            if (success)
-            {
-                ProcessOutput(_output);
-            }
-            else
-            {
-                //return empty array
+                // return empty array
                 while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
