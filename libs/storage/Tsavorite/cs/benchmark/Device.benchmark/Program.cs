@@ -52,9 +52,16 @@ namespace Device.benchmark
         static void PrintBenchMarkSummary(Options opts)
         {
             Console.WriteLine("<<<<<<< Start Benchmark Configuration >>>>>>>>");
-            Console.WriteLine($"Device Type: {opts.DeviceType}");
-            Console.WriteLine($"IO Backend: {opts.IoBackend}");
-            Console.WriteLine($"File Name: {opts.FileName}");
+            if (opts.DeviceType == DeviceType.LocalMemory)
+            {
+                Console.WriteLine($"Device Type: LocalMemory");
+            }
+            else
+            {
+                Console.WriteLine($"Device Type: {opts.DeviceType}");
+                Console.WriteLine($"IO Backend: {opts.IoBackend}");
+                Console.WriteLine($"File Name: {opts.FileName}");
+            }
             Console.WriteLine($"File Size: {opts.FileSize}");
             Console.WriteLine($"Sector Size: {opts.SectorSize}");
             Console.WriteLine($"Segment Size: {opts.SegmentSize}");
@@ -142,9 +149,19 @@ namespace Device.benchmark
                     foreach (var worker in workers)
                         worker.Join();
 
+                    // Aggregate per-worker counters (single-writer per worker → no race).
+                    long completedOk = 0, errors = 0;
+                    for (int wi = 0; wi < bworkers.Length; wi++)
+                    {
+                        completedOk += Interlocked.Read(ref bworkers[wi].localCompletedOk);
+                        errors += Interlocked.Read(ref bworkers[wi].localErrors);
+                        for (int code = 0; code < ErrorCounts.Length; code++)
+                            Interlocked.Add(ref ErrorCounts[code], Interlocked.Read(ref bworkers[wi].localErrorCounts[code]));
+                    }
+                    Interlocked.Exchange(ref totalCompletedOk, completedOk);
+                    Interlocked.Exchange(ref totalErrors, errors);
+
                     long submitted = Interlocked.Read(ref totalSubmitted);
-                    long completedOk = Interlocked.Read(ref totalCompletedOk);
-                    long errors = Interlocked.Read(ref totalErrors);
                     double seconds = sw.Elapsed.TotalSeconds;
                     double throughput = completedOk / seconds;
 
@@ -194,6 +211,24 @@ namespace Device.benchmark
 
         static IDevice GetDevice(Options opts)
         {
+            if (opts.DeviceType == DeviceType.LocalMemory)
+            {
+                // Capacity must be >= FileSize (the benchmark fills FileSize bytes then reads randomly).
+                // Capacity must be a multiple of segment size.
+                long segSize = opts.SegmentSize;
+                long capacity = opts.FileSize;
+                if (capacity % segSize != 0)
+                    capacity = ((capacity + segSize - 1) / segSize) * segSize;
+                int parallelism = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
+                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism})");
+                return Devices.CreateLogDevice(
+                    logPath: null,
+                    deviceType: DeviceType.LocalMemory,
+                    capacity: capacity,
+                    numCompletionThreads: parallelism,
+                    localMemorySegmentSize: segSize);
+            }
+
             var deviceType = opts.DeviceType;
             var fileName = opts.FileName;
             return deviceType switch
@@ -212,6 +247,8 @@ namespace Device.benchmark
                 _ => throw new ArgumentOutOfRangeException()
             };
         }
+
+        const string CompletionThreadsLabel = "completion-threads";
 
         static NativeStorageDevice.IoBackend ParseBackend(string s) => (s ?? "default").ToLowerInvariant() switch
         {

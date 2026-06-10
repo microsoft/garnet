@@ -1682,8 +1682,7 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            if (!asyncGetFromDiskResultPool.TryDequeue(out var asyncResult))
-                asyncResult = new AsyncGetFromDiskResult<AsyncIOContext>();
+            var asyncResult = RentAsyncGetFromDiskResult();
             asyncResult.context = context;
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
@@ -2022,8 +2021,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="fromLogicalAddress">Start of the record</param>
         /// <param name="numBytes">Number of bytes to be read (may be less than actual record size)</param>
-        /// <param name="context">The <see cref="AsyncIOContext"/> of the operation. This is passed by value, not reference; in the iterator case, it is
-        ///     the completionEvent's contained request, and populating it will result in prematurely freeing the record.</param>
+        /// <param name="context">The <see cref="AsyncIOContext"/> of the operation (a reference type). In the iterator/completion-event
+        ///     case it IS the completionEvent's request instance, and the completed record is read back through it.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
             // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
@@ -2222,12 +2221,9 @@ namespace Tsavorite.core
                     {
                         _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
-                        // Reread: the local ctx is a struct copy taken at line var ctx = result.context;
-                        // and carries id / requestKey / minAddress / callbackQueue forward. AsyncGetFromDisk
-                        // passes it by value to AsyncReadRecordToMemory, which rents a fresh wrapper from
-                        // asyncGetFromDiskResultPool and writes asyncResult.context = ctx — so every field
-                        // populated at RECORD_ON_DISK setup propagates into the new IO. Our (old) wrapper
-                        // is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
+                        // Reread: ctx is the same AsyncIOContext instance (a reference). AsyncGetFromDisk rents a
+                        // fresh wrapper and carries ctx into it, so all fields propagate into the new IO. The old
+                        // wrapper is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2236,8 +2232,9 @@ namespace Tsavorite.core
                 // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
                 if (ctx.completionEvent is not null)
                 {
-                    // completionEvent took ownership of the data via Set; finally returns the wrapper to the pool.
-                    ctx.completionEvent.Set(ref ctx);
+                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the
+                    // waiter. The wrapper is returned to the pool in the finally below (poolReturn stays true).
+                    ctx.completionEvent.Set(ctx);
                 }
                 else
                 {
@@ -2272,6 +2269,28 @@ namespace Tsavorite.core
             }
         }
 
+        // Two-tier pool for AsyncGetFromDiskResult wrappers. The TLS fast path
+        // (see <see cref="ThreadLocalCache{T}"/>) absorbs the Get/Return cycles
+        // a single worker thread issues back-to-back, eliminating the CAS on the
+        // shared ConcurrentQueue's head/tail cache line under heavy worker
+        // contention. On thread-local cache miss/full we fall back to the shared
+        // queue, which is still allocation-free in steady state because the total
+        // number of in-flight wrappers is bounded by the device throttle.
+
+        /// <summary>
+        /// Two-tier rent: thread-local LIFO first, then shared ConcurrentQueue,
+        /// finally allocate a fresh wrapper.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal AsyncGetFromDiskResult<AsyncIOContext> RentAsyncGetFromDiskResult()
+        {
+            if (ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryRent(out var result))
+                return result;
+            if (asyncGetFromDiskResultPool.TryDequeue(out result))
+                return result;
+            return new AsyncGetFromDiskResult<AsyncIOContext>();
+        }
+
         /// <summary>
         /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
         /// pool after the worker has consumed its <c>context</c> field in
@@ -2283,7 +2302,12 @@ namespace Tsavorite.core
             // Clear the captured ctx so a pooled wrapper doesn't transitively retain
             // SectorAlignedMemory / DiskLogRecord references across rentals.
             result.context = default;
-            asyncGetFromDiskResultPool.Enqueue(result);
+
+            // TLS first; on overflow fall back to the shared queue. The queue is
+            // bounded externally by device.ThrottleLimit in-flight IOs, so it never
+            // grows unbounded in steady state.
+            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result))
+                asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>

@@ -20,16 +20,17 @@ namespace Garnet.common
     /// 500K+ ops/sec. This pool reuses the wrapper instance across Rent/Dispose cycles.
     /// </para>
     /// <para>
-    /// Design is two-tier (mirrors <c>ArrayPool&lt;T&gt;.Shared</c>): a per-thread (<see cref="ThreadStaticAttribute"/>)
-    /// fixed-size cache provides a lock-free fast path; a process-wide
-    /// <see cref="ConcurrentQueue{T}"/> serves as fallback when the per-thread cache is empty (Rent)
-    /// or full (Return). In Garnet's <c>ProcessMessage</c> flow, Rent (CopyRespTo) and Dispose
-    /// (SendAndReset) execute on the same worker thread synchronously, so the TLS hit rate is
-    /// effectively 100% in steady state.
+    /// Design is two-tier (mirrors <c>ArrayPool&lt;T&gt;.Shared</c>): a
+    /// <see cref="Tsavorite.core.ThreadLocalCache{T}"/> fast path provides a per-thread
+    /// lock-free LIFO; a process-wide <see cref="ConcurrentQueue{T}"/> serves as fallback
+    /// when the per-thread cache is empty (Rent) or full (Return). In Garnet's
+    /// <c>ProcessMessage</c> flow, Rent (CopyRespTo) and Dispose (SendAndReset) execute
+    /// on the same worker thread synchronously, so the TLS hit rate is effectively 100%
+    /// in steady state.
     /// </para>
     /// <para>
     /// Memory ceiling (wrappers only; underlying byte[] are owned by ArrayPool):
-    /// <c>num_unique_threads × <see cref="TlsCacheSize"/> × sizeof(wrapper)</c>
+    /// <c>num_unique_threads × <see cref="Tsavorite.core.ThreadLocalCache{T}.Capacity"/> × sizeof(wrapper)</c>
     /// + <c><see cref="MaxRetainedWrappers"/> × sizeof(wrapper)</c>. With ~160 threads on an 80-core
     /// box that is roughly 660 KB — flat and independent of session count, batch size, or workload.
     /// </para>
@@ -47,13 +48,6 @@ namespace Garnet.common
         public static new readonly PooledArrayMemoryPool Shared = new();
 
         /// <summary>
-        /// Per-thread cache size (wrappers per thread). Chosen to comfortably cover a single
-        /// session's burst (e.g., a 1024-entry SG-GET batch is processed in chunks much smaller
-        /// than this) while keeping per-thread footprint to a few KB.
-        /// </summary>
-        private const int TlsCacheSize = 64;
-
-        /// <summary>
         /// Upper bound on the number of wrapper instances retained in the global fallback queue.
         /// Excess wrappers returned beyond this cap are dropped (the underlying byte[] is still
         /// returned to <see cref="ArrayPool{T}.Shared"/>). The TLS cache absorbs the steady-state
@@ -67,12 +61,6 @@ namespace Garnet.common
         /// pass explicit sizes.
         /// </summary>
         private const int DefaultRentSize = 4096;
-
-        [ThreadStatic]
-        private static PooledBuffer[] tlsCache;
-
-        [ThreadStatic]
-        private static int tlsCount;
 
         private readonly ConcurrentQueue<PooledBuffer> globalPool = new();
         private int retainedCount;
@@ -92,22 +80,13 @@ namespace Garnet.common
 
             PooledBuffer buf;
 
-            // Fast path: per-thread cache, lock-free.
-            var cache = tlsCache;
-            var idx = tlsCount - 1;
-            if (cache != null && idx >= 0)
+            // Fast path: thread-local LIFO; fall back to the global queue, then a fresh wrapper.
+            if (!Tsavorite.core.ThreadLocalCache<PooledBuffer>.TryRent(out buf))
             {
-                buf = cache[idx];
-                cache[idx] = null;
-                tlsCount = idx;
-            }
-            else if (globalPool.TryDequeue(out buf))
-            {
-                Interlocked.Decrement(ref retainedCount);
-            }
-            else
-            {
-                buf = new PooledBuffer(this);
+                if (globalPool.TryDequeue(out buf))
+                    Interlocked.Decrement(ref retainedCount);
+                else
+                    buf = new PooledBuffer(this);
             }
 
             buf.Init(minBufferSize);
@@ -138,21 +117,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void OnPooledBufferDisposed(PooledBuffer buf)
         {
-            // Fast path: per-thread cache, lock-free.
-            var cache = tlsCache;
-            if (cache == null)
-            {
-                cache = new PooledBuffer[TlsCacheSize];
-                tlsCache = cache;
-            }
-
-            var count = tlsCount;
-            if ((uint)count < (uint)TlsCacheSize)
-            {
-                cache[count] = buf;
-                tlsCount = count + 1;
+            // Fast path: thread-local LIFO.
+            if (Tsavorite.core.ThreadLocalCache<PooledBuffer>.TryReturn(buf))
                 return;
-            }
 
             // Slow path: global queue with hard cap. If we are over the cap, drop the wrapper
             // (see remarks above — its byte[] is already back in ArrayPool, so dropping leaks

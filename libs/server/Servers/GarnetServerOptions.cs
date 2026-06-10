@@ -301,9 +301,10 @@ namespace Garnet.server
         public int NetworkSendThrottleMax = 8;
 
         /// <summary>
-        /// Whether we use scatter gather IO for MGET operations - useful to saturate disk random read IO
+        /// Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate
+        /// disk random read IO. MGET always uses scatter-gather regardless of this setting.
         /// </summary>
-        public bool EnableScatterGatherGet = false;
+        public bool EnableScatterGatherGet = true;
 
         /// <summary>
         /// Whether and by how much should we throttle replica sync frequency (default = 5ms)

@@ -116,6 +116,9 @@ namespace Garnet.server
         // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
 
+        // Cached scatter-gather GET flag (read once per session; checked on every GET dispatch)
+        readonly bool enableScatterGatherGet;
+
         // Track whether consistent read session is active
         internal bool IsConsistentReadSessionActive = false;
 
@@ -299,6 +302,7 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
+            enableScatterGatherGet = storeWrapper.serverOptions.EnableScatterGatherGet;
 
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;

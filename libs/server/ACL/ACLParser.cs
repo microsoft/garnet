@@ -232,7 +232,10 @@ namespace Garnet.server.ACL
             }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
-                // NOTE: No-op, because only wildcard key patterns are currently supported
+                // NOTE: No-op, because only wildcard key patterns are currently supported. If per-key key
+                // patterns are ever added, the GET scatter-gather fast path (NetworkGET_SG) must re-check
+                // ACL per key: it serves GETs past the first without returning through the per-command ACL
+                // check in ProcessMessages, which is only safe while key access is all-or-nothing.
             }
             else if (op.Equals("RESETKEYS", StringComparison.OrdinalIgnoreCase))
             {

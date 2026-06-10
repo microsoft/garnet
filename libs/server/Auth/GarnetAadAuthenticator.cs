@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
+using Garnet.common;
 using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -33,11 +34,19 @@ namespace Garnet.server.Auth
         private bool _authorized;
         private DateTime _validFrom;
         private DateTime _validateTo;
+
+        // Tick projections of the validity window used on the hot path —
+        // comparing longs is faster than comparing DateTimes.
+        private long _validFromTicks = long.MaxValue;
+        private long _validToTicks = long.MinValue;
+
         private readonly IReadOnlyCollection<string> _authorizedAppIds;
         private readonly IReadOnlyCollection<string> _audiences;
         private readonly IReadOnlyCollection<string> _issuers;
         private readonly IssuerSigningTokenProvider _signingTokenProvider;
         private readonly bool _validateUsername;
+
+        private readonly TimeProvider _timeProvider;
 
         private readonly ILogger _logger;
 
@@ -47,7 +56,8 @@ namespace Garnet.server.Auth
             IReadOnlyCollection<string> issuers,
             IssuerSigningTokenProvider signingTokenProvider,
             bool validateUsername,
-            ILogger logger)
+            ILogger logger,
+            TimeProvider timeProvider = null)
         {
             _authorizedAppIds = authorizedAppIds;
             _signingTokenProvider = signingTokenProvider;
@@ -55,6 +65,7 @@ namespace Garnet.server.Auth
             _issuers = issuers;
             _validateUsername = validateUsername;
             _logger = logger;
+            _timeProvider = timeProvider ?? CoarseTimeProvider.Instance;
         }
 
         public bool Authenticate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username)
@@ -74,6 +85,12 @@ namespace Garnet.server.Auth
                 _validFrom = token.ValidFrom;
                 _validateTo = token.ValidTo;
 
+                // token.ValidFrom / ValidTo are expected to be UTC. Build a DateTimeOffset
+                // with a zero offset so a non-UTC DateTime throws here instead of silently
+                // miscomparing against UtcTicks on every IsAuthorized call.
+                _validFromTicks = new DateTimeOffset(_validFrom, TimeSpan.Zero).UtcTicks;
+                _validToTicks = new DateTimeOffset(_validateTo, TimeSpan.Zero).UtcTicks;
+
                 _authorized = IsIdentityAuthorized(identity, username);
                 _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);
 
@@ -84,6 +101,8 @@ namespace Garnet.server.Auth
                 _authorized = false;
                 _validFrom = DateTime.MinValue;
                 _validateTo = DateTime.MinValue;
+                _validFromTicks = long.MaxValue;
+                _validToTicks = long.MinValue;
                 _logger?.LogError(ex, "Authentication failed");
                 return false;
             }
@@ -133,8 +152,8 @@ namespace Garnet.server.Auth
 
         private bool IsAuthorized()
         {
-            var now = DateTime.UtcNow;
-            return _authorized && now >= _validFrom && now <= _validateTo;
+            var nowTicks = _timeProvider.GetUtcNow().UtcTicks;
+            return _authorized && nowTicks >= _validFromTicks && nowTicks <= _validToTicks;
         }
 
         private static bool IsApplicationPrincipal(IDictionary<string, string> claims)

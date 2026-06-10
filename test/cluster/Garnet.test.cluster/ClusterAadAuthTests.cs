@@ -21,6 +21,8 @@ namespace Garnet.test.cluster
 
         readonly Dictionary<string, LogLevel> monitorTests = [];
 
+        // Microsoft Entra tenant ID — a public identifier (NOT a secret), used only to
+        // construct the issuer URL for test-only JWTs signed by a locally-generated key.
         private const string issuer = "https://sts.windows.net/975f013f-7f24-47e8-a7d3-abc4752bf346/";
 
         [SetUp]
