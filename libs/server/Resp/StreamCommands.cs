@@ -713,42 +713,39 @@ namespace Garnet.server
             var subCommand = parseState.GetArgSliceByRef(0).ToString().ToUpperInvariant();
             var key = parseState.GetArgSliceByRef(1);
 
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
+            StreamOperation op;
             switch (subCommand)
             {
                 case "STREAM":
-                    if (!streamManager.StreamInfo(key, ref _output, respProtocolVersion))
-                    {
-                        while (!RespWriteUtils.TryWriteError("ERR no such key"u8, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
+                    op = StreamOperation.XINFO_STREAM;
                     break;
                 case "GROUPS":
-                    if (!streamManager.StreamInfoGroups(key, ref _output, respProtocolVersion))
-                    {
-                        while (!RespWriteUtils.TryWriteError("ERR no such key"u8, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
+                    op = StreamOperation.XINFO_GROUPS;
                     break;
                 case "CONSUMERS":
                     if (parseState.Count < 3)
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                    var groupName = parseState.GetArgSliceByRef(2).ToString();
-                    if (!streamManager.StreamInfoConsumers(key, groupName, ref _output, respProtocolVersion))
-                    {
-                        while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
+                    op = StreamOperation.XINFO_CONSUMERS;
                     break;
                 default:
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
-            ProcessOutput(_output);
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = op };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageSession.StreamObjectRead(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                ReadOnlySpan<byte> err = op == StreamOperation.XINFO_CONSUMERS
+                    ? "NOGROUP No such consumer group"u8
+                    : "ERR no such key"u8;
+                while (!RespWriteUtils.TryWriteError(err, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 

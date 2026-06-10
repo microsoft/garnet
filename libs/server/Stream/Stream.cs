@@ -319,6 +319,15 @@ namespace Garnet.server
                 case StreamOperation.XGROUP_DELCONSUMER:
                     OperateXGroupDelConsumer(ref input, ref output, respProtocolVersion);
                     return true;
+                case StreamOperation.XINFO_STREAM:
+                    GetStreamInfo(ref output.SpanByteAndMemory, respProtocolVersion);
+                    return true;
+                case StreamOperation.XINFO_GROUPS:
+                    GetGroupsInfo(ref output.SpanByteAndMemory, respProtocolVersion);
+                    return true;
+                case StreamOperation.XINFO_CONSUMERS:
+                    OperateXInfoConsumers(ref input, ref output, respProtocolVersion);
+                    return true;
                 default:
                     throw new NotSupportedException($"Stream operation {input.header.StreamOp} is not yet dispatched through Operate.");
             }
@@ -405,6 +414,17 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt64((long)Length());
+        }
+
+        /// <summary>XINFO CONSUMERS: parseState = [CONSUMERS, key, group].</summary>
+        void OperateXInfoConsumers(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            if (!GetConsumersInfo(groupName, ref output.SpanByteAndMemory, respProtocolVersion))
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteError("NOGROUP No such consumer group"u8);
+            }
         }
 
         /// <summary>XGROUP CREATE: parseState = [CREATE, key, group, id, (MKSTREAM | ENTRIESREAD n)...].</summary>
