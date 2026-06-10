@@ -304,6 +304,21 @@ namespace Garnet.server
                 case StreamOperation.XLAST:
                     ReadLastEntry(ref output.SpanByteAndMemory, respProtocolVersion);
                     return true;
+                case StreamOperation.XGROUP_CREATE:
+                    OperateXGroupCreate(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XGROUP_SETID:
+                    OperateXGroupSetId(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XGROUP_DESTROY:
+                    OperateXGroupDestroy(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XGROUP_CREATECONSUMER:
+                    OperateXGroupCreateConsumer(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XGROUP_DELCONSUMER:
+                    OperateXGroupDelConsumer(ref input, ref output, respProtocolVersion);
+                    return true;
                 default:
                     throw new NotSupportedException($"Stream operation {input.header.StreamOp} is not yet dispatched through Operate.");
             }
@@ -390,6 +405,111 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt64((long)Length());
+        }
+
+        /// <summary>XGROUP CREATE: parseState = [CREATE, key, group, id, (MKSTREAM | ENTRIESREAD n)...].</summary>
+        void OperateXGroupCreate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            var idStr = input.parseState.GetArgSliceByRef(3).ToString();
+            long entriesRead = -1;
+            for (var i = 4; i < input.parseState.Count; i++)
+            {
+                var opt = input.parseState.GetArgSliceByRef(i).ToString().ToUpperInvariant();
+                if (opt == "ENTRIESREAD" && i + 1 < input.parseState.Count)
+                {
+                    _ = long.TryParse(input.parseState.GetArgSliceByRef(i + 1).ToString(), out entriesRead);
+                    i++;
+                }
+                // MKSTREAM was applied at creation time (carried in arg1); ignore here.
+            }
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            StreamID startId;
+            if (idStr == "$")
+            {
+                startId = default;
+            }
+            else if (idStr is "0" or "0-0")
+            {
+                startId = new StreamID(0, 0);
+                if (entriesRead < 0) entriesRead = 0;
+            }
+            else if (!ParseCompleteStreamIDFromString(idStr, out startId))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                return;
+            }
+
+            if (CreateGroup(groupName, startId, entriesRead))
+                writer.WriteSimpleString("OK"u8);
+            else
+                writer.WriteError("ERR no such key"u8);
+        }
+
+        /// <summary>XGROUP SETID: parseState = [SETID, key, group, id, (ENTRIESREAD n)].</summary>
+        void OperateXGroupSetId(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            var idStr = input.parseState.GetArgSliceByRef(3).ToString();
+            long entriesRead = -1;
+            if (input.parseState.Count >= 6)
+            {
+                var opt = input.parseState.GetArgSliceByRef(4).ToString().ToUpperInvariant();
+                if (opt == "ENTRIESREAD")
+                    _ = long.TryParse(input.parseState.GetArgSliceByRef(5).ToString(), out entriesRead);
+            }
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            StreamID id;
+            if (idStr == "$")
+            {
+                id = default;
+            }
+            else if (!ParseCompleteStreamIDFromString(idStr, out id))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                return;
+            }
+
+            if (SetGroupId(groupName, id, entriesRead))
+                writer.WriteSimpleString("OK"u8);
+            else
+                writer.WriteError("NOGROUP No such consumer group"u8);
+        }
+
+        /// <summary>XGROUP DESTROY: parseState = [DESTROY, key, group].</summary>
+        void OperateXGroupDestroy(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64(DestroyGroup(groupName) ? 1 : 0);
+        }
+
+        /// <summary>XGROUP CREATECONSUMER: parseState = [CREATECONSUMER, key, group, consumer].</summary>
+        void OperateXGroupCreateConsumer(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            var consumerName = input.parseState.GetArgSliceByRef(3).ToString();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            var result = CreateConsumer(groupName, consumerName);
+            if (result == null)
+                writer.WriteError("NOGROUP No such consumer group"u8);
+            else
+                writer.WriteInt64(result.Value ? 1 : 0);
+        }
+
+        /// <summary>XGROUP DELCONSUMER: parseState = [DELCONSUMER, key, group, consumer].</summary>
+        void OperateXGroupDelConsumer(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(2).ToString();
+            var consumerName = input.parseState.GetArgSliceByRef(3).ToString();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            var removed = DeleteConsumer(groupName, consumerName);
+            if (removed < 0)
+                writer.WriteError("NOGROUP No such consumer group"u8);
+            else
+                writer.WriteInt64(removed);
         }
 
         /// <summary>

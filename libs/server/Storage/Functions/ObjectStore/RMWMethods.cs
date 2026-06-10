@@ -52,6 +52,8 @@ namespace Garnet.server
             => input.header.StreamOp switch
             {
                 StreamOperation.XADD => ((StreamAddOptions)input.arg1 & StreamAddOptions.NoMkStream) == 0,
+                // XGROUP CREATE creates the stream only when MKSTREAM is set (carried in arg1).
+                StreamOperation.XGROUP_CREATE => input.arg1 != 0,
                 _ => false,
             };
 
