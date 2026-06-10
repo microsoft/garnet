@@ -36,12 +36,12 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings kvSettings, TestDeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings kvSettings, TestDeviceType deviceType, int latencyUs = DefaultLocalMemoryDeviceLatencyUs)
         {
             kvSettings.IndexSize = 1L << 13;
 
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
-            log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
+            log = CreateTestDevice(deviceType, filename, latencyUs: latencyUs);
             kvSettings.LogDevice = log;
 
             store = new(kvSettings
@@ -248,8 +248,8 @@ namespace Tsavorite.test
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType, latencyMs: latencyMs);
+            var latencyUs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyUs;
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType, latencyUs: latencyUs);
 
             for (var c = 0; c < NumRecs; c++)
             {

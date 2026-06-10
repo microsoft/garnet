@@ -88,7 +88,8 @@ namespace Garnet.server
         int totalLength;
 
         /// <summary>
-        /// Combined offset in all managed scratch buffers
+        /// Combined offset across all managed scratch buffers; capture it as a savepoint and pass it to
+        /// <see cref="TryRewindToOffset"/> to reclaim everything allocated afterwards.
         /// </summary>
         internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
 
@@ -157,6 +158,32 @@ namespace Garnet.server
 
             Debug.Assert(currScratchBuffer.IsDefault || ScratchBufferOffset == 0);
             Debug.Assert(TotalLength == (currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length));
+        }
+
+        /// <summary>
+        /// Rewinds the current buffer back toward a savepoint captured from <see cref="ScratchBufferOffset"/>,
+        /// reclaiming the slices allocated since. The caller must guarantee that everything allocated after
+        /// the savepoint is dead and that it did not pop or reset the allocator in between. If the allocator
+        /// grew since the savepoint (the savepoint now lives in a buffer below the current one), the current
+        /// buffer is reclaimed to its base instead — the earliest reachable point within it — leaving the
+        /// buffers below to be released by the next <see cref="Reset"/>.
+        /// </summary>
+        /// <param name="savedOffset">Combined offset captured at the savepoint via <see cref="ScratchBufferOffset"/></param>
+        internal void TryRewindToOffset(int savedOffset)
+        {
+            if (currScratchBuffer.IsDefault)
+                return;
+
+            // Savepoint position relative to the current buffer's base. A negative value means a grow moved
+            // the savepoint into a buffer below the current one, whose entire content is therefore
+            // post-savepoint and safe to reclaim; clamp to the base (0) in that case.
+            var newOffset = savedOffset - prevScratchBuffersOffset;
+            if (newOffset < 0)
+                newOffset = 0;
+
+            // Never rewind forward.
+            if (newOffset <= currScratchBuffer.scratchBufferOffset)
+                currScratchBuffer.scratchBufferOffset = newOffset;
         }
 
         /// <summary>

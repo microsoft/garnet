@@ -33,6 +33,15 @@ namespace Tsavorite.core
             public readonly AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> readyResponses;
 
             /// <summary>
+            /// Per-session pool of <see cref="AsyncIOContext"/> instances. Each pending IO rents one upfront,
+            /// fills its fields in place, then returns it after completion processing. The reference-typed
+            /// AsyncIOContext is carried across threads by the heap <see cref="AsyncGetFromDiskResult{TContext}"/>
+            /// wrapper and the <see cref="readyResponses"/> queue, so pooling it avoids the per-IO struct copy
+            /// (Buffer.BulkMoveWithWriteBarrier) the previous value-typed AsyncIOContext incurred on each hop.
+            /// </summary>
+            public readonly Stack<AsyncIOContext> asyncIOContextPool;
+
+            /// <summary>
             /// Per-session pool of <see cref="IHeapContainer{TInput}"/> wrappers
             /// (either <see cref="SpanByteHeapContainer"/> or <see cref="StandardHeapContainer{T}"/>,
             /// determined by <typeparamref name="TInput"/>). Each pending operation rents one when
@@ -53,8 +62,34 @@ namespace Tsavorite.core
                 readyResponses = new AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 heapContainerPool = new Stack<IHeapContainer<TInput>>();
+                asyncIOContextPool = new Stack<AsyncIOContext>();
                 pendingReads = new AsyncCountDown();
                 isAcquiredTransactional = false;
+            }
+
+            /// <summary>
+            /// Rent a pre-allocated <see cref="AsyncIOContext"/> from the per-session pool. Single-threaded
+            /// per session, so non-concurrent <see cref="Stack{T}"/> is safe. Caller fills the instance's fields
+            /// directly and returns it to the pool via <see cref="ReturnAsyncIOContext"/> after the IO completes.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal AsyncIOContext RentAsyncIOContext()
+            {
+                if (asyncIOContextPool.TryPop(out var ctx))
+                    return ctx;
+                return new AsyncIOContext();
+            }
+
+            /// <summary>Return an <see cref="AsyncIOContext"/> to the per-session pool after completion.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void ReturnAsyncIOContext(AsyncIOContext ctx)
+            {
+                // Uncapped, matching the sibling per-session pools with the same rent-on-IO-issue /
+                // return-on-drain lifecycle (heapContainerPool, the allocator's asyncGetFromDiskResultPool).
+                // The pool self-bounds at this session's peak concurrent pending depth — the same high-water
+                // the (also uncapped) ioPendingRequests dictionary retains — so it cannot grow without bound.
+                ctx.Reset();
+                asyncIOContextPool.Push(ctx);
             }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
