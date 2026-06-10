@@ -22,7 +22,7 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 
 | Decision | Rationale |
 |----------|-----------|
-| **Stream is an `IGarnetObject`** (`GarnetObjectType.Stream`) in the unified store | A stream key is a first-class object like Hash/List/Set/SortedSet, so it inherits the store's keyspace semantics (TYPE, DEL/UNLINK, EXPIRE, FLUSHDB/FLUSHALL), checkpoint/recovery, and per-record locking for free. |
+| **Stream is an `IGarnetObject`** (`GarnetObjectType.Stream`) in the unified store | A stream key is a first-class object like Hash/List/Set/SortedSet, so it inherits the store's keyspace semantics (`TYPE` → `stream`, `KEYS`, `SCAN` incl. `SCAN … TYPE stream`, `DEL`/`UNLINK`, `EXPIRE`, `FLUSHDB`/`FLUSHALL`), checkpoint/recovery, and per-record locking for free. |
 | **Operate-dispatch for all commands** | `XADD`/`XRANGE`/`XREADGROUP`/`XACK`/… build an `ObjectInput` (header = `GarnetObjectType.Stream` + a `StreamOperation`) and run through the object store RMW/Read path into `StreamObject.Operate`, so the store mediates liveness/eviction/locking (no detached references). |
 | **TsavoriteLog** for entry storage (internal to the object) | Append-only, page-aligned, supports recovery, tiered storage, and zero-copy reads via `Span<byte>`. The `StreamObject` owns a per-stream log; the log is committed during the object's checkpoint serialization. |
 | **BTree** for ID → address index (internal to the object) | O(log n) range scans, ordered iteration, in-place tombstoning, and prefix trimming — all needed for `XRANGE`/`XREVRANGE`/`XTRIM`. Rebuilt from the per-stream log when the object is deserialized. |
@@ -473,51 +473,30 @@ Reads new entries from one or more streams starting after the given IDs. `BLOCK`
 
 ## Durability
 
-Stream durability has three tiers depending on server configuration:
+Stream durability depends on whether a per-stream log directory is configured.
 
-### Tier 1: In-memory only (default)
+### In-memory only (default)
 
-When `--stream-log-dir` is not set, streams use `NullDevice`. All data lives in memory. No persistence.
+When `--stream-log-dir` is not set, streams use `NullDevice`. All data lives in memory and is lost on restart.
 
-### Tier 2: Periodic flush
+### Persistent (with `--stream-log-dir`)
 
-When `--stream-log-dir` is set and `--enable-aof` is on:
-- Each stream's TsavoriteLog writes to real disk segments.
-- Stream mutations (`XADD`, `XDEL`, …) run as object-store RMW operations, so they are also recorded in the main AOF and replayed on recovery (re-applied after the checkpoint-restored state).
-- Checkpoints flush each live stream's log as part of serializing its `StreamObject` (`StreamObject.DoSerialize` calls `log.Commit`).
-- **Possible data loss window**: entries written between the last commit/checkpoint and a crash (when AOF is off).
-
-### Tier 3: Wait-for-commit (strong consistency)
-
-When `--enable-aof` and `--aof-commit-wait` are both set:
-- Every write operation (`XADD`, `XDEL`, `XTRIM`) calls `log.Commit(spinWait: true)` after the `Enqueue`, synchronously flushing to disk and waiting for completion before returning a response.
-- **No data loss window**, but higher latency per operation.
-
-### Configuration flow
-
-```
-GarnetServerOptions.EnableAOF && WaitForCommit
-    ↓
-StoreWrapper constructor
-    ↓
-StreamManager(waitForCommit: true)
-    ↓
-StreamObject(waitForCommit: true)
-    ↓
-log.Commit(spinWait: true) after each Enqueue
-```
+When `--stream-log-dir` is set:
+- Each stream's `TsavoriteLog` writes to real disk segments, holding the entry payloads.
+- Stream mutations (`XADD`, `XDEL`, `XTRIM`, `XGROUP …`, `XACK`, …) run as object-store RMW operations, so they are recorded in the main AOF (as `ObjectStoreRMW` entries) and replayed on recovery. When `--aof-commit-wait` is set, the main AOF is committed before the response is returned — there is no per-write per-stream `log.Commit`; durability comes from the AOF plus the checkpoint, not from synchronous per-write log commits.
+- A checkpoint (SAVE/BGSAVE) serializes each live `StreamObject` via `DoSerialize`, which commits the per-stream log and writes the stream metadata **and the full consumer-group state** (groups, consumers, PELs, `LastDeliveredId`, `EntriesRead`) into the object blob.
 
 ### Recovery
 
-On server restart with `--stream-log-dir` set:
+On restart, recovery is mediated by the object store (there is no separate stream-directory scan):
 
-1. `StreamManager.Recover()` enumerates hex-named subdirectories.
-2. For each directory, opens a `StreamObject` with `recover: true`.
-3. `StreamObject.RebuildIndexFromLog()` scans the TsavoriteLog from `BeginAddress` to `TailAddress`:
-   - **Data records** (`numPairs ≥ 0`): inserted into the BTree with `index.Insert(id, address)`.
-   - **Tombstone records** (`numPairs == -1`): replayed as `index.Delete(id)`.
-   - Updates `lastId` and `totalEntriesAdded` to match the recovered state.
-4. Consumer group state is **not** recovered from the log (in-memory only). Groups must be recreated after restart.
+1. The store reconstructs each `StreamObject` from its checkpoint blob via the `StreamObject(BinaryReader)` constructor, which:
+   - re-opens the per-stream `TsavoriteLog` (using the ambient `StreamObjectConfig`),
+   - rebuilds the BTree by scanning the log — `RebuildIndexFromLog`: data records (`numPairs ≥ 0`) → `InsertIntoTail`, tombstones (`numPairs == -1`) → `Delete`, updating `lastId`/`totalEntriesAdded`,
+   - and deserializes the consumer-group state from the blob.
+2. The main AOF then replays any stream mutations recorded after the checkpoint.
+
+Consumer-group state is therefore **preserved across restarts** (it travels in the checkpoint blob), unlike earlier experimental builds where it was in-memory only.
 
 ---
 
@@ -581,7 +560,8 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 
 | Path | Purpose |
 |------|---------|
-| `libs/server/Objects/Stream/StreamObject.cs` | `StreamObject` — core stream logic, entry operations, consumer group operations; also the static `StreamObjectConfig` holder |
+| `libs/server/Objects/Stream/StreamObject.cs` | `StreamObject` (partial) — class scaffolding, `Operate` dispatch, serialization/recovery, ID parsing & RESP-encoding helpers; also the static `StreamObjectConfig` holder |
+| `libs/server/Objects/Stream/StreamObjectImpl.cs` | `StreamObject` (partial) — per-command operation implementations: entry ops (XADD/XLEN/XDEL/XRANGE/XREVRANGE/XLAST/XTRIM) and the consumer-group operations |
 | `libs/server/Objects/Stream/ConsumerGroup.cs` | `ConsumerGroup`, `StreamConsumer`, `PendingEntry` data model |
 | `libs/server/Objects/Stream/StreamID.cs` | `StreamID` — 128-bit stream entry identifier |
 | `libs/server/BTreeIndex/BTree.cs` | BTree root — create, insert dispatch |
@@ -595,5 +575,6 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 | `libs/server/Resp/RespServerSession.cs` | Dispatch switch (`ProcessArrayCommands`) |
 | `libs/server/StoreWrapper.cs` | `StreamObjectConfig` setup (log dir, page/memory size), FLUSHDB/FLUSHALL stream cleanup |
 | `libs/server/Servers/GarnetServerOptions.cs` | Stream configuration (log dir, page size, memory size) |
-| `test/Garnet.test/RespStreamTests.cs` | Stream unit tests |
+| `test/standalone/Garnet.test/RespStreamTests.cs` | Stream RESP-level unit tests |
+| `test/standalone/Garnet.test/StreamObjectTests.cs` | Consumer-group serialization round-trip tests |
 | `playground/StreamBench/Program.cs` | Stream benchmark tool |

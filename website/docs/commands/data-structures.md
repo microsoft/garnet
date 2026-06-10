@@ -987,7 +987,7 @@ If **destination** already exists, it is overwritten.
 Stream support in Garnet is **experimental**. Notable limitations:
 
 - **Cluster mode is not supported.** All stream commands (`XADD`, `XREAD`, `XREADGROUP`, `XGROUP`, etc.) are only available on a node started in standalone mode. Slot routing, cross-shard migration, and replication of stream entries are not yet implemented — running these commands against a node started with `--cluster` is not supported.
-- **Consumer group state is not persisted.** Groups, consumers, pending-entry lists, and the group's `LastDeliveredId` live only in memory and are lost on server restart. The stream entries themselves do recover from disk (when `--stream-log-dir` is set), but groups must be recreated by the application.
+- **Durable streams require `--stream-log-dir`.** When set, both the stream entries and consumer-group state (groups, consumers, pending-entry lists, and the group's `LastDeliveredId`) are persisted and recovered across server restarts — entries from the per-stream log and consumer-group state from the object-store checkpoint. Without `--stream-log-dir`, streams are in-memory only and are lost on restart.
 - **`BLOCK` is parsed but not implemented** on `XREAD` / `XREADGROUP` — the call returns immediately even when no entries are available.
 - APIs, on-disk layout, and recovery semantics may change in future releases.
 
@@ -1117,7 +1117,7 @@ Manages consumer groups associated with a stream.
 - **CREATECONSUMER**: Explicitly creates a consumer within a group.
 - **DELCONSUMER**: Removes a consumer from a group, returning the number of pending entries the consumer owned (which are removed from the group's PEL).
 
-Consumer group state is currently held in-memory only and is not restored after a server restart.
+Consumer group state (groups, consumers, pending-entry lists, `LastDeliveredId`, `EntriesRead`) is persisted into the stream's object-store checkpoint and restored across server restarts when `--stream-log-dir` is configured. It is not replicated to cluster replicas.
 
 ---
 
