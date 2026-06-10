@@ -529,16 +529,16 @@ The current implementation is feature-complete enough to run real workloads on a
 
 Stream commands are only supported on a node started in **standalone** mode. Running them against a node started with `--cluster` is not currently supported because:
 
-- `StreamManager` keeps streams in its own dictionary keyed by raw key bytes; it does not consult the cluster's slot map. There is no slot routing, `MOVED`/`ASK` redirection, or cross-shard error handling on the stream-command path.
+- The stream-command path does not consult the cluster's slot map. There is no slot routing, `MOVED`/`ASK` redirection, or cross-shard error handling for stream keys.
 - The per-stream TsavoriteLog directories live under a single `--stream-log-dir` and are not partitioned by slot, so a slot migration would have no way to move a stream's on-disk state with it.
 - The replication AOF replay path does not currently understand stream records — secondaries will not see `XADD`/`XDEL`/`XTRIM` mutations propagated from the primary.
-- Consumer group state is process-local (see below), so even if entries were replicated, group cursors, PELs, and consumer membership would diverge between primary and replica.
+- Consumer group state is not propagated over the replication stream, so even if entries were replicated, group cursors, PELs, and consumer membership would diverge between primary and replica.
 
-Wiring up streams for cluster mode requires, at minimum: slot-aware key routing in `StreamManager`, slot-tagged subdirectories in the on-disk layout, an AOF entry type for stream mutations, and a migration handshake to move a stream's log + BTree + consumer group state atomically between nodes. None of this is in place today.
+Wiring up streams for cluster mode requires, at minimum: slot-aware key routing for stream keys, slot-tagged subdirectories in the on-disk layout, an AOF entry type for stream mutations, and a migration handshake to move a stream's log + BTree + consumer group state atomically between nodes. None of this is in place today.
 
-### Consumer group state is not persisted
+### Consumer group state is not replicated to replicas
 
-Groups, consumers, PELs, and `LastDeliveredId` live only in memory. A restart loses all of them — only the stream entries themselves come back via TsavoriteLog recovery. Applications must recreate groups (and reset `LastDeliveredId` appropriately) after a restart.
+Consumer group state (groups, consumers, PELs, `LastDeliveredId`, `EntriesRead`) **is persisted across restarts** — it is serialized into the stream object's checkpoint blob and restored on recovery (see Persistence). What is not yet handled is propagating that state to replicas over the replication stream; see the cluster limitation above.
 
 ### `BLOCK` is parsed but not implemented
 
