@@ -65,14 +65,15 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 │  │ (append-only │  │ (StreamID →  │  │   (PEL + consumers;      │   │
 │  │  entry log)  │  │  log address)│  │    serialized to blob)   │   │
 │  └──────────────┘  └──────────────┘  └─────────────────────────┘   │
-│  • Operate(StreamOperation) executes every command under store lock │
+│  • Operate(StreamOperation) executes every command under the store's    │
+│    per-record lock                                                       │
 │  • DoSerialize/(BinaryReader): metadata + consumer groups (+ log    │
 │    commit); deserialize re-opens the log and rebuilds the BTree      │
 └─────────────────────────────────────────────────────────────────────┘
 
-StreamManager (libs/server/Stream/StreamManager.cs) is now a thin helper:
-it publishes the server-global stream config (log dir, page/memory size) for
-the deserialization factory, tracks live stream instances, and performs
+StreamObjectConfig (a static holder in libs/server/Stream/Stream.cs) publishes
+the server-global stream config (log dir, page/memory size) for the
+deserialization factory, tracks live stream instances, and performs
 FLUSHDB/FLUSHALL directory cleanup.
 ```
 
@@ -129,7 +130,7 @@ XADD key [NOMKSTREAM] [MAXLEN|MINID [=|~] threshold] *|id field value [field val
 2. **Monotonicity check**: New ID must be strictly greater than `lastId`.
 3. **Log append**: `log.Enqueue<StreamLogEntryHeader>(header, rawFieldValuePairs, out logicalAddress)`
 4. **Index insert**: `index.Insert(id, Value(logicalAddress))`
-5. **Commit**: If `waitForCommit`, calls `log.Commit(spinWait: true)`.
+5. **Durability**: The mutation is logged to the main AOF as an `ObjectStoreRMW` entry (waited before responding in `--aof-commit-wait` mode); the per-stream log is committed to disk at the next object-store checkpoint (see Persistence below). There is no per-write `log.Commit`.
 6. **Response**: Returns the generated ID as a bulk string (e.g., `"1526919030474-55"`).
 
 ### XRANGE / XREVRANGE — Range scan
@@ -153,7 +154,7 @@ XDEL key id [id ...]
 
 1. **BTree delete**: `index.Delete(id)` — marks the leaf entry as a tombstone (sets `Value.valid = 0`).
 2. **Log tombstone**: Enqueues a `StreamLogEntryHeader` with `numPairs = ControlRecordKind.Tombstone` so recovery replays the delete.
-3. **Commit**: If `waitForCommit`, flushes synchronously.
+3. **Durability**: As with XADD, the delete is captured by the main AOF and persisted to the per-stream log at the next object-store checkpoint.
 
 ### XTRIM — Trim the stream
 
@@ -163,7 +164,7 @@ XTRIM key MAXLEN|MINID [=|~] threshold
 
 1. **BTree trim**: `TrimByLength` or `TrimByID` — walks leaves from head, tombstoning entries until the threshold is met. Returns the new head address.
 2. **Log truncation**: `log.TruncateUntil(newHeadAddress)` — discards all pages before the new head. This is the persistence of the trim — recovery simply won't see the truncated records.
-3. **Commit**: If `waitForCommit`, flushes synchronously.
+3. **Durability**: As with XADD, the trim is captured by the main AOF and persisted to the per-stream log at the next object-store checkpoint.
 
 ### XLEN — Stream length
 
@@ -235,7 +236,7 @@ PendingEntry
   └── DeliveryCount: int               — re-delivery counter
 ```
 
-All consumer group state is in-memory, protected by the owning `StreamObject`'s `SingleWriterMultiReaderLock`. Thread safety is achieved by requiring callers to hold the stream lock before any group mutation.
+All consumer group state is in-memory and serialized into the object blob at checkpoint. Thread safety comes from the unified object store: each command runs through the store's RMW/Read path, which holds the per-record lock (and epoch protection) for the duration of `StreamObject.Operate`. The object therefore needs no internal lock of its own — like every other Garnet object type (Hash/List/Set/SortedSet).
 
 The per-consumer `PendingIds` set is an *index* into the group PEL, not an independent source of truth. Every PEL mutation (insert, claim, delete) must keep both views consistent — that invariant is enforced by funnelling all mutations through the same `ConsumerGroup` methods rather than mutating the structures directly.
 
@@ -271,7 +272,7 @@ A single stream entry, from the perspective of one consumer group, moves through
                                                 └──────────────────┘
 ```
 
-A pending entry is always owned by *exactly one* consumer. Ownership transfers happen atomically under the stream lock.
+A pending entry is always owned by *exactly one* consumer. Ownership transfers happen atomically while the store holds the per-record lock during `Operate`.
 
 #### Three PEL transitions
 
@@ -339,11 +340,11 @@ The `DeliveryCount` field is the standard signal for poison-pill handling: when 
 
 #### Implementation notes specific to Garnet
 
-- **All consumer group state is in-memory and not yet persisted.** A server restart loses groups, consumers, PELs, and `LastDeliveredId`. The stream entries themselves recover from the on-disk TsavoriteLog, but the application must recreate groups (with the right `LastDeliveredId`) afterwards. Persistence is a known gap on the experimental roadmap.
-- **The stream lock is held for the entire duration of an `XREADGROUP > ` call**, including the BTree range scan and log reads. This keeps the PEL insert and `LastDeliveredId` advance atomic with the delivery decision, at the cost of serializing concurrent `XREADGROUP` against the same stream. For workloads with many consumers on one stream this is the dominant contention point and may need to be revisited.
+- **Consumer group state is persisted via the object-store checkpoint.** Groups, consumers, PELs, `LastDeliveredId`, and `EntriesRead` are serialized into the `StreamObject` blob by `DoSerialize` and restored by the `(BinaryReader)` constructor on recovery, alongside the stream entries (which recover from the on-disk TsavoriteLog). A server restart no longer loses consumer-group state.
+- **The store's per-record lock is held for the entire duration of an `XREADGROUP >` call**, including the BTree range scan and log reads. This keeps the PEL insert and `LastDeliveredId` advance atomic with the delivery decision, at the cost of serializing concurrent commands against the same stream key. For workloads with many consumers on one stream this is the dominant contention point and may need to be revisited.
 - **`XPENDING` does not take an idle filter into the summary form** — the `IDLE` clause is only honoured in the detail form (with `start`/`end`/`count`). This matches Redis behaviour but is easy to overlook.
 - **`XAUTOCLAIM`'s pagination cursor is a stream ID, not an opaque token.** Callers must pass `0-0` to start and the returned next-id to continue; a value of `0-0` in the response means the scan is complete.
-- **Per-consumer `PendingIds` is a `SortedSet<StreamID>`** for fast ordered iteration during replay. Mutations are O(log n); concurrent reads piggyback on the stream's reader lock.
+- **Per-consumer `PendingIds` is a `SortedSet<StreamID>`** for fast ordered iteration during replay. Mutations are O(log n); access is serialized by the store's per-record lock.
 
 #### Pitfalls
 
