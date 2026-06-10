@@ -79,6 +79,9 @@ namespace Tsavorite.core
         // process-wide, so it must be paired with an identity check: inline-complete only when the
         // re-entrant submit targets the SAME instance this thread drains. A submit to a DIFFERENT
         // LocalMemoryDevice must route through that instance's ring (no self-deadlock risk there).
+        // Set once on the dedicated drain thread (see ProcessorLoop) and never cleared; this is safe
+        // only because drain work runs on dedicated threads, so the slot can never leak to a pooled
+        // thread reused for unrelated work.
         [ThreadStatic]
         private static LocalMemoryDevice t_processorOwner;
 
