@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -34,6 +35,44 @@ namespace Garnet.server
         VALID,
         INVALID,
         NOT_GREATER,
+    }
+
+    /// <summary>
+    /// Stream sub-operations dispatched through <see cref="StreamObject.Operate"/> when a stream is
+    /// stored as an <see cref="IGarnetObject"/> in the unified object store. Values must fit in the
+    /// low <see cref="RespInputHeader.FlagMask"/> bits (0-31).
+    /// </summary>
+    public enum StreamOperation : byte
+    {
+        XADD,
+        XLEN,
+        XRANGE,
+        XREVRANGE,
+        XDEL,
+        XTRIM,
+        XSETID,
+        XREAD,
+        XINFO_STREAM,
+        XINFO_GROUPS,
+        XINFO_CONSUMERS,
+        XGROUP_CREATE,
+        XGROUP_DESTROY,
+        XGROUP_CREATECONSUMER,
+        XGROUP_DELCONSUMER,
+        XGROUP_SETID,
+        XREADGROUP,
+        XACK,
+        XPENDING,
+        XCLAIM,
+        XAUTOCLAIM,
+    }
+
+    /// <summary>Options bitmask carried in <see cref="ObjectInput.arg1"/> for stream operations.</summary>
+    [Flags]
+    internal enum StreamAddOptions
+    {
+        None = 0,
+        NoMkStream = 1,
     }
 
     // This is the layout that is put in the log for each stream entry. The numPairs field
@@ -219,17 +258,98 @@ namespace Garnet.server
         public override byte Type => (byte)GarnetObjectType.Stream;
 
         /// <summary>
+        /// Create a fresh stream for the given key using the server-global <see cref="StreamObjectConfig"/>.
+        /// The per-stream log directory is derived from the hex-encoded key so it is filesystem-safe and
+        /// reversible. Used by the object-store RMW initial-update path, where the record key is available.
+        /// </summary>
+        internal static StreamObject CreateForKey(ReadOnlySpan<byte> key)
+        {
+            var rootDir = StreamObjectConfig.StreamsRootDir;
+            var dirName = rootDir != null ? Convert.ToHexString(key) : null;
+            return new StreamObject(rootDir, dirName, StreamObjectConfig.DefaultPageSize, StreamObjectConfig.DefaultMemorySize, StreamObjectConfig.WaitForCommit);
+        }
+
+        /// <summary>
         /// Streams are mutated in place through StreamManager rather than copied; the per-stream log
         /// and device cannot be duplicated, so Clone shares this single owning instance.
         /// </summary>
         public override IHeapObject Clone() => this;
 
         /// <summary>
-        /// Stream commands are dispatched directly via StreamManager / RespServerSession, not through
-        /// the generic object Operate path used by Hash/List/Set/SortedSet.
+        /// Dispatch a stream sub-operation when the stream is stored as an object in the unified store.
+        /// Args arrive via <paramref name="input"/>'s parse state (index 0 = first arg after the key);
+        /// RESP output is written into <paramref name="output"/>'s buffer. Returns true on success.
         /// </summary>
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
-            => throw new NotSupportedException("Stream operations are dispatched via StreamManager, not the object Operate path.");
+        {
+            switch (input.header.StreamOp)
+            {
+                case StreamOperation.XADD:
+                    OperateXAdd(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XLEN:
+                    OperateXLen(ref output, respProtocolVersion);
+                    return true;
+                default:
+                    throw new NotSupportedException($"Stream operation {input.header.StreamOp} is not yet dispatched through Operate.");
+            }
+        }
+
+        /// <summary>
+        /// XADD via the object path. parseState layout: [id, field1, value1, ...]. Re-encodes the
+        /// field/value tokens into the RESP bulk-string payload the read path expects and appends.
+        /// </summary>
+        void OperateXAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var idSlice = input.parseState.GetArgSliceByRef(0);
+            var numPairs = input.parseState.Count - 1;
+            var payload = EncodeFieldValuePairs(ref input.parseState, 1, out var rented, out var payloadLength);
+            try
+            {
+                AddEntry(idSlice, numPairs, payload.Slice(0, payloadLength), ref output.SpanByteAndMemory, respProtocolVersion);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
+
+        void OperateXLen(ref ObjectOutput output, byte respProtocolVersion)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64((long)Length());
+        }
+
+        /// <summary>
+        /// Re-encode the field/value tokens in <paramref name="parseState"/> (from <paramref name="startIdx"/>)
+        /// as a contiguous sequence of RESP bulk strings (<c>$len\r\n&lt;bytes&gt;\r\n</c>) — the exact
+        /// payload layout the stream read path copies verbatim. Rents a buffer from the shared pool;
+        /// the caller must return <paramref name="rented"/>.
+        /// </summary>
+        static Span<byte> EncodeFieldValuePairs(ref SessionParseState parseState, int startIdx, out byte[] rented, out int length)
+        {
+            // Over-estimate each token's serialized size: '$' + up to 20 length digits + CRLF + data + CRLF.
+            long size = 0;
+            for (var i = startIdx; i < parseState.Count; i++)
+                size += 25 + parseState.GetArgSliceByRef(i).Length;
+
+            rented = ArrayPool<byte>.Shared.Rent((int)size);
+            var off = 0;
+            for (var i = startIdx; i < parseState.Count; i++)
+            {
+                var span = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                rented[off++] = (byte)'$';
+                off += NumUtils.WriteInt64(span.Length, rented.AsSpan(off));
+                rented[off++] = (byte)'\r';
+                rented[off++] = (byte)'\n';
+                span.CopyTo(rented.AsSpan(off));
+                off += span.Length;
+                rented[off++] = (byte)'\r';
+                rented[off++] = (byte)'\n';
+            }
+            length = off;
+            return rented.AsSpan(0, off);
+        }
 
         /// <summary>
         /// Streams do not participate in generic key-space SCAN over members.
@@ -1970,6 +2090,12 @@ namespace Garnet.server
         }
 
         #endregion Consumer Group Operations
+
+        /// <summary>Number of consumer groups attached to this stream. For tests/diagnostics.</summary>
+        internal int ConsumerGroupCount => consumerGroups.Count;
+
+        /// <summary>Try to get a consumer group by name. For tests/diagnostics.</summary>
+        internal bool TryGetConsumerGroupForTest(string name, out ConsumerGroup group) => consumerGroups.TryGetValue(name, out group);
 
         /// <inheritdoc/>
         public override void Dispose()
