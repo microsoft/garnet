@@ -328,6 +328,24 @@ namespace Garnet.server
                 case StreamOperation.XINFO_CONSUMERS:
                     OperateXInfoConsumers(ref input, ref output, respProtocolVersion);
                     return true;
+                case StreamOperation.XACK:
+                    OperateXAck(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XPENDING:
+                    OperateXPending(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XCLAIM:
+                    OperateXClaim(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XAUTOCLAIM:
+                    OperateXAutoClaim(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XREADGROUP:
+                    OperateXReadGroup(ref input, ref output, respProtocolVersion);
+                    return true;
+                case StreamOperation.XREAD:
+                    OperateXRead(ref input, ref output, respProtocolVersion);
+                    return true;
                 default:
                     throw new NotSupportedException($"Stream operation {input.header.StreamOp} is not yet dispatched through Operate.");
             }
@@ -421,10 +439,203 @@ namespace Garnet.server
         {
             var groupName = input.parseState.GetArgSliceByRef(2).ToString();
             if (!GetConsumersInfo(groupName, ref output.SpanByteAndMemory, respProtocolVersion))
+                WriteStreamError(ref output, respProtocolVersion, "NOGROUP No such consumer group"u8);
+        }
+
+        /// <summary>XACK: parseState = [key, group, id, id, ...].</summary>
+        void OperateXAck(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(1).ToString();
+            var ids = new StreamID[input.parseState.Count - 2];
+            for (var i = 0; i < ids.Length; i++)
             {
-                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteError("NOGROUP No such consumer group"u8);
+                if (!ParseCompleteStreamIDFromString(input.parseState.GetArgSliceByRef(i + 2).ToString(), out ids[i]))
+                {
+                    WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                    return;
+                }
             }
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            var acked = Acknowledge(groupName, ids);
+            if (acked < 0)
+                writer.WriteError("NOGROUP No such consumer group"u8);
+            else
+                writer.WriteInt64(acked);
+        }
+
+        /// <summary>XPENDING: parseState = [key, group, ([IDLE ms] start end count [consumer])].</summary>
+        void OperateXPending(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(1).ToString();
+            string start = null, end = null, consumerFilter = null;
+            var count = -1;
+            long minIdleTime = -1;
+
+            if (input.parseState.Count > 2)
+            {
+                var argIdx = 2;
+                var opt = input.parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
+                if (opt == "IDLE" && argIdx + 1 < input.parseState.Count)
+                {
+                    if (!long.TryParse(input.parseState.GetArgSliceByRef(argIdx + 1).ToString(), out minIdleTime))
+                    {
+                        WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                        return;
+                    }
+                    argIdx += 2;
+                }
+                if (argIdx + 2 < input.parseState.Count)
+                {
+                    start = input.parseState.GetArgSliceByRef(argIdx).ToString();
+                    end = input.parseState.GetArgSliceByRef(argIdx + 1).ToString();
+                    if (!int.TryParse(input.parseState.GetArgSliceByRef(argIdx + 2).ToString(), out count))
+                    {
+                        WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                        return;
+                    }
+                    argIdx += 3;
+                }
+                if (argIdx < input.parseState.Count)
+                    consumerFilter = input.parseState.GetArgSliceByRef(argIdx).ToString();
+            }
+
+            if (!GetPending(groupName, start, end, count, minIdleTime, consumerFilter, ref output.SpanByteAndMemory, respProtocolVersion))
+                WriteStreamError(ref output, respProtocolVersion, "NOGROUP No such consumer group"u8);
+        }
+
+        /// <summary>XCLAIM: parseState = [key, group, consumer, min-idle, id..., options...].</summary>
+        void OperateXClaim(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(1).ToString();
+            var consumerName = input.parseState.GetArgSliceByRef(2).ToString();
+            if (!long.TryParse(input.parseState.GetArgSliceByRef(3).ToString(), out var minIdleTime))
+            {
+                WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return;
+            }
+
+            var idList = new List<StreamID>();
+            long? idleMs = null, timeMs = null;
+            int? retryCount = null;
+            var force = false;
+            var justId = false;
+            var argIdx = 4;
+            while (argIdx < input.parseState.Count)
+            {
+                var argStr = input.parseState.GetArgSliceByRef(argIdx).ToString();
+                var upper = argStr.ToUpperInvariant();
+                if (upper is "IDLE" or "TIME" or "RETRYCOUNT" or "FORCE" or "JUSTID")
+                    break;
+                if (!ParseCompleteStreamIDFromString(argStr, out var id))
+                {
+                    WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                    return;
+                }
+                idList.Add(id);
+                argIdx++;
+            }
+            while (argIdx < input.parseState.Count)
+            {
+                var opt = input.parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
+                switch (opt)
+                {
+                    case "IDLE":
+                        if (argIdx + 1 >= input.parseState.Count || !long.TryParse(input.parseState.GetArgSliceByRef(argIdx + 1).ToString(), out var idle))
+                        { WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return; }
+                        idleMs = idle; argIdx += 2; break;
+                    case "TIME":
+                        if (argIdx + 1 >= input.parseState.Count || !long.TryParse(input.parseState.GetArgSliceByRef(argIdx + 1).ToString(), out var time))
+                        { WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return; }
+                        timeMs = time; argIdx += 2; break;
+                    case "RETRYCOUNT":
+                        if (argIdx + 1 >= input.parseState.Count || !int.TryParse(input.parseState.GetArgSliceByRef(argIdx + 1).ToString(), out var retry))
+                        { WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return; }
+                        retryCount = retry; argIdx += 2; break;
+                    case "FORCE": force = true; argIdx++; break;
+                    case "JUSTID": justId = true; argIdx++; break;
+                    default: WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return;
+                }
+            }
+
+            if (!ClaimEntries(groupName, consumerName, minIdleTime, idList.ToArray(), idleMs, timeMs, retryCount, force, justId, ref output.SpanByteAndMemory, respProtocolVersion))
+                WriteStreamError(ref output, respProtocolVersion, "NOGROUP No such consumer group"u8);
+        }
+
+        /// <summary>XAUTOCLAIM: parseState = [key, group, consumer, min-idle, start, (COUNT n)(JUSTID)].</summary>
+        void OperateXAutoClaim(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(1).ToString();
+            var consumerName = input.parseState.GetArgSliceByRef(2).ToString();
+            if (!long.TryParse(input.parseState.GetArgSliceByRef(3).ToString(), out var minIdleTime))
+            {
+                WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return;
+            }
+            if (!ParseStreamIDFromString(input.parseState.GetArgSliceByRef(4).ToString(), out var start))
+            {
+                WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                return;
+            }
+
+            var count = 100;
+            var justId = false;
+            var argIdx = 5;
+            while (argIdx < input.parseState.Count)
+            {
+                var opt = input.parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
+                if (opt == "COUNT" && argIdx + 1 < input.parseState.Count)
+                {
+                    if (!int.TryParse(input.parseState.GetArgSliceByRef(argIdx + 1).ToString(), out count))
+                    { WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return; }
+                    argIdx += 2;
+                }
+                else if (opt == "JUSTID")
+                {
+                    justId = true; argIdx++;
+                }
+                else
+                {
+                    WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR); return;
+                }
+            }
+
+            if (!AutoClaim(groupName, consumerName, minIdleTime, start, count, justId, ref output.SpanByteAndMemory, respProtocolVersion))
+                WriteStreamError(ref output, respProtocolVersion, "NOGROUP No such consumer group"u8);
+        }
+
+        /// <summary>
+        /// XREADGROUP single-stream slice: parseState = [group, consumer, id]; arg1 = NOACK flag,
+        /// arg2 = count. Writes the entries sub-array; sets result1 = 1 if the group was found, else 0.
+        /// </summary>
+        void OperateXReadGroup(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var groupName = input.parseState.GetArgSliceByRef(0).ToString();
+            var consumerName = input.parseState.GetArgSliceByRef(1).ToString();
+            var id = input.parseState.GetArgSliceByRef(2).ToString();
+            var found = ReadGroup(groupName, consumerName, id, input.arg2, input.arg1 != 0, ref output.SpanByteAndMemory, respProtocolVersion);
+            output.result1 = found ? 1 : 0;
+        }
+
+        /// <summary>XREAD single-stream slice: parseState = [id]; arg2 = count. Writes the entries array.</summary>
+        void OperateXRead(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var idStr = input.parseState.GetArgSliceByRef(0).ToString();
+            StreamID afterId;
+            if (idStr == "$")
+                afterId = new StreamID(ulong.MaxValue, ulong.MaxValue);
+            else if (!ParseStreamIDFromString(idStr, out afterId))
+            {
+                WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                return;
+            }
+            ReadAfter(afterId, input.arg2, ref output.SpanByteAndMemory, respProtocolVersion);
+        }
+
+        static void WriteStreamError(ref ObjectOutput output, byte respProtocolVersion, scoped ReadOnlySpan<byte> error)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteError(error);
         }
 
         /// <summary>XGROUP CREATE: parseState = [CREATE, key, group, id, (MKSTREAM | ENTRIESREAD n)...].</summary>

@@ -373,8 +373,8 @@ namespace Garnet.server
             if (groupKw != "GROUP")
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            var groupName = parseState.GetArgSliceByRef(argIdx++).ToString();
-            var consumerName = parseState.GetArgSliceByRef(argIdx++).ToString();
+            var groupSlice = parseState.GetArgSliceByRef(argIdx++);
+            var consumerSlice = parseState.GetArgSliceByRef(argIdx++);
 
             int count = -1;
             bool noAck = false;
@@ -412,12 +412,12 @@ namespace Garnet.server
 
             int numStreams = remaining / 2;
             var keys = new PinnedSpanByte[numStreams];
-            var ids = new string[numStreams];
+            var idSlices = new PinnedSpanByte[numStreams];
 
             for (int i = 0; i < numStreams; i++)
                 keys[i] = parseState.GetArgSliceByRef(argIdx + i);
             for (int i = 0; i < numStreams; i++)
-                ids[i] = parseState.GetArgSliceByRef(argIdx + numStreams + i).ToString();
+                idSlices[i] = parseState.GetArgSliceByRef(argIdx + numStreams + i);
 
             // XREADGROUP always returns multi-stream format: *N [*2 $key *M entries...]
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -428,9 +428,10 @@ namespace Garnet.server
                 writer.WriteArrayLength(2);
                 writer.WriteBulkString(keys[i].ReadOnlySpan);
 
-                // Collect entries into a temp buffer
-                var streamOutput = new SpanByteAndMemory();
-                bool found = streamManager.StreamReadGroup(keys[i], groupName, consumerName, ids[i], count, noAck, ref streamOutput, respProtocolVersion);
+                // Collect entries into a temp (unpinned) buffer via the object store.
+                var streamOutput = new ObjectOutput();
+                var status = storageSession.StreamReadGroupOne(keys[i], groupSlice, consumerSlice, idSlices[i], count, noAck, ref streamOutput);
+                var found = status != GarnetStatus.NOTFOUND && streamOutput.result1 != 0;
                 if (!found)
                 {
                     // Group not found — discard partial output and write error
@@ -441,14 +442,15 @@ namespace Garnet.server
                 }
 
                 // Inline the entries sub-array
-                if (streamOutput.IsSpanByte)
+                var sbm = streamOutput.SpanByteAndMemory;
+                if (sbm.IsSpanByte)
                 {
-                    writer.WriteDirect(streamOutput.SpanByte.ReadOnlySpan);
+                    writer.WriteDirect(sbm.SpanByte.ReadOnlySpan);
                 }
-                else if (streamOutput.Memory != null)
+                else if (sbm.Memory != null)
                 {
-                    writer.WriteDirect(streamOutput.Memory.Memory.Span.Slice(0, streamOutput.Length));
-                    streamOutput.Memory.Dispose();
+                    writer.WriteDirect(sbm.Memory.Memory.Span.Slice(0, sbm.Length));
+                    sbm.Memory.Dispose();
                 }
             }
             writer.Dispose();
@@ -465,27 +467,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var groupName = parseState.GetArgSliceByRef(1).ToString();
 
-            var ids = new StreamID[parseState.Count - 2];
-            for (int i = 2; i < parseState.Count; i++)
-            {
-                var idStr = parseState.GetArgSliceByRef(i).ToString();
-                if (!StreamObject.ParseCompleteStreamIDFromString(idStr, out ids[i - 2]))
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
-            }
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XACK };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            int acked = streamManager.StreamAcknowledge(key, groupName, ids);
-            if (acked < 0)
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
-            else
-            {
-                while (!RespWriteUtils.TryWriteInt64(acked, ref dcurr, dend))
-                    SendAndReset();
-            }
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -498,57 +492,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var groupName = parseState.GetArgSliceByRef(1).ToString();
 
-            string start = null, end = null;
-            int count = -1;
-            long minIdleTime = -1;
-            string consumerFilter = null;
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XPENDING };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            if (parseState.Count > 2)
-            {
-                int argIdx = 2;
-
-                // Check for IDLE option
-                if (argIdx < parseState.Count)
-                {
-                    var opt = parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
-                    if (opt == "IDLE" && argIdx + 1 < parseState.Count)
-                    {
-                        if (!long.TryParse(parseState.GetArgSliceByRef(argIdx + 1).ToString(), out minIdleTime))
-                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                        argIdx += 2;
-                    }
-                }
-
-                // Parse start end count
-                if (argIdx + 2 < parseState.Count)
-                {
-                    start = parseState.GetArgSliceByRef(argIdx).ToString();
-                    end = parseState.GetArgSliceByRef(argIdx + 1).ToString();
-                    if (!int.TryParse(parseState.GetArgSliceByRef(argIdx + 2).ToString(), out count))
-                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                    argIdx += 3;
-                }
-
-                // Optional consumer filter
-                if (argIdx < parseState.Count)
-                {
-                    consumerFilter = parseState.GetArgSliceByRef(argIdx).ToString();
-                }
-            }
-
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            bool found = streamManager.StreamPending(key, groupName, start, end, count, minIdleTime, consumerFilter, ref _output, respProtocolVersion);
-            if (!found)
+            var status = storageSession.StreamObjectRead(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
-            else
-            {
-                ProcessOutput(_output);
-            }
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -561,86 +517,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var groupName = parseState.GetArgSliceByRef(1).ToString();
-            var consumerName = parseState.GetArgSliceByRef(2).ToString();
 
-            if (!long.TryParse(parseState.GetArgSliceByRef(3).ToString(), out long minIdleTime))
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XCLAIM };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            // Parse IDs and options
-            var idList = new System.Collections.Generic.List<StreamID>();
-            long? idleMs = null;
-            long? timeMs = null;
-            int? retryCount = null;
-            bool force = false;
-            bool justId = false;
-
-            int argIdx = 4;
-            // First collect all IDs (they come before options)
-            while (argIdx < parseState.Count)
-            {
-                var argStr = parseState.GetArgSliceByRef(argIdx).ToString();
-                var upper = argStr.ToUpperInvariant();
-
-                if (upper == "IDLE" || upper == "TIME" || upper == "RETRYCOUNT" || upper == "FORCE" || upper == "JUSTID")
-                    break; // Hit an option, stop collecting IDs
-
-                if (!StreamObject.ParseCompleteStreamIDFromString(argStr, out StreamID id))
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
-
-                idList.Add(id);
-                argIdx++;
-            }
-
-            // Parse options
-            while (argIdx < parseState.Count)
-            {
-                var opt = parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
-                switch (opt)
-                {
-                    case "IDLE":
-                        if (argIdx + 1 >= parseState.Count || !long.TryParse(parseState.GetArgSliceByRef(argIdx + 1).ToString(), out long idle))
-                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                        idleMs = idle;
-                        argIdx += 2;
-                        break;
-                    case "TIME":
-                        if (argIdx + 1 >= parseState.Count || !long.TryParse(parseState.GetArgSliceByRef(argIdx + 1).ToString(), out long time))
-                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                        timeMs = time;
-                        argIdx += 2;
-                        break;
-                    case "RETRYCOUNT":
-                        if (argIdx + 1 >= parseState.Count || !int.TryParse(parseState.GetArgSliceByRef(argIdx + 1).ToString(), out int retry))
-                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                        retryCount = retry;
-                        argIdx += 2;
-                        break;
-                    case "FORCE":
-                        force = true;
-                        argIdx++;
-                        break;
-                    case "JUSTID":
-                        justId = true;
-                        argIdx++;
-                        break;
-                    default:
-                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }
-            }
-
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            bool found = streamManager.StreamClaim(key, groupName, consumerName, minIdleTime,
-                idList.ToArray(), idleMs, timeMs, retryCount, force, justId, ref _output, respProtocolVersion);
-            if (!found)
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
-            else
-            {
-                ProcessOutput(_output);
-            }
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -653,52 +542,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var groupName = parseState.GetArgSliceByRef(1).ToString();
-            var consumerName = parseState.GetArgSliceByRef(2).ToString();
 
-            if (!long.TryParse(parseState.GetArgSliceByRef(3).ToString(), out long minIdleTime))
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XAUTOCLAIM };
+            var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var startStr = parseState.GetArgSliceByRef(4).ToString();
-            if (!StreamObject.ParseStreamIDFromString(startStr, out StreamID start))
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
-
-            int count = 100; // Redis default
-            bool justId = false;
-            int argIdx = 5;
-
-            while (argIdx < parseState.Count)
-            {
-                var opt = parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
-                if (opt == "COUNT" && argIdx + 1 < parseState.Count)
-                {
-                    if (!int.TryParse(parseState.GetArgSliceByRef(argIdx + 1).ToString(), out count))
-                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                    argIdx += 2;
-                }
-                else if (opt == "JUSTID")
-                {
-                    justId = true;
-                    argIdx++;
-                }
-                else
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }
-            }
-
-            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            bool found = streamManager.StreamAutoClaim(key, groupName, consumerName, minIdleTime,
-                start, count, justId, ref _output, respProtocolVersion);
-            if (!found)
+            var status = storageSession.StreamObjectRMW(key, ref input, ref output);
+            if (status == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
-            else
-            {
-                ProcessOutput(_output);
-            }
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -803,23 +659,19 @@ namespace Garnet.server
                 for (int i = 0; i < numStreams; i++)
                 {
                     var streamKey = parseState.GetArgSliceByRef(argIdx + i);
-                    var idStr = parseState.GetArgSliceByRef(argIdx + numStreams + i).ToString();
+                    var idSlice = parseState.GetArgSliceByRef(argIdx + numStreams + i);
+                    var idStr = idSlice.ToString();
 
-                    StreamID afterId;
-                    if (idStr == "$")
-                    {
-                        // $ means only new entries — for non-blocking, return empty
-                        afterId = new StreamID(ulong.MaxValue, ulong.MaxValue);
-                    }
-                    else if (!StreamObject.ParseStreamIDFromString(idStr, out afterId))
+                    // Validate up front so an invalid ID aborts the whole command (the object re-parses).
+                    if (idStr != "$" && !StreamObject.ParseStreamIDFromString(idStr, out _))
                     {
                         writer.Dispose();
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
                     }
 
-                    var streamOutput = new SpanByteAndMemory();
-                    streamManager.StreamRead(streamKey, afterId, count, ref streamOutput, respProtocolVersion);
-                    streamResults[i] = (streamKey, streamOutput);
+                    var streamOutput = new ObjectOutput();
+                    _ = storageSession.StreamReadOne(streamKey, idSlice, count, ref streamOutput);
+                    streamResults[i] = (streamKey, streamOutput.SpanByteAndMemory);
                 }
 
                 // Check if any stream returned results
