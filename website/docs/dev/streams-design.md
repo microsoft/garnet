@@ -482,9 +482,9 @@ When `--stream-log-dir` is not set, streams use `NullDevice`. All data lives in 
 
 When `--stream-log-dir` is set and `--enable-aof` is on:
 - Each stream's TsavoriteLog writes to real disk segments.
-- The periodic `CommitTask` (configured via `--aof-commit-freq`) commits both the main AOF and all stream logs at the configured interval.
-- Checkpoints also flush stream logs (via `streamManager.CommitAsync()`).
-- **Possible data loss window**: entries written between the last commit and a crash.
+- Stream mutations (`XADD`, `XDEL`, …) run as object-store RMW operations, so they are also recorded in the main AOF and replayed on recovery (re-applied after the checkpoint-restored state).
+- Checkpoints flush each live stream's log as part of serializing its `StreamObject` (`StreamObject.DoSerialize` calls `log.Commit`).
+- **Possible data loss window**: entries written between the last commit/checkpoint and a crash (when AOF is off).
 
 ### Tier 3: Wait-for-commit (strong consistency)
 
