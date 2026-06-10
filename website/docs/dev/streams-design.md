@@ -8,7 +8,7 @@ title: Streams
 
 :::caution Experimental
 
-Stream support in Garnet is **experimental**. APIs, on-disk layout, and recovery semantics are subject to change. Consumer group state is currently in-memory only and is not preserved across restarts.
+Stream support in Garnet is **experimental**. APIs, on-disk layout, and recovery semantics are subject to change. Streams are modeled as a first-class object type (`GarnetObjectType.Stream`) in the unified store, so consumer-group state is now captured by the object checkpoint and **preserved across restarts**.
 
 **Streams are not supported in cluster mode.** All stream commands (`XADD`, `XREAD`, `XREADGROUP`, `XGROUP`, etc.) are implemented only for the standalone (single-node) configuration. Slot routing, key migration, and replication of stream entries are not yet wired up — running stream commands against a node started with `--cluster` is not supported.
 
@@ -22,10 +22,14 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 
 | Decision | Rationale |
 |----------|-----------|
-| **TsavoriteLog** for entry storage | Append-only, page-aligned, supports recovery, tiered storage, and zero-copy reads via `Span<byte>`. |
-| **BTree** for ID → address index | O(log n) range scans, ordered iteration, in-place tombstoning, and prefix trimming — all needed for `XRANGE`/`XREVRANGE`/`XTRIM`. |
-| **In-memory consumer groups** on `StreamObject` | Matches Redis semantics (groups are part of the stream object). Durability piggybacks on the stream's own log recovery + future serialization, avoiding split-brain with two persistence systems. |
-| **Per-stream TsavoriteLog** (not the main KV store) | Stream entries are variable-length append-only records that don't fit the fixed-size RMW model of the main store. A dedicated log per stream avoids contention and allows independent compaction/trim. |
+| **Stream is an `IGarnetObject`** (`GarnetObjectType.Stream`) in the unified store | A stream key is a first-class object like Hash/List/Set/SortedSet, so it inherits the store's keyspace semantics (TYPE, DEL/UNLINK, EXPIRE, FLUSHDB/FLUSHALL), checkpoint/recovery, and per-record locking for free. |
+| **Operate-dispatch for all commands** | `XADD`/`XRANGE`/`XREADGROUP`/`XACK`/… build an `ObjectInput` (header = `GarnetObjectType.Stream` + a `StreamOperation`) and run through the object store RMW/Read path into `StreamObject.Operate`, so the store mediates liveness/eviction/locking (no detached references). |
+| **TsavoriteLog** for entry storage (internal to the object) | Append-only, page-aligned, supports recovery, tiered storage, and zero-copy reads via `Span<byte>`. The `StreamObject` owns a per-stream log; the log is committed during the object's checkpoint serialization. |
+| **BTree** for ID → address index (internal to the object) | O(log n) range scans, ordered iteration, in-place tombstoning, and prefix trimming — all needed for `XRANGE`/`XREVRANGE`/`XTRIM`. Rebuilt from the per-stream log when the object is deserialized. |
+| **Consumer groups serialized into the object blob** | `DoSerialize`/`(BinaryReader)` round-trip the groups, PEL, consumers, last-delivered-id, and entries-read, so the checkpoint/AOF path makes consumer-group state durable across restarts. |
+| **Default database (DB 0) only** | Streams are stored in the default database's unified store; they are not per-database and remain unsupported in cluster mode. |
+
+> **Note on durability coordination:** stream *entries* live in the per-stream `TsavoriteLog` and are committed when the object is serialized during a store checkpoint (`StreamObject.DoSerialize` calls `log.Commit`). On recovery the object is deserialized — it re-opens its per-stream log and rebuilds the BTree from it. `DEL`/`UNLINK`/`EXPIRE` route through the store and `GarnetRecordTriggers.OnDispose` (never fired on eviction) closes the per-stream log and removes its on-disk directory; `FLUSHDB`/`FLUSHALL` close all live stream log handles before sweeping the per-stream directories.
 
 ---
 
@@ -40,29 +44,36 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 ┌─────────────────────────────────────────────────────────────────────┐
 │  RespServerSession  (libs/server/Resp/StreamCommands.cs)            │
 │  • Parses arguments from network buffer                             │
-│  • Calls StreamManager methods                                      │
+│  • Builds ObjectInput (header = GarnetObjectType.Stream + StreamOp) │
+│  • Calls the DB 0 object store API (StorageSession.StreamObject*)   │
 │  • Formats RESP responses via RespMemoryWriter                      │
 └────────────┬────────────────────────────────────────────────────────┘
              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  StreamManager  (libs/server/Stream/StreamManager.cs)               │
-│  • Dictionary<byte[], StreamObject> — one entry per stream key      │
-│  • SingleWriterMultiReaderLock for dictionary mutations              │
-│  • Creates StreamObject on first XADD (unless NOMKSTREAM)           │
-│  • Recovery: enumerates hex-named subdirectories, replays each log  │
-│  • Forwards all operations to the appropriate StreamObject           │
+│  Unified object store (DB 0)  —  ObjectSessionFunctions RMW/Read    │
+│  • Stream key is a record whose value is a StreamObject             │
+│  • InitialUpdater creates the StreamObject from the record key      │
+│    (StreamObject.CreateForKey) on first XADD / XGROUP CREATE MKSTREAM│
+│  • InPlaceUpdater/Reader dispatch into StreamObject.Operate          │
+│  • Checkpoint/AOF persist the object; OnDispose handles DEL cleanup  │
 └────────────┬────────────────────────────────────────────────────────┘
              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  StreamObject  (libs/server/Stream/Stream.cs)                       │
+│  StreamObject : GarnetObjectBase  (libs/server/Stream/Stream.cs)    │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────┐   │
 │  │ TsavoriteLog │  │   BTree      │  │   Consumer Groups       │   │
-│  │ (append-only │  │ (StreamID →  │  │   (in-memory, per-group │   │
-│  │  entry log)  │  │  log address)│  │    PEL + consumers)     │   │
+│  │ (append-only │  │ (StreamID →  │  │   (PEL + consumers;      │   │
+│  │  entry log)  │  │  log address)│  │    serialized to blob)   │   │
 │  └──────────────┘  └──────────────┘  └─────────────────────────┘   │
-│  • SingleWriterMultiReaderLock guards all mutations                  │
-│  • waitForCommit: sync flush after every write when AOF enabled     │
+│  • Operate(StreamOperation) executes every command under store lock │
+│  • DoSerialize/(BinaryReader): metadata + consumer groups (+ log    │
+│    commit); deserialize re-opens the log and rebuilds the BTree      │
 └─────────────────────────────────────────────────────────────────────┘
+
+StreamManager (libs/server/Stream/StreamManager.cs) is now a thin helper:
+it publishes the server-global stream config (log dir, page/memory size) for
+the deserialization factory, tracks live stream instances, and performs
+FLUSHDB/FLUSHALL directory cleanup.
 ```
 
 ---
