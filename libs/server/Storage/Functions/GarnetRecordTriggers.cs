@@ -80,6 +80,14 @@ namespace Garnet.server
                     vectorManager?.RequestDeletion(logRecord.ValueSpan);
                 }
             }
+            else if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.ValueObject is StreamObject stream)
+            {
+                // A stream key was deleted (DEL/UNLINK/EXPIRE): close its per-stream log/device and
+                // remove its on-disk directory. OnDispose is never called on eviction, so this does
+                // not run when the in-memory instance is merely being spilled to disk.
+                stream.Dispose();
+                stream.DeleteOnDiskData();
+            }
         }
 
         /// <inheritdoc/>

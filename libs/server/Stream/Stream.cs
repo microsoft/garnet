@@ -2517,6 +2517,27 @@ namespace Garnet.server
         /// <summary>Number of consumer groups attached to this stream. For tests/diagnostics.</summary>
         internal int ConsumerGroupCount => consumerGroups.Count;
 
+        /// <summary>
+        /// Delete this stream's on-disk directory (per-stream log + segment files). Call only on actual
+        /// key removal (DEL / UNLINK / FLUSH) — never on eviction, where the data must survive on disk.
+        /// <see cref="Dispose"/> must run first so the device/log file handles are closed.
+        /// </summary>
+        internal void DeleteOnDiskData()
+        {
+            if (streamsRootDir == null || streamDirName == null)
+                return;
+            try
+            {
+                var dir = Path.Combine(streamsRootDir, streamDirName);
+                if (Directory.Exists(dir))
+                    Directory.Delete(dir, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup; a leftover directory is reclaimed on the next FLUSH or by recovery skipping it.
+            }
+        }
+
         /// <summary>Try to get a consumer group by name. For tests/diagnostics.</summary>
         internal bool TryGetConsumerGroupForTest(string name, out ConsumerGroup group) => consumerGroups.TryGetValue(name, out group);
 

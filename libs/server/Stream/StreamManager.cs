@@ -604,51 +604,31 @@ namespace Garnet.server
         #endregion Consumer Group Forwarding
 
         /// <summary>
-        /// Drop every stream — disposes each <see cref="StreamObject"/> (which deallocates its
-        /// BTree index and closes its TsavoriteLog + device) and deletes the per-stream on-disk
-        /// subdirectory so a subsequent recovery does not replay the data. Used by
-        /// <c>FLUSHDB</c> / <c>FLUSHALL</c>. Streams are not per-database, so flushing any
-        /// database wipes the entire stream namespace.
+        /// Remove every stream's on-disk directory under <see cref="streamsRootDir"/>. Streams are now
+        /// first-class objects in the unified store, so <c>FLUSHDB</c>/<c>FLUSHALL</c> clears their
+        /// in-memory state (and closes their per-stream logs via the store's object disposal) as part of
+        /// flushing the store; this only sweeps the leftover on-disk per-stream directories. Streams are
+        /// not per-database, so flushing any database wipes the entire stream namespace.
         /// </summary>
         public void FlushAll()
         {
-            if (streams == null) return;
+            if (streamsRootDir == null || !Directory.Exists(streamsRootDir))
+                return;
 
             _lock.WriteLock();
             try
             {
-                foreach (var kv in streams)
+                foreach (var dir in Directory.EnumerateDirectories(streamsRootDir))
                 {
-                    var key = kv.Key;
-                    var stream = kv.Value;
-
                     try
                     {
-                        stream.Dispose();
+                        Directory.Delete(dir, recursive: true);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Error disposing stream during FLUSHDB/FLUSHALL");
-                    }
-
-                    // Remove the on-disk artifacts. The directory name matches the encoding used
-                    // when the stream was created (see StreamAdd / StreamGroupCreate).
-                    if (streamsRootDir != null)
-                    {
-                        try
-                        {
-                            var dir = Path.Combine(streamsRootDir, Convert.ToHexString(key));
-                            if (Directory.Exists(dir))
-                                Directory.Delete(dir, recursive: true);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogError(ex, "Error deleting stream directory during FLUSHDB/FLUSHALL");
-                        }
+                        logger?.LogError(ex, "Error deleting stream directory '{dir}' during FLUSHDB/FLUSHALL", dir);
                     }
                 }
-
-                streams.Clear();
             }
             finally
             {
