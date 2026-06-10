@@ -18,14 +18,11 @@ namespace Tsavorite.core
     /// consumer keeps its own bounding / drop policy.
     /// </para>
     /// <para>
-    /// The per-thread array starts at <see cref="InitialCapacity"/> and grows geometrically
-    /// (up to the caller-supplied <c>maxCapacity</c> on <see cref="TryReturn"/>) so a worker
-    /// whose in-flight depth exceeds the initial size keeps a same-thread Rent/Return cycle
-    /// entirely in TLS instead of spilling to the shared global tier — the spill is the
-    /// scaling bottleneck under many threads. One <see cref="ThreadStaticAttribute"/> slot is
-    /// allocated per <em>closed</em> <typeparamref name="T"/>, so different pooled types never
-    /// share a slot; footprint is the grown array (≤ maxCapacity × 8 B) plus the cached
-    /// instances (bounded by actual peak demand).
+    /// One <see cref="ThreadStaticAttribute"/> slot is allocated per <em>closed</em>
+    /// <typeparamref name="T"/>, so different pooled types never share a TLS slot.
+    /// Per-thread footprint is <c>Capacity × 8 B</c> of references (≈ 512 B per cached
+    /// type) plus the cached instances themselves (bounded by actual peak demand, not
+    /// by <see cref="Capacity"/>).
     /// </para>
     /// </summary>
     /// <typeparam name="T">The pooled object type. Must be a reference type since we
@@ -33,12 +30,14 @@ namespace Tsavorite.core
     public static class ThreadLocalCache<T> where T : class
     {
         /// <summary>
-        /// Initial per-thread array size. The array grows geometrically from here up to the
-        /// <c>maxCapacity</c> passed to <see cref="TryReturn"/> when a worker's in-flight depth
-        /// exceeds it, so low-demand threads keep a ≈ 512 B footprint while a high-in-flight
-        /// worker (e.g. a deep read-pending batch) auto-sizes to absorb its full burst.
+        /// Per-thread cache slot count. Sized to comfortably cover the typical short-burst
+        /// Rent/Return pattern of one worker thread (a few dozen in flight) while keeping
+        /// per-thread footprint to ≈ 512 B of references. Empirically (measured on
+        /// KV.bench and resp.bench disk-bound recipes) raising this to 1024 to fully
+        /// absorb a 1024-batch burst gives no throughput change — the global-queue
+        /// fallback is not the bottleneck at the rates this is used.
         /// </summary>
-        public const int InitialCapacity = 64;
+        public const int Capacity = 64;
 
         [ThreadStatic]
         private static T[] cache;
@@ -69,37 +68,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to push <paramref name="item"/> onto this thread's cache, growing the backing
-        /// array geometrically (up to <paramref name="maxCapacity"/>) so a worker whose
-        /// in-flight depth exceeds <see cref="InitialCapacity"/> keeps returning into TLS
-        /// instead of the shared tier. Returns <c>false</c> only once the cache has reached
-        /// <paramref name="maxCapacity"/> — the caller should then enqueue <paramref name="item"/>
-        /// on its global queue (or drop it per the caller's own retention policy).
+        /// Try to push <paramref name="item"/> onto this thread's cache. Returns
+        /// <c>false</c> if the cache is full — the caller should then enqueue
+        /// <paramref name="item"/> on its global queue (or drop it per the caller's
+        /// own retention policy).
         /// </summary>
-        /// <param name="item">The instance to cache.</param>
-        /// <param name="maxCapacity">Growth ceiling for this caller's per-thread cache. Bounds
-        /// the worst-case footprint; pass a value covering the caller's peak in-flight depth.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReturn(T item, int maxCapacity = InitialCapacity)
+        public static bool TryReturn(T item)
         {
             var c = cache;
-            var n = count;
             if (c == null)
             {
-                c = cache = new T[InitialCapacity < maxCapacity ? InitialCapacity : maxCapacity];
+                c = new T[Capacity];
+                cache = c;
             }
-            else if (n == c.Length)
+            var n = count;
+            if ((uint)n < (uint)Capacity)
             {
-                if (n >= maxCapacity)
-                    return false;
-                var grown = c.Length * 2;
-                var nc = new T[grown < maxCapacity ? grown : maxCapacity];
-                Array.Copy(c, nc, n);
-                c = cache = nc;
+                c[n] = item;
+                count = n + 1;
+                return true;
             }
-            c[n] = item;
-            count = n + 1;
-            return true;
+            return false;
         }
     }
 }
