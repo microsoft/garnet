@@ -59,7 +59,7 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 └────────────┬────────────────────────────────────────────────────────┘
              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  StreamObject : GarnetObjectBase  (libs/server/Stream/Stream.cs)    │
+│  StreamObject : GarnetObjectBase  (libs/server/Objects/Stream/StreamObject.cs) │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────┐   │
 │  │ TsavoriteLog │  │   BTree      │  │   Consumer Groups       │   │
 │  │ (append-only │  │ (StreamID →  │  │   (PEL + consumers;      │   │
@@ -71,7 +71,7 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 │    commit); deserialize re-opens the log and rebuilds the BTree      │
 └─────────────────────────────────────────────────────────────────────┘
 
-StreamObjectConfig (a static holder in libs/server/Stream/Stream.cs) publishes
+StreamObjectConfig (a static holder in libs/server/Objects/Stream/StreamObject.cs) publishes
 the server-global stream config (log dir, page/memory size) for the
 deserialization factory, tracks live stream instances, and performs
 FLUSHDB/FLUSHALL directory cleanup.
@@ -581,9 +581,9 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 
 | Path | Purpose |
 |------|---------|
-| `libs/server/Stream/Stream.cs` | `StreamObject` — core stream logic, entry operations, consumer group operations |
-| `libs/server/Stream/StreamManager.cs` | `StreamManager` — stream lifecycle, dictionary, forwarding, recovery |
-| `libs/server/Stream/ConsumerGroup.cs` | `ConsumerGroup`, `StreamConsumer`, `PendingEntry` data model |
+| `libs/server/Objects/Stream/StreamObject.cs` | `StreamObject` — core stream logic, entry operations, consumer group operations; also the static `StreamObjectConfig` holder |
+| `libs/server/Objects/Stream/ConsumerGroup.cs` | `ConsumerGroup`, `StreamConsumer`, `PendingEntry` data model |
+| `libs/server/Objects/Stream/StreamID.cs` | `StreamID` — 128-bit stream entry identifier |
 | `libs/server/BTreeIndex/BTree.cs` | BTree root — create, insert dispatch |
 | `libs/server/BTreeIndex/BTreeInsert.cs` | Insert with leaf/node splitting |
 | `libs/server/BTreeIndex/BTreeDelete.cs` | In-place tombstone delete |
@@ -593,7 +593,7 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 | `libs/server/Resp/Parser/RespCommand.cs` | `RespCommand` enum + fast parse entries for stream commands |
 | `libs/server/Resp/StreamCommands.cs` | All RESP handlers for stream commands |
 | `libs/server/Resp/RespServerSession.cs` | Dispatch switch (`ProcessArrayCommands`) |
-| `libs/server/StoreWrapper.cs` | StreamManager creation, commit task integration, checkpoint hooks |
+| `libs/server/StoreWrapper.cs` | `StreamObjectConfig` setup (log dir, page/memory size), FLUSHDB/FLUSHALL stream cleanup |
 | `libs/server/Servers/GarnetServerOptions.cs` | Stream configuration (log dir, page size, memory size) |
 | `test/Garnet.test/RespStreamTests.cs` | Stream unit tests |
 | `playground/StreamBench/Program.cs` | Stream benchmark tool |
