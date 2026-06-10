@@ -23,7 +23,7 @@ namespace Garnet.test
         {
             // In-memory streams (NullDevice). Configure the ambient stream settings used by the
             // object-store deserialization factory.
-            StreamObjectConfig.Configure(streamsRootDir: null, PageSize, MemorySize, waitForCommit: false);
+            StreamObjectConfig.Configure(streamsRootDir: null, PageSize, MemorySize);
         }
 
         /// <summary>

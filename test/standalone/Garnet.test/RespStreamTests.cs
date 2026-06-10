@@ -1088,7 +1088,7 @@ namespace Garnet.test
                     s.Execute("SAVE");
                     System.Threading.Thread.Sleep(500);
 
-                    // Hex of the UTF-8 key bytes — matches the subdir naming in StreamManager.
+                    // Hex of the UTF-8 key bytes — matches the subdir naming in StreamObject.CreateForKey.
                     dirA = System.IO.Path.Combine(saveDir,
                         Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamA)));
                     dirB = System.IO.Path.Combine(saveDir,
