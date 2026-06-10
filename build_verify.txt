@@ -1,0 +1,141 @@
+  Determining projects to restore...
+  Restored Q:\garnet\playground\StreamBench\StreamBench.csproj (in 650 ms).
+  Restored Q:\garnet\playground\SampleModule\SampleModule.csproj (in 668 ms).
+  Restored Q:\garnet\libs\cluster\Garnet.cluster.csproj (in 668 ms).
+  Restored Q:\garnet\modules\NoOpModule\NoOpModule.csproj (in 667 ms).
+  Restored Q:\garnet\libs\host\Garnet.host.csproj (in 672 ms).
+  Restored Q:\garnet\playground\Embedded.perftest\Embedded.perftest.csproj (in 559 ms).
+  Restored Q:\garnet\benchmark\Resp.benchmark\Resp.benchmark.csproj (in 674 ms).
+  Restored Q:\garnet\playground\Bitmap\Bitmap.csproj (in 10 ms).
+  Restored Q:\garnet\playground\CommandInfoUpdater\CommandInfoUpdater.csproj (in 83 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.replication\Garnet.test.cluster.replication.csproj (in 789 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.scripting\Garnet.test.scripting.csproj (in 789 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.vectorset\Garnet.test.vectorset.csproj (in 790 ms).
+  Restored Q:\garnet\modules\GarnetJSON\GarnetJSON.csproj (in 40 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.migrate\Garnet.test.cluster.migrate.csproj (in 90 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.rangeindex\Garnet.test.rangeindex.csproj (in 697 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.multilog\Garnet.test.cluster.multilog.csproj (in 787 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.complexstring\Garnet.test.complexstring.csproj (in 787 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.multilog.diskless\Garnet.test.cluster.multilog.diskless.csproj (in 98 ms).
+  Restored Q:\garnet\playground\GarnetClientStress\GarnetClientStress.csproj (in 25 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.collections\Garnet.test.collections.csproj (in 789 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.replication.tls\Garnet.test.cluster.replication.tls.csproj (in 792 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster\Garnet.test.cluster.csproj (in 153 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.extensions\Garnet.test.extensions.csproj (in 697 ms).
+  Restored Q:\garnet\playground\MigrateBench\MigrateBench.csproj (in 36 ms).
+  Restored Q:\garnet\samples\ETag\ETag.csproj (in 19 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.vectorsets\Garnet.test.cluster.vectorsets.csproj (in 184 ms).
+  Restored Q:\garnet\main\GarnetServer\GarnetServer.csproj (in 112 ms).
+  Restored Q:\garnet\samples\GarnetClientSample\GarnetClientSample.csproj (in 69 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test.acl\Garnet.test.acl.csproj (in 130 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.replication.disklesssync\Garnet.test.cluster.replication.disklesssync.csproj (in 130 ms).
+  Restored Q:\garnet\benchmark\Device.benchmark\Device.benchmark.csproj (in 82 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.replication.asyncreplay\Garnet.test.cluster.replication.asyncreplay.csproj (in 120 ms).
+  Restored Q:\garnet\samples\MetricsMonitor\MetricsMonitor.csproj (in 133 ms).
+  Restored Q:\garnet\test\Garnet.fuzz\Garnet.fuzz.csproj (in 177 ms).
+  Restored Q:\garnet\test\standalone\Garnet.test\Garnet.test.csproj (in 131 ms).
+  Restored Q:\garnet\hosting\Windows\Garnet.worker\Garnet.worker.csproj (in 155 ms).
+  Restored Q:\garnet\test\cluster\Garnet.test.cluster.replication.rangeindex\Garnet.test.cluster.replication.rangeindex.csproj (in 248 ms).
+  Restored Q:\garnet\playground\TstRunner\TstRunner.csproj (in 275 ms).
+  Restored Q:\garnet\benchmark\BDN.benchmark\BDN.benchmark.csproj (in 289 ms).
+  8 of 47 projects are up-to-date for restore.
+  HdrHistogram -> Q:\garnet\metrics\HdrHistogram\bin\Debug\net8.0\HdrHistogram.dll
+  Garnet.resources -> Q:\garnet\libs\resources\bin\Debug\net10.0\Garnet.resources.dll
+  Tsavorite.core -> Q:\garnet\libs\storage\Tsavorite\cs\src\core\bin\Debug\net8.0\Tsavorite.core.dll
+  ETag -> Q:\garnet\samples\ETag\bin\Debug\net8.0\ETag.dll
+  HdrHistogram -> Q:\garnet\metrics\HdrHistogram\bin\Debug\net10.0\HdrHistogram.dll
+  Tsavorite.core -> Q:\garnet\libs\storage\Tsavorite\cs\src\core\bin\Debug\net10.0\Tsavorite.core.dll
+  ETag -> Q:\garnet\samples\ETag\bin\Debug\net10.0\ETag.dll
+  Garnet.resources -> Q:\garnet\libs\resources\bin\Debug\net8.0\Garnet.resources.dll
+  StreamBench -> Q:\garnet\playground\StreamBench\bin\Debug\net8.0\StreamBench.dll
+  BfTreeInterop -> Q:\garnet\libs\native\bftree-garnet\bin\Debug\net10.0\BfTreeInterop.dll
+  Bitmap -> Q:\garnet\playground\Bitmap\bin\Debug\net10.0\Bitmap.dll
+  Tsavorite.devices.AzureStorageDevice -> Q:\garnet\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\Debug\net10.0\Tsavorite.devices.AzureStorageDevice.dll
+  Garnet.common -> Q:\garnet\libs\common\bin\Debug\net10.0\Garnet.common.dll
+  BfTreeInterop -> Q:\garnet\libs\native\bftree-garnet\bin\Debug\net8.0\BfTreeInterop.dll
+  Garnet.client -> Q:\garnet\libs\client\bin\Debug\net10.0\Garnet.client.dll
+  Tsavorite.devices.AzureStorageDevice -> Q:\garnet\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\Debug\net8.0\Tsavorite.devices.AzureStorageDevice.dll
+  Garnet.server -> Q:\garnet\libs\server\bin\Debug\net10.0\Garnet.server.dll
+  GarnetClientStress -> Q:\garnet\playground\GarnetClientStress\bin\Debug\net10.0\GarnetClientStress.dll
+  GarnetClientSample -> Q:\garnet\samples\GarnetClientSample\bin\Debug\net10.0\GarnetClientSample.dll
+  Bitmap -> Q:\garnet\playground\Bitmap\bin\Debug\net8.0\Bitmap.dll
+  MetricsMonitor -> Q:\garnet\samples\MetricsMonitor\bin\Debug\net10.0\MetricsMonitor.dll
+  NoOpModule -> Q:\garnet\modules\NoOpModule\bin\Debug\net10.0\NoOpModule.dll
+  Garnet.common -> Q:\garnet\libs\common\bin\Debug\net8.0\Garnet.common.dll
+  Garnet.client -> Q:\garnet\libs\client\bin\Debug\net8.0\Garnet.client.dll
+  CommandInfoUpdater -> Q:\garnet\playground\CommandInfoUpdater\bin\Debug\net10.0\CommandInfoUpdater.dll
+  GarnetClientStress -> Q:\garnet\playground\GarnetClientStress\bin\Debug\net8.0\GarnetClientStress.dll
+  GarnetClientSample -> Q:\garnet\samples\GarnetClientSample\bin\Debug\net8.0\GarnetClientSample.dll
+  GarnetJSON -> Q:\garnet\modules\GarnetJSON\bin\Debug\net10.0\GarnetJSON.dll
+  Garnet.cluster -> Q:\garnet\libs\cluster\bin\Debug\net10.0\Garnet.cluster.dll
+  SampleModule -> Q:\garnet\playground\SampleModule\bin\Debug\net10.0\SampleModule.dll
+  MigrateBench -> Q:\garnet\playground\MigrateBench\bin\Debug\net10.0\MigrateBench.dll
+  Device.benchmark -> Q:\garnet\benchmark\Device.benchmark\bin\Debug\net10.0\Device.benchmark.dll
+      Finished `release` profile [optimized] target(s) in 3.59s
+  Garnet.host -> Q:\garnet\libs\host\bin\Debug\net10.0\Garnet.host.dll
+  GarnetServer -> Q:\garnet\main\GarnetServer\bin\Debug\net10.0\GarnetServer.dll
+  Embedded.perftest -> Q:\garnet\playground\Embedded.perftest\bin\Debug\net10.0\Embedded.perftest.dll
+  Garnet.worker -> Q:\garnet\hosting\Windows\Garnet.worker\bin\Debug\net10.0\Garnet.worker.dll
+  Garnet.fuzz -> Q:\garnet\test\Garnet.fuzz\bin\Debug\net10.0\Garnet.fuzz.dll
+  Resp.benchmark -> Q:\garnet\benchmark\Resp.benchmark\bin\Debug\net10.0\Resp.benchmark.dll
+  Garnet.server -> Q:\garnet\libs\server\bin\Debug\net8.0\Garnet.server.dll
+  SampleModule -> Q:\garnet\playground\SampleModule\bin\Debug\net8.0\SampleModule.dll
+  MigrateBench -> Q:\garnet\playground\MigrateBench\bin\Debug\net8.0\MigrateBench.dll
+  GarnetJSON -> Q:\garnet\modules\GarnetJSON\bin\Debug\net8.0\GarnetJSON.dll
+  Device.benchmark -> Q:\garnet\benchmark\Device.benchmark\bin\Debug\net8.0\Device.benchmark.dll
+  Garnet.cluster -> Q:\garnet\libs\cluster\bin\Debug\net8.0\Garnet.cluster.dll
+  MetricsMonitor -> Q:\garnet\samples\MetricsMonitor\bin\Debug\net8.0\MetricsMonitor.dll
+  CommandInfoUpdater -> Q:\garnet\playground\CommandInfoUpdater\bin\Debug\net8.0\CommandInfoUpdater.dll
+  NoOpModule -> Q:\garnet\modules\NoOpModule\bin\Debug\net8.0\NoOpModule.dll
+  BDN.benchmark -> Q:\garnet\benchmark\BDN.benchmark\bin\Debug\net10.0\BDN.benchmark.dll
+  Garnet.host -> Q:\garnet\libs\host\bin\Debug\net8.0\Garnet.host.dll
+  Garnet.test.cluster -> Q:\garnet\test\cluster\Garnet.test.cluster\bin\Debug\net10.0\Garnet.test.cluster.dll
+  Resp.benchmark -> Q:\garnet\benchmark\Resp.benchmark\bin\Debug\net8.0\Resp.benchmark.dll
+  Garnet.worker -> Q:\garnet\hosting\Windows\Garnet.worker\bin\Debug\net8.0\Garnet.worker.dll
+  GarnetServer -> Q:\garnet\main\GarnetServer\bin\Debug\net8.0\GarnetServer.dll
+  Garnet.test.cluster.replication.rangeindex -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.rangeindex\bin\Debug\net10.0\Garnet.test.cluster.replication.rangeindex.dll
+  Garnet.test -> Q:\garnet\test\standalone\Garnet.test\bin\Debug\net10.0\Garnet.test.dll
+  BDN.benchmark -> Q:\garnet\benchmark\BDN.benchmark\bin\Debug\net8.0\BDN.benchmark.dll
+  Garnet.test.cluster.replication -> Q:\garnet\test\cluster\Garnet.test.cluster.replication\bin\Debug\net10.0\Garnet.test.cluster.replication.dll
+  Garnet.fuzz -> Q:\garnet\test\Garnet.fuzz\bin\Debug\net8.0\Garnet.fuzz.dll
+  Garnet.test.cluster.vectorsets -> Q:\garnet\test\cluster\Garnet.test.cluster.vectorsets\bin\Debug\net10.0\Garnet.test.cluster.vectorsets.dll
+  Garnet.test.cluster.migrate -> Q:\garnet\test\cluster\Garnet.test.cluster.migrate\bin\Debug\net10.0\Garnet.test.cluster.migrate.dll
+  Garnet.test.cluster.replication.disklesssync -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.disklesssync\bin\Debug\net10.0\Garnet.test.cluster.replication.disklesssync.dll
+  Garnet.test.cluster.replication.tls -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.tls\bin\Debug\net10.0\Garnet.test.cluster.replication.tls.dll
+  Garnet.test.cluster.multilog -> Q:\garnet\test\cluster\Garnet.test.cluster.multilog\bin\Debug\net10.0\Garnet.test.cluster.multilog.dll
+  Garnet.test.cluster.replication.asyncreplay -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.asyncreplay\bin\Debug\net10.0\Garnet.test.cluster.replication.asyncreplay.dll
+  Garnet.test.acl -> Q:\garnet\test\standalone\Garnet.test.acl\bin\Debug\net10.0\Garnet.test.acl.dll
+  Garnet.test.extensions -> Q:\garnet\test\standalone\Garnet.test.extensions\bin\Debug\net10.0\Garnet.test.extensions.dll
+  Garnet.test.rangeindex -> Q:\garnet\test\standalone\Garnet.test.rangeindex\bin\Debug\net10.0\Garnet.test.rangeindex.dll
+  Garnet.test.cluster.multilog.diskless -> Q:\garnet\test\cluster\Garnet.test.cluster.multilog.diskless\bin\Debug\net10.0\Garnet.test.cluster.multilog.diskless.dll
+  Garnet.test.complexstring -> Q:\garnet\test\standalone\Garnet.test.complexstring\bin\Debug\net10.0\Garnet.test.complexstring.dll
+  Garnet.test.vectorset -> Q:\garnet\test\standalone\Garnet.test.vectorset\bin\Debug\net10.0\Garnet.test.vectorset.dll
+  Garnet.test.collections -> Q:\garnet\test\standalone\Garnet.test.collections\bin\Debug\net10.0\Garnet.test.collections.dll
+  Garnet.test.scripting -> Q:\garnet\test\standalone\Garnet.test.scripting\bin\Debug\net10.0\Garnet.test.scripting.dll
+  Embedded.perftest -> Q:\garnet\playground\Embedded.perftest\bin\Debug\net8.0\Embedded.perftest.dll
+  Garnet.test -> Q:\garnet\test\standalone\Garnet.test\bin\Debug\net8.0\Garnet.test.dll
+  TstRunner -> Q:\garnet\playground\TstRunner\bin\Debug\net10.0\TstRunner.dll
+  Garnet.test.cluster -> Q:\garnet\test\cluster\Garnet.test.cluster\bin\Debug\net8.0\Garnet.test.cluster.dll
+  Garnet.test.acl -> Q:\garnet\test\standalone\Garnet.test.acl\bin\Debug\net8.0\Garnet.test.acl.dll
+  Garnet.test.cluster.migrate -> Q:\garnet\test\cluster\Garnet.test.cluster.migrate\bin\Debug\net8.0\Garnet.test.cluster.migrate.dll
+  Garnet.test.vectorset -> Q:\garnet\test\standalone\Garnet.test.vectorset\bin\Debug\net8.0\Garnet.test.vectorset.dll
+  Garnet.test.cluster.replication.rangeindex -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.rangeindex\bin\Debug\net8.0\Garnet.test.cluster.replication.rangeindex.dll
+  Garnet.test.rangeindex -> Q:\garnet\test\standalone\Garnet.test.rangeindex\bin\Debug\net8.0\Garnet.test.rangeindex.dll
+  Garnet.test.cluster.vectorsets -> Q:\garnet\test\cluster\Garnet.test.cluster.vectorsets\bin\Debug\net8.0\Garnet.test.cluster.vectorsets.dll
+  Garnet.test.extensions -> Q:\garnet\test\standalone\Garnet.test.extensions\bin\Debug\net8.0\Garnet.test.extensions.dll
+  Garnet.test.complexstring -> Q:\garnet\test\standalone\Garnet.test.complexstring\bin\Debug\net8.0\Garnet.test.complexstring.dll
+  Garnet.test.collections -> Q:\garnet\test\standalone\Garnet.test.collections\bin\Debug\net8.0\Garnet.test.collections.dll
+  Garnet.test.scripting -> Q:\garnet\test\standalone\Garnet.test.scripting\bin\Debug\net8.0\Garnet.test.scripting.dll
+  Garnet.test.cluster.replication -> Q:\garnet\test\cluster\Garnet.test.cluster.replication\bin\Debug\net8.0\Garnet.test.cluster.replication.dll
+  Garnet.test.cluster.replication.disklesssync -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.disklesssync\bin\Debug\net8.0\Garnet.test.cluster.replication.disklesssync.dll
+  Garnet.test.cluster.replication.tls -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.tls\bin\Debug\net8.0\Garnet.test.cluster.replication.tls.dll
+  Garnet.test.cluster.replication.asyncreplay -> Q:\garnet\test\cluster\Garnet.test.cluster.replication.asyncreplay\bin\Debug\net8.0\Garnet.test.cluster.replication.asyncreplay.dll
+  Garnet.test.cluster.multilog -> Q:\garnet\test\cluster\Garnet.test.cluster.multilog\bin\Debug\net8.0\Garnet.test.cluster.multilog.dll
+  TstRunner -> Q:\garnet\playground\TstRunner\bin\Debug\net8.0\TstRunner.dll
+  Garnet.test.cluster.multilog.diskless -> Q:\garnet\test\cluster\Garnet.test.cluster.multilog.diskless\bin\Debug\net8.0\Garnet.test.cluster.multilog.diskless.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:01:11.58

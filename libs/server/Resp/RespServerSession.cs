@@ -233,9 +233,6 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
-        // HK TODO: Consider removing this altogether
-        internal readonly SessionStreamCache sessionStreamCache;
-
         /// <summary>
         /// Create a new RESP server session
         /// </summary>
@@ -283,7 +280,6 @@ namespace Garnet.server
 
 
             this.streamManager = storeWrapper.streamManager;
-            this.sessionStreamCache = new SessionStreamCache();
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 

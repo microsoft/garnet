@@ -1,0 +1,42 @@
+Inserting 500000 monotonic IDs; printing tree structure on each root split.
+LEAF_CAPACITY = 168, INTERNAL_CAPACITY = 167
+
+=== ROOT SPLIT: insert #169, new depth = 2 ===
+  level 1 [Internal] nodes=1 totalKeys=1 totalValid=168 children=2
+      root count=1    valid=168    key=169:0
+  level 0 [Leaf] nodes=2 totalKeys=169 totalValid=168
+      min  count=168  valid=168    first=1:0 mid=85:0 last=168:0
+      max  count=1    valid=0      key=169:0
+
+=== ROOT SPLIT: insert #28225, new depth = 3 ===
+  level 2 [Internal] nodes=1 totalKeys=1 totalValid=28057 children=2
+      root count=1    valid=28057  key=28225:0
+  level 1 [Internal] nodes=2 totalKeys=167 totalValid=28057 children=169
+      min  count=167  valid=28057  first=169:0 mid=14113:0 last=28057:0
+      max  count=0    valid=0      (empty)
+  level 0 [Leaf] nodes=169 totalKeys=28225 totalValid=28057
+      min  count=168  valid=168    first=1:0 mid=85:0 last=168:0
+      max  count=1    valid=0      key=28225:0
+Final Tree Print | not a split
+
+=== ROOT SPLIT: insert #0, new depth = 3 ===
+  level 2 [Internal] nodes=1 totalKeys=17 totalValid=496993 children=18
+      root count=17   valid=496993 first=28225:0 mid=254017:0 last=479809:0
+  level 1 [Internal] nodes=18 totalKeys=2959 totalValid=496993 children=2977
+      min  count=167  valid=28057  first=169:0 mid=14113:0 last=28057:0
+      max  count=120  valid=20040  first=479977:0 mid=490057:0 last=499969:0
+  level 0 [Leaf] nodes=2977 totalKeys=500000 totalValid=497024
+      min  count=168  valid=168    first=1:0 mid=85:0 last=168:0
+      max  count=32   valid=31     first=499969:0 mid=499985:0 last=500000:0
+
+=== FINAL STATS ===
+Depth: 3
+Number of leaf nodes: 2977
+Number of internal nodes: 19
+Total inserts: 500000
+Total deletes: 0
+Total fast inserts: 500000
+Number of keys: 500000
+Number of valid keys: 500000
+Number of allocates: 2996
+Number of deallocates: 2996
