@@ -9,8 +9,6 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        readonly StreamManager streamManager;
-
         /// <summary>
         /// Adds a new entry to the stream.
         /// </summary>

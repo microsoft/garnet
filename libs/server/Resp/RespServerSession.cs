@@ -279,8 +279,6 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
 
-            this.streamManager = storeWrapper.streamManager;
-
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 
             // Create the default DB session (for DB 0) & add it to the session map

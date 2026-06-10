@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -100,33 +101,67 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Server-global configuration needed to re-open a stream's per-stream log when the object store
-    /// deserializes a <see cref="StreamObject"/> (the deserialization factory only receives a
-    /// <see cref="BinaryReader"/>). Streams are not per-database, so a single ambient configuration
-    /// suffices. Set once at startup by <see cref="StreamManager"/>.
+    /// Server-global stream configuration and lifecycle registry. Streams are first-class objects in
+    /// the unified store but are not per-database, so a single ambient holder suffices. It supplies the
+    /// per-stream log settings needed when the object-store deserialization factory re-opens a stream
+    /// (it only receives a <see cref="BinaryReader"/>), and tracks live stream instances so
+    /// FLUSHDB/FLUSHALL can close their per-stream log handles before deleting the on-disk directories
+    /// (the unified store retains the objects after a flush, so GC alone won't close the handles).
+    /// Configured once at startup by <c>StoreWrapper</c>.
     /// </summary>
     internal static class StreamObjectConfig
     {
         internal static string StreamsRootDir;
         internal static long DefaultPageSize = 4096;
         internal static long DefaultMemorySize = 1L << 24;
-        internal static bool WaitForCommit;
 
-        /// <summary>
-        /// Invoked when a live <see cref="StreamObject"/> is constructed/recovered, and when it is
-        /// disposed. Lets the owning <see cref="StreamManager"/> track open per-stream log handles so
-        /// FLUSHDB/FLUSHALL can close them deterministically before deleting the on-disk directories
-        /// (the unified store retains the objects after a flush, so GC alone won't close the handles).
-        /// </summary>
-        internal static Action<StreamObject> RegisterLiveStream;
-        internal static Action<StreamObject> UnregisterLiveStream;
+        static readonly ConcurrentDictionary<StreamObject, byte> liveStreams = new();
 
-        internal static void Configure(string streamsRootDir, long pageSize, long memorySize, bool waitForCommit)
+        internal static void Configure(string streamsRootDir, long pageSize, long memorySize)
         {
             StreamsRootDir = streamsRootDir;
             DefaultPageSize = pageSize;
             DefaultMemorySize = memorySize;
-            WaitForCommit = waitForCommit;
+        }
+
+        internal static void Register(StreamObject stream) => liveStreams.TryAdd(stream, 0);
+
+        internal static void Unregister(StreamObject stream) => liveStreams.TryRemove(stream, out _);
+
+        /// <summary>
+        /// FLUSHDB/FLUSHALL cleanup: close every live stream's per-stream log/device handle, then delete
+        /// all per-stream on-disk directories. Streams are not per-database, so flushing any database
+        /// wipes the entire stream namespace.
+        /// </summary>
+        internal static void FlushAll()
+        {
+            foreach (var stream in liveStreams.Keys)
+            {
+                try
+                {
+                    stream.Dispose();
+                }
+                catch
+                {
+                    // Best-effort: a failed dispose must not block the remaining cleanup.
+                }
+            }
+            liveStreams.Clear();
+
+            if (StreamsRootDir == null || !Directory.Exists(StreamsRootDir))
+                return;
+
+            foreach (var dir in Directory.EnumerateDirectories(StreamsRootDir))
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+                catch
+                {
+                    // Best-effort: leftover directories are reclaimed on the next FLUSH.
+                }
+            }
         }
     }
 
@@ -138,7 +173,6 @@ namespace Garnet.server
         readonly IDevice device;
         readonly TsavoriteLog log;
         readonly BTree index;
-        readonly bool waitForCommit;
         readonly string streamsRootDir;
         readonly string streamDirName;
         StreamID lastId;
@@ -182,12 +216,9 @@ namespace Garnet.server
         ///     If null, the stream is in-memory only.</param>
         /// <param name="pageSize">Page size of the log used for the stream.</param>
         /// <param name="memorySize">Memory budget for the log.</param>
-        /// <param name="waitForCommit">When true, every write (XADD, XDEL, XTRIM) synchronously
-        ///     flushes and waits for the commit to complete before returning. This mirrors the
-        ///     server-wide <c>--wait-for-commit</c> AOF behaviour for the stream's own log.</param>
         /// <param name="recover">If true and a disk-backed log exists at the path, recover the
         ///     log and rebuild the in-memory BTree by scanning all entries.</param>
-        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, bool waitForCommit = false, bool recover = false)
+        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, bool recover = false)
             : base(StreamHeapOverhead)
         {
             this.streamsRootDir = streamsRootDir;
@@ -210,7 +241,6 @@ namespace Garnet.server
             index = new BTree((uint)BTreeNode.PAGE_SIZE);
             totalEntriesAdded = 0;
             lastId = default;
-            this.waitForCommit = waitForCommit;
             _lock = new SingleWriterMultiReaderLock();
 
             if (recover)
@@ -218,7 +248,7 @@ namespace Garnet.server
                 RebuildIndexFromLog();
             }
 
-            StreamObjectConfig.RegisterLiveStream?.Invoke(this);
+            StreamObjectConfig.Register(this);
         }
 
         /// <summary>
@@ -231,11 +261,10 @@ namespace Garnet.server
         {
             _lock = new SingleWriterMultiReaderLock();
 
-            // Per-stream identity. The log directory name is persisted; the root dir, page/memory
-            // sizes, and wait-for-commit are server-global and come from the ambient config.
+            // Per-stream identity. The log directory name is persisted; the root dir and page/memory
+            // sizes are server-global and come from the ambient config.
             var hasDir = reader.ReadBoolean();
             streamDirName = hasDir ? reader.ReadString() : null;
-            waitForCommit = reader.ReadBoolean();
             streamsRootDir = StreamObjectConfig.StreamsRootDir;
 
             if (streamsRootDir == null || streamDirName == null)
@@ -265,7 +294,7 @@ namespace Garnet.server
             lastId = blobLastId;
             totalEntriesAdded = blobTotalEntriesAdded;
 
-            StreamObjectConfig.RegisterLiveStream?.Invoke(this);
+            StreamObjectConfig.Register(this);
         }
 
         /// <inheritdoc />
@@ -280,12 +309,12 @@ namespace Garnet.server
         {
             var rootDir = StreamObjectConfig.StreamsRootDir;
             var dirName = rootDir != null ? Convert.ToHexString(key) : null;
-            return new StreamObject(rootDir, dirName, StreamObjectConfig.DefaultPageSize, StreamObjectConfig.DefaultMemorySize, StreamObjectConfig.WaitForCommit);
+            return new StreamObject(rootDir, dirName, StreamObjectConfig.DefaultPageSize, StreamObjectConfig.DefaultMemorySize);
         }
 
         /// <summary>
-        /// Streams are mutated in place through StreamManager rather than copied; the per-stream log
-        /// and device cannot be duplicated, so Clone shares this single owning instance.
+        /// Streams are mutated in place rather than copied; the per-stream log and device cannot be
+        /// duplicated, so Clone shares this single owning instance.
         /// </summary>
         public override IHeapObject Clone() => this;
 
@@ -806,9 +835,8 @@ namespace Garnet.server
             writer.Write(hasDir);
             if (hasDir)
                 writer.Write(streamDirName);
-            writer.Write(waitForCommit);
 
-            // Stream metadata. Take the read lock to avoid torn reads against a concurrent AddEntry.
+            // Stream metadata.
             _lock.ReadLock();
             try
             {
@@ -1166,9 +1194,6 @@ namespace Garnet.server
 
                 log.Enqueue<StreamLogEntryHeader>(header, item: rawFieldValuePairs, out long returnedLogicalAddr);
 
-                if (waitForCommit)
-                    log.Commit(spinWait: true);
-
                 // BTree append-only insert. parseIDString already enforces strict monotonic IDs,
                 // so this never collides with an existing key.
                 index.InsertIntoTail((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value(returnedLogicalAddr));
@@ -1236,9 +1261,6 @@ namespace Garnet.server
                     // Persist a tombstone marker so recovery doesn't resurrect this entry.
                     var marker = new StreamLogEntryHeader { id = entryID, numPairs = ControlRecordKind.Tombstone };
                     log.Enqueue<StreamLogEntryHeader>(marker, item: [], out _);
-
-                    if (waitForCommit)
-                        log.Commit(spinWait: true);
                 }
             }
             finally
@@ -1496,9 +1518,6 @@ namespace Garnet.server
                     // If everything was trimmed, push past the current tail so nothing replays.
                     long target = newHead.Valid ? newHead.address : log.TailAddress;
                     log.TruncateUntil(target);
-
-                    if (waitForCommit)
-                        log.Commit(spinWait: true);
                 }
                 // Note: BTree leaves still reference tombstoned entries at addresses below the
                 // new BeginAddress. Range reads handle this by clamping scanStart to BeginAddress
@@ -2562,18 +2581,15 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void Dispose()
         {
-            // Idempotent: BTree.Deallocate is a native free that would crash on a second call,
-            // and a session cache may still hold a reference to a disposed StreamObject until
-            // its FIFO eviction reclaims it or the next lookup detects IsDisposed and evicts.
-            // Guard with the same flag the cache uses for staleness detection.
+            // Idempotent: BTree.Deallocate is a native free that would crash on a second call.
+            // The unified store may still hold a reference to a disposed StreamObject (e.g. after a
+            // FLUSHDB that evicts records without firing OnDispose), so guard with this flag.
             if (disposed) return;
 
             // Publish the disposed flag *before* releasing native memory so any concurrent reader
-            // that beat us to a cache lookup at least has a chance to observe it on its next
-            // operation. Subsequent cache-hit code paths must check IsDisposed and re-resolve
-            // through StreamManager.
+            // observes it and re-resolves through the store on its next operation.
             disposed = true;
-            StreamObjectConfig.UnregisterLiveStream?.Invoke(this);
+            StreamObjectConfig.Unregister(this);
             try
             {
                 index.Deallocate();
@@ -2581,11 +2597,9 @@ namespace Garnet.server
                 device.Dispose();
 
                 // Release the heavy managed graph (consumer groups, PELs, PendingEntry instances,
-                // consumer-name strings, etc.) so it becomes GC-eligible immediately even if the
-                // wrapper is pinned by a stale SessionStreamCache entry that never sees another
-                // lookup for this key. Without this, a DELed stream that had a large pending list
-                // would keep all of that managed state alive until the session disconnects or
-                // FIFO-evicts the cache entry.
+                // consumer-name strings, etc.) so it becomes GC-eligible immediately. Without this,
+                // a DELed stream that had a large pending list would keep all of that managed state
+                // alive until the store record itself is reclaimed.
                 consumerGroups.Clear();
             }
             finally

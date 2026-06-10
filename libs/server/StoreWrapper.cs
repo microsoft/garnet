@@ -182,8 +182,6 @@ namespace Garnet.server
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
 
-        internal readonly StreamManager streamManager;
-
         /// <summary>
         /// Get task manager instance
         /// </summary>
@@ -294,7 +292,7 @@ namespace Garnet.server
                     StoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
-            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), serverOptions.EnableAOF && serverOptions.WaitForCommit, loggerFactory?.CreateLogger("StreamManager"));
+            StreamObjectConfig.Configure(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes());
         }
 
         /// <summary>
@@ -313,11 +311,8 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
-            this.streamManager = new StreamManager(serverOptions.StreamLogDirectory(),
-                                                   serverOptions.StreamPageSizeBytes(),
-                                                   serverOptions.StreamMemorySizeBytes(),
-                                                   serverOptions.EnableAOF && serverOptions.WaitForCommit,
-                                                   loggerFactory?.CreateLogger("StreamManager"));
+            // StreamObjectConfig is a static, process-wide holder already configured by the
+            // primary constructor that this copy constructor chains to.
         }
 
         /// <summary>
@@ -408,28 +403,7 @@ namespace Garnet.server
             if (dbId > 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
 
-            // Fan out a stream commit alongside the main store checkpoint. CommitAsync does not
-            // touch the BTree lock, so reads/writes proceed unhindered while pages flush.
-            // Failures here are logged and swallowed: a stream commit shouldn't block SAVE.
-            FireAndForgetStreamCommit(token, logger);
-
             return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);
-        }
-
-        void FireAndForgetStreamCommit(CancellationToken token, ILogger logger)
-        {
-            if (streamManager == null) return;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await streamManager.CommitAsync(token).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Stream log commit failed during checkpoint");
-                }
-            }, token);
         }
 
         /// <summary>
@@ -443,17 +417,7 @@ namespace Garnet.server
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
 
-            // Fan out the main checkpoint and the stream commits concurrently. Stream commit
-            // exceptions are isolated so a stream-level failure doesn't fail the whole checkpoint.
-            var streamTask = streamManager == null
-                ? Task.CompletedTask
-                : streamManager.CommitAsync()
-                    .ContinueWith(
-                        t => { /* observe to avoid UnobservedTaskException; logged elsewhere */ var _ = t.Exception; },
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default);
-            await Task.WhenAll(databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId), streamTask).ConfigureAwait(false);
+            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -635,11 +599,11 @@ namespace Garnet.server
 
             databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
 
-            // Streams are not per-database — a single StreamManager backs the whole StoreWrapper —
-            // so any FLUSHDB wipes the entire stream namespace alongside the main store. This
-            // disposes each StreamObject (deallocating its BTree and closing its TsavoriteLog)
-            // and deletes the on-disk subdirectories so a subsequent recovery sees no data.
-            streamManager?.FlushAll();
+            // Streams are not per-database, so any FLUSHDB wipes the entire stream namespace
+            // alongside the main store. This disposes each live StreamObject (deallocating its
+            // BTree and closing its TsavoriteLog) and deletes the on-disk subdirectories so a
+            // subsequent recovery sees no data.
+            StreamObjectConfig.FlushAll();
         }
 
         /// <summary>
@@ -649,7 +613,7 @@ namespace Garnet.server
         public void FlushAllDatabases(bool unsafeTruncateLog)
         {
             databaseManager.FlushAllDatabases(unsafeTruncateLog);
-            streamManager?.FlushAll();
+            StreamObjectConfig.FlushAll();
         }
 
         /// <summary>
@@ -708,20 +672,6 @@ namespace Garnet.server
                     else
                     {
                         await databaseManager.CommitToAofAsync(token, logger).ConfigureAwait(false);
-
-                        // Piggyback stream log commits onto the same periodic cycle so
-                        // stream data is flushed at the configured AOF frequency.
-                        if (streamManager != null)
-                        {
-                            try
-                            {
-                                await streamManager.CommitAsync(token).ConfigureAwait(false);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger?.LogError(ex, "Stream log periodic commit failed");
-                            }
-                        }
 
                         await Task.Delay(commitFrequencyMs, token).ConfigureAwait(false);
                     }

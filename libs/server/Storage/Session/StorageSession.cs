@@ -57,7 +57,6 @@ namespace Garnet.server
 
         internal readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
-        public readonly StreamManager streamManager;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
@@ -142,8 +141,6 @@ namespace Garnet.server
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
             unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
             unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
-
-            streamManager = storeWrapper.streamManager;
 
             vectorBasicContext = vectorSession.BasicContext;
             vectorTransactionalContext = vectorSession.TransactionalContext;
