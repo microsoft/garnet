@@ -1375,6 +1375,17 @@ namespace Garnet.test
                     db2.ListLeftPush($"k{i}o", new string('x', 256));
                 }
 
+                // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
+                // only second-resolution. The second wait loop below relies on lastsave strictly
+                // increasing past lastsave_old, which is impossible if the next checkpoint completes
+                // within the same Unix second as the first one (an in-memory checkpoint of ~1 MB
+                // completes in microseconds in Release builds). Sleep until the wall clock advances
+                // into the next Unix second so the next checkpoint's LastSaveTime is guaranteed
+                // to round to a strictly greater value than lastsave (captured at end of the prior
+                // wait loop above).
+                while (DateTimeOffset.UtcNow.ToUnixTimeSeconds() <= lastsave)
+                    Thread.Sleep(1);
+
                 // Issue a general BGSAVE and a per-DB BGSAVE on DB 0 as a single pipelined batch
                 // via LightClient. Pipelining eliminates the client→server roundtrip between the
                 // two commands so the per-DB BGSAVE arrives at the server while the general BGSAVE's
