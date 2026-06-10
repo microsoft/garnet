@@ -21,7 +21,9 @@ namespace Tsavorite.core
 #endif
         {
             // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
-            if (UseReadCache)
+            // Gate on hei.IsReadCache (not UseReadCache): it implies UseReadCache and is false when the tag chain has no readcache
+            // prefix, so we skip the (NoInlining) FindInReadCache call entirely in that common case.
+            if (stackCtx.hei.IsReadCache)
             {
                 var minRC = IsReadCache(pendingContext.initialEntryAddress) ? pendingContext.initialEntryAddress + 1 : kInvalidAddress;
                 if (FindInReadCache(key, ref stackCtx, minAddress: minRC))
@@ -211,7 +213,9 @@ namespace Tsavorite.core
 
             // We are not here from Read() so have not processed readcache; search that as well as the in-memory log.
             // minAddress is either HeadAddress or ReadOnlyAddress for the main log.
-            if ((UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress))
+            // Gate the readcache search on hei.IsReadCache (implies UseReadCache; false when there is no readcache prefix) to
+            // skip the NoInlining FindInReadCache call when the tag chain has none.
+            if ((stackCtx.hei.IsReadCache && FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress))
                 || TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress: minAddress))
             {
                 if (stackCtx.recSrc.GetInfo().IsClosed)

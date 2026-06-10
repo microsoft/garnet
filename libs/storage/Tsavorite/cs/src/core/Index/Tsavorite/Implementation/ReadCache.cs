@@ -70,13 +70,14 @@ namespace Tsavorite.core
                     }
                 }
 
-                // If a readcache record was evicted while we were processing it here, its .PreviousAddress will be kTempInvalidAddress.
-                // This should not be the case otherwise; we should always find a valid main-log address after the readcache prefix chain.
-                if (recordInfo.PreviousAddress <= kTempInvalidAddress)
-                {
-                    _ = ReadCacheNeedToWaitForEviction(ref stackCtx);
-                    goto RestartChain;
-                }
+                // The current readcache record passed ReadCacheNeedToWaitForEviction above (it is >= readcache.HeadAddress),
+                // so eviction cannot have unlinked/stamped it here: eviction runs as a deferred, epoch-gated drain-list action
+                // (OnPagesClosedWorker) and HeadAddress is published before it is queued, so a walker either waits at the
+                // boundary above or holds an epoch that gates the unlink. Its PreviousAddress is therefore always a live
+                // address (a lower readcache record or the main-log boundary). SkipReadCache relies on this same invariant
+                // without a check.
+                Debug.Assert(recordInfo.PreviousAddress > kTempInvalidAddress,
+                    "readcache record's PreviousAddress was kInvalid/kTempInvalid; eviction must not be observable here under epoch");
 
                 // Update the leading LatestLogicalAddress to recordInfo.PreviousAddress, and if that is a main log record, break out.
                 stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
