@@ -1250,8 +1250,7 @@ namespace Garnet.server
                 {
                     if (iter.GetNext(out byte[] entry, out _, out _, out _))
                     {
-                        // Wrap in array of 1 entry
-                        writer.WriteArrayLength(1);
+                        // XLAST returns the single last entry directly as [id, [field, value, ...]].
                         WriteEntryToWriter(entry, ref writer);
                     }
                     else
