@@ -78,7 +78,10 @@ namespace Tsavorite.core
 
             try
             {
-                if (UseReadCache)
+                // Gate on hei.IsReadCache (same cost as the UseReadCache field read): skips the call when this chain has no
+                // RC prefix, and — since hei.IsReadCache implies UseReadCache — lets SkipReadCache's UseReadCache assert
+                // flag an RC-record-while-!UseReadCache anomaly instead of silently skipping it.
+                if (stackCtx.hei.IsReadCache)
                     SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
 
                 // We don't have a pendingContext here, so pass the minAddress directly.
