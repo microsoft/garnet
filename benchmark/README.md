@@ -34,6 +34,15 @@ See more command-line options at https://benchmarkdotnet.org/articles/guides/con
 
 Please see the [Microbenchmark Design Guidelines](https://github.com/dotnet/performance/blob/main/docs/microbenchmark-design-guidelines.md) for the best practices when writing microbenchmarks using BenchmarkDotNet.
 
+## StreamBenchmark
+
+A reproducible, publication-grade harness and methodology for benchmarking Garnet's
+**Streams** implementation against Redis (and other RESP servers). Covers tooling
+selection (memtier_benchmark + the `Resp.benchmark` cross-check), the stream workload
+matrix (ingest / range / tail / consumer-group / mixed / trim), configuration parity,
+run protocol, and a publication disclosure checklist. See
+[`StreamBenchmark/README.md`](StreamBenchmark/README.md).
+
 ## Device.benchmark
 
 A low-overhead random-read IOPS benchmark for Tsavorite's `IDevice` implementations

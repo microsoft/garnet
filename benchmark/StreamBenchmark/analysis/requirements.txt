@@ -1,0 +1,3 @@
+# Analysis dependencies for summarize.py
+# Only matplotlib is optional (plots are skipped gracefully if absent).
+matplotlib>=3.7
