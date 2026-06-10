@@ -300,7 +300,12 @@ namespace Tsavorite.core
         {
             int seq = Interlocked.Increment(ref nextRingIdx) - 1;
             int idx = (int)((uint)seq % (uint)parallelism);
-            t_ringIdxPlusOne = idx + 1;
+            // Do NOT clobber a processor (drain) thread's sentinel: that would break same-instance
+            // reentrant inline completion and risk self-deadlock if a later submit back to this instance
+            // hit a full ring this same thread is the only consumer of. A drain thread routing a rare
+            // cross-instance submit just round-robins per call without caching the index.
+            if (t_ringIdxPlusOne != ProcessorThreadRingIdx)
+                t_ringIdxPlusOne = idx + 1;
             return idx;
         }
 
