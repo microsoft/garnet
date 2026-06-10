@@ -233,6 +233,7 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        // HK TODO: Consider removing this altogether
         internal readonly SessionStreamCache sessionStreamCache;
 
         /// <summary>

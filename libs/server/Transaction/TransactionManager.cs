@@ -491,9 +491,6 @@ namespace Garnet.server
             // verify and possibly update txn version after locks are acquired
             txnVersion = stateMachineDriver.VerifyTransactionVersion(txnVersion);
 
-            // acquire txn version after locks are acquired
-            //txnVersion = stateMachineDriver.AcquireTransactionVersionFastNoBarrier();
-
             // Update sessions with transaction version
             LocksAcquired(txnVersion);
 

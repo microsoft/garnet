@@ -168,7 +168,7 @@ namespace Garnet.server
                 else if (header.numPairs >= 0)
                 {
                     // Data record.
-                    index.Insert((byte*)Unsafe.AsPointer(ref header.id.idBytes[0]), new Value((ulong)currentAddress));
+                    index.InsertIntoTail((byte*)Unsafe.AsPointer(ref header.id.idBytes[0]), new Value(currentAddress));
                     lastId = header.id;
                     totalEntriesAdded++;
                 }
@@ -220,7 +220,7 @@ namespace Garnet.server
         /// Generate the next stream ID
         /// </summary>
         /// <returns>StreamID generated</returns>
-        public unsafe void GenerateNextID(ref StreamID id)
+        public void GenerateNextID(ref StreamID id)
         {
             ulong timestamp = (ulong)Stopwatch.GetTimestamp() / (ulong)(Stopwatch.Frequency / 1000);
 
@@ -398,7 +398,7 @@ namespace Garnet.server
 
                 // BTree append-only insert. parseIDString already enforces strict monotonic IDs,
                 // so this never collides with an existing key.
-                index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value((ulong)returnedLogicalAddr));
+                index.InsertIntoTail((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value(returnedLogicalAddr));
 
                 // copy encoded ms and seq
                 lastId.ms = id.ms;
@@ -499,7 +499,7 @@ namespace Garnet.server
                         return;
                     }
 
-                    long addressOnLog = (long)lastEntry.Value.address;
+                    long addressOnLog = lastEntry.Value.address;
 
                     using (var iter = log.Scan(addressOnLog, addressOnLog + 1, scanUncommitted: true))
                     {
@@ -599,10 +599,10 @@ namespace Garnet.server
                         return;
                     }
 
-                    HashSet<ulong> tombstoneAddrs = null;
+                    HashSet<long> tombstoneAddrs = null;
                     if (tombstones != null && tombstones.Count > 0)
                     {
-                        tombstoneAddrs = new HashSet<ulong>(tombstones.Count);
+                        tombstoneAddrs = new HashSet<long>(tombstones.Count);
                         foreach (var t in tombstones)
                         {
                             tombstoneAddrs.Add(t.address);
@@ -611,8 +611,8 @@ namespace Garnet.server
 
                     // For reverse: startVal is at the higher address, endVal at the lower.
                     // For forward: startVal is at the lower address, endVal at the higher.
-                    long scanStart = (long)(isReverse ? endVal.address : startVal.address);
-                    long scanEnd = (long)(isReverse ? startVal.address : endVal.address);
+                    long scanStart = (isReverse ? endVal.address : startVal.address);
+                    long scanEnd = (isReverse ? startVal.address : endVal.address);
 
                     // After XTRIM, BTree leaves still reference addresses below the new
                     // log.BeginAddress. Clamp so log.Scan never tries to read truncated pages.
@@ -635,7 +635,7 @@ namespace Garnet.server
                         {
                             while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
                             {
-                                if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
+                                if (tombstoneAddrs != null && tombstoneAddrs.Contains(currentAddress))
                                     continue;
                                 if (IsControlRecord(entry)) continue;
                                 entries.Add(entry);
@@ -655,7 +655,7 @@ namespace Garnet.server
                             int written = 0;
                             while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
                             {
-                                if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
+                                if (tombstoneAddrs != null && tombstoneAddrs.Contains(currentAddress))
                                     continue;
                                 if (IsControlRecord(entry)) continue;
                                 WriteEntryToWriter(entry, ref writer);
@@ -721,7 +721,7 @@ namespace Garnet.server
                     // both grow monotonically). Truncating the log past the new head IS the
                     // persistence of the trim — recovery just won't see the dropped entries.
                     // If everything was trimmed, push past the current tail so nothing replays.
-                    long target = newHead.Valid ? (long)newHead.address : log.TailAddress;
+                    long target = newHead.Valid ? newHead.address : log.TailAddress;
                     log.TruncateUntil(target);
 
                     if (waitForCommit)
@@ -1072,16 +1072,16 @@ namespace Garnet.server
                 return;
             }
 
-            HashSet<ulong> tombstoneAddrs = null;
+            HashSet<long> tombstoneAddrs = null;
             if (tombstones != null && tombstones.Count > 0)
             {
-                tombstoneAddrs = new HashSet<ulong>(tombstones.Count);
+                tombstoneAddrs = new HashSet<long>(tombstones.Count);
                 foreach (var t in tombstones)
                     tombstoneAddrs.Add(t.address);
             }
 
-            long scanStart = (long)startVal.address;
-            long scanEnd = (long)endVal.address;
+            long scanStart = startVal.address;
+            long scanEnd = endVal.address;
             long beginAddr = log.BeginAddress;
             if (scanStart < beginAddr) scanStart = beginAddr;
             if (scanEnd < beginAddr)
@@ -1096,7 +1096,7 @@ namespace Garnet.server
             {
                 while (iter.GetNext(out byte[] entry, out _, out long currentAddress))
                 {
-                    if (tombstoneAddrs != null && tombstoneAddrs.Contains((ulong)currentAddress))
+                    if (tombstoneAddrs != null && tombstoneAddrs.Contains(currentAddress))
                         continue;
                     if (IsControlRecord(entry)) continue;
 
@@ -1175,7 +1175,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                long addr = (long)result.address;
+                long addr = result.address;
                 using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
                 if (iter.GetNext(out byte[] entry, out _, out _))
                 {
@@ -1395,7 +1395,7 @@ namespace Garnet.server
                             var result = index.Get(keyPtr);
                             if (result.Valid)
                             {
-                                long addr = (long)result.address;
+                                long addr = result.address;
                                 using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
                                 if (iter.GetNext(out byte[] entry, out _, out _))
                                 {
@@ -1504,7 +1504,7 @@ namespace Garnet.server
 
                         if (!justId)
                         {
-                            long addr = (long)result.address;
+                            long addr = result.address;
                             using var iter = log.Scan(addr, addr + 1, scanUncommitted: true);
                             if (iter.GetNext(out byte[] entry, out _, out _))
                             {

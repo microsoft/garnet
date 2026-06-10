@@ -114,7 +114,6 @@ namespace Garnet.server.BTreeIndex
             if (root == null)
                 return;
             Free(ref root);
-            Console.WriteLine("free complete");
             stats.printStats();
             root = null;
             head = null;
@@ -132,6 +131,11 @@ namespace Garnet.server.BTreeIndex
         public ulong FastInserts => stats.totalFastInserts;
         public ulong LeafCount => stats.numLeafNodes;
         public ulong InternalCount => stats.numInternalNodes;
+
+        /// <summary>
+        /// Read-only access to the root node, for diagnostics and structure visualization.
+        /// </summary>
+        public BTreeNode* Root => root;
 
         public ulong ValidCount => StatsValidCount();
 

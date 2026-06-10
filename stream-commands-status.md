@@ -29,7 +29,6 @@
 | **XCFGSET** | Config | Set stream config (`IDMP-DURATION`, `IDMP-MAXSIZE`) for idempotency |
 
 ## Suggested Priority
-
 1. **XREAD** — most commonly used after XADD/XRANGE; needed for pub-sub style patterns
 2. **XADD inline trim** (`MAXLEN`/`MINID`) — frequently used in production for capped streams
 3. **XINFO STREAM** — basic introspection, easy to add

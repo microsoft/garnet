@@ -27,30 +27,37 @@ namespace Garnet.server.BTreeIndex
         public BTreeNode** children;
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = sizeof(byte) + sizeof(ulong))]
+    /// <summary>
+    /// A leaf value in the B+tree: a logical log address together with a validity (tombstone) flag,
+    /// packed into a single 64-bit word. The sign bit (bit 63) holds validity and the low 63 bits hold
+    /// the address. Tsavorite logical addresses occupy at most 48 bits, so the high bits (including the
+    /// sign bit) are always clear on a real address and free to repurpose.
+    /// </summary>
     public struct Value
     {
-        [FieldOffset(0)]
-        public byte valid;
-        [FieldOffset(1)]
-        public ulong address;
+        // Sign bit marks a live (non-tombstoned) entry; the remaining bits hold the log address.
+        const long ValidBitMask = 1L << 63;
+        const long AddressBitMask = ~ValidBitMask;
 
+        long word;
+
+        /// <summary>Whether the entry is live (true) or a tombstone (false).</summary>
         public bool Valid
         {
-            get
-            {
-                return valid == 1;
-            }
-            set
-            {
-                valid = (byte)(value ? 1 : 0);
-            }
+            readonly get => (word & ValidBitMask) != 0;
+            set => word = value ? word | ValidBitMask : word & AddressBitMask;
         }
 
-        public Value(ulong value)
+        /// <summary>The logical log address the entry points to.</summary>
+        public long address
         {
-            this.valid = 1;
-            this.address = value;
+            readonly get => word & AddressBitMask;
+            set => word = (word & ValidBitMask) | (value & AddressBitMask);
+        }
+
+        public Value(long address)
+        {
+            word = address | ValidBitMask;
         }
     }
 

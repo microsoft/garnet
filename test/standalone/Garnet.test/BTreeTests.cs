@@ -18,7 +18,7 @@ namespace Garnet.test
     public unsafe class BTreeTests
     {
         static StreamID[] streamIDs;
-        static ulong N = 50000;
+        static ulong N = 100_000;
 
         [SetUp]
         public void Setup()
@@ -61,7 +61,7 @@ namespace Garnet.test
 
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(i + 1));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)(i + 1)));
             }
             ClassicAssert.AreEqual(tree.FastInserts, N);
             tree.Deallocate();
@@ -75,12 +75,12 @@ namespace Garnet.test
 
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
             for (ulong i = 0; i < N; i++)
             {
-                ClassicAssert.AreEqual(tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0])).address, streamIDs[i].ms);
+                ClassicAssert.AreEqual(tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0])).address, streamIDs[i].getMS());
             }
 
             tree.Deallocate();
@@ -94,14 +94,14 @@ namespace Garnet.test
 
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
             int count = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 200].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal, out Value endVal, out List<Value> list);
             ClassicAssert.AreEqual(count, N - 1 - (N - 200) + 1);
             ClassicAssert.AreEqual(list.Count, 0);
-            ClassicAssert.AreEqual(startVal.address, streamIDs[N - 200].ms);
-            ClassicAssert.AreEqual(endVal.address, streamIDs[N - 1].ms);
+            ClassicAssert.AreEqual(startVal.address, streamIDs[N - 200].getMS());
+            ClassicAssert.AreEqual(endVal.address, streamIDs[N - 1].getMS());
 
             tree.Deallocate();
         }
@@ -113,7 +113,7 @@ namespace Garnet.test
             var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
             // delete 10% of keys at random 
@@ -139,7 +139,7 @@ namespace Garnet.test
             var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
             var trimLength = 5000; // trim the tree to half its size
@@ -157,7 +157,7 @@ namespace Garnet.test
             var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
             for (ulong i = 0; i < N; i++)
             {
-                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
             var streamIDToTrim = streamIDs[N - 1000];
@@ -180,7 +180,7 @@ namespace Garnet.test
             int valueSize = sizeof(Value);
             TestContext.Out.WriteLine($"sizeof(Value) = {valueSize}");
             TestContext.Out.WriteLine($"LEAF_CAPACITY = {BTreeNode.LEAF_CAPACITY}");
-            ClassicAssert.AreEqual(9, valueSize, "sizeof(Value) should be 9");
+            ClassicAssert.AreEqual(8, valueSize, "sizeof(Value) should be 8");
         }
 
         /// <summary>
@@ -201,7 +201,7 @@ namespace Garnet.test
             {
                 ids[i] = new StreamID(i + 1, 0);
                 ulong addr = firstAddr + i * recordSize;
-                tree.Insert((byte*)Unsafe.AsPointer(ref ids[i].idBytes[0]), new Value(addr));
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref ids[i].idBytes[0]), new Value((long)addr));
             }
 
             int leafCapacity = BTreeNode.LEAF_CAPACITY;
