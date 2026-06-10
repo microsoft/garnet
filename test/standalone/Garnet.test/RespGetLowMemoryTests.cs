@@ -64,6 +64,75 @@ namespace Garnet.test
             }
         }
 
+        // Mixed GET/SET pipeline: every GET is immediately followed by a SET, so the scatter-gather
+        // look-ahead must correctly decline to batch across the SET and the interleaved results must be
+        // exactly as issued. Exercises the cheap GET-prefix peek that rejects a non-GET next command.
+        [Test]
+        public void ScatterGatherMixedGetSetPipeline()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 100;
+            for (var i = 0; i < n; i++)
+                db.StringSet($"r{i}", $"val{i}");
+
+            var batch = db.CreateBatch();
+            var getTasks = new Task<RedisValue>[n];
+            var setTasks = new Task<bool>[n];
+            for (var i = 0; i < n; i++)
+            {
+                getTasks[i] = batch.StringGetAsync($"r{i}");
+                setTasks[i] = batch.StringSetAsync($"w{i}", $"x{i}");
+            }
+            batch.Execute();
+            Task.WaitAll([.. getTasks.Cast<Task>().Concat(setTasks)]);
+
+            for (var i = 0; i < n; i++)
+            {
+                ClassicAssert.AreEqual($"val{i}", (string)getTasks[i].Result);
+                ClassicAssert.IsTrue(setTasks[i].Result);
+                ClassicAssert.AreEqual($"x{i}", (string)db.StringGet($"w{i}"));
+            }
+        }
+
+        [Test]
+        public void ScatterGatherMixedGetTtlPipeline()
+        {
+            // GET followed by a same-shaped 3-byte command (TTL) must not be mis-batched as a GET: the
+            // dispatch gate verifies the GET token, so TTL falls through to its own handler and returns correctly.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 100;
+            for (var i = 0; i < n; i++)
+            {
+                db.StringSet($"r{i}", $"val{i}");
+                if (i % 2 == 0)
+                    db.KeyExpire($"r{i}", TimeSpan.FromMinutes(10));
+            }
+
+            var batch = db.CreateBatch();
+            var getTasks = new Task<RedisValue>[n];
+            var ttlTasks = new Task<TimeSpan?>[n];
+            for (var i = 0; i < n; i++)
+            {
+                getTasks[i] = batch.StringGetAsync($"r{i}");
+                ttlTasks[i] = batch.KeyTimeToLiveAsync($"r{i}");
+            }
+            batch.Execute();
+            Task.WaitAll([.. getTasks.Cast<Task>().Concat(ttlTasks)]);
+
+            for (var i = 0; i < n; i++)
+            {
+                ClassicAssert.AreEqual($"val{i}", (string)getTasks[i].Result);
+                if (i % 2 == 0)
+                    ClassicAssert.IsTrue(ttlTasks[i].Result > TimeSpan.Zero);
+                else
+                    ClassicAssert.IsNull(ttlTasks[i].Result);
+            }
+        }
+
         [Test]
         [TestCase(30)]      // Probably completes sync
         [TestCase(300)]     // May be a mix
@@ -120,6 +189,49 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(expected, multiActual);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// MGET must work on a low-memory (disk-backed) store even when scatter-gather is disabled, because
+    /// MGET always uses the scatter-gather batch regardless of the flag. Guards against reintroducing a
+    /// per-key blocking MGET path, which deadlocks when a read goes pending under the ReadWithPrefetch epoch.
+    /// </summary>
+    [TestFixture]
+    public class RespMGetLowMemoryNoSgTests : TestBase
+    {
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, getSG: false, disablePubSub: true);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public void MGetOnDiskCompletesWithoutScatterGatherFlag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int n = 3_000; // Large enough that reads spill to disk and go pending.
+            var input = new KeyValuePair<RedisKey, RedisValue>[n];
+            for (var i = 0; i < n; i++)
+                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
+            ClassicAssert.IsTrue(db.StringSet(input));
+
+            var results = db.StringGet([.. input.Select(r => (RedisKey)r.Key)]);
+            for (var i = 0; i < n; i++)
+                ClassicAssert.AreEqual(input[i].Value, results[i]);
         }
     }
 }

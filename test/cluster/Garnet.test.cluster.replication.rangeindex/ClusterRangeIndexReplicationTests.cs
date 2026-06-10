@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -145,7 +146,7 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test, Order(3)]
         [Category("REPLICATION")]
-        public void ClusterRangeIndexCheckpointSyncWithEviction()
+        public async Task ClusterRangeIndexCheckpointSyncWithEviction()
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
@@ -156,15 +157,23 @@ namespace Garnet.test.cluster
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
 
-            // Populate range indexes — low memory should trigger eviction
+            // Populate range indexes
             PopulateRangeIndex(primaryIndex, "idx1", 10);
             PopulateRangeIndex(primaryIndex, "idx2", 10);
 
-            // Verify flush.bftree files were created on the primary (confirms eviction triggered flush path)
+            // Capture TailAddress after RI population — flushing up to this address guarantees
+            // the RI records are on disk.
+            var tailAfterRiInsert = long.Parse(
+                context.clusterTestUtils.GetInfo(primaryIndex, "STORE", "Log.TailAddress", logger: context.logger));
+
+            // Insert fillers and poll until FlushedUntilAddress reaches the captured tail
+            await context.clusterTestUtils.FlushAndWaitForStoreAsync(primaryIndex, tailAfterRiInsert);
+
+            // Verify flush.bftree files were created on the primary (confirms flush path was triggered).
             var primaryRiLogRoot = GetRiLogRoot(primaryIndex);
             var primaryFlushFiles = Directory.GetFiles(primaryRiLogRoot, "*.flush.bftree");
             ClassicAssert.IsTrue(primaryFlushFiles.Length > 0,
-                "flush.bftree files should exist on primary after eviction");
+                "flush.bftree files should exist on primary after deterministic flush");
 
             // Take checkpoint
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
@@ -345,5 +354,6 @@ namespace Garnet.test.cluster
                 logger: context.logger);
             ClassicAssert.AreEqual("OK", (string)result);
         }
+
     }
 }

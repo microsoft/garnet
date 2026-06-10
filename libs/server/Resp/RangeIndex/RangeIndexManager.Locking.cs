@@ -38,9 +38,9 @@ namespace Garnet.server
         internal readonly ref struct ReadRangeIndexLock : IDisposable
         {
             private readonly ref readonly ReadOptimizedLock lockRef;
-            private readonly int lockToken;
+            private readonly ReadOptimizedLock.LockToken lockToken;
 
-            internal ReadRangeIndexLock(ref readonly ReadOptimizedLock lockRef, int lockToken)
+            internal ReadRangeIndexLock(ref readonly ReadOptimizedLock lockRef, ReadOptimizedLock.LockToken lockToken)
             {
                 this.lockToken = lockToken;
                 this.lockRef = ref lockRef;
@@ -52,7 +52,7 @@ namespace Garnet.server
                 if (Unsafe.IsNullRef(in lockRef))
                     return;
 
-                lockRef.ReleaseSharedLock(lockToken);
+                lockRef.ReleaseLock(lockToken);
             }
         }
 
@@ -63,9 +63,9 @@ namespace Garnet.server
         internal readonly ref struct ExclusiveRangeIndexLock : IDisposable
         {
             private readonly ref readonly ReadOptimizedLock lockRef;
-            private readonly int lockToken;
+            private readonly ReadOptimizedLock.LockToken lockToken;
 
-            internal ExclusiveRangeIndexLock(ref readonly ReadOptimizedLock lockRef, int lockToken)
+            internal ExclusiveRangeIndexLock(ref readonly ReadOptimizedLock lockRef, ReadOptimizedLock.LockToken lockToken)
             {
                 this.lockToken = lockToken;
                 this.lockRef = ref lockRef;
@@ -77,7 +77,7 @@ namespace Garnet.server
                 if (Unsafe.IsNullRef(in lockRef))
                     return;
 
-                lockRef.ReleaseExclusiveLock(lockToken);
+                lockRef.ReleaseLock(lockToken);
             }
         }
 
@@ -127,14 +127,14 @@ namespace Garnet.server
             }
             catch
             {
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
                 throw;
             }
 
             if (readRes != GarnetStatus.OK)
             {
                 status = readRes;
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
                 return default;
             }
 
@@ -144,7 +144,7 @@ namespace Garnet.server
 
             if (outputSpan.Length != IndexSizeBytes)
             {
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
                 throw new GarnetException($"Unexpected stub size {outputSpan.Length} for RangeIndex read, expected {IndexSizeBytes}");
             }
 
@@ -159,14 +159,14 @@ namespace Garnet.server
 
             if (stub.IsFlushed)
             {
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
                 PromoteToTail(session, key);
                 goto Retry;
             }
 
             if (stub.TreeHandle == nint.Zero)
             {
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
 
                 // Restore under exclusive lock to prevent concurrent restores.
                 // Pre-staging of data.bftree always happened earlier (PostCopyToTail-cold,
@@ -224,14 +224,14 @@ namespace Garnet.server
         /// <returns><c>true</c> if caller should retry the read; <c>false</c> if no wait was needed.</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private bool WaitForTreeCheckpoint(ReadOnlySpan<byte> key, ref StringOutput output,
-            Span<byte> indexSpan, ref int sharedLockToken)
+            Span<byte> indexSpan, ref ReadOptimizedLock.LockToken sharedLockToken)
         {
             var keyId = KeyId(key);
             if (!liveIndexes.TryGetValue(keyId, out var treeEntry)
                 || Volatile.Read(ref treeEntry.SnapshotPending) == 0)
                 return false;
 
-            rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+            rangeIndexLocks.ReleaseLock(sharedLockToken);
             while (Volatile.Read(ref treeEntry.SnapshotPending) != 0)
                 Thread.Yield();
             return true;
@@ -349,7 +349,7 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                rangeIndexLocks.ReleaseLock(exclusiveLockToken);
             }
 
             // RIRESTORE RMW WITHOUT the X-lock. Safe because OnFlush no longer takes any RI

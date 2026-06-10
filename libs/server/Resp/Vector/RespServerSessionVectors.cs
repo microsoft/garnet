@@ -862,7 +862,7 @@ namespace Garnet.server
 
                                 var totalFound = distancesSpan.Length;
 
-                                // Compute output count: if bitmap is present, popcount it; otherwise all results
+                                // Compute max output count: if bitmap is present, popcount it; otherwise all results
                                 int outputCount;
                                 if (hasFilter)
                                 {
@@ -875,6 +875,10 @@ namespace Garnet.server
                                     outputCount = totalFound;
                                 }
 
+                                // Limit to what is actually asked for
+                                outputCount = Math.Min(count.Value, outputCount);
+
+                                // Each flag doubles output
                                 var arrayItemCount = outputCount;
                                 if (withScores.Value)
                                 {
@@ -888,7 +892,10 @@ namespace Garnet.server
                                 while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
                                     SendAndReset();
 
-                                for (var resultIndex = 0; resultIndex < totalFound; resultIndex++)
+                                var writtenCount = 0;
+                                var resultIndex = 0;
+
+                                while (writtenCount < outputCount)
                                 {
                                     ReadOnlySpan<byte> elementData;
 
@@ -933,6 +940,8 @@ namespace Garnet.server
                                             var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
                                             remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
                                         }
+
+                                        resultIndex++;
                                         continue;
                                     }
 
@@ -967,6 +976,9 @@ namespace Garnet.server
                                         var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
                                     }
+
+                                    resultIndex++;
+                                    writtenCount++;
                                 }
                             }
                         }
