@@ -80,6 +80,26 @@ namespace Garnet.server.ACL
         => this._enabledCommands.CanRunCommand(command);
 
         /// <summary>
+        /// Checks whether the user can access the given custom (extension) command by name.
+        /// Combines the generic per-type bit with per-name allow/deny (deny wins).
+        /// </summary>
+        /// <param name="genericCmd">One of CustomRawStringCmd/CustomObjCmd/CustomTxn/CustomProcedure.</param>
+        /// <param name="customName">The custom command name (case-insensitive match).</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CanAccessCustomCommand(RespCommand genericCmd, string customName)
+        => this._enabledCommands.CanRunCustomCommand(genericCmd, customName);
+
+        /// <summary>
+        /// Read-only snapshot of custom command names explicitly allowed for this user.
+        /// </summary>
+        public IReadOnlySet<string> CustomCommandsAllowed => _enabledCommands.CustomAllowed;
+
+        /// <summary>
+        /// Read-only snapshot of custom command names explicitly denied for this user.
+        /// </summary>
+        public IReadOnlySet<string> CustomCommandsDenied => _enabledCommands.CustomDenied;
+
+        /// <summary>
         /// Adds the given category to the user.
         /// </summary>
         /// <param name="category">Bit flag of the category to add.</param>
@@ -334,6 +354,89 @@ namespace Garnet.server.ACL
                 }
 
                 updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
+            }
+            while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
+        }
+
+        /// <summary>
+        /// Adds the given custom (extension) command name to the user's per-name allow list.
+        /// Custom commands aren't tracked in the RespCommand bitmap (their dynamic IDs fall outside it);
+        /// they live in a separate per-name allow/deny set with deny precedence at check time.
+        /// </summary>
+        /// <param name="customName">Custom command name. Normalized to uppercase; matching is case-insensitive.</param>
+        public void AddCustomCommand(string customName)
+        {
+            ArgumentNullException.ThrowIfNull(customName);
+
+            // Reject anything ACLParser would reject so the persisted Description can't be poisoned
+            // by callers bypassing the parser (e.g. "foo +@all" would re-parse as two tokens on reload).
+            if (!ACLParser.IsValidCustomCommandName(customName))
+            {
+                throw new ACLException($"Invalid custom command name '{customName}'");
+            }
+
+            string normalized = customName.ToUpperInvariant();
+
+            CommandPermissionSet prev = this._enabledCommands;
+            string descUpdate = $"+{normalized.ToLowerInvariant()}";
+
+            CommandPermissionSet oldPerms;
+            CommandPermissionSet updated;
+            do
+            {
+                oldPerms = prev;
+
+                // No-op fast path: already allowed.
+                if (oldPerms == CommandPermissionSet.All ||
+                    (oldPerms.CustomAllowed.Contains(normalized) && !oldPerms.CustomDenied.Contains(normalized)))
+                {
+                    return;
+                }
+
+                updated = oldPerms.Copy();
+                updated.AddCustomCommand(normalized);
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization: false);
+            }
+            while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
+        }
+
+        /// <summary>
+        /// Adds the given custom (extension) command name to the user's per-name deny list.
+        /// A deny entry overrides any +@category that would otherwise allow the command.
+        /// </summary>
+        /// <param name="customName">Custom command name. Normalized to uppercase; matching is case-insensitive.</param>
+        public void RemoveCustomCommand(string customName)
+        {
+            ArgumentNullException.ThrowIfNull(customName);
+
+            // See AddCustomCommand: same syntax validation, same reason.
+            if (!ACLParser.IsValidCustomCommandName(customName))
+            {
+                throw new ACLException($"Invalid custom command name '{customName}'");
+            }
+
+            string normalized = customName.ToUpperInvariant();
+
+            CommandPermissionSet prev = this._enabledCommands;
+            string descUpdate = $"-{normalized.ToLowerInvariant()}";
+
+            CommandPermissionSet oldPerms;
+            CommandPermissionSet updated;
+            do
+            {
+                oldPerms = prev;
+
+                // No-op fast path: already explicitly denied and not in any allow list.
+                if (oldPerms != CommandPermissionSet.All &&
+                    oldPerms.CustomDenied.Contains(normalized) &&
+                    !oldPerms.CustomAllowed.Contains(normalized))
+                {
+                    return;
+                }
+
+                updated = oldPerms.Copy();
+                updated.RemoveCustomCommand(normalized);
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization: false);
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
