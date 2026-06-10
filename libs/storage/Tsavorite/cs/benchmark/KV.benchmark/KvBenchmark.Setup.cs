@@ -110,9 +110,18 @@ namespace Tsavorite.kvbench
                 int localMemRing = 0;
                 if (opts.DeviceThrottle > 0)
                 {
-                    localMemRing = 1;
-                    while (localMemRing < opts.DeviceThrottle)
-                        localMemRing <<= 1;
+                    // Round up to a power of two, overflow-safe. --device-throttle is user-supplied, so a
+                    // naive `while (r < throttle) r <<= 1` would overflow to a negative r and spin forever
+                    // for values > 2^30; cap at the largest power-of-two int instead.
+                    const int MaxRing = 1 << 30;
+                    if (opts.DeviceThrottle >= MaxRing)
+                        localMemRing = MaxRing;
+                    else
+                    {
+                        localMemRing = 1;
+                        while (localMemRing < opts.DeviceThrottle)
+                            localMemRing <<= 1;
+                    }
                 }
 
                 dev = Devices.CreateLogDevice(

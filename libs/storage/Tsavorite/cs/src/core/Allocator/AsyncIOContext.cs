@@ -10,8 +10,8 @@ namespace Tsavorite.core
     using static LogAddress;
 
     /// <summary>
-    /// Async IO context for PMM. Reference type so per-pending-IO storage (the per-session ready queue,
-    /// completion-event slot, dictionary values) holds an 8-byte reference rather than a ~112-byte struct
+    /// Async IO context for PMM. Reference type so per-pending-IO storage (the per-session ready queue and
+    /// completion-event slot) holds an 8-byte reference rather than a ~112-byte struct
     /// with 5+ object refs. The previous struct-typed implementation caused
     /// <c>Buffer.BulkMoveWithWriteBarrier</c> on every context store, which carried JIT-inserted GC poll
     /// loops eating ~18% of the worker thread's CPU at single-thread libaio random reads (each barrier-set
