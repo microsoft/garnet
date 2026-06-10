@@ -23,6 +23,9 @@ namespace Garnet.server
                 GarnetObjectType.List => new ListObject(),
                 GarnetObjectType.Hash => new HashObject(),
                 GarnetObjectType.Set => new SetObject(),
+                // Stream objects carry per-stream config (log directory, page/memory size) and are
+                // created through StreamManager, not the generic initial-value factory.
+                GarnetObjectType.Stream => throw new Exception("Stream objects must be created via StreamManager"),
                 _ => throw new Exception("Unsupported data type"),
             };
         }

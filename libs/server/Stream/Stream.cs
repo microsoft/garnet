@@ -59,12 +59,39 @@ namespace Garnet.server
         public const int Tombstone = -1;
     }
 
-    public class StreamObject : IDisposable
+    /// <summary>
+    /// Server-global configuration needed to re-open a stream's per-stream log when the object store
+    /// deserializes a <see cref="StreamObject"/> (the deserialization factory only receives a
+    /// <see cref="BinaryReader"/>). Streams are not per-database, so a single ambient configuration
+    /// suffices. Set once at startup by <see cref="StreamManager"/>.
+    /// </summary>
+    internal static class StreamObjectConfig
     {
+        internal static string StreamsRootDir;
+        internal static long DefaultPageSize = 4096;
+        internal static long DefaultMemorySize = 1L << 24;
+        internal static bool WaitForCommit;
+
+        internal static void Configure(string streamsRootDir, long pageSize, long memorySize, bool waitForCommit)
+        {
+            StreamsRootDir = streamsRootDir;
+            DefaultPageSize = pageSize;
+            DefaultMemorySize = memorySize;
+            WaitForCommit = waitForCommit;
+        }
+    }
+
+    public class StreamObject : GarnetObjectBase
+    {
+        // Rough heap-overhead estimate reported to the object store (refined as the BTree/log grow).
+        const long StreamHeapOverhead = 4096;
+
         readonly IDevice device;
         readonly TsavoriteLog log;
         readonly BTree index;
         readonly bool waitForCommit;
+        readonly string streamsRootDir;
+        readonly string streamDirName;
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
@@ -112,7 +139,10 @@ namespace Garnet.server
         /// <param name="recover">If true and a disk-backed log exists at the path, recover the
         ///     log and rebuild the in-memory BTree by scanning all entries.</param>
         public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, bool waitForCommit = false, bool recover = false)
+            : base(StreamHeapOverhead)
         {
+            this.streamsRootDir = streamsRootDir;
+            this.streamDirName = streamDirName;
             if (streamsRootDir == null || streamDirName == null)
             {
                 device = new NullDevice();
@@ -138,6 +168,188 @@ namespace Garnet.server
             {
                 RebuildIndexFromLog();
             }
+        }
+
+        /// <summary>
+        /// Reconstruct a stream from its serialized object-store form. Reads the per-stream identity,
+        /// metadata, and consumer-group state from the blob, re-opens the per-stream log (using the
+        /// server-global <see cref="StreamObjectConfig"/>), and rebuilds the BTree index.
+        /// </summary>
+        public StreamObject(BinaryReader reader)
+            : base(reader, StreamHeapOverhead)
+        {
+            _lock = new SingleWriterMultiReaderLock();
+
+            // Per-stream identity. The log directory name is persisted; the root dir, page/memory
+            // sizes, and wait-for-commit are server-global and come from the ambient config.
+            var hasDir = reader.ReadBoolean();
+            streamDirName = hasDir ? reader.ReadString() : null;
+            waitForCommit = reader.ReadBoolean();
+            streamsRootDir = StreamObjectConfig.StreamsRootDir;
+
+            if (streamsRootDir == null || streamDirName == null)
+            {
+                device = new NullDevice();
+            }
+            else
+            {
+                var streamDir = Path.Combine(streamsRootDir, streamDirName);
+                Directory.CreateDirectory(streamDir);
+                device = Devices.CreateLogDevice(Path.Combine(streamDir, "streamLog"), preallocateFile: false);
+            }
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = StreamObjectConfig.DefaultPageSize, MemorySize = StreamObjectConfig.DefaultMemorySize });
+            index = new BTree((uint)BTreeNode.PAGE_SIZE);
+
+            // Authoritative metadata from the blob (totalEntriesAdded must survive log trims, which
+            // RebuildIndexFromLog cannot recompute since trimmed records are gone).
+            var blobLastId = ReadStreamID(reader);
+            var blobTotalEntriesAdded = reader.ReadInt64();
+
+            DeserializeConsumerGroups(reader);
+
+            // Phase 1: rebuild the index by scanning the recovered log. A future phase serializes the
+            // BTree into the blob (with the covered tail) and replays only the post-checkpoint suffix.
+            RebuildIndexFromLog();
+
+            lastId = blobLastId;
+            totalEntriesAdded = blobTotalEntriesAdded;
+        }
+
+        /// <inheritdoc />
+        public override byte Type => (byte)GarnetObjectType.Stream;
+
+        /// <summary>
+        /// Streams are mutated in place through StreamManager rather than copied; the per-stream log
+        /// and device cannot be duplicated, so Clone shares this single owning instance.
+        /// </summary>
+        public override IHeapObject Clone() => this;
+
+        /// <summary>
+        /// Stream commands are dispatched directly via StreamManager / RespServerSession, not through
+        /// the generic object Operate path used by Hash/List/Set/SortedSet.
+        /// </summary>
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+            => throw new NotSupportedException("Stream operations are dispatched via StreamManager, not the object Operate path.");
+
+        /// <summary>
+        /// Streams do not participate in generic key-space SCAN over members.
+        /// </summary>
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
+        {
+            items = new List<byte[]>();
+            cursor = 0;
+        }
+
+        /// <inheritdoc />
+        public override void DoSerialize(BinaryWriter writer)
+        {
+            base.DoSerialize(writer);
+
+            // Per-stream identity needed to re-open the log on deserialize.
+            var hasDir = streamDirName != null;
+            writer.Write(hasDir);
+            if (hasDir)
+                writer.Write(streamDirName);
+            writer.Write(waitForCommit);
+
+            // Stream metadata. Take the read lock to avoid torn reads against a concurrent AddEntry.
+            _lock.ReadLock();
+            try
+            {
+                WriteStreamID(writer, lastId);
+                writer.Write(totalEntriesAdded);
+                SerializeConsumerGroups(writer);
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+        /// <summary>Serialize all consumer groups (group cursor + entries-read + PEL + consumers).</summary>
+        void SerializeConsumerGroups(BinaryWriter writer)
+        {
+            writer.Write(consumerGroups.Count);
+            foreach (var group in consumerGroups.Values)
+            {
+                writer.Write(group.Name);
+                WriteStreamID(writer, group.LastDeliveredId);
+                writer.Write(group.EntriesRead);
+
+                // Pending Entries List.
+                writer.Write(group.PEL.Count);
+                foreach (var pending in group.PEL.Values)
+                {
+                    WriteStreamID(writer, pending.Id);
+                    writer.Write(pending.ConsumerName);
+                    writer.Write(pending.DeliveryTime);
+                    writer.Write(pending.DeliveryCount);
+                }
+
+                // Consumers (their PendingIds are rebuilt from the PEL on deserialize).
+                writer.Write(group.Consumers.Count);
+                foreach (var consumer in group.Consumers.Values)
+                {
+                    writer.Write(consumer.Name);
+                    writer.Write(consumer.SeenTime);
+                }
+            }
+        }
+
+        /// <summary>Reconstruct consumer groups written by <see cref="SerializeConsumerGroups"/>.</summary>
+        void DeserializeConsumerGroups(BinaryReader reader)
+        {
+            var groupCount = reader.ReadInt32();
+            for (var g = 0; g < groupCount; g++)
+            {
+                var name = reader.ReadString();
+                var lastDeliveredId = ReadStreamID(reader);
+                var entriesRead = reader.ReadInt64();
+                var group = new ConsumerGroup(name, lastDeliveredId, entriesRead);
+
+                var pelCount = reader.ReadInt32();
+                for (var p = 0; p < pelCount; p++)
+                {
+                    var id = ReadStreamID(reader);
+                    var consumerName = reader.ReadString();
+                    var deliveryTime = reader.ReadInt64();
+                    var deliveryCount = reader.ReadInt32();
+                    group.PEL[id] = new PendingEntry(id, consumerName, deliveryTime) { DeliveryCount = deliveryCount };
+                }
+
+                var consumerCount = reader.ReadInt32();
+                for (var c = 0; c < consumerCount; c++)
+                {
+                    var consumerName = reader.ReadString();
+                    var seenTime = reader.ReadInt64();
+                    group.Consumers[consumerName] = new StreamConsumer(consumerName, seenTime);
+                }
+
+                // Rebuild each consumer's PendingIds index from the group PEL.
+                foreach (var pending in group.PEL.Values)
+                {
+                    if (group.Consumers.TryGetValue(pending.ConsumerName, out var consumer))
+                        consumer.PendingIds.Add(pending.Id);
+                }
+
+                consumerGroups[name] = group;
+            }
+        }
+
+        static void WriteStreamID(BinaryWriter writer, StreamID id)
+        {
+            Span<byte> buf = stackalloc byte[16];
+            MemoryMarshal.Write(buf, in id);
+            writer.Write(buf);
+        }
+
+        static StreamID ReadStreamID(BinaryReader reader)
+        {
+            Span<byte> buf = stackalloc byte[16];
+            var read = reader.Read(buf);
+            if (read != buf.Length)
+                throw new EndOfStreamException("Truncated StreamID in serialized stream object");
+            return MemoryMarshal.Read<StreamID>(buf);
         }
 
         /// <summary>
@@ -1760,7 +1972,7 @@ namespace Garnet.server
         #endregion Consumer Group Operations
 
         /// <inheritdoc/>
-        public void Dispose()
+        public override void Dispose()
         {
             // Idempotent: BTree.Deallocate is a native free that would crash on a second call,
             // and a session cache may still hold a reference to a disposed StreamObject until

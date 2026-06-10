@@ -41,6 +41,10 @@ namespace Garnet.server
             defMemorySize = memorySize;
             this.waitForCommit = waitForCommit;
             this.logger = logger;
+
+            // Publish the server-global stream configuration so the object-store deserialization
+            // factory (which only receives a BinaryReader) can re-open per-stream logs.
+            StreamObjectConfig.Configure(streamsRootDir, pageSize, memorySize, waitForCommit);
         }
 
         /// <summary>
