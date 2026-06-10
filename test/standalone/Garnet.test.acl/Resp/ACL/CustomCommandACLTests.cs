@@ -118,14 +118,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void Parser_RejectsNameOverLengthLimit()
-        {
-            var user = new User("alice");
-            string longName = new string('a', ACLParser.MaxCustomCommandNameLength + 1);
-            Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+" + longName));
-        }
-
-        [Test]
         public void Parser_RejectsNameWithLeadingNonAlphanumeric()
         {
             // Real RESP command names always begin with [A-Za-z0-9]. Names like "-foo",
@@ -136,15 +128,6 @@ namespace Garnet.test.Resp.ACL
             Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+.foo"));
             Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+_foo"));
             Assert.Throws<AclCommandDoesNotExistException>(() => ACLParser.ApplyACLOpToUser(ref user, "+|foo"));
-        }
-
-        [Test]
-        public void Parser_AcceptsNameAtLengthLimit()
-        {
-            var user = new User("alice");
-            string maxName = new string('a', ACLParser.MaxCustomCommandNameLength);
-            ACLParser.ApplyACLOpToUser(ref user, "+" + maxName);
-            CollectionAssert.Contains(user.CustomCommandsAllowed, maxName.ToUpperInvariant());
         }
 
         [Test]
@@ -235,19 +218,6 @@ namespace Garnet.test.Resp.ACL
             Assert.Throws<ACLException>(() => user.AddCustomCommand(".leading_dot"));
 
             Assert.DoesNotThrow(() => user.AddCustomCommand("json.set"));
-        }
-
-        [Test]
-        public void User_AddCustomCommand_LengthBoundary()
-        {
-            // Pin the MaxCustomCommandNameLength contract so a future bump doesn't silently
-            // change what the parser will accept on reload.
-            var user = new User("alice");
-            string maxLen = new string('a', Garnet.server.ACL.ACLParser.MaxCustomCommandNameLength);
-            string tooLong = maxLen + "a";
-
-            Assert.DoesNotThrow(() => user.AddCustomCommand(maxLen));
-            Assert.Throws<ACLException>(() => user.AddCustomCommand(tooLong));
         }
 
         [Test]

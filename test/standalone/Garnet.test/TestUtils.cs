@@ -272,7 +272,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            bool aclStrictCustomCommands = false,
+            bool aclStrictCustomCommands = true,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,

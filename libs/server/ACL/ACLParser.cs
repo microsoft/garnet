@@ -12,11 +12,6 @@ namespace Garnet.server.ACL
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
 
-        /// <summary>
-        /// Maximum length (in chars) of a custom command name accepted in an ACL rule.
-        /// </summary>
-        internal const int MaxCustomCommandNameLength = 64;
-
         // Allowed characters for custom command names. First char must be alphanumeric;
         // subsequent chars additionally permit '.', '_', '-', and '|'.
         // '|' is permitted so custom names can mirror built-in subcommand notation (e.g. CLIENT|GETNAME).
@@ -344,7 +339,7 @@ namespace Garnet.server.ACL
         /// </summary>
         internal static bool IsValidCustomCommandName(string name)
         {
-            if (string.IsNullOrEmpty(name) || name.Length > MaxCustomCommandNameLength)
+            if (string.IsNullOrEmpty(name))
             {
                 return false;
             }

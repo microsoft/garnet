@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -307,30 +308,24 @@ namespace Garnet.test.Resp.ACL
             //    Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
             //}
 
-            // Test None now accepted (per-name custom-command ACL fallthrough)
+            // Test None rejected by strict mode
             {
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users3.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +none");
 
-                // Before per-name custom-command ACLs landed this threw. The token is now
-                // accepted as a custom-command name at load (loose-by-default). Operators that
-                // want typo protection enable acl-strict-custom-commands, which would cause
-                // startup to fail after module load if the name is not registered.
-                using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-                Assert.That(server, Is.Not.Null);
+                // Ensure Garnet refuses to start and surfaces the strict-mode diagnostic
+                var ex = Assert.Throws<GarnetException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                StringAssert.Contains("ACL strict mode", ex.Message);
             }
 
-
-            // Test Invalid rejected
+            // Test Invalid rejected by strict mode
             {
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users4.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +invalid");
 
-                // Same change of contract as +none above: arbitrary alphanumeric tokens are
-                // now accepted as custom-command names at load. Strict mode is the mechanism
-                // for catching typos.
-                using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-                Assert.That(server, Is.Not.Null);
+                // Ensure Garnet refuses to start and surfaces the strict-mode diagnostic
+                var ex = Assert.Throws<GarnetException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                StringAssert.Contains("ACL strict mode", ex.Message);
             }
         }
 
