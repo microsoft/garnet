@@ -186,12 +186,42 @@ namespace Garnet.server
                     currentUser = userHandle.User;
                     newUser = new User(currentUser);
 
+                    // Snapshot the pre-op custom-name sets so we only re-validate the *added* names.
+                    // Names already present (e.g. loaded from an ACL file before modules registered)
+                    // are not re-checked, so SETUSER on unrelated rules won't fail on legacy entries.
+                    var preAllowed = currentUser.CustomCommandsAllowed;
+                    var preDenied = currentUser.CustomCommandsDenied;
+
                     // Remaining parameters are ACL operations
                     for (var i = 1; i < ops.Length; i++)
                     {
                         ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
                     }
 
+                    // At SETUSER time modules are loaded; any newly-added per-name custom permission
+                    // must resolve against CustomCommandManager. Unknown names here are almost always
+                    // typos - fail closed.
+                    var ccm = storeWrapper.customCommandManager;
+                    if (ccm != null)
+                    {
+                        foreach (var name in newUser.CustomCommandsAllowed)
+                        {
+                            // A name already present in either pre-op set (allow/deny) is not "new" from
+                            // the system's POV - only flag names absent from both presets and unregistered.
+                            // This permits toggling (allow↔deny) of loose-loaded names without false-positive throws.
+                            if (!preAllowed.Contains(name) && !preDenied.Contains(name) && !ccm.IsCustomCommandRegistered(name))
+                            {
+                                throw new ACLException($"Unknown custom command '{name}' (not registered with any loaded module)");
+                            }
+                        }
+                        foreach (var name in newUser.CustomCommandsDenied)
+                        {
+                            if (!preAllowed.Contains(name) && !preDenied.Contains(name) && !ccm.IsCustomCommandRegistered(name))
+                            {
+                                throw new ACLException($"Unknown custom command '{name}' (not registered with any loaded module)");
+                            }
+                        }
+                    }
                 }
                 while (!userHandle.TrySetUser(newUser, currentUser));
             }
