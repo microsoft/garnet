@@ -173,6 +173,10 @@ namespace Garnet
         [Option("acl-file", Required = false, HelpText = "External ACL user file.")]
         public string AclFile { get; set; }
 
+        [OptionValidation]
+        [Option("acl-strict-custom-commands", Required = false, HelpText = "If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings.")]
+        public bool? AclStrictCustomCommands { get; set; }
+
         [Option("aad-authority", Required = false, HelpText = "The authority of AAD authentication.")]
         public string AadAuthority { get; set; }
 
@@ -193,11 +197,11 @@ namespace Garnet
         public bool? EnableAOF { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit")]
+        [Option("aof-memory", Required = false, HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit. Must be at least twice AofPageSize.")]
         public string AofMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes (rounds down to power of 2). Must be at least twice the main-log PageSize, since an AOF entry can be as large as the underlying main-log record being written; object commands like LPUSH/HSET can push this even higher. When you raise this, also raise --aof-memory to at least 2x this value.")]
         public string AofPageSize { get; set; }
 
         [MemorySizeValidation]
@@ -399,7 +403,7 @@ namespace Garnet
         public int NetworkSendThrottleMax { get; set; }
 
         [OptionValidation]
-        [Option("sg-get", Required = false, HelpText = "Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO.")]
+        [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
         public bool? EnableScatterGatherGet { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
@@ -487,6 +491,10 @@ namespace Garnet
         [IntRangeValidation(1, 64)]
         [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
         public int? DeviceCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, 65536)]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends.")]
+        public int? DeviceThrottleLimit { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
@@ -847,6 +855,7 @@ namespace Garnet
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
+                AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
@@ -900,9 +909,10 @@ namespace Garnet
                         deviceType: deviceType,
                         ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                         numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
-                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
+                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 FastAofTruncate = GetFastAofTruncate(logger),
@@ -918,6 +928,7 @@ namespace Garnet
                 DeviceType = deviceType,
                 DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                 DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
+                DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

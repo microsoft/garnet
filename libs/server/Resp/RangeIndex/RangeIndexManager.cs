@@ -522,7 +522,7 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                rangeIndexLocks.ReleaseLock(lockToken);
             }
         }
 
@@ -741,7 +741,7 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
             }
         }
 

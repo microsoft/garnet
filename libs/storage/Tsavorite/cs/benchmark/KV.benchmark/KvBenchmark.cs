@@ -132,6 +132,9 @@ namespace Tsavorite.kvbench
         public PhaseResult Load()
             => RunWorkers(phase: "load", isLoad: true, durationSec: 0, iteration: 0, threadCount: Options.ResolvedLoadThreads);
 
+        /// <summary>Dumps the post-load hash-table bucket distribution (delegates to TsavoriteKV.DumpDistribution()).</summary>
+        public string DumpDistribution() => store.DumpDistribution();
+
         /// <summary>Runs one warmup window (if configured) followed by a measured run window using <paramref name="threadCount"/> workers.</summary>
         public PhaseResult RunIteration(int iteration, int threadCount)
         {

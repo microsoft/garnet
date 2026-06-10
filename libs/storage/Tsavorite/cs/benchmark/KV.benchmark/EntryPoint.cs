@@ -91,6 +91,13 @@ namespace Tsavorite.kvbench
                     Console.WriteLine("[validate] OK");
                 }
 
+                // ---- Optional --dump-distribution after load ----
+                if (opts.DumpDistribution)
+                {
+                    Console.WriteLine("[dump-distribution] hash-table distribution after load:");
+                    Console.WriteLine(engine.DumpDistribution());
+                }
+
                 // ---- Run sweep ----
                 // Run the full --iterations loop ONCE for each thread count in the sweep
                 // (single load → multiple run experiments).

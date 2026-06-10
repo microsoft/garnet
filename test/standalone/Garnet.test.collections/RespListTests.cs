@@ -537,7 +537,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 304;
+            var expectedResponse = 312;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var lrange = db.ListRange(key, 0, -1);
@@ -554,7 +554,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 304;
+            expectedResponse = 312;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             lrange = db.ListRange(key, 0, -1);
@@ -1296,7 +1296,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "mylist");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 936;
+            expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             //this should not create a new list

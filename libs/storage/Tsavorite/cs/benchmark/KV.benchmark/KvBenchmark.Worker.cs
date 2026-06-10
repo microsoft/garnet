@@ -126,7 +126,7 @@ namespace Tsavorite.kvbench
         /// <summary>
         /// RUN-phase hot loop. Structure (kept identical for all rumd ratios and distributions):
         /// <list type="bullet">
-        ///   <item>Per-chunk: <c>Interlocked.Add</c> on <see cref="globalChunkIdx"/>, then iterate kChunkSize ops.</item>
+        ///   <item>Per-chunk: <c>Interlocked.Add</c> on <see cref="globalChunkIdx"/>, then iterate --batch-size ops.</item>
         ///   <item>Per-op: inline xorshift32 key generation (bitmask if keyCount is a power of two,
         ///         else Lemire's fast modulo; zipf path delegates to <see cref="ZipfGenerator"/>).</item>
         ///   <item>Per-op: SECOND independent xorshift32 coin toss for op selection — independence is
@@ -174,10 +174,13 @@ namespace Tsavorite.kvbench
             long reads_done = 0, writes_done = 0, deletes_done = 0;
             KvKey key = default;  // hoisted; avoids per-op 16-byte zero-init.
 
+            // Run-phase batch depth (hoisted out of the hot loop). Clamp to >=1.
+            long runBatch = Math.Max(1, Options.BatchSize);
+
             while (!Volatile.Read(ref doneFlag))
             {
-                long chunk_idx = Interlocked.Add(ref globalChunkIdx, kChunkSize) - kChunkSize;
-                long chunk_end = chunk_idx + kChunkSize;
+                long chunk_idx = Interlocked.Add(ref globalChunkIdx, runBatch) - runBatch;
+                long chunk_end = chunk_idx + runBatch;
                 bContext.CompletePending(false);
                 for (long idx = chunk_idx; idx < chunk_end; ++idx)
                 {
@@ -217,7 +220,7 @@ namespace Tsavorite.kvbench
 
                     if (rcoin < readCutoff)
                     {
-                        bContext.Read(key, ref pinnedInputSpan, ref _output, Empty.Default);
+                        bContext.Read(key, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }

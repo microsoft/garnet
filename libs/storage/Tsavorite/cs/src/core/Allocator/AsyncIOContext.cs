@@ -10,9 +10,16 @@ namespace Tsavorite.core
     using static LogAddress;
 
     /// <summary>
-    /// Async IO context for PMM
+    /// Async IO context for PMM. Reference type so per-pending-IO storage (the
+    /// <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper, completion-event slot,
+    /// dictionary values) holds an 8-byte reference rather than a ~112-byte struct with
+    /// 5+ object refs. The previous struct-typed implementation caused
+    /// <c>Buffer.BulkMoveWithWriteBarrier</c> on every <c>asyncResult.context = context</c>
+    /// store, which carried JIT-inserted GC poll loops eating ~18% of the worker thread's
+    /// CPU at single-thread libaio random reads (each barrier-set in the bulk-move had a
+    /// chance of taking the slow path, and there were ~5 ref fields per copy).
     /// </summary>
-    public struct AsyncIOContext
+    public sealed class AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -24,7 +31,7 @@ namespace Tsavorite.core
         /// </summary>
         public ConditionallyHoistedKey requestKey;
 
-        /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
+        /// The retrieved record, including deserialized ValueObject if RecordDataHeader.ValueIsObject, and key or value Overflows
         public DiskLogRecord diskLogRecord;
 
         /// <summary>
@@ -50,7 +57,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext> callbackQueue;
+        internal AsyncQueue<AsyncGetFromDiskResult<AsyncIOContext>> callbackQueue;
 
         /// <summary>
         /// Synchronous completion event
@@ -58,9 +65,27 @@ namespace Tsavorite.core
         internal AsyncIOContextCompletionEvent completionEvent;
 
         /// <summary>
+        /// Reset all fields to default (for pooling). The receiver instance stays alive so the
+        /// pool keeps a stable identity; only the fields change.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Reset()
+        {
+            id = 0;
+            requestKey = default;
+            diskLogRecord = default;
+            logicalAddress = 0;
+            minAddress = 0;
+            record = null;
+            objBuffer = null;
+            callbackQueue = null;
+            completionEvent = null;
+        }
+
+        /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public readonly bool IsDefault() => callbackQueue is null && completionEvent is null;
+        public bool IsDefault() => callbackQueue is null && completionEvent is null;
 
         /// <summary>
         /// Dispose
@@ -75,7 +100,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override readonly string ToString()
+        public override string ToString()
             => $"id {id}, key {requestKey}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
     }
 
@@ -89,8 +114,7 @@ namespace Tsavorite.core
         internal AsyncIOContextCompletionEvent()
         {
             semaphore = new SemaphoreSlim(0);
-            request.id = -1;
-            request.minAddress = kInvalidAddress;
+            request = new AsyncIOContext { id = -1, minAddress = kInvalidAddress };
             request.completionEvent = this;
         }
 
@@ -114,11 +138,17 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(ref AsyncIOContext ctx)
+        internal void Set(AsyncIOContext ctx)
         {
-            request.DisposeRecord();
-
-            request = ctx;
+            // The IO carries this event's `request` as its context, so `ctx` is the same instance and
+            // the completed record is already in `request`. Disposing here would free the record the
+            // waiter is about to read. Only adopt (and dispose the stale record) if a different
+            // instance is ever passed.
+            if (!ReferenceEquals(request, ctx))
+            {
+                request.DisposeRecord();
+                request = ctx;
+            }
             exception = null;
             _ = semaphore.Release(1);
         }
@@ -129,7 +159,7 @@ namespace Tsavorite.core
             request.DisposeRecord();
             request.requestKey.Dispose();
 
-            request = default;
+            request.Reset();
             exception = ex;
             _ = semaphore.Release(1);
         }

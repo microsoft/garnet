@@ -111,13 +111,14 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |
 | **ClusterPassword** | ```--cluster-password``` | ```string``` |  | Password to authenticate intra-cluster communication with. |
 | **AclFile** | ```--acl-file``` | ```string``` |  | External ACL user file. |
+| **AclStrictCustomCommands** | ```--acl-strict-custom-commands``` | ```bool``` |  | If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings. |
 | **AadAuthority** | ```--aad-authority``` | ```string``` |  | The authority of AAD authentication. |
 | **AadAudiences** | ```--aad-audiences``` | ```string``` |  | The audiences of AAD token for AAD authentication. Should be a comma separated string. |
 | **AadIssuers** | ```--aad-issuers``` | ```string``` |  | The issuers of AAD token for AAD authentication. Should be a comma separated string. |
 | **AuthorizedAadApplicationIds** | ```--aad-authorized-app-ids``` | ```string``` |  | The authorized client app Ids for AAD authentication. Should be a comma separated string. |
 | **EnableAOF** | ```--aof``` | ```bool``` |  | Enable write ahead logging (append-only file). |
-| **AofMemorySize** | ```--aof-memory``` | ```string``` | Memory size | Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit |
-| **AofPageSize** | ```--aof-page-size``` | ```string``` | Memory size | Size of each AOF page in bytes(rounds down to power of 2) |
+| **AofMemorySize** | ```--aof-memory``` | ```string``` | Memory size | Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit. Must be at least twice AofPageSize. |
+| **AofPageSize** | ```--aof-page-size``` | ```string``` | Memory size | Size of each AOF page in bytes (rounds down to power of 2). Must be at least twice the main-log PageSize, since an AOF entry can be as large as the underlying main-log record being written; object commands like LPUSH/HSET can push this even higher. When you raise this, also raise --aof-memory to at least 2x this value. |
 | **AofSegmentSize** | ```--aof-segment-size``` | ```string``` | Memory size | Size of each AOF segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which AOF files are created and truncated. |
 | **CommitFrequencyMs** | ```--aof-commit-freq``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command |
 | **WaitForCommit** | ```--aof-commit-wait``` | ```bool``` |  | Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency. |
@@ -155,7 +156,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |
 | **NetworkSendThrottleMax** | ```--network-send-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle the maximum outstanding network sends per session. |
-| **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO. |
+| **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather. |
 | **ReplicaSyncDelayMs** | ```--replica-sync-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling |
 | **MainMemoryReplication** | ```--main-memory-replication``` | ```bool``` |  | Use main-memory replication model. |
 | **OnDemandCheckpoint** | ```--on-demand-checkpoint``` | ```bool``` |  | Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching |

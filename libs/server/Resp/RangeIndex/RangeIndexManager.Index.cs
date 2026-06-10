@@ -280,7 +280,7 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+                rangeIndexLocks.ReleaseLock(lockToken);
             }
 
             // Defer the heavyweight cleanup (native dispose + file delete) via the store epoch.

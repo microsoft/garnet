@@ -2805,14 +2805,15 @@ namespace Garnet.server
         /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
         private bool AttemptSkipLine()
         {
-            // We might have received an inline command package.Try to find the end of the line.
-            logger?.LogWarning("Received malformed input message. Trying to skip line.");
-
+            // We might have received an inline command package. Try to find the end of the line.
             for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
                 if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
-                    // Skip to the end of the string
+                    // We found a complete line that was not a valid RESP array - this is malformed input.
+                    // Only log here (not on the partial-frame path below) to avoid spurious warnings
+                    // when speculative parsers (e.g. NetworkGET_SG) peek past end-of-batch.
+                    logger?.LogWarning("Received malformed input message. Trying to skip line.");
                     readHead = endReadHead = stringEnd + 2;
                     return true;
                 }

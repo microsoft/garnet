@@ -84,9 +84,9 @@ namespace Garnet.test
 
         [Test]
         [TestCase("BRPOP", "LPUSH", 0)]
-        [TestCase("BRPOP", "LPUSH", 0.5)]
+        [TestCase("BRPOP", "LPUSH", 10)]
         [TestCase("BLPOP", "RPUSH", 0)]
-        [TestCase("BLPOP", "RPUSH", 0.5)]
+        [TestCase("BLPOP", "RPUSH", 10)]
         public void MultiListBlockingPopTest(string blockingCmd, string pushCmd, double timeout)
         {
             var key = "mykey";

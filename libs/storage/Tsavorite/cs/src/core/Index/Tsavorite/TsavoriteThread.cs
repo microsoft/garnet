@@ -85,18 +85,35 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.readyResponses.Count == 0)
                 return;
 
-            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext request))
-                InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
+            // The queue carries a heap-allocated wrapper (AsyncGetFromDiskResult) that holds the
+            // AsyncIOContext reference, so each TryDequeue moves only an 8-byte wrapper reference.
+            // The worker reads result.context then returns the wrapper to the allocator's pool so it
+            // can be reused for the next IO.
+            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncGetFromDiskResult<AsyncIOContext> result))
+            {
+                // try/finally ensures the pooled wrapper is returned even if the user
+                // callback inside InternalCompletePendingRequest throws — otherwise a
+                // throwing callback would leak the wrapper forever and degrade pool
+                // hit rate over time.
+                try
+                {
+                    InternalCompletePendingRequest(sessionFunctions, ref result.context, completedOutputs);
+                }
+                finally
+                {
+                    hlogBase.ReturnAsyncGetFromDiskResult(result);
+                }
+            }
         }
 
-        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Get and Remove this request.id pending dictionary if it is there.
+            // Get and Remove this request.id pending op from the dictionary (struct copy out of the inline entry).
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, request, ref pendingContext, out _);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref pendingContext, out var newRequest);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -106,6 +123,22 @@ namespace Tsavorite.core
                 {
                     OnDisposeDiskRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
                     pendingContext.Dispose();
+                    sessionFunctions.Ctx.ReturnAsyncIOContext(request);
+                }
+                else
+                {
+                    // Re-pended: a FRESH AsyncIOContext (newRequest) was issued for the next hop and the dictionary
+                    // holds a fresh copy of pendingContext (diskLogRecord cleared for non-conditional ops). The
+                    // completed `request` is now unreferenced, so return it to the pool. The record just read is
+                    // stale; dispose it so its buffer isn't leaked (conditional ops keep it as the dict copy's
+                    // copy/push source, so only dispose for non-conditional).
+                    Debug.Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct AsyncIOContext");
+                    if (!pendingContext.IsConditionalOp && pendingContext.diskLogRecord.IsSet)
+                    {
+                        OnDisposeDiskRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                        pendingContext.diskLogRecord.Dispose();
+                    }
+                    sessionFunctions.Ctx.ReturnAsyncIOContext(request);
                 }
             }
         }
@@ -113,12 +146,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
-            newRequest = default;
+            newRequest = null;
 
             // If this was an operation that was trying to retrieve a target record, copy it into the pendingContext.
             // CONDITIONAL_* operations do not care about the retrieved data; they only care whether a record was found.

@@ -45,6 +45,76 @@ namespace Garnet.common
     /// </remarks>
     public struct ReadOptimizedLock
     {
+        /// <summary>
+        /// Type of lock held by a <see cref="LockToken"/>.
+        /// </summary>
+        internal enum LockType : byte
+        {
+            /// <summary>
+            /// Illegal value.
+            /// </summary>
+            Invalid = 0,
+
+            /// <summary>
+            /// Shared lock.
+            /// </summary>
+            Shared,
+
+            /// <summary>
+            /// Exclusive lock for a specific hash.
+            /// </summary>
+            Exclusive,
+
+            /// <summary>
+            /// Exclusive lock for _all_ hashes.
+            /// </summary>
+            AllExclusive,
+        }
+
+        /// <summary>
+        /// Represents an acquisition of a lock.
+        /// 
+        /// Used to release the lock, and upgrade shared to exclusive locks.
+        /// </summary>
+        public readonly struct LockToken
+        {
+            internal readonly LockType type;
+            internal readonly int token;
+
+            /// <summary>
+            /// True if lock is exclusive (either for one hash or all hashes).
+            /// </summary>
+            public readonly bool IsExclusive => type is LockType.Exclusive or LockType.AllExclusive;
+
+            private LockToken(LockType type, int token)
+            {
+                this.type = type;
+                this.token = token;
+            }
+
+            /// <summary>
+            /// Create a token for a shared lock acquisition of a single hash.
+            /// </summary>
+            internal static LockToken CreateShared(int token)
+            => new(LockType.Shared, token);
+
+            /// <summary>
+            /// Create a token for an exclusive lock acquisition of a single hash.
+            /// </summary>
+            internal static LockToken CreateExclusive(int token)
+            => new(LockType.Exclusive, token);
+
+            /// <summary>
+            /// Create a token for an exclusive lock acquisition of all possible hashes.
+            /// </summary>
+            internal static LockToken CreateAllExclusive()
+            => new(LockType.AllExclusive, -1);
+
+            /// <inheritdoc/>
+            public override string ToString()
+            => type.ToString();
+        }
+
         // Beyond 4K bytes per core we're well past "this is worth the tradeoff", so cut off then.
         //
         // Must be a power of 2.
@@ -151,7 +221,7 @@ namespace Garnet.common
         /// 
         /// Will block exclusive locks until released.
         /// </summary>
-        public readonly bool TryAcquireSharedLock(long hash, out int lockToken)
+        public readonly bool TryAcquireSharedLock(long hash, out LockToken lockToken)
         {
             var ix = CalculateIndex(hash, GetProcessorHint());
 
@@ -166,7 +236,7 @@ namespace Garnet.common
                 return false;
             }
 
-            lockToken = ix;
+            lockToken = LockToken.CreateShared(ix);
             return true;
         }
 
@@ -175,7 +245,7 @@ namespace Garnet.common
         /// 
         /// Will block exclusive locks until released.
         /// </summary>
-        public readonly void AcquireSharedLock(long hash, out int lockToken)
+        public readonly void AcquireSharedLock(long hash, out LockToken lockToken)
         {
             var ix = CalculateIndex(hash, GetProcessorHint());
 
@@ -194,22 +264,59 @@ namespace Garnet.common
                 }
                 else
                 {
-                    lockToken = ix;
+                    lockToken = LockToken.CreateShared(ix);
                     return;
                 }
             }
         }
 
         /// <summary>
-        /// Release a lock previously acquired with <see cref="TryAcquireSharedLock(long, out int)"/> or <see cref="AcquireSharedLock(long, out int)"/>.
+        /// Releases a lock previously acquired with <see cref="TryAcquireSharedLock"/>, <see cref="AcquireSharedLock"/>, <see cref="TryAcquireExclusiveLock"/>, <see cref="AcquireExclusiveLock"/>, <see cref="TryPromoteSharedLock"/>, or <see cref="AcquireAllExclusiveLock"/>.
         /// </summary>
-        public readonly void ReleaseSharedLock(int lockToken)
+        public readonly void ReleaseLock(LockToken lockToken)
         {
-            Debug.Assert(lockToken >= 0 && lockToken < lockCounts.Length, "Invalid lock token");
+            if (lockToken.type == LockType.Exclusive)
+            {
+                // lockToken.token is a hash
+                ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
-            ref var releaseRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), lockToken);
+                var hash = lockToken.token;
 
-            _ = Interlocked.Decrement(ref releaseRef);
+                var coreCount = coreSelectionMask + 1;
+                for (var i = 0; i < coreCount; i++)
+                {
+                    var releaseIx = CalculateIndex(hash, i);
+
+                    ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
+                    while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                    {
+                        // Optimistic shared lock got us, back off and try again
+                        _ = Thread.Yield();
+                    }
+                }
+            }
+            else if (lockToken.type == LockType.Shared)
+            {
+                // lockToken.token is an index
+                ref var releaseRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), lockToken.token);
+
+                _ = Interlocked.Decrement(ref releaseRef);
+            }
+            else
+            {
+                // lockToken.token is ignored
+                Debug.Assert(lockToken.type == LockType.AllExclusive, "Unexpected lock type");
+
+                for (var i = 0; i < lockCounts.Length; i++)
+                {
+                    ref var releaseRef = ref lockCounts[i];
+                    while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                    {
+                        // Optimistic shared lock got us, back off and try again
+                        _ = Thread.Yield();
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -217,7 +324,7 @@ namespace Garnet.common
         /// 
         /// Will block all other locks until released.
         /// </summary>
-        public readonly bool TryAcquireExclusiveLock(long hash, out int lockToken)
+        public readonly bool TryAcquireExclusiveLock(long hash, out LockToken lockToken)
         {
             ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
@@ -250,7 +357,7 @@ namespace Garnet.common
             // Successfully acquired all shards exclusively
 
             // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
-            lockToken = (int)hash;
+            lockToken = LockToken.CreateExclusive((int)hash);
 
             return true;
         }
@@ -260,7 +367,7 @@ namespace Garnet.common
         /// 
         /// Will block all other locks until released.
         /// </summary>
-        public readonly void AcquireExclusiveLock(long hash, out int lockToken)
+        public readonly void AcquireExclusiveLock(long hash, out LockToken lockToken)
         {
             ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
@@ -280,32 +387,7 @@ namespace Garnet.common
             }
 
             // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
-            lockToken = (int)hash;
-        }
-
-        /// <summary>
-        /// Release a lock previously acquired with <see cref="TryAcquireExclusiveLock(long, out int)"/>, <see cref="AcquireExclusiveLock(long, out int)"/>, or <see cref="TryPromoteSharedLock(long, int, out int)"/>.
-        /// </summary>
-        public readonly void ReleaseExclusiveLock(int lockToken)
-        {
-            // The lockToken is a hash, so no range check here
-
-            ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
-
-            var hash = lockToken;
-
-            var coreCount = coreSelectionMask + 1;
-            for (var i = 0; i < coreCount; i++)
-            {
-                var releaseIx = CalculateIndex(hash, i);
-
-                ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
-                while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
-                {
-                    // Optimistic shared lock got us, back off and try again
-                    _ = Thread.Yield();
-                }
-            }
+            lockToken = LockToken.CreateExclusive((int)hash);
         }
 
         /// <summary>
@@ -313,7 +395,7 @@ namespace Garnet.common
         /// 
         /// Will block all other locks until released.
         /// </summary>
-        public readonly void AcquireAllExclusiveLock()
+        public readonly void AcquireAllExclusiveLock(out LockToken lockToken)
         {
             for (var i = 0; i < lockCounts.Length; i++)
             {
@@ -327,38 +409,23 @@ namespace Garnet.common
                     _ = Thread.Yield();
                 }
             }
+
+            lockToken = LockToken.CreateAllExclusive();
         }
 
         /// <summary>
-        /// Release a lock previously acquired with <see cref="AcquireAllExclusiveLock()"/>.
-        /// </summary>
-        public readonly void ReleaseAllExclusiveLock()
-        {
-            for (var i = 0; i < lockCounts.Length; i++)
-            {
-                ref var releaseRef = ref lockCounts[i];
-                while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
-                {
-                    // Optimistic shared lock got us, back off and try again
-                    _ = Thread.Yield();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock(long, out int)"/> or <see cref="AcquireSharedLock(long, out int)"/> to an exclusive lock.
+        /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock"/> or <see cref="AcquireSharedLock"/> to an exclusive lock.
         /// 
         /// If successful, will block all other locks until released.
         /// 
-        /// If successful, must be released with <see cref="ReleaseExclusiveLock(int)"/>.
-        /// 
-        /// If unsuccessful, shared lock will still be held and must be released with <see cref="ReleaseSharedLock(int)"/>.
+        /// Upon return <paramref name="lockToken"/> is an active lock which must be <see cref="ReleaseLock"/>'d.
+        /// If true is returned, the lock is an exclusive lock.  If false, it remains a shared lock
         /// </summary>
-        public readonly bool TryPromoteSharedLock(long hash, int lockToken, out int newLockToken)
+        public readonly bool TryPromoteSharedLock(long hash, ref LockToken lockToken)
         {
-            Debug.Assert(Interlocked.CompareExchange(ref lockCounts[lockToken], 0, 0) > 0, "Illegal call when not holding shard lock");
-
-            Debug.Assert(lockToken >= 0 && lockToken < lockCounts.Length, "Invalid lock token");
+            Debug.Assert(lockToken.type == LockType.Shared, "Expected shared lock type");
+            Debug.Assert(lockToken.token >= 0 && lockToken.token < lockCounts.Length, "Invalid lock token");
+            Debug.Assert(Interlocked.CompareExchange(ref lockCounts[lockToken.token], 0, 0) > 0, "Illegal call when not holding shard lock");
 
             ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
@@ -368,7 +435,7 @@ namespace Garnet.common
                 var acquireIx = CalculateIndex(hash, i);
                 ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
 
-                if (acquireIx == lockToken)
+                if (acquireIx == lockToken.token)
                 {
                     // Do the promote
                     if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 1) != 1)
@@ -387,7 +454,6 @@ namespace Garnet.common
                         }
 
                         // Note we're still holding the shared lock here
-                        Unsafe.SkipInit(out newLockToken);
                         return false;
                     }
                 }
@@ -400,7 +466,7 @@ namespace Garnet.common
                         for (var j = 0; j < i; j++)
                         {
                             var releaseIx = CalculateIndex(hash, j);
-                            var releaseTargetValue = releaseIx == lockToken ? 1 : 0;
+                            var releaseTargetValue = releaseIx == lockToken.token ? 1 : 0;
 
                             ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
                             while (Interlocked.CompareExchange(ref releaseRef, releaseTargetValue, int.MinValue) != int.MinValue)
@@ -411,14 +477,13 @@ namespace Garnet.common
                         }
 
                         // Note we're still holding the shared lock here
-                        Unsafe.SkipInit(out newLockToken);
                         return false;
                     }
                 }
             }
 
             // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
-            newLockToken = (int)hash;
+            lockToken = LockToken.CreateExclusive((int)hash);
             return true;
         }
 

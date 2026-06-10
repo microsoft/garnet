@@ -59,19 +59,19 @@ namespace Garnet.common
                 h1 = h1 * 5 + 0x52dce729;
             }
 
-            int suffixLen = len & 15;
+            int suffixLen = len & 7;
             byte* suffix = (byte*)(blockEnd);
             k1 = 0;
 
-            if (suffixLen >= 7) k1 ^= (ulong)((*(suffix + 6) << 48));
-            if (suffixLen >= 6) k1 ^= (ulong)((*(suffix + 5) << 40));
-            if (suffixLen >= 5) k1 ^= (ulong)((*(suffix + 4) << 32));
-            if (suffixLen >= 4) k1 ^= (ulong)((*(suffix + 3) << 24));
-            if (suffixLen >= 3) k1 ^= (ulong)((*(suffix + 2) << 16));
-            if (suffixLen >= 2) k1 ^= (ulong)((*(suffix + 1) << 8));
+            if (suffixLen >= 7) k1 ^= ((ulong)*(suffix + 6) << 48);
+            if (suffixLen >= 6) k1 ^= ((ulong)*(suffix + 5) << 40);
+            if (suffixLen >= 5) k1 ^= ((ulong)*(suffix + 4) << 32);
+            if (suffixLen >= 4) k1 ^= ((ulong)*(suffix + 3) << 24);
+            if (suffixLen >= 3) k1 ^= ((ulong)*(suffix + 2) << 16);
+            if (suffixLen >= 2) k1 ^= ((ulong)*(suffix + 1) << 8);
             if (suffixLen >= 1)
             {
-                k1 ^= (ulong)((*(suffix + 0) << 0));
+                k1 ^= ((ulong)*(suffix + 0) << 0);
                 k1 *= c1;
                 k1 = Rotl64(k1, 31);
                 k1 *= c2;
@@ -147,31 +147,31 @@ namespace Garnet.common
             byte* suffix = (byte*)(blockEnd);
             k1 = 0;
             k2 = 0;
-            if (suffixLen >= 15) k2 ^= (ulong)((*(suffix + 14) << 48));
-            if (suffixLen >= 14) k2 ^= (ulong)((*(suffix + 13) << 40));
-            if (suffixLen >= 13) k2 ^= (ulong)((*(suffix + 12) << 32));
-            if (suffixLen >= 12) k2 ^= (ulong)((*(suffix + 11) << 24));
-            if (suffixLen >= 11) k2 ^= (ulong)((*(suffix + 10) << 16));
-            if (suffixLen >= 10) k2 ^= (ulong)((*(suffix + 9) << 8));
+            if (suffixLen >= 15) k2 ^= ((ulong)*(suffix + 14) << 48);
+            if (suffixLen >= 14) k2 ^= ((ulong)*(suffix + 13) << 40);
+            if (suffixLen >= 13) k2 ^= ((ulong)*(suffix + 12) << 32);
+            if (suffixLen >= 12) k2 ^= ((ulong)*(suffix + 11) << 24);
+            if (suffixLen >= 11) k2 ^= ((ulong)*(suffix + 10) << 16);
+            if (suffixLen >= 10) k2 ^= ((ulong)*(suffix + 9) << 8);
             if (suffixLen >= 9)
             {
-                k2 ^= (ulong)((*(suffix + 8) << 0));
+                k2 ^= ((ulong)*(suffix + 8) << 0);
                 k2 *= c2;
                 k2 = Rotl64(k2, 33);
                 k2 *= c1;
                 h2 ^= k2;
             }
 
-            if (suffixLen >= 8) k1 ^= (ulong)((*(suffix + 7) << 56));
-            if (suffixLen >= 7) k1 ^= (ulong)((*(suffix + 6) << 48));
-            if (suffixLen >= 6) k1 ^= (ulong)((*(suffix + 5) << 40));
-            if (suffixLen >= 5) k1 ^= (ulong)((*(suffix + 4) << 32));
-            if (suffixLen >= 4) k1 ^= (ulong)((*(suffix + 3) << 24));
-            if (suffixLen >= 3) k1 ^= (ulong)((*(suffix + 2) << 16));
-            if (suffixLen >= 2) k1 ^= (ulong)((*(suffix + 1) << 8));
+            if (suffixLen >= 8) k1 ^= ((ulong)*(suffix + 7) << 56);
+            if (suffixLen >= 7) k1 ^= ((ulong)*(suffix + 6) << 48);
+            if (suffixLen >= 6) k1 ^= ((ulong)*(suffix + 5) << 40);
+            if (suffixLen >= 5) k1 ^= ((ulong)*(suffix + 4) << 32);
+            if (suffixLen >= 4) k1 ^= ((ulong)*(suffix + 3) << 24);
+            if (suffixLen >= 3) k1 ^= ((ulong)*(suffix + 2) << 16);
+            if (suffixLen >= 2) k1 ^= ((ulong)*(suffix + 1) << 8);
             if (suffixLen >= 1)
             {
-                k1 ^= (ulong)((*(suffix + 0) << 0));
+                k1 ^= ((ulong)*(suffix + 0) << 0);
                 k1 *= c1;
                 k1 = Rotl64(k1, 31);
                 k1 *= c2;
