@@ -388,10 +388,11 @@ namespace Garnet.server
 
             databaseManager.RecoverVectorSets();
 
-            // Streams persist as their own logs under StreamLogDir; rebuild the BTree indexes from
-            // the disk-backed logs. Always-on (independent of `--recover`) because a stream's
-            // existence is tracked entirely in those directories.
-            streamManager?.Recover();
+            // Streams are now first-class objects in the unified store: their consumer-group state and
+            // metadata are captured in the object checkpoint, and their per-stream log is re-opened (and
+            // BTree rebuilt) when the object is deserialized during store recovery. The old directory
+            // enumeration is intentionally gone — re-opening the logs here would double-open the devices
+            // the store recovery is about to open.
         }
 
         /// <summary>

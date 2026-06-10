@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -16,6 +17,10 @@ namespace Garnet.server
     public sealed class StreamManager : IDisposable
     {
         private readonly Dictionary<byte[], StreamObject> streams;
+
+        // Live per-stream objects (owned by the unified store) whose log handles this manager must be
+        // able to close on FLUSHDB/FLUSHALL before deleting their on-disk directories.
+        private readonly ConcurrentDictionary<StreamObject, byte> liveStreams = new();
 
         readonly string streamsRootDir;
         long defPageSize;
@@ -43,8 +48,11 @@ namespace Garnet.server
             this.logger = logger;
 
             // Publish the server-global stream configuration so the object-store deserialization
-            // factory (which only receives a BinaryReader) can re-open per-stream logs.
+            // factory (which only receives a BinaryReader) can re-open per-stream logs, and track live
+            // stream instances so FLUSH can close their log handles before deleting directories.
             StreamObjectConfig.Configure(streamsRootDir, pageSize, memorySize, waitForCommit);
+            StreamObjectConfig.RegisterLiveStream = s => liveStreams.TryAdd(s, 0);
+            StreamObjectConfig.UnregisterLiveStream = s => liveStreams.TryRemove(s, out _);
         }
 
         /// <summary>
@@ -618,6 +626,22 @@ namespace Garnet.server
             _lock.WriteLock();
             try
             {
+                // Close the per-stream log handles first. The stream objects are owned by the unified
+                // store and survive the store flush, so their device/log file handles stay open until
+                // we dispose them here — otherwise Directory.Delete below fails on Windows.
+                foreach (var stream in liveStreams.Keys)
+                {
+                    try
+                    {
+                        stream.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error disposing stream during FLUSHDB/FLUSHALL");
+                    }
+                }
+                liveStreams.Clear();
+
                 foreach (var dir in Directory.EnumerateDirectories(streamsRootDir))
                 {
                     try

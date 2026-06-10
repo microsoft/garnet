@@ -112,6 +112,15 @@ namespace Garnet.server
         internal static long DefaultMemorySize = 1L << 24;
         internal static bool WaitForCommit;
 
+        /// <summary>
+        /// Invoked when a live <see cref="StreamObject"/> is constructed/recovered, and when it is
+        /// disposed. Lets the owning <see cref="StreamManager"/> track open per-stream log handles so
+        /// FLUSHDB/FLUSHALL can close them deterministically before deleting the on-disk directories
+        /// (the unified store retains the objects after a flush, so GC alone won't close the handles).
+        /// </summary>
+        internal static Action<StreamObject> RegisterLiveStream;
+        internal static Action<StreamObject> UnregisterLiveStream;
+
         internal static void Configure(string streamsRootDir, long pageSize, long memorySize, bool waitForCommit)
         {
             StreamsRootDir = streamsRootDir;
@@ -208,6 +217,8 @@ namespace Garnet.server
             {
                 RebuildIndexFromLog();
             }
+
+            StreamObjectConfig.RegisterLiveStream?.Invoke(this);
         }
 
         /// <summary>
@@ -253,6 +264,8 @@ namespace Garnet.server
 
             lastId = blobLastId;
             totalEntriesAdded = blobTotalEntriesAdded;
+
+            StreamObjectConfig.RegisterLiveStream?.Invoke(this);
         }
 
         /// <inheritdoc />
@@ -799,6 +812,11 @@ namespace Garnet.server
             _lock.ReadLock();
             try
             {
+                // Flush the per-stream log so entries up to the serialized metadata are durable on disk.
+                // Recovery re-opens this log and rebuilds the BTree from it; uncommitted tail records
+                // would be lost on restart. No-op for in-memory (NullDevice) streams.
+                log.Commit(spinWait: true);
+
                 WriteStreamID(writer, lastId);
                 writer.Write(totalEntriesAdded);
                 SerializeConsumerGroups(writer);
@@ -2555,6 +2573,7 @@ namespace Garnet.server
             // operation. Subsequent cache-hit code paths must check IsDisposed and re-resolve
             // through StreamManager.
             disposed = true;
+            StreamObjectConfig.UnregisterLiveStream?.Invoke(this);
             try
             {
                 index.Deallocate();
