@@ -253,6 +253,21 @@ namespace Garnet.test
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
 
+        public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
+        {
+            // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
+            // only second-resolution. Loop on getting the server time and sleeping until the
+            // server's time advances into the next Unix second.
+            while (true)
+            {
+                var actualValue = db.Execute("TIME");
+                var currentSeconds = (long)((RedisValue[])actualValue)[0];
+                if (currentSeconds > baseSeconds)
+                    break;
+                Thread.Sleep(100);
+            }
+        }
+
         /// <summary>
         /// Create GarnetServer
         /// </summary>

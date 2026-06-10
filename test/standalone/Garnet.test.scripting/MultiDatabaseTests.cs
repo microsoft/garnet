@@ -1106,7 +1106,8 @@ namespace Garnet.test
                 // Issue and wait for DB save
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);
@@ -1337,9 +1338,9 @@ namespace Garnet.test
                 var db2 = redis.GetDatabase(1);
 
                 // Check no saves present
-                var lastsave = (int)db1.Execute("LASTSAVE");
-                var lastsave1 = (int)db1.Execute("LASTSAVE", "0");
-                var lastsave2 = (int)db2.Execute("LASTSAVE", "1");
+                var lastsave = (long)db1.Execute("LASTSAVE");
+                var lastsave1 = (long)db1.Execute("LASTSAVE", "0");
+                var lastsave2 = (long)db2.Execute("LASTSAVE", "1");
                 ClassicAssert.AreEqual(0, lastsave);
                 ClassicAssert.AreEqual(0, lastsave1);
                 ClassicAssert.AreEqual(0, lastsave2);
@@ -1360,9 +1361,9 @@ namespace Garnet.test
                 do
                 {
                     Thread.Sleep(10);
-                    lastsave = (int)db1.Execute("LASTSAVE");
-                    lastsave1 = (int)db1.Execute("LASTSAVE", "0");
-                    lastsave2 = (int)db2.Execute("LASTSAVE", "1");
+                    lastsave = (long)db1.Execute("LASTSAVE");
+                    lastsave1 = (long)db1.Execute("LASTSAVE", "0");
+                    lastsave2 = (long)db2.Execute("LASTSAVE", "1");
                 }
                 while (lastsave == 0 || lastsave1 == 0 || lastsave2 == 0);
 
@@ -1375,16 +1376,8 @@ namespace Garnet.test
                     db2.ListLeftPush($"k{i}o", new string('x', 256));
                 }
 
-                // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
-                // only second-resolution. The second wait loop below relies on lastsave strictly
-                // increasing past lastsave_old, which is impossible if the next checkpoint completes
-                // within the same Unix second as the first one (an in-memory checkpoint of ~1 MB
-                // completes in microseconds in Release builds). Sleep until the wall clock advances
-                // into the next Unix second so the next checkpoint's LastSaveTime is guaranteed
-                // to round to a strictly greater value than lastsave (captured at end of the prior
-                // wait loop above).
-                while (DateTimeOffset.UtcNow.ToUnixTimeSeconds() <= lastsave)
-                    Thread.Sleep(1);
+                var lastsaveBaseline = lastsave;
+                TestUtils.WaitUntilNextSecond(db1, lastsaveBaseline);
 
                 // Issue a general BGSAVE and a per-DB BGSAVE on DB 0 as a single pipelined batch
                 // via LightClient. Pipelining eliminates the client→server roundtrip between the
@@ -1402,14 +1395,16 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(expectedResponse, response);
                 }
 
-                int lastsave_old = lastsave;
+                var deadline = DateTime.UtcNow.AddSeconds(30);
                 // Wait for save to complete
                 do
                 {
                     Thread.Sleep(10);
                     lastsave = (int)db1.Execute("LASTSAVE");
                 }
-                while (lastsave <= lastsave_old);
+                while (lastsave <= lastsaveBaseline && DateTime.UtcNow < deadline);
+
+                ClassicAssert.Greater(lastsave, lastsaveBaseline, "LASTSAVE did not advance within timeout");
             }
         }
 
@@ -1438,6 +1433,8 @@ namespace Garnet.test
             // Issue general background save.
             var res = db0.Execute("BGSAVE");
             ClassicAssert.AreEqual("Background saving started", res.ToString());
+
+            TestUtils.WaitUntilNextSecond(db0, lastsaveBaseline);
 
             // Issuing another general BGSAVE while the first is in progress must fail. With multiple
             // active DBs, multiDbCheckpointingLock is acquired synchronously by the first BGSAVE,

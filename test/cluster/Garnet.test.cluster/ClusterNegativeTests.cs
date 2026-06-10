@@ -275,6 +275,7 @@ namespace Garnet.test.cluster
 
                 // Take a checkpoint to create an in-memory entry
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
@@ -321,6 +322,7 @@ namespace Garnet.test.cluster
 
             // Take a checkpoint to create an in-memory entry
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
@@ -345,6 +347,7 @@ namespace Garnet.test.cluster
 
                 // Take another checkpoin to truncate
                 primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
@@ -391,6 +394,7 @@ namespace Garnet.test.cluster
 
             // Take a checkpoint to create an in-memory entry
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
@@ -441,6 +445,7 @@ namespace Garnet.test.cluster
 
             // Take a checkpoint to create an in-memory entry
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 

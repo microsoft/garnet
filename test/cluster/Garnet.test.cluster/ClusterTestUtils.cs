@@ -3403,21 +3403,43 @@ namespace Garnet.test.cluster
             return default;
         }
 
-        public void WaitCheckpoint(int nodeIndex, DateTime time, ILogger logger = null)
-            => WaitCheckpoint((IPEndPoint)endpoints[nodeIndex], time: time, logger: logger);
+        public void WaitUntilNextSecond(int nodeIndex, DateTime baseDateTime, ILogger logger = null)
+            => WaitUntilNextSecond((IPEndPoint)endpoints[nodeIndex], baseDateTime);
 
-        public void WaitCheckpoint(IPEndPoint endPoint, DateTime time, ILogger logger = null)
+        public void WaitUntilNextSecond(IPEndPoint endPoint, DateTime baseDateTime)
+        {
+            // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
+            // only second-resolution. Loop on getting the server time and sleeping until the
+            // server's time advances into the next Unix second.
+            var server = redis.GetServer(endPoint);
+            var baseSeconds = new DateTimeOffset(baseDateTime).ToUnixTimeSeconds();
+            while (true)
+            {
+                var serverTime = server.Time();
+                if (new DateTimeOffset(serverTime).ToUnixTimeSeconds() > baseSeconds)
+                    break;
+                Thread.Sleep(100);
+            }
+        }
+
+        public void WaitCheckpoint(int nodeIndex, DateTime previousLastSave, ILogger logger = null)
+            => WaitCheckpoint((IPEndPoint)endpoints[nodeIndex], previousLastSave: previousLastSave, logger: logger);
+
+        public void WaitCheckpoint(IPEndPoint endPoint, DateTime previousLastSave, ILogger logger = null)
         {
             try
             {
                 var server = redis.GetServer(endPoint);
-                while (true)
+                var deadline = DateTime.UtcNow.AddSeconds(30);
+                do
                 {
                     var lastSaveTime = server.LastSave();
-                    if (lastSaveTime >= time)
-                        break;
+                    if (lastSaveTime > previousLastSave)
+                        return;
                     BackOff(cancellationToken: context.cts.Token);
-                }
+                } while (DateTime.UtcNow < deadline);
+
+                Assert.Fail("LASTSAVE did not advance within timeout in WaitCheckpoint");
             }
             catch (Exception ex)
             {
