@@ -1522,6 +1522,61 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task XReadGroupReturnsNullWhenNoNewMessages()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "xrg-null", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "xrg-null", "grp", "0");
+
+            // First ">" read delivers the entry.
+            var first = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "STREAMS", "xrg-null", ">");
+            ClassicAssert.IsNotNull(first);
+
+            // Second ">" read has no new messages -> null reply (Redis-compatible).
+            var second = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "STREAMS", "xrg-null", ">");
+            ClassicAssert.IsNull(second);
+        }
+
+        [Test]
+        public async Task XReadGroupOmitsStreamsWithNoNewMessages()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "xrg-a", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "xrg-a", "grp", "0");
+            await c.ExecuteAsync("XADD", "xrg-b", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "xrg-b", "grp", "0");
+
+            // Drain xrg-a so it has no new messages; xrg-b still has its entry.
+            await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "STREAMS", "xrg-a", ">");
+
+            var result = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "STREAMS", "xrg-a", "xrg-b", ">", ">");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(1, result.Length); // xrg-a omitted (no new); only xrg-b returned
+            ClassicAssert.IsTrue(result[0].Contains("xrg-b"));
+        }
+
+        [Test]
+        public async Task XReadGroupHistoryReadIncludesEmptyStream()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "xrg-hist", "*", "f1", "v1");
+            await c.ExecuteAsync("XGROUP", "CREATE", "xrg-hist", "grp", "0");
+
+            // Deliver with NOACK so the PEL stays empty, then a history read ("0") must still
+            // return [key, []] (history reads are never omitted, unlike ">" reads).
+            await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "NOACK", "STREAMS", "xrg-hist", ">");
+            var hist = await c.ExecuteForArrayAsync("XREADGROUP", "GROUP", "grp", "c1", "STREAMS", "xrg-hist", "0");
+            ClassicAssert.IsNotNull(hist);
+            ClassicAssert.AreEqual(1, hist.Length);
+        }
+
+        [Test]
         public async Task XInfoStreamTest()
         {
             using var c = TestUtils.GetGarnetClientSession();

@@ -411,28 +411,27 @@ namespace Garnet.server
         /// <param name="noAck">If true, do not add to PEL on new delivery.</param>
         /// <param name="output">RESP output buffer.</param>
         /// <param name="respProtocolVersion">RESP protocol version.</param>
-        /// <returns>True if group was found, false otherwise.</returns>
-        public unsafe bool ReadGroup(string groupName, string consumerName, string id,
+        /// <returns>Number of entries written, or -1 if the group was not found.</returns>
+        public unsafe int ReadGroup(string groupName, string consumerName, string id,
             int count, bool noAck, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             try
             {
                 if (!consumerGroups.TryGetValue(groupName, out var group))
-                    return false;
+                    return -1;
 
                 long nowMs = NowMs();
                 var consumer = group.GetOrCreateConsumer(consumerName, nowMs);
 
                 if (id == ">")
                 {
-                    ReadGroupNewEntries(group, consumer, count, noAck, nowMs, ref writer);
+                    return ReadGroupNewEntries(group, consumer, count, noAck, nowMs, ref writer);
                 }
                 else
                 {
-                    ReadGroupPendingEntries(group, consumer, id, count, ref writer);
+                    return ReadGroupPendingEntries(group, consumer, id, count, ref writer);
                 }
-                return true;
             }
             finally
             {
@@ -443,7 +442,7 @@ namespace Garnet.server
         /// <summary>
         /// Deliver new entries (after group.LastDeliveredId) to the consumer.
         /// </summary>
-        unsafe void ReadGroupNewEntries(ConsumerGroup group, StreamConsumer consumer,
+        unsafe int ReadGroupNewEntries(ConsumerGroup group, StreamConsumer consumer,
             int count, bool noAck, long nowMs, ref RespMemoryWriter writer)
         {
             // Find entries after LastDeliveredId
@@ -466,7 +465,7 @@ namespace Garnet.server
                 {
                     // At the absolute maximum ID, nothing can follow
                     writer.WriteArrayLength(0);
-                    return;
+                    return 0;
                 }
             }
 
@@ -482,7 +481,7 @@ namespace Garnet.server
             if (validCount == 0)
             {
                 writer.WriteArrayLength(0);
-                return;
+                return 0;
             }
 
             HashSet<long> tombstoneAddrs = null;
@@ -500,7 +499,7 @@ namespace Garnet.server
             if (scanEnd < beginAddr)
             {
                 writer.WriteArrayLength(0);
-                return;
+                return 0;
             }
 
             // Collect entries to deliver
@@ -534,12 +533,14 @@ namespace Garnet.server
                     group.AddPendingEntry(entryId, consumer, nowMs);
                 }
             }
+
+            return entries.Count;
         }
 
         /// <summary>
         /// Return pending entries for the consumer starting at the given ID.
         /// </summary>
-        unsafe void ReadGroupPendingEntries(ConsumerGroup group, StreamConsumer consumer,
+        unsafe int ReadGroupPendingEntries(ConsumerGroup group, StreamConsumer consumer,
             string idStr, int count, ref RespMemoryWriter writer)
         {
             StreamID startID;
@@ -550,7 +551,7 @@ namespace Garnet.server
             else if (!ParseCompleteStreamIDFromString(idStr, out startID))
             {
                 writer.WriteArrayLength(0);
-                return;
+                return 0;
             }
 
             // Walk consumer's pending IDs from startID
@@ -563,7 +564,7 @@ namespace Garnet.server
             if (pendingIds.Count == 0)
             {
                 writer.WriteArrayLength(0);
-                return;
+                return 0;
             }
 
             // Read each pending entry from the log
@@ -599,6 +600,8 @@ namespace Garnet.server
                     writer.WriteNull();
                 }
             }
+
+            return pendingIds.Count;
         }
 
         /// <summary>

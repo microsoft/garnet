@@ -645,15 +645,15 @@ namespace Garnet.server
 
         /// <summary>
         /// XREADGROUP single-stream slice: parseState = [group, consumer, id]; arg1 = NOACK flag,
-        /// arg2 = count. Writes the entries sub-array; sets result1 = 1 if the group was found, else 0.
+        /// arg2 = count. Writes the entries sub-array; sets result1 = number of entries written, or -1
+        /// if the group was not found (so the caller can emit NOGROUP and omit empty "&gt;" streams).
         /// </summary>
         void OperateXReadGroup(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var groupName = input.parseState.GetArgSliceByRef(0).ToString();
             var consumerName = input.parseState.GetArgSliceByRef(1).ToString();
             var id = input.parseState.GetArgSliceByRef(2).ToString();
-            var found = ReadGroup(groupName, consumerName, id, input.arg2, input.arg1 != 0, ref output.SpanByteAndMemory, respProtocolVersion);
-            output.result1 = found ? 1 : 0;
+            output.result1 = ReadGroup(groupName, consumerName, id, input.arg2, input.arg1 != 0, ref output.SpanByteAndMemory, respProtocolVersion);
         }
 
         /// <summary>XREAD single-stream slice: parseState = [id]; arg2 = count. Writes the entries array

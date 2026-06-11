@@ -417,42 +417,88 @@ namespace Garnet.server
             for (int i = 0; i < numStreams; i++)
                 idSlices[i] = parseState.GetArgSliceByRef(argIdx + numStreams + i);
 
-            // XREADGROUP always returns multi-stream format: *N [*2 $key *M entries...]
+            // XREADGROUP multi-stream format: *N [*2 $key *M entries...]. Like XREAD, ">" (new-message)
+            // reads omit streams with no new entries (and reply null when none); history reads (explicit
+            // ID) always include the stream so an empty PEL still returns [key, []].
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var writer = new RespMemoryWriter(respProtocolVersion, ref _output);
-            writer.WriteArrayLength(numStreams);
-            for (int i = 0; i < numStreams; i++)
+            var streamResults = new (SpanByteAndMemory output, bool include)[numStreams];
+            var groupMissing = false;
+            try
             {
-                writer.WriteArrayLength(2);
-                writer.WriteBulkString(keys[i].ReadOnlySpan);
-
-                // Collect entries into a temp (unpinned) buffer via the object store.
-                var streamOutput = new ObjectOutput();
-                var status = storageSession.StreamReadGroupOne(keys[i], groupSlice, consumerSlice, idSlices[i], count, noAck, ref streamOutput);
-                var found = status != GarnetStatus.NOTFOUND && streamOutput.result1 != 0;
-                if (!found)
+                for (int i = 0; i < numStreams; i++)
                 {
-                    // Group not found — discard partial output and write error
+                    var streamOutput = new ObjectOutput();
+                    var status = storageSession.StreamReadGroupOne(keys[i], groupSlice, consumerSlice, idSlices[i], count, noAck, ref streamOutput);
+                    // result1 = entries written, or -1 if the group does not exist.
+                    if (status == GarnetStatus.NOTFOUND || streamOutput.result1 < 0)
+                    {
+                        groupMissing = true;
+                        streamResults[i] = (streamOutput.SpanByteAndMemory, false);
+                        break;
+                    }
+
+                    var idSpan = idSlices[i].ReadOnlySpan;
+                    var isNewRead = idSpan.Length == 1 && idSpan[0] == (byte)'>';
+                    // ">" reads omit empty streams; history reads are always returned.
+                    var include = !isNewRead || streamOutput.result1 > 0;
+                    streamResults[i] = (streamOutput.SpanByteAndMemory, include);
+                }
+
+                if (groupMissing)
+                {
                     writer.Dispose();
                     while (!RespWriteUtils.TryWriteError("NOGROUP No such consumer group"u8, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
-                // Inline the entries sub-array
-                var sbm = streamOutput.SpanByteAndMemory;
-                if (sbm.IsSpanByte)
+                var includeCount = 0;
+                for (int i = 0; i < numStreams; i++)
                 {
-                    writer.WriteDirect(sbm.SpanByte.ReadOnlySpan);
+                    if (streamResults[i].include)
+                        includeCount++;
                 }
-                else if (sbm.Memory != null)
+
+                if (includeCount == 0)
                 {
-                    writer.WriteDirect(sbm.Memory.Memory.Span.Slice(0, sbm.Length));
-                    sbm.Memory.Dispose();
+                    writer.WriteNullArray();
+                }
+                else
+                {
+                    writer.WriteArrayLength(includeCount);
+                    for (int i = 0; i < numStreams; i++)
+                    {
+                        if (!streamResults[i].include)
+                            continue;
+                        writer.WriteArrayLength(2);
+                        writer.WriteBulkString(keys[i].ReadOnlySpan);
+
+                        var sbm = streamResults[i].output;
+                        if (sbm.IsSpanByte)
+                            writer.WriteDirect(sbm.SpanByte.ReadOnlySpan);
+                        else if (sbm.Memory != null)
+                            writer.WriteDirect(sbm.Memory.Memory.Span.Slice(0, sbm.Length));
+                        else
+                            writer.WriteArrayLength(0);
+                    }
+                }
+                writer.Dispose();
+                ProcessOutput(_output);
+            }
+            catch
+            {
+                writer.Dispose();
+                throw;
+            }
+            finally
+            {
+                for (int i = 0; i < numStreams; i++)
+                {
+                    if (streamResults[i].output.Memory != null)
+                        streamResults[i].output.Memory.Dispose();
                 }
             }
-            writer.Dispose();
-            ProcessOutput(_output);
             return true;
         }
 
