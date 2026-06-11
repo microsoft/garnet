@@ -43,7 +43,8 @@ namespace Tsavorite.core
             /// <summary>The user Context that was sent to this operation if it was RUMD.</summary>
             internal TContext userContext;
 
-            /// <summary>The id of this operation in the <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.TsavoriteExecutionContext{TInput, TOutput, TContext}.ioPendingRequests"/> queue.</summary>
+            /// <summary>The id assigned to this operation when it goes pending (diagnostic; the pending op is
+            /// carried directly on its <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.PendingIoContext{TInput, TOutput, TContext}"/>).</summary>
             internal long id;
 
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>

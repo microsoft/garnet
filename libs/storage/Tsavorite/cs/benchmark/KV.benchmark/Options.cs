@@ -104,7 +104,11 @@ namespace Tsavorite.kvbench
         public string Device { get; set; }
 
         [Option("device-throttle", Required = false, Default = 0,
-            HelpText = "Max in-flight IOs. 0 = device default (120 for every Tsavorite device).")]
+            HelpText = "Max in-flight IOs (device queue depth). 0 = device default (120 for Native; maps to " +
+                       "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
+                       "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
+                       "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
+                       "caps IOPS below the device's large-span ceiling).")]
         public int DeviceThrottle { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
@@ -120,6 +124,13 @@ namespace Tsavorite.kvbench
                        "value up to the available submitter concurrency. 0 = default (1 for Native; " +
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
+
+        [Option("device-inline-completion", Required = false, Default = false,
+            HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
+                       "completion threads or rings; copy + callback run synchronously). Isolates the " +
+                       "per-op work from the cross-thread run-thread->completion-thread handoff. " +
+                       "Overrides --device-completion-threads.")]
+        public bool DeviceInlineCompletion { get; set; }
 
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]

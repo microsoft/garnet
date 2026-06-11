@@ -493,7 +493,7 @@ namespace Garnet
         public int? DeviceCompletionThreads { get; set; }
 
         [IntRangeValidation(0, 65536)]
-        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends.")]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends. For DeviceType=LocalMemory (which has no device-wide throttle) this instead sets the per-ring in-flight capacity, rounded up to a power of two.")]
         public int? DeviceThrottleLimit { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
