@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           npm install -g azurite
-          azurite &
+          azurite --skipApiVersionCheck &
       - name: Install dependencies
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Build Tsavorite
