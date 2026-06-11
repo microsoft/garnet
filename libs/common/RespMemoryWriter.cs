@@ -519,11 +519,12 @@ namespace Garnet.common
             if (ptrHandle.Pointer != default)
             {
                 ptrHandle.Dispose();
-                // Do NOT dispose output.Memory here. Its contents were just copied into newMem and
-                // output.Memory is reassigned below; proactively returning the old buffer to the
-                // shared MemoryPool at this point corrupts buffers handed out by subsequent rents
-                // (observed as cross-test failures, e.g. RespTests.AppendLargeStringValueTest). The
-                // old buffer is left for GC. Only the pin handle is ours to release here.
+                // NOTE: output.Memory is intentionally NOT disposed here, which leaks the old pooled
+                // buffer back to GC (instead of MemoryPool) on every grow. Disposing it is correct for
+                // the main-store path, but the stream read output path (XINFO/XREAD/XREADGROUP/...)
+                // currently double-disposes output.Memory, so re-enabling this dispose turns that into
+                // a double-free that crashes the server (8+ RespStreamTests fail fast). Fix the stream
+                // output buffer lifecycle first, then restore `output.Memory.Dispose();` here.
             }
             else
             {
