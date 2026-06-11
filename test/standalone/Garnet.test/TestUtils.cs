@@ -1312,9 +1312,9 @@ using System.Threading.Tasks;
             return RandomNumberGenerator.GetString(chars, len);
         }
 
-        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null, bool suppressFailure = false)
         {
-            var failTestOnLeak = TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
+            var failTestOnLeak = !suppressFailure && TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
 
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
@@ -1346,6 +1346,11 @@ using System.Threading.Tasks;
             if (failTestOnLeak && !string.IsNullOrEmpty(failMsg))
             {
                 Assert.Fail(failMsg);
+            }
+            else if (logger is null && !string.IsNullOrEmpty(failMsg))
+            {
+                // Guarantee the leak message goes _somewhere_ if it doesn't fail the test
+                TestContext.Out.WriteLine(failMsg);
             }
         }
     }
