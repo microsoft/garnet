@@ -175,7 +175,7 @@ namespace Tsavorite.core
                 return false;
 
             completionEvent.Prepare(key, logicalAddress, bufferPool);
-            AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, IStreamBuffer.DefaultInitialIORecordSize, completionEvent.request);
             completionEvent.Wait();
 
             ref var request = ref completionEvent.request;

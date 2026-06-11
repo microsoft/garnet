@@ -581,6 +581,10 @@ namespace Garnet
         [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
         public string ValueOverflowThreshold { get; set; }
 
+        [MemorySizeValidation(isRequired: false)]
+        [Option("initial-io-record-size", Required = false, HelpText = "Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes.")]
+        public string InitialIORecordSize { get; set; }
+
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
@@ -944,6 +948,7 @@ namespace Garnet
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
                 ValueOverflowThreshold = ValueOverflowThreshold,
+                InitialIORecordSize = InitialIORecordSize,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,

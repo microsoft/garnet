@@ -74,6 +74,10 @@ namespace Tsavorite.core
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
+            /// <summary>Initial IO record size for disk reads; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from session or store level.
+            /// Note: default(PendingContext) leaves this as 0, which is also treated as "use default" by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.ResolveInitialIORecordSize"/>.</summary>
+            internal int initialIORecordSize;
+
             internal long minAddress;
             internal long maxAddress;
 
@@ -93,17 +97,23 @@ namespace Tsavorite.core
             {
                 var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
-                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}";
+                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}, InitIORecSz={initialIORecordSize}";
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(long keyHash) => this.keyHash = keyHash;
+            internal PendingContext(long keyHash)
+            {
+                this.keyHash = keyHash;
+                operationFlags = kNoOpFlags;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
                 operationFlags = kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
+                initialIORecordSize = readOptions.InitialIORecordSize;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -111,6 +121,7 @@ namespace Tsavorite.core
             {
                 operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
             }
 
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;

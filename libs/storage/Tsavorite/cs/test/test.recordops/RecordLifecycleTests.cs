@@ -204,7 +204,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -610,9 +610,9 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
+                PageSize = MinKvLogPageSize,
                 ReadCacheMemorySize = 1L << 15,
-                ReadCachePageSize = 1L << 10,
+                ReadCachePageSize = MinKvLogPageSize,
                 ReadCacheEnabled = true,
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))
@@ -680,10 +680,10 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << 15,
-                PageSize = 1L << 10,
-                ReadCacheMemorySize = 1L << 16,
-                ReadCachePageSize = 1L << 10,
+                LogMemorySize = 1L << (MinKvLogPageSizeBits + 4),
+                PageSize = MinKvLogPageSize,
+                ReadCacheMemorySize = 1L << (MinKvLogPageSizeBits + 5),
+                ReadCachePageSize = MinKvLogPageSize,
                 ReadCacheEnabled = true,
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))

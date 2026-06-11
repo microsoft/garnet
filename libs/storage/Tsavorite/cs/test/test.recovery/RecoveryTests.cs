@@ -249,9 +249,10 @@ namespace Tsavorite.test.recovery.sumstore
                 CheckpointDir = MethodTestDir
             };
 
-            log = new LocalMemoryDevice(kvSettings.SegmentSize * 4, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(MethodTestDir, $"{allocatorType}.log"));
+            // smallSector is there to cause a mismatch in sectorSize. We now have a required minimum so use half that.
+            log = new LocalMemoryDevice(capacity: kvSettings.SegmentSize * 4, segmentSize: 1L << 22, parallelism: 2, sectorSize: smallSector ? IDevice.MinDeviceSectorSize / 2 : (uint)IDevice.MinDeviceSectorSize, fileName: Path.Join(MethodTestDir, $"{allocatorType}.log"));
             objlog = allocatorType == AllocatorType.Object
-                ? new LocalMemoryDevice(capacity: kvSettings.ObjectLogSegmentSize * 4, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{allocatorType}.obj.log"))
+                ? new LocalMemoryDevice(capacity: kvSettings.ObjectLogSegmentSize * 4, segmentSize: 1L << 22, parallelism: 2, fileName: Path.Join(MethodTestDir, $"{allocatorType}.obj.log"))
                 : null;
 
             kvSettings.LogDevice = log;
@@ -339,7 +340,7 @@ namespace Tsavorite.test.recovery.sumstore
             if (smallSector)
             {
                 _ = Assert.ThrowsAsync<TsavoriteException>(async () => await Checkpoint(store, isAsync).ConfigureAwait(false));
-                Assert.Pass("Verified expected exception; the test cannot continue, so exiting early with success");
+                Assert.Pass("Verified expected exception on mismatched sector sizes; the test cannot continue, so exiting early with success");
             }
             else
                 await Checkpoint(store, isAsync).ConfigureAwait(false);

@@ -6,6 +6,7 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
@@ -27,7 +28,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 9
+                PageSize = MinKvLogPageSize,
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

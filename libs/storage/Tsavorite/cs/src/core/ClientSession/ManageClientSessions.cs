@@ -19,11 +19,14 @@ namespace Tsavorite.core
         /// <param name="functions">Callback functions</param>
         /// <param name="enableConsistentRead">Enable consistent read context</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
+        /// <param name="initialIORecordSize">Initial IO record size for disk reads in this session;
+        ///     <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from the store-level setting, and may be overridden on individual Read operations via <see cref="ReadOptions.InitialIORecordSize"/>.</param>
         /// <returns>Session instance</returns>
         public ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TKey, TInput, TOutput, TContext, TFunctions>(
             TFunctions functions,
             bool enableConsistentRead = false,
-            ReadCopyOptions readCopyOptions = default)
+            ReadCopyOptions readCopyOptions = default,
+            int initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -36,6 +39,7 @@ namespace Tsavorite.core
             int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
+            ctx.InitialIORecordSize = initialIORecordSize;
 
             if (RevivificationManager.IsEnabled)
             {

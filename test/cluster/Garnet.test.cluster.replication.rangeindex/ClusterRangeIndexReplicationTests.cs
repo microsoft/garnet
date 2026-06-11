@@ -126,8 +126,9 @@ namespace Garnet.test.cluster
             PopulateRangeIndex(primaryIndex, "idx3", 5);
 
             // Take checkpoint
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Wait for replica to sync
@@ -176,8 +177,9 @@ namespace Garnet.test.cluster
                 "flush.bftree files should exist on primary after deterministic flush");
 
             // Take checkpoint
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Wait for replica to sync
@@ -219,8 +221,9 @@ namespace Garnet.test.cluster
 
             // Populate and checkpoint
             PopulateRangeIndex(primaryIndex, "idx1", 10);
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Add more data after checkpoint (will be in AOF)
@@ -271,6 +274,7 @@ namespace Garnet.test.cluster
             // Take checkpoint so replica can recover
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
             var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
@@ -333,6 +337,7 @@ namespace Garnet.test.cluster
             // Take checkpoint
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
             var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
             context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);

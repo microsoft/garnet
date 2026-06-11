@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// Floor sector size used when the alignment probe fails (parent directory missing,
         /// or kernel/filesystem combinations that do not populate statx STATX_DIOALIGN).
         /// </summary>
-        const uint MinSectorSize = 512;
+        const uint MinSectorSize = IDevice.MinDeviceSectorSize;
 
         readonly ConcurrentQueue<int> freeResults = new();
         readonly ILogger logger;

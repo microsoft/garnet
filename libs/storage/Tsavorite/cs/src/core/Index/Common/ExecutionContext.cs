@@ -19,6 +19,9 @@ namespace Tsavorite.core
             // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
             internal ReadCopyOptions ReadCopyOptions;
 
+            /// <summary>Initial IO record size for disk reads; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from store level.</summary>
+            internal int InitialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
+
             public SystemState SessionState;
             internal long version => SessionState.Version;
             public Phase phase => SessionState.Phase;

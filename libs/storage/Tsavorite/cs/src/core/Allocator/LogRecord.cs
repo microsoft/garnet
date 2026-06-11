@@ -481,6 +481,26 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
+        /// <summary>
+        /// Computes the expected allocated record size from component lengths and optional-field expectations, without requiring
+        /// an actual record in memory. This uses the same layout math as <see cref="RecordSizeInfo.CalculateSizes"/>.
+        /// </summary>
+        /// <param name="keyDataLength">Length of the key data in bytes.</param>
+        /// <param name="valueDataLength">Length of the value data in bytes. For object values, use <see cref="ObjectIdMap.ObjectIdSize"/>.</param>
+        /// <param name="extendedNamespaceLength">Length of any extended namespace data preceding the key (0 if none).</param>
+        /// <param name="expectETag">Whether the record is expected to have an ETag optional field.</param>
+        /// <param name="expectExpiration">Whether the record is expected to have an Expiration optional field.</param>
+        /// <param name="expectObject">Whether the record is expected to have an object (key overflow, value overflow, or value object),
+        ///     which requires an <see cref="ObjectLogPositionSize"/>-byte object-log position field.</param>
+        /// <returns>The expected allocated (record-aligned) size in bytes, including <see cref="RecordInfo"/> header.</returns>
+        public static int GetExpectedIORecordSize(int keyDataLength, int valueDataLength, int extendedNamespaceLength = 0,
+            bool expectETag = false, bool expectExpiration = false, bool expectObject = false)
+        {
+            var optionalSize = (expectETag ? ETagSize : 0) + (expectExpiration ? ExpirationSize : 0) + (expectObject ? ObjectLogPositionSize : 0);
+            var actualSize = Constants.FixedHeaderSize + extendedNamespaceLength + keyDataLength + valueDataLength + optionalSize;
+            return Utility.RoundUp(actualSize, Constants.kRecordAlignment);
+        }
+
         /// <summary>Set the filler length on the RDH for a record. Used only by <see cref="DiskLogRecord.DirectCopyInlinePortionOfRecord"/>
         /// when constructing a LogRecord over a transient output buffer (NOT a live log record), so no concurrent scanner exists.
         /// <see cref="RecordDataHeader.SetFiller"/> performs its own atomic word update.</summary>

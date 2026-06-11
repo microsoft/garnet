@@ -11,7 +11,7 @@ namespace Tsavorite.core
     internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
-        public const int kMinPageSizeBits = 6;  // 64B
+        public const int kMinPageSizeBits = 12; // 4KB
         /// <summary>Maximum number of bits for a page size</summary>
         public const int kMaxPageSizeBits = 27; // 128MB
 
@@ -26,7 +26,7 @@ namespace Tsavorite.core
         public const int kMaxSegmentSizeBits = 62;
 
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
-        public const int kMinMemorySizeBits = kMinPageSizeBits;
+        public const int kMinMemorySizeBits = kMinPageSizeBits + 1;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
@@ -50,7 +50,7 @@ namespace Tsavorite.core
         public const int DefaultMaxInlineValueSize = 1 << 12;                           // 4KB
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
-        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;                   // 64B
+        public const int kLowestMaxInlineSizeBits = 6;                                  // 64B
 
         /// <summary>Maximum inline key size that fits in the RDH KeyLength field.
         /// <para>Set to one less than the field's max value (`(1 &lt;&lt; <see cref="RecordDataHeader.kKeyLengthBits"/>) - 1`), so inline keys occupy

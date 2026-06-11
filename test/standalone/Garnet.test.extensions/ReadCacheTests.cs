@@ -47,7 +47,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheTailAddress);
 
             // Do enough writes to overflow memory to push records to disk
-            for (var i = 0; i < 120; i++)
+            for (var i = 0; i < 2000; i++)
             {
                 var key = $"key{i:00000}";
                 var value = $"val{i:00000}";
@@ -85,13 +85,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual($"val{j:00000}", (string)value);
             }
             info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
-            // 32 bytes for 14 records plus PageHeader ends on page boundary so no bytes needed for 512b page alignment, but we pick up the next pages' headers.
-            ClassicAssert.AreEqual(PageHeaderSize * 3 + RecordSize * 40, info.ReadCacheTailAddress);
+            // 32 bytes for each record plus PageHeader and we stay on the same page.
+            ClassicAssert.AreEqual(PageHeaderSize + RecordSize * 40, info.ReadCacheTailAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress); // Read cache should not have been evicted yet
             ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
 
             // Issue more reads to start evicting read cache entries
-            for (var j = 40; j < 80; j++)
+            for (var j = 40; j < 1500; j++)
             {
                 var key = $"key{j:00000}";
                 var value = db.StringGet(key);
@@ -118,7 +118,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheTailAddress);
 
             // Do enough list pushes to overflow memory to push records to disk
-            for (var i = 0; i < 100; i++)
+            for (var i = 0; i < 2000; i++)
             {
                 var key = $"objKey{i:00000}";
                 var value = $"objVal{i:00000}";
@@ -156,13 +156,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual($"objVal{j:00000}", (string)value);
             }
             info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
-            // 40 bytes for 11 records plus PageHeader ends 8 bytes short of page boundary so add 8 bytes needed for page alignment plus next page's header.
-            ClassicAssert.AreEqual(PageHeaderSize * 2 + RecordSize * 20 + 8, info.ReadCacheTailAddress);
+            // 40 bytes for each record plus PageHeader and we stay on the same page.
+            ClassicAssert.AreEqual(PageHeaderSize + RecordSize * 20, info.ReadCacheTailAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress); // Read cache should not have been evicted yet
             ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
 
             // Issue more reads to start evicting read cache entries
-            for (var j = 40; j < 80; j++)
+            for (var j = 40; j < 1500; j++)
             {
                 var key = $"objKey{j:00000}";
                 var value = db.ListGetByIndex(key, 0);

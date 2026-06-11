@@ -151,9 +151,13 @@ namespace Tsavorite.core
                 op.record = null;
                 op.callbackQueue = sessionCtx.readyResponses;
 
+                // The IO record size is resolved on the first call to this method. Usually this is from InternalRead/InternalRMW before returning
+                // RECORD_ON_DISK but may be from elsewhere such as ReadCache or ConditionalCopyToTail, so do the setting of initial IO record size here.
+                if (pendingContext.initialIORecordSize <= 0)
+                    ResolveInitialIORecordSize(sessionCtx, ref pendingContext);
                 // Count the op as pending before issuing; the drain decrements when this op completes.
                 sessionCtx.pendingCount++;
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, op);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, pendingContext.initialIORecordSize, op);
                 request = op;
                 return new(StatusCode.Pending);
             }
@@ -162,6 +166,31 @@ namespace Tsavorite.core
                 Debug.Fail($"Unexpected OperationStatus {operationStatus}");
                 return new(StatusCode.Error);
             }
+        }
+
+        /// <summary>
+        /// Resolves the initial IO record size for a pending disk read by checking the hierarchy:
+        /// per-operation (highest priority) → session → store → default (lowest priority).
+        /// Called from InternalRead and InternalRMW before returning <see cref="OperationStatus.RECORD_ON_DISK"/>.
+        /// </summary>
+        /// <param name="sessionCtx">The session execution context (session-level setting).</param>
+        /// <param name="pendingContext">The pending context; its <see cref="PendingContext{TInput,TOutput,TContext}.initialIORecordSize"/> holds
+        ///     the per-operation value and will be overwritten with the resolved value.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ResolveInitialIORecordSize<TInput, TOutput, TContext>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext)
+        {
+            // Priority: per-operation (highest) > session-level > store-level > IStreamBuffer.DefaultInitialIORecordSize.
+            // Both UseDefaultInitialIORecordSize (-1) and 0 (from default struct init) are treated as "not set".
+            var size = pendingContext.initialIORecordSize;
+            if (size <= 0)
+                size = sessionCtx.InitialIORecordSize;
+            if (size <= 0)
+                size = InitialIORecordSize;
+            if (size <= 0)
+                size = IStreamBuffer.DefaultInitialIORecordSize;
+            pendingContext.initialIORecordSize = size;
         }
     }
 }

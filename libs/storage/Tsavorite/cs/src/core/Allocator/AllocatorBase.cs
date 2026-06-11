@@ -1679,16 +1679,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
+            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedReadStart, out var alignedReadLength);
+            device.ReadAsync(alignedReadStart, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
-        private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength)
+        private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedReadStart, out uint alignedReadLength)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
-            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
+            var readStart = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+            alignedReadStart = (ulong)RoundDown((long)readStart, sectorSize);
+            var alignedReadEnd = (ulong)RoundUp((long)readStart + numBytes, sectorSize);
+            alignedReadLength = (uint)(alignedReadEnd - alignedReadStart);
 
             // Records never span page boundaries (HandlePageOverflow guarantees this), but the
             // sector-aligned read window above can over-extend past the page-end on records near
@@ -1701,8 +1701,8 @@ namespace Tsavorite.core
             // sector-aligned (PageSizeBits >= SectorSize), so the clamped length stays
             // sector-aligned.
             var pageEndInFile = (ulong)(AlignedPageSizeBytes * (GetPage(fromLogicalAddress) + 1));
-            if (alignedFileOffset + alignedReadLength > pageEndInFile)
-                alignedReadLength = (uint)(pageEndInFile - alignedFileOffset);
+            if (alignedReadStart + alignedReadLength > pageEndInFile)
+                alignedReadLength = (uint)(pageEndInFile - alignedReadStart);
 
             // Rent the read-destination buffer with clearOnReturn=false: the device read
             // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
@@ -1710,7 +1710,7 @@ namespace Tsavorite.core
             // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
             // bandwidth per pending read).
             var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
-            record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            record.valid_offset = (int)(readStart - alignedReadStart);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;
             return record;
@@ -2104,7 +2104,7 @@ namespace Tsavorite.core
             // TODO: Optimize for non-ReadAtAddress tombstoned records to not have to retrieve the full record or, if we have it, not deserialize objects.
 
             // Initialize to "key is not present (data too small) or does not match so get previous record" length to read
-            prevLengthToRead = IStreamBuffer.InitialIOSize;
+            prevLengthToRead = IStreamBuffer.DefaultInitialIORecordSize;
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;

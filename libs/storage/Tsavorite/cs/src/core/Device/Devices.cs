@@ -55,7 +55,7 @@ namespace Tsavorite.core
                 DeviceType.Null => new NullDevice(),
                 DeviceType.LocalMemory => new LocalMemoryDevice(
                     capacity: capacity,
-                    sz_segment: localMemorySegmentSize,
+                    segmentSize: localMemorySegmentSize,
                     parallelism: numCompletionThreads < 0 ? System.Environment.ProcessorCount : numCompletionThreads,
                     ringCapacity: localMemoryRingCapacity > 0 ? localMemoryRingCapacity : 1024,
                     fileName: logPath ?? "/userspace/ram/storage"),

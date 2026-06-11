@@ -94,6 +94,11 @@ namespace Garnet.test
 
     internal static class TestUtils
     {
+        // Use 4KB page size for tests, independent of device sector size
+        public const int MinKvLogPageSizeBits = 12; // TODO: Same as LogSettings.kMinPageSizeBits; need to centralize
+        public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+        public const int MinKvLogPageSizeInKB = MinKvLogPageSize / 1024;
+
         public static int TestPort = (int)TestPortAssignment.GarnetTest;    // No OneTimeSetUp needed for "Garnet.test" to set this
 
         /// <summary>
@@ -246,6 +251,21 @@ namespace Garnet.test
             // Need this environment variable set AND Azure Storage Emulator running
             if (!IsRunningAzureTests)
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
+        }
+
+        public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
+        {
+            // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
+            // only second-resolution. Loop on getting the server time and sleeping until the
+            // server's time advances into the next Unix second.
+            while (true)
+            {
+                var actualValue = db.Execute("TIME");
+                var currentSeconds = (long)((RedisValue[])actualValue)[0];
+                if (currentSeconds > baseSeconds)
+                    break;
+                Thread.Sleep(100);
+            }
         }
 
         /// <summary>
@@ -428,8 +448,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
 
                 // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
                 // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
@@ -853,8 +873,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
             }
 
             return opts;
@@ -1126,7 +1146,7 @@ namespace Garnet.test
         /// <param name="fillerPrefix">Prefix for filler key names (default "flushfiller").</param>
         /// <param name="timeoutMs">Maximum time in ms to wait for flush (default 5000).</param>
         public static async Task FlushAndWaitForStoreAsync(IDatabase db, IServer server,
-            long flushUntilAddress, int fillerCount = 200, string fillerPrefix = "flushfiller",
+            long flushUntilAddress, int fillerCount = 2000, string fillerPrefix = "flushfiller",
             int timeoutMs = 5000)
         {
             for (var i = 0; i < fillerCount; i++)

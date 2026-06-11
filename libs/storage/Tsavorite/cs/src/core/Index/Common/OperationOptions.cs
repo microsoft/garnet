@@ -94,12 +94,21 @@ namespace Tsavorite.core
         /// </summary>
         public long? KeyHash { get; set; }
 
+        /// <summary>
+        /// Initial IO size for reading this record from disk; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means
+        /// inherit from the session or store level setting.
+        /// </summary>
+        public int InitialIORecordSize { get; set; } = KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <summary>Default constructor.</summary>
+        public ReadOptions() { }
+
         /// <inheritdoc/>
-        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}";
+        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}";
     }
 
     /// <summary>
-    /// Options for the Read() operation
+    /// Options for the RMW() operation
     /// </summary>
     public struct RMWOptions
     {
@@ -108,8 +117,17 @@ namespace Tsavorite.core
         /// </summary>
         public long? KeyHash { get; set; }
 
+        /// <summary>
+        /// Initial IO size for reading this record from disk; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means
+        /// inherit from the session or store level setting.
+        /// </summary>
+        public int InitialIORecordSize { get; set; } = KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <summary>Default constructor.</summary>
+        public RMWOptions() { }
+
         /// <inheritdoc/>
-        public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
+        public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}";
     }
 
     /// <summary>
