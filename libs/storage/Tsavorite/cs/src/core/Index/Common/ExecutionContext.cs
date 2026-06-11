@@ -34,6 +34,13 @@ namespace Tsavorite.core
             /// </summary>
             public int pendingCount;
             public readonly AsyncCountDown pendingReads;
+
+            /// <summary>
+            /// Queue of completed pending-IO ops awaiting run-thread processing. Typed as the non-generic
+            /// <see cref="AsyncIOContext"/> base because the allocator's IO-completion callback that enqueues
+            /// here is not generic; every entry is in fact a <see cref="PendingIoContext{TInput, TOutput, TContext}"/>,
+            /// recovered by downcast when drained on a thread that has the session's type arguments in scope.
+            /// </summary>
             public readonly AsyncQueue<AsyncIOContext> readyResponses;
 
             /// <summary>
