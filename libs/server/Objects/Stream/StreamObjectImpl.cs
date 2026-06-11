@@ -146,14 +146,14 @@ namespace Garnet.server
         /// <param name="max">end of range</param>
         /// <param name="limit">threshold to scanning</param>
         /// <param name="output"></param>
-        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse = false)
+        public unsafe int ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse = false)
         {
             var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             try
             {
                 if (index.ValidCount == 0)
                 {
-                    return;
+                    return 0;
                 }
 
                 // Sentinels for "-" and "+". StreamID is stored big-endian, so byte-wise
@@ -172,7 +172,7 @@ namespace Garnet.server
                 }
                 else if (!ParseStreamIDFromString(min, out startID))
                 {
-                    return;
+                    return 0;
                 }
 
                 if (max == "+")
@@ -185,7 +185,7 @@ namespace Garnet.server
                 }
                 else if (!ParseStreamIDFromString(max, out endID))
                 {
-                    return;
+                    return 0;
                 }
 
                 // BTree.Get asserts ordering. For reverse, start (larger) >= end (smaller).
@@ -193,7 +193,7 @@ namespace Garnet.server
                 if (isReverse ? cmp < 0 : cmp > 0)
                 {
                     writer.WriteArrayLength(0);
-                    return;
+                    return 0;
                 }
 
                 byte* startPtr = (byte*)Unsafe.AsPointer(ref startID.idBytes[0]);
@@ -206,7 +206,7 @@ namespace Garnet.server
                 if (validCount == 0)
                 {
                     writer.WriteArrayLength(0);
-                    return;
+                    return 0;
                 }
 
                 HashSet<long> tombstoneAddrs = null;
@@ -232,7 +232,7 @@ namespace Garnet.server
                 {
                     // Whole requested window was truncated; nothing to emit.
                     writer.WriteArrayLength(0);
-                    return;
+                    return 0;
                 }
 
                 writer.WriteArrayLength(validCount);
@@ -275,6 +275,8 @@ namespace Garnet.server
                         }
                     }
                 }
+
+                return validCount;
             }
             finally
             {
@@ -1080,7 +1082,7 @@ namespace Garnet.server
         /// <summary>
         /// Read entries from the stream after the given ID (for XREAD, non-group).
         /// </summary>
-        public unsafe void ReadAfter(StreamID afterId, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public unsafe int ReadAfter(StreamID afterId, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             // Compute exclusive start: afterId + 1
             StreamID startID = afterId;
@@ -1101,7 +1103,7 @@ namespace Garnet.server
                 {
                     using var w = new RespMemoryWriter(respProtocolVersion, ref output);
                     w.WriteArrayLength(0);
-                    return;
+                    return 0;
                 }
             }
 
@@ -1109,7 +1111,7 @@ namespace Garnet.server
             // Reuse ReadRange infrastructure
             string startStr = $"{startID.getMS()}-{startID.getSeq()}";
             string endStr = "+";
-            ReadRange(startStr, endStr, count, ref output, respProtocolVersion, isReverse: false);
+            return ReadRange(startStr, endStr, count, ref output, respProtocolVersion, isReverse: false);
         }
 
         #endregion Consumer Group Operations

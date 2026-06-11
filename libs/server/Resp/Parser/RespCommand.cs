@@ -115,7 +115,7 @@ namespace Garnet.server
         ZEXPIRETIME,
         ZPEXPIRETIME,
         ZSCAN,
-        ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+        ZSCORE,
         ZUNION,
 
         // Read-only RangeIndex commands
@@ -125,6 +125,17 @@ namespace Garnet.server
         RIMETRICS,
         RIRANGE,
         RISCAN,
+
+        // Read-only stream commands
+        XLEN,
+        XRANGE,
+        XREVRANGE,
+        XPENDING,
+        XREAD,
+        XLAST,
+        XINFO_CONSUMERS,
+        XINFO_GROUPS,
+        XINFO_STREAM, // Note: Last read command should immediately precede FirstWriteCommand
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -223,20 +234,17 @@ namespace Garnet.server
         VREM,
         VSETATTR,
         XADD,
-        XLEN,
-        XRANGE,
-        XREVRANGE,
         XDEL,
         XTRIM,
-        XLAST,
-        XGROUP,
-        XREADGROUP,
         XACK,
-        XPENDING,
         XCLAIM,
         XAUTOCLAIM,
-        XINFO,
-        XREAD,
+        XREADGROUP,
+        XGROUP_CREATE,
+        XGROUP_CREATECONSUMER,
+        XGROUP_DELCONSUMER,
+        XGROUP_DESTROY,
+        XGROUP_SETID,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -380,15 +388,9 @@ namespace Garnet.server
         SLOWLOG_GET,
         SLOWLOG_RESET,
 
-        // Stream subcommands (for command info metadata)
-        XGROUP_CREATE,
-        XGROUP_CREATECONSUMER,
-        XGROUP_DELCONSUMER,
-        XGROUP_DESTROY,
-        XGROUP_SETID,
-        XINFO_CONSUMERS,
-        XINFO_GROUPS,
-        XINFO_STREAM,
+        // Stream container commands (dispatch to subcommands; classified as neither read nor write)
+        XGROUP,
+        XINFO,
 
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this

@@ -1566,6 +1566,51 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(result);
         }
 
+        [Test]
+        public async Task XReadReturnsNullWhenNoNewEntries()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var lastId = await c.ExecuteAsync("XADD", "xr-empty", "*", "f1", "v1");
+
+            // Reading after the last ID yields no new entries -> Redis replies with a null array.
+            var result = await c.ExecuteForArrayAsync("XREAD", "STREAMS", "xr-empty", lastId);
+            ClassicAssert.IsNull(result);
+        }
+
+        [Test]
+        public async Task XReadReturnsNullWhenAllStreamsEmpty()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var a = await c.ExecuteAsync("XADD", "xr-all-a", "*", "f1", "v1");
+            var b = await c.ExecuteAsync("XADD", "xr-all-b", "*", "f1", "v1");
+
+            // Both read past their last IDs -> no stream has new entries -> null.
+            var result = await c.ExecuteForArrayAsync("XREAD", "STREAMS", "xr-all-a", "xr-all-b", a, b);
+            ClassicAssert.IsNull(result);
+        }
+
+        [Test]
+        public async Task XReadOmitsStreamsWithNoNewEntries()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            await c.ExecuteAsync("XADD", "xr-a", "*", "f1", "v1");
+            await c.ExecuteAsync("XADD", "xr-b", "*", "f1", "v1");
+            var lastB = await c.ExecuteAsync("XADD", "xr-b", "*", "f2", "v2");
+
+            // xr-a from 0 has entries; xr-b read past its last ID has none and must be omitted.
+            var result = await c.ExecuteForArrayAsync("XREAD", "STREAMS", "xr-a", "xr-b", "0", lastB);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(1, result.Length); // only xr-a returned; xr-b omitted
+            ClassicAssert.IsTrue(result[0].Contains("xr-a"));
+            ClassicAssert.IsTrue(result[0].Contains("v1")); // entry data is intact (no truncation/garbage)
+        }
+
         #endregion
     }
 }

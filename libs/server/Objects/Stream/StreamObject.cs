@@ -656,7 +656,8 @@ namespace Garnet.server
             output.result1 = found ? 1 : 0;
         }
 
-        /// <summary>XREAD single-stream slice: parseState = [id]; arg2 = count. Writes the entries array.</summary>
+        /// <summary>XREAD single-stream slice: parseState = [id]; arg2 = count. Writes the entries array
+        /// and sets result1 = number of entries found (0 if none, so the caller can omit empty streams).</summary>
         void OperateXRead(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var idStr = input.parseState.GetArgSliceByRef(0).ToString();
@@ -668,7 +669,7 @@ namespace Garnet.server
                 WriteStreamError(ref output, respProtocolVersion, CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
                 return;
             }
-            ReadAfter(afterId, input.arg2, ref output.SpanByteAndMemory, respProtocolVersion);
+            output.result1 = ReadAfter(afterId, input.arg2, ref output.SpanByteAndMemory, respProtocolVersion);
         }
 
         static void WriteStreamError(ref ObjectOutput output, byte respProtocolVersion, scoped ReadOnlySpan<byte> error)

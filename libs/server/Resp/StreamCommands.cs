@@ -649,11 +649,9 @@ namespace Garnet.server
             // Build response: array of [key, entries] pairs
             var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var writer = new RespMemoryWriter(respProtocolVersion, ref _output);
+            var streamResults = new (PinnedSpanByte key, SpanByteAndMemory output, int count)[numStreams];
             try
             {
-                bool anyResults = false;
-                var streamResults = new (PinnedSpanByte key, SpanByteAndMemory output)[numStreams];
-
                 for (int i = 0; i < numStreams; i++)
                 {
                     var streamKey = parseState.GetArgSliceByRef(argIdx + i);
@@ -669,39 +667,32 @@ namespace Garnet.server
 
                     var streamOutput = new ObjectOutput();
                     _ = storageSession.StreamReadOne(streamKey, idSlice, count, ref streamOutput);
-                    streamResults[i] = (streamKey, streamOutput.SpanByteAndMemory);
+                    // result1 = number of entries found; 0 means this stream has no new entries.
+                    streamResults[i] = (streamKey, streamOutput.SpanByteAndMemory, streamOutput.result1);
                 }
 
-                // Check if any stream returned results
+                // Redis omits streams with no new entries, and replies null when none have data.
+                var nonEmptyCount = 0;
                 for (int i = 0; i < numStreams; i++)
                 {
-                    if (streamResults[i].output.Memory != null && streamResults[i].output.Memory.Memory.Length > 0)
-                    {
-                        anyResults = true;
-                        break;
-                    }
+                    if (streamResults[i].count > 0)
+                        nonEmptyCount++;
                 }
 
-                if (!anyResults)
+                if (nonEmptyCount == 0)
                 {
-                    writer.WriteNull();
+                    writer.WriteNullArray();
                 }
                 else
                 {
-                    writer.WriteArrayLength(numStreams);
+                    writer.WriteArrayLength(nonEmptyCount);
                     for (int i = 0; i < numStreams; i++)
                     {
+                        if (streamResults[i].count <= 0)
+                            continue;
                         writer.WriteArrayLength(2);
                         writer.WriteBulkString(streamResults[i].key.ReadOnlySpan);
-                        if (streamResults[i].output.Memory != null)
-                        {
-                            writer.WriteDirect(streamResults[i].output.Memory.Memory.Span.Slice(0, streamResults[i].output.Length));
-                            streamResults[i].output.Memory.Dispose();
-                        }
-                        else
-                        {
-                            writer.WriteArrayLength(0);
-                        }
+                        writer.WriteDirect(streamResults[i].output.Memory.Memory.Span.Slice(0, streamResults[i].output.Length));
                     }
                 }
                 writer.Dispose();
@@ -711,6 +702,15 @@ namespace Garnet.server
             {
                 writer.Dispose();
                 throw;
+            }
+            finally
+            {
+                // Release every per-stream pooled buffer, including empty streams that allocated a "*0".
+                for (int i = 0; i < numStreams; i++)
+                {
+                    if (streamResults[i].output.Memory != null)
+                        streamResults[i].output.Memory.Dispose();
+                }
             }
             return true;
         }
