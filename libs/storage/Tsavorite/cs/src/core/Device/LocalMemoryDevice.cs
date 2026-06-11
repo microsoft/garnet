@@ -91,7 +91,7 @@ namespace Tsavorite.core
         public LocalMemoryDevice(long capacity, long segmentSize, int parallelism, int latencyUs = 0, uint sectorSize = IDevice.MinDeviceSectorSize, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
             : base(fileName, sectorSize, capacity > 0 ? capacity : checked(segmentSize * DefaultMaxSegments))
         {
-            if (segmentSize <= 0) 
+            if (segmentSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(segmentSize), "sz_segment must be > 0");
             if (segmentSize > int.MaxValue)
                 throw new ArgumentOutOfRangeException(nameof(segmentSize), "sz_segment must be <= int.MaxValue");
