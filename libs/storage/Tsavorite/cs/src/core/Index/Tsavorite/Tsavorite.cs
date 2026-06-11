@@ -481,6 +481,10 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            // Keep PendingContext on the stack: the overwhelmingly common in-memory read never goes pending,
+            // so it must not pay any heap cost. Only when the read goes pending (RECORD_ON_DISK) does
+            // HandleOperationStatus copy this context into the per-session ioPendingRequests dictionary
+            // (a holder/reference wrapper was measured net-slower here, so the struct is stored directly).
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             var keyHash = storeFunctions.GetKeyHashCode64(key);

@@ -47,6 +47,13 @@ namespace Garnet.server
         public IAuthenticationSettings AuthSettings = null;
 
         /// <summary>
+        /// If true (default), the server refuses to start when an ACL rule references a custom command
+        /// name that no loaded module has registered. Set to false to load unresolved names as-is and
+        /// log warnings.
+        /// </summary>
+        public bool AclStrictCustomCommands = true;
+
+        /// <summary>
         /// Enable append-only file (write ahead log)
         /// </summary>
         public bool EnableAOF = false;
@@ -301,9 +308,10 @@ namespace Garnet.server
         public int NetworkSendThrottleMax = 8;
 
         /// <summary>
-        /// Whether we use scatter gather IO for MGET operations - useful to saturate disk random read IO
+        /// Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate
+        /// disk random read IO. MGET always uses scatter-gather regardless of this setting.
         /// </summary>
-        public bool EnableScatterGatherGet = false;
+        public bool EnableScatterGatherGet = true;
 
         /// <summary>
         /// Whether and by how much should we throttle replica sync frequency (default = 5ms)

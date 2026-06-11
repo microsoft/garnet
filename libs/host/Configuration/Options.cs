@@ -173,6 +173,10 @@ namespace Garnet
         [Option("acl-file", Required = false, HelpText = "External ACL user file.")]
         public string AclFile { get; set; }
 
+        [OptionValidation]
+        [Option("acl-strict-custom-commands", Required = false, HelpText = "If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings.")]
+        public bool? AclStrictCustomCommands { get; set; }
+
         [Option("aad-authority", Required = false, HelpText = "The authority of AAD authentication.")]
         public string AadAuthority { get; set; }
 
@@ -399,7 +403,7 @@ namespace Garnet
         public int NetworkSendThrottleMax { get; set; }
 
         [OptionValidation]
-        [Option("sg-get", Required = false, HelpText = "Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO.")]
+        [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
         public bool? EnableScatterGatherGet { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
@@ -854,6 +858,7 @@ namespace Garnet
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
+                AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
@@ -910,7 +915,7 @@ namespace Garnet
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
-                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
+                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 FastAofTruncate = GetFastAofTruncate(logger),

@@ -111,6 +111,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |
 | **ClusterPassword** | ```--cluster-password``` | ```string``` |  | Password to authenticate intra-cluster communication with. |
 | **AclFile** | ```--acl-file``` | ```string``` |  | External ACL user file. |
+| **AclStrictCustomCommands** | ```--acl-strict-custom-commands``` | ```bool``` |  | If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings. |
 | **AadAuthority** | ```--aad-authority``` | ```string``` |  | The authority of AAD authentication. |
 | **AadAudiences** | ```--aad-audiences``` | ```string``` |  | The audiences of AAD token for AAD authentication. Should be a comma separated string. |
 | **AadIssuers** | ```--aad-issuers``` | ```string``` |  | The issuers of AAD token for AAD authentication. Should be a comma separated string. |
@@ -155,7 +156,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |
 | **NetworkSendThrottleMax** | ```--network-send-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle the maximum outstanding network sends per session. |
-| **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO. |
+| **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather. |
 | **ReplicaSyncDelayMs** | ```--replica-sync-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling |
 | **MainMemoryReplication** | ```--main-memory-replication``` | ```bool``` |  | Use main-memory replication model. |
 | **OnDemandCheckpoint** | ```--on-demand-checkpoint``` | ```bool``` |  | Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching |

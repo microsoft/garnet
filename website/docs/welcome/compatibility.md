@@ -21,8 +21,8 @@ prefer the atomic semantics of `MSET` by default.
 3. Garnet does not support Redis modules. Instead, it has its own C# based [extensibility](../extensions/overview.md) mechanisms
 that are optimized for very high performance, thread scalability, safety, and ease of use.
 4. Garnet now has full-fledged and efficient support for Lua scripting. You can enable Lua with the `--lua` switch.
-5. Garnet respects the FIFO ordering of request-responses. However, when used with larger-than-memory data, and if you
-_opt in_ to using the scatter-gather version of IO (using the `EnableScatterGatherGet [--sg-get]` option) for increased disk performance, then
+5. Garnet respects the FIFO ordering of request-responses. However, when used with larger-than-memory data, and with
+the scatter-gather version of IO (the `EnableScatterGatherGet [--sg-get]` option, enabled by default) for increased disk performance,
 even though results are still returned in FIFO order, the read operations may be executed out-of-order to earlier
 write operations in the same input operation sequence.
 6. When Garnet is used with the append-only-file (AOF) turned on, by default the server does not wait for commit before

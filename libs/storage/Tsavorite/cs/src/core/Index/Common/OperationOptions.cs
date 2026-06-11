@@ -37,7 +37,8 @@ namespace Tsavorite.core
         /// <summary>Do not copy.</summary>
         None,
 
-        /// <summary>Copy to the tail of the main log (or splice into the readcache/mainlog boundary, if readcache records are present).</summary>
+        /// <summary>Copy to the tail of the main log. If readcache records are present for the key, CAS'ing the new
+        /// record into the hash entry detaches (drops) the entire read-cache prefix, which is re-promoted on a later read.</summary>
         MainLog,
 
         /// <summary>Copy to the readcache. This requires that <see cref="ReadCacheSettings"/> be supplied to the TsavoriteKV ctor.</summary>

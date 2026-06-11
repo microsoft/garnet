@@ -238,7 +238,9 @@ namespace Tsavorite.core
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
-                if (store.UseReadCache)
+                // Gate on hei.IsReadCache (same cost as UseReadCache): skips the call when this chain has no RC prefix, and
+                // lets SkipReadCache's UseReadCache assert flag an RC-record-while-!UseReadCache anomaly.
+                if (stackCtx.hei.IsReadCache)
                     store.SkipReadCache(ref stackCtx, out _);
                 if (stackCtx.recSrc.LogicalAddress == mainKvIter.CurrentAddress)
                 {
