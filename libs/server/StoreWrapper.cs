@@ -891,6 +891,13 @@ namespace Garnet.server
             ctsCommit?.Cancel();
             taskManager.Dispose();
             rangeIndexManager?.Dispose();
+
+            // Dispose all live streams' in-memory resources (per-stream TsavoriteLog/LightEpoch, device
+            // handle, BTree) on graceful shutdown. Unlike FlushAll this preserves on-disk data for recovery.
+            // StreamObjects are values in the unified store, which does not dispose value objects on teardown,
+            // so without this their LightEpoch instances would leak past server shutdown.
+            StreamObjectConfig.DisposeAll();
+
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();

@@ -22,6 +22,11 @@ namespace Garnet.common
         byte* end;
         byte* ptr;
         MemoryHandle ptrHandle;
+        // Pooled buffers that were superseded by a grow in ReallocateOutput. They are returned to the
+        // MemoryPool in Dispose() rather than at grow time so that a single writer never frees a buffer
+        // that the in-flight write might still observe. The final output.Memory is never added here — its
+        // lifetime is owned by the caller (e.g. ProcessOutput -> SendAndReset).
+        List<IMemoryOwner<byte>> supersededBuffers;
         ref SpanByteAndMemory output;
         public readonly bool resp3;
 
@@ -29,6 +34,7 @@ namespace Garnet.common
         {
             this.output = ref output;
             ptrHandle = default;
+            supersededBuffers = null;
             resp3 = respVersion >= 3;
 
             ptr = output.SpanByte.ToPointer();
@@ -519,12 +525,12 @@ namespace Garnet.common
             if (ptrHandle.Pointer != default)
             {
                 ptrHandle.Dispose();
-                // NOTE: output.Memory is intentionally NOT disposed here, which leaks the old pooled
-                // buffer back to GC (instead of MemoryPool) on every grow. Disposing it is correct for
-                // the main-store path, but the stream read output path (XINFO/XREAD/XREADGROUP/...)
-                // currently double-disposes output.Memory, so re-enabling this dispose turns that into
-                // a double-free that crashes the server (8+ RespStreamTests fail fast). Fix the stream
-                // output buffer lifecycle first, then restore `output.Memory.Dispose();` here.
+                // Defer returning the superseded pooled buffer until Dispose(). Returning it here would
+                // recycle it back into the MemoryPool while this write is still in progress, which (once
+                // the buffer is re-rented elsewhere) corrupts the output. Tracking it keeps the buffer
+                // reserved until the writer is disposed, then returns it to the pool — fixing the leak
+                // where output.Memory was previously dropped to the GC on every grow.
+                (supersededBuffers ??= new List<IMemoryOwner<byte>>()).Add(output.Memory);
             }
             else
             {
@@ -583,6 +589,16 @@ namespace Garnet.common
         public void Dispose()
         {
             if (ptrHandle.Pointer != default) ptrHandle.Dispose();
+
+            // Return every superseded pooled buffer to the MemoryPool. The final output.Memory is never
+            // in this list, so the caller's buffer is left untouched.
+            if (supersededBuffers is not null)
+            {
+                for (var i = 0; i < supersededBuffers.Count; i++)
+                    supersededBuffers[i].Dispose();
+                supersededBuffers = null;
+            }
+
             output.Length = (int)(curr - ptr);
         }
     }

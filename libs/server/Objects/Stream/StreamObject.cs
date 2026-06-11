@@ -128,11 +128,12 @@ namespace Garnet.server
         internal static void Unregister(StreamObject stream) => liveStreams.TryRemove(stream, out _);
 
         /// <summary>
-        /// FLUSHDB/FLUSHALL cleanup: close every live stream's per-stream log/device handle, then delete
-        /// all per-stream on-disk directories. Streams are not per-database, so flushing any database
-        /// wipes the entire stream namespace.
+        /// Dispose every live stream's in-memory resources (BTree, per-stream <see cref="TsavoriteLog"/> and
+        /// its <see cref="Tsavorite.core.LightEpoch"/>, device handle) and clear the registry, leaving the
+        /// on-disk data intact. Called on graceful server shutdown so a subsequent recovery can re-open the
+        /// logs. Streams are a process-global namespace, so this disposes streams across all databases.
         /// </summary>
-        internal static void FlushAll()
+        internal static void DisposeAll()
         {
             foreach (var stream in liveStreams.Keys)
             {
@@ -146,6 +147,16 @@ namespace Garnet.server
                 }
             }
             liveStreams.Clear();
+        }
+
+        /// <summary>
+        /// FLUSHDB/FLUSHALL cleanup: close every live stream's per-stream log/device handle, then delete
+        /// all per-stream on-disk directories. Streams are not per-database, so flushing any database
+        /// wipes the entire stream namespace.
+        /// </summary>
+        internal static void FlushAll()
+        {
+            DisposeAll();
 
             if (StreamsRootDir == null || !Directory.Exists(StreamsRootDir))
                 return;

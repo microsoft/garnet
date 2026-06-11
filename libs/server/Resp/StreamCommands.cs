@@ -695,7 +695,7 @@ namespace Garnet.server
                         writer.WriteBulkString(streamResults[i].key.ReadOnlySpan);
                         if (streamResults[i].output.Memory != null)
                         {
-                            writer.WriteDirect(streamResults[i].output.Memory.Memory.Span);
+                            writer.WriteDirect(streamResults[i].output.Memory.Memory.Span.Slice(0, streamResults[i].output.Length));
                             streamResults[i].output.Memory.Dispose();
                         }
                         else
