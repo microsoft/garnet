@@ -461,7 +461,7 @@ namespace Tsavorite.test
                 addresses[i] = addr;
             }
 
-            while (log.SafeTailAddress < log.TailAddress)
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
                 _ = Thread.Yield();
 
             long pageSize = 1L << 22;
