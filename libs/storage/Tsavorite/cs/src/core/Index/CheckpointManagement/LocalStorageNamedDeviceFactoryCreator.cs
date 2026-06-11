@@ -26,7 +26,7 @@ namespace Tsavorite.core
         /// <param name="preallocateFile">Whether files should be preallocated</param>
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
-        /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
+        /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance. For DeviceType.LocalMemory (which has no device-wide throttle) it instead sets the per-ring capacity, rounded up to a power of two.</param>
         /// <param name="deviceType">Device type</param>
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
         /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of IO completion drain threads (default 1). Ignored otherwise.</param>

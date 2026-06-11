@@ -203,18 +203,6 @@ namespace Tsavorite.core
         internal SectorAlignedBufferPool bufferPool;
 
         /// <summary>
-        /// Pool of <see cref="AsyncGetFromDiskResult{TContext}"/> wrappers used by the
-        /// pending-read path (one per in-flight IO). The wrapper is the <c>object context</c>
-        /// passed to <c>IDevice.ReadAsync</c>, so pooling it removes the only
-        /// per-IO heap allocation on the steady-state read path. Bounded by
-        /// <c>device.ThrottleLimit</c> in-flight IOs, so the pool naturally settles around
-        /// that size; the underlying <c>ConcurrentQueue</c> is fine here because pool
-        /// churn is strictly bounded — no segment growth in steady state.
-        /// </summary>
-        readonly System.Collections.Concurrent.ConcurrentQueue<AsyncGetFromDiskResult<AsyncIOContext>>
-            asyncGetFromDiskResultPool = new();
-
-        /// <summary>
         /// Cached delegate for <see cref="AsyncGetFromDiskCallback"/>. The C# compiler does
         /// not cache method-group conversions to delegates for <em>instance</em> methods
         /// (only for static), so without this field every <see cref="AsyncGetFromDisk"/>
@@ -1682,9 +1670,9 @@ namespace Tsavorite.core
         internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
-            var asyncResult = RentAsyncGetFromDiskResult();
-            asyncResult.context = context;
-            device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
+            // The AsyncIOContext is itself the object-context handed to the device; it is carried back to
+            // the completion callback and (for async ops) on to the run thread via readyResponses.
+            device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
         /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/> - simple read context version. Used by TsavoriteLog.</summary>
@@ -2181,133 +2169,81 @@ namespace Tsavorite.core
             return false;
         }
 
+        /// <summary>
+        /// Verify a pending read's record and, on an incomplete record or key mismatch, re-issue the next disk
+        /// read on the SAME op (walking the disk hash chain). Returns true if the op is resolved and ready for
+        /// completion (full record with a key match, or walked below the resolvable range); false if a new IO was
+        /// issued and the op is therefore still pending. Shared by the synchronous iterator/scan path (called on
+        /// the device completion thread) and the asynchronous run-thread drain (<see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>).
+        /// </summary>
+        internal bool TryVerifyOrReissuePendingRead(ref AsyncIOContext ctx)
+        {
+            if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
+            {
+                // Either we had an incomplete record (re-read the current record) or the key didn't match (read the
+                // previous record in the chain). If that address is in range, issue the read; else fall through to
+                // "IO complete" and let ContinuePending* detect the below-range case.
+                ctx.logicalAddress = prevAddressToRead;
+                if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
+                {
+                    _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    ctx.DisposeRecord();
+                    // Re-issue this same op (a reference), repopulating its read buffer; all fields propagate.
+                    AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
                 logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
-            var ctx = result.context;
-            // poolReturn=true means we own this wrapper's lifetime and will return it to
-            // the pool ourselves (e.g., reread path, exception path, completion-event path).
-            // On the success+callbackQueue path we transfer ownership to the worker by
-            // enqueueing the wrapper reference; the worker returns it to the pool after
-            // it consumes result.context in InternalCompletePendingRequest.
-            var poolReturn = true;
+            // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
+            var ctx = (AsyncIOContext)context;
+
+            // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset),
+            // so subtract valid_offset from the device's reported transfer count (total bytes written from aligned_pointer).
+            Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
+                $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
+            Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
+                $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
+            ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
+
+            if (ctx.record.available_bytes >= RecordInfo.Size)
+            {
+                var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
+                Debug.Assert(!recordInfo.Invalid,
+                    $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
+            }
+
+            if (ctx.completionEvent is null)
+            {
+                // Asynchronous path: keep the completion thread minimal — record the device result and hand the op
+                // to the run thread via the per-session ready queue. The run-thread drain verifies the record,
+                // walks the disk chain, and runs ContinuePending*; it returns the op to the per-session pool.
+                ctx.callbackQueue.Enqueue(ctx);
+                return;
+            }
+
+            // Synchronous iterator/scan path: verify and walk the disk chain here, then signal the waiter, which
+            // reads ctx.diskLogRecord directly after Wait().
             try
             {
-                // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset), so we must subtract
-                // valid_offset from the device's reported transfer count (which is total bytes written into the aligned buffer starting at aligned_pointer).
-                Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
-                    $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
-                Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
-                    $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
-                ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
-
-                if (ctx.record.available_bytes >= RecordInfo.Size)
-                {
-                    var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
-                    Debug.Assert(!recordInfo.Invalid,
-                        $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
-                }
-
-                if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
-                {
-                    // Either we had an incomplete record and we're re-reading the current record, or the record Key didn't match and we're reading the previous record
-                    // in the chain. If the record to read is in the range to resolve then issue the read, else fall through to signal "IO complete".
-                    ctx.logicalAddress = prevAddressToRead;
-                    if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                    {
-                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
-                        ctx.DisposeRecord();
-                        // Reread: ctx is the same AsyncIOContext instance (a reference). AsyncGetFromDisk rents a
-                        // fresh wrapper and carries ctx into it, so all fields propagate into the new IO. The old
-                        // wrapper is returned to the pool by ReturnAsyncGetFromDiskResult in the finally below.
-                        AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
-                        return;
-                    }
-                }
-
-                // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                if (ctx.completionEvent is not null)
-                {
-                    // completionEvent.request IS ctx, so the record is already in place; Set just signals the
-                    // waiter. The wrapper is returned to the pool in the finally below (poolReturn stays true).
-                    ctx.completionEvent.Set(ctx);
-                }
-                else
-                {
-                    // Write modified ctx back to the wrapper and transfer ownership to the
-                    // worker via the per-session ready queue. The worker reads result.context
-                    // in InternalCompletePendingRequest and returns the wrapper to the pool.
-                    result.context = ctx;
-                    poolReturn = false;
-                    ctx.callbackQueue.Enqueue(result);
-                }
+                if (!TryVerifyOrReissuePendingRead(ref ctx))
+                    return;   // re-issued; the next completion will signal the waiter
+                ctx.completionEvent.Set(ctx);
             }
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
                 _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
-                if (ctx.completionEvent is not null)
-                    ctx.completionEvent.SetException(e);
-                else
-                    throw;
+                ctx.completionEvent.SetException(e);
             }
-            finally
-            {
-                // Single return point for the wrapper. ReturnAsyncGetFromDiskResult clears
-                // result.context before enqueueing, keeping pooled wrappers free of stale
-                // SectorAlignedMemory / DiskLogRecord refs. The success-via-callbackQueue path
-                // opts out (poolReturn=false) because it transfers wrapper ownership to the
-                // worker, which returns it via ReturnAsyncGetFromDiskResult after consuming
-                // result.context in InternalCompletePendingRequest.
-                if (poolReturn)
-                    ReturnAsyncGetFromDiskResult(result);
-            }
-        }
-
-        // Two-tier pool for AsyncGetFromDiskResult wrappers. The TLS fast path
-        // (see <see cref="ThreadLocalCache{T}"/>) absorbs the Get/Return cycles
-        // a single worker thread issues back-to-back, eliminating the CAS on the
-        // shared ConcurrentQueue's head/tail cache line under heavy worker
-        // contention. On thread-local cache miss/full we fall back to the shared
-        // queue, which is still allocation-free in steady state because the total
-        // number of in-flight wrappers is bounded by the device throttle.
-
-        /// <summary>
-        /// Two-tier rent: thread-local LIFO first, then shared ConcurrentQueue,
-        /// finally allocate a fresh wrapper.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal AsyncGetFromDiskResult<AsyncIOContext> RentAsyncGetFromDiskResult()
-        {
-            if (ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryRent(out var result))
-                return result;
-            if (asyncGetFromDiskResultPool.TryDequeue(out result))
-                return result;
-            return new AsyncGetFromDiskResult<AsyncIOContext>();
-        }
-
-        /// <summary>
-        /// Return an <see cref="AsyncGetFromDiskResult{TContext}"/> wrapper to the per-allocator
-        /// pool after the worker has consumed its <c>context</c> field in
-        /// <see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ReturnAsyncGetFromDiskResult(AsyncGetFromDiskResult<AsyncIOContext> result)
-        {
-            // Clear the captured ctx so a pooled wrapper doesn't transitively retain
-            // SectorAlignedMemory / DiskLogRecord references across rentals.
-            result.context = default;
-
-            // TLS first; on overflow fall back to the shared queue. The queue is
-            // bounded externally by device.ThrottleLimit in-flight IOs, so it never
-            // grows unbounded in steady state.
-            if (!ThreadLocalCache<AsyncGetFromDiskResult<AsyncIOContext>>.TryReturn(result))
-                asyncGetFromDiskResultPool.Enqueue(result);
         }
 
         /// <summary>
