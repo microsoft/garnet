@@ -237,7 +237,7 @@ namespace Tsavorite.core
                         break;
                     }
 
-                    // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
+                    // Here, the input data for 'doingCU' comes from the request, so populate the RecordSource copy from that.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
                     status = CreateNewRecordRMW(pendingContext.requestKey, in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
                                                 ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone, ref rmwInfo);
