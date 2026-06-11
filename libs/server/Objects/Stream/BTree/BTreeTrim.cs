@@ -8,6 +8,11 @@ namespace Garnet.server.BTreeIndex
     public unsafe partial class BTree
     {
         // ─── Trim semantics ───────────────────────────────────────────────────────
+        // TODO(hkhalid): tombstone-only trim is inefficient — it walks leaves linearly on
+        // every trim and never reclaims tombstoned leaves or truncates the underlying log,
+        // so memory grows unbounded under repeated XTRIM. Replace with a correct
+        // restructuring trim that physically frees leaves and truncates the log.
+        //
         // The previous structural trim (which physically removed leaves and rebalanced
         // internal nodes) had multiple bugs that left dangling child pointers in the
         // root, crashing the test host on Dispose. This implementation tombstones in

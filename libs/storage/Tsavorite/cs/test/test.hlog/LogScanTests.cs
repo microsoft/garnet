@@ -436,7 +436,6 @@ namespace Tsavorite.test
                 LogDevice = nullDevice,
                 PageSize = 1L << 22,     // 4MB pages (same as Stream default)
                 MemorySize = 1L << 30,   // 1GB
-                SafeTailRefreshFrequencyMs = 0,
                 AutoCommit = false,
             });
 

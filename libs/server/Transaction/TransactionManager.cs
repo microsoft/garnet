@@ -294,7 +294,6 @@ namespace Garnet.server
                     return false;
                 }
 
-                // State will never be Aborted at this point for non-cluster mode. This code path is only for TransactionProcedure.
                 if (state == TxnState.Aborted)
                 {
                     WriteCachedSlotVerificationMessage(ref output);
@@ -458,10 +457,8 @@ namespace Garnet.server
             // We acquire the version here to ensure that we have the latest version before acquiring locks.
             // This call may block if the system is in prepare_grow phase of the index resizing state machine till it moves to In-progress_grow phase.
             txnVersion = stateMachineDriver.AcquireTransactionVersion();
-            //stateMachineDriver.WaitForPrepareGrowComplete();
 
-            // For the ongoing session, mark it as in-transaction. This marking is only used to handle cases during index resizing.
-            // See further explanation in TsavoriteThread.cs [InternalRefresh].
+            // Acquire lock sessions
             BeginTransaction();
 
             bool lockSuccess;

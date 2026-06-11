@@ -189,7 +189,6 @@ namespace Garnet.server
         {
             try
             {
-                // Compaction trims hybrid log from the back, checkpointing truncates AOF
                 await DoCompactionAsync(db, isFromCheckpoint: true, logger).ConfigureAwait(false);
                 var lastSaveStoreTailAddress = db.Store.Log.TailAddress;
 
@@ -530,7 +529,6 @@ namespace Garnet.server
                 sm = Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
             }
 
-            // Hand off the state machine to the state machine driver and await its completion
             checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);
 
             // If cluster is enabled the replication manager is responsible for truncating AOF

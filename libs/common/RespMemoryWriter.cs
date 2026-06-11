@@ -519,6 +519,11 @@ namespace Garnet.common
             if (ptrHandle.Pointer != default)
             {
                 ptrHandle.Dispose();
+                // Do NOT dispose output.Memory here. Its contents were just copied into newMem and
+                // output.Memory is reassigned below; proactively returning the old buffer to the
+                // shared MemoryPool at this point corrupts buffers handed out by subsequent rents
+                // (observed as cross-test failures, e.g. RespTests.AppendLargeStringValueTest). The
+                // old buffer is left for GC. Only the pin handle is ours to release here.
             }
             else
             {

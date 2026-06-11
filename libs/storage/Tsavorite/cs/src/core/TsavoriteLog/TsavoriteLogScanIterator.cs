@@ -228,7 +228,6 @@ namespace Tsavorite.core
                 nextAddress = default;
                 return false;
             }
-
             epoch.Resume();
             // Continue looping until we find a record that is not a commit record
             while (true)

@@ -30,7 +30,7 @@ namespace Garnet.server
         Set,
 
         /// <summary>
-        /// Stream (backed by a BTree index + per-stream data log)
+        /// Stream
         /// </summary>
         Stream,
 

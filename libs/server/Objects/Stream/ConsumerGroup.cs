@@ -10,6 +10,13 @@ namespace Garnet.server
     /// Represents a pending entry in a consumer group's Pending Entries List (PEL).
     /// Tracks delivery metadata for an entry that has been read but not yet acknowledged.
     /// </summary>
+    // TODO(hkhalid): PendingEntry instances are long-lived — they sit in a group's PEL until
+    // XACK / XCLAIM / XGROUP DELCONSUMER removes them — so a large PEL promotes many small
+    // objects to Gen2 and adds GC pressure under heavy consumer-group load. Consider making
+    // this a struct so entries live inline in the PEL. Caveat: as a mutable struct stored in
+    // Dictionary<StreamID, PendingEntry>, every in-place mutation (DeliveryCount++, and the
+    // ConsumerName/DeliveryTime updates in XREADGROUP/XCLAIM/XAUTOCLAIM) must re-store the
+    // value back into the dictionary, or the change is silently lost.
     public class PendingEntry
     {
         /// <summary>Stream entry ID.</summary>

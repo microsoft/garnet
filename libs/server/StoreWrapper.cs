@@ -311,8 +311,6 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
-            // StreamObjectConfig is a static, process-wide holder already configured by the
-            // primary constructor that this copy constructor chains to.
         }
 
         /// <summary>
@@ -382,12 +380,6 @@ namespace Garnet.server
             }
 
             databaseManager.RecoverVectorSets();
-
-            // Streams are now first-class objects in the unified store: their consumer-group state and
-            // metadata are captured in the object checkpoint, and their per-stream log is re-opened (and
-            // BTree rebuilt) when the object is deserialized during store recovery. The old directory
-            // enumeration is intentionally gone — re-opening the logs here would double-open the devices
-            // the store recovery is about to open.
         }
 
         /// <summary>

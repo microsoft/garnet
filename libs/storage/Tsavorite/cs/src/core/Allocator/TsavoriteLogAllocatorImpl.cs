@@ -21,6 +21,9 @@ namespace Tsavorite.core
             : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            // Reserve PageHeader.Size at the start of every page (same as the SpanByte/Object
+            // allocators) so records never overwrite the page header — required for correct
+            // scans across page boundaries (e.g. Garnet Streams' Enqueue<THeader> + Scan).
             pageHeaderSize = PageHeader.Size;
         }
 
