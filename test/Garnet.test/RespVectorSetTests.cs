@@ -2597,7 +2597,7 @@ namespace Garnet.test
                             {
                                 if (t.IsCompletedSuccessfully && (int)t.Result == 1)
                                 {
-                                    _ = successfullyAdded.TryAdd(id, true);
+                                    _ = successfullyAdded.TryAdd(idCopy, true);
                                 }
 
                                 return t.Result;
