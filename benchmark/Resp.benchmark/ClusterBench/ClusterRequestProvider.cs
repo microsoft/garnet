@@ -11,7 +11,7 @@ namespace Resp.benchmark
     /// Orchestrates cluster-mode benchmarking by discovering topology,
     /// creating ClientRequestProviders per shard, and aggregating results.
     /// </summary>
-    public class ClusterRequestProvider : IDisposable
+    public class ClusterBench : IDisposable
     {
         readonly Options opts;
         readonly ILoggerFactory loggerFactory;
@@ -20,7 +20,7 @@ namespace Resp.benchmark
         ShardInfo[] shards;
         ClientRequestProvider[] providers;
 
-        public ClusterRequestProvider(Options opts, ILoggerFactory loggerFactory = null)
+        public ClusterBench(Options opts, ILoggerFactory loggerFactory = null)
         {
             this.opts = opts;
             this.loggerFactory = loggerFactory;
@@ -33,8 +33,8 @@ namespace Resp.benchmark
         /// </summary>
         public void DiscoverTopology()
         {
-            var topology = new ClusterTopology(opts);
-            shards = topology.DiscoverPrimaryShards();
+            var clusterManager = new ClusterManager(opts);
+            shards = clusterManager.DiscoverPrimaryShards();
 
             Console.WriteLine($"Discovered {shards.Length} primary shard(s):");
             foreach (var shard in shards)
@@ -105,7 +105,7 @@ namespace Resp.benchmark
             PrintHeader();
 
             var threads = new Thread[providers.Length];
-            for (int i = 0; i < providers.Length; i++)
+            for (var i = 0; i < providers.Length; i++)
             {
                 var p = providers[i];
                 threads[i] = new Thread(() => p.RunOffline(startSignal, runTime));
@@ -157,9 +157,9 @@ namespace Resp.benchmark
                 foreach (var provider in providers)
                     currentTotalOps += provider.OpsCompleted;
 
-                long iterOps = currentTotalOps - lastTotalOps;
-                double elapsedSecs = reportInterval.TotalSeconds;
-                double tptKops = iterOps / elapsedSecs / 1000.0;
+                var iterOps = currentTotalOps - lastTotalOps;
+                var elapsedSecs = reportInterval.TotalSeconds;
+                var tptKops = iterOps / elapsedSecs / 1000.0;
 
                 ReportIteration(currentTotalOps, iterOps, tptKops);
                 lastTotalOps = currentTotalOps;
@@ -179,11 +179,10 @@ namespace Resp.benchmark
 
         private void PrintHeader()
         {
-            const int pad = -15;
             var header =
-                $"{"total_ops",pad}" +
-                $"{"iter_ops",pad}" +
-                $"{"tpt (Kops/sec)",pad}";
+                $"{"total_ops",-15}" +
+                $"{"iter_ops",-15}" +
+                $"{"tpt (Kops/sec)",-15}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
                 Console.WriteLine(header);
@@ -193,11 +192,10 @@ namespace Resp.benchmark
 
         private void ReportIteration(long totalOps, long iterOps, double tptKops)
         {
-            const int pad = -15;
             var msg =
-                $"{totalOps,pad}" +
-                $"{iterOps,pad}" +
-                $"{tptKops:F2,pad}";
+                $"{totalOps,-15}" +
+                $"{iterOps,-15}" +
+                $"{tptKops,-15:F2}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
                 Console.WriteLine(msg);
@@ -232,12 +230,12 @@ namespace Resp.benchmark
                 totalOps += shardOps;
 
                 double shardOpsPerSec = shardOps / totalElapsed.TotalSeconds;
-                Console.WriteLine($"{s,-8}{shards[s].Address + ":" + shards[s].Port,-25}{threadsPerShard,-10}{shardOps,-15}{shardOpsPerSec:N0,-15}");
+                Console.WriteLine($"{s,-8}{shards[s].Address + ":" + shards[s].Port,-25}{threadsPerShard,-10}{shardOps,-15}{shardOpsPerSec,-15:N0}");
             }
 
             Console.WriteLine(new string('-', 73));
             double totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
-            Console.WriteLine($"{"Total",-8}{"",-25}{providers.Length,-10}{totalOps,-15}{totalOpsPerSec:N0,-15}");
+            Console.WriteLine($"{"Total",-8}{"",-25}{providers.Length,-10}{totalOps,-15}{totalOpsPerSec,-15:N0}");
 
             // Latency summary
             if (summary.TotalCount > 0)

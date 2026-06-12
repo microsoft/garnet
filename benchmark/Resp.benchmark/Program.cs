@@ -263,22 +263,22 @@ namespace Resp.benchmark
                 }
             }
 
-            if (opts.Online)
+            if (opts.ClusterBench)
             {
-                if (opts.SkipLoad)
-                    throw new Exception("Skipload not supported with --online");
-                var bench = new RespOnlineBench(opts, runDuration: opts.RunTime == -1 ? int.MaxValue : opts.RunTime, loggerFactory: loggerFactory);
-                bench.Run();
-                return;
-            }
-            else if (opts.ClusterBench)
-            {
-                using var clusterBench = new ClusterRequestProvider(opts, loggerFactory);
+                using var clusterBench = new ClusterBench(opts, loggerFactory);
                 clusterBench.DiscoverTopology();
                 if (!opts.SkipLoad)
                     clusterBench.LoadData();
                 if (opts.RunTime != 0)
                     clusterBench.Run();
+                return;
+            }
+            else if (opts.Online)
+            {
+                if (opts.SkipLoad)
+                    throw new Exception("Skipload not supported with --online");
+                var bench = new RespOnlineBench(opts, runDuration: opts.RunTime == -1 ? int.MaxValue : opts.RunTime, loggerFactory: loggerFactory);
+                bench.Run();
                 return;
             }
             else if (opts.Txn)

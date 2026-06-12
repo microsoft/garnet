@@ -106,12 +106,17 @@ namespace Resp.benchmark
                     for (var i = 0; i < bytesRead; i++)
                         if (buf[i] == '+') count++;
                     break;
+                case OpType.DEL:
+                case OpType.INCR:
+                    for (var i = 0; i < bytesRead; i++)
+                        if (buf[i] == ':') count++;
+                    break;
                 default:
                     for (var i = 0; i < bytesRead; i++)
                         if (buf[i] is (byte)'+' or (byte)'$' or (byte)':') count++;
                     break;
             }
-            return (count, 0);
+            return (bytesRead, count);
         }
     }
 }

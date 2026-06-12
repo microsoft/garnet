@@ -41,7 +41,7 @@ namespace Resp.benchmark
                 endpoint,
                 (int)opts.Op,
                 onResponse,
-                1,
+                1 << 17, // Buffer size in bytes
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();

@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Numerics;
 using System.Text;
 using Garnet.common;
 
@@ -52,7 +53,7 @@ namespace Resp.benchmark
                 endpoint,
                 (int)OpType.SET,
                 onResponse,
-                batchSize,
+                1 << 17, // Buffer size in bytes for the network buffer
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();
@@ -86,11 +87,20 @@ namespace Resp.benchmark
             var endpoint = new IPEndPoint(IPAddress.Parse(shard.Address), shard.Port);
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
+            // Buffer size must be large enough to hold the largest pre-generated request buffer
+            var bufferSize = 1 << 17; // 128KB default
+            if (requestBuffers != null)
+            {
+                var maxLen = requestLengths.Max();
+                if (maxLen > bufferSize)
+                    bufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
+            }
+
             using var client = new LightClient(
                 endpoint,
                 (int)opts.Op,
                 onResponse,
-                opts.BatchSize.First(),
+                bufferSize,
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();
