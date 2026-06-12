@@ -2690,18 +2690,7 @@ namespace Garnet.test
                 // HACK HACK HACK
                 try
                 {
-                    var expectedVectors = new List<byte[]>();
-
-                    for (var id = 0; id < Vectors; id++)
-                    {
-                        var valuesByte = new byte[Dimensions * sizeof(float)];
-                        var values = MemoryMarshal.Cast<byte, float>(valuesByte.AsSpan());
-                        values.Fill((byte)id % 128);
-
-                        expectedVectors.Add(valuesByte);
-                    }
-
-                    var map = FullMapOfVectorSet(server, successfullyAdded.Keys.OrderBy(static k => k), [.. expectedVectors], []);
+                    var map = FullMapOfVectorSet(server, successfullyAdded.Keys.OrderBy(static k => k), []);
 
                     TestContext.Out.WriteLine("=== Vector Set State After Failure ===");
                     TestContext.Out.WriteLine(map);
@@ -2720,7 +2709,7 @@ namespace Garnet.test
             }
 
             // HACK HACK HACK
-            static string FullMapOfVectorSet(GarnetServer secondary, IEnumerable<int> ids, byte[][] vectors, HashSet<int> shouldHaveBeenDeleted)
+            static string FullMapOfVectorSet(GarnetServer secondary, IEnumerable<int> ids, HashSet<int> shouldHaveBeenDeleted)
             {
                 const ulong AssumedContext = 8;
 
@@ -2755,7 +2744,11 @@ namespace Garnet.test
                         _ = sb.Append($" {BinaryPrimitives.ReadInt32LittleEndian(internalIdBytes)} \t|");
 
                         var actualFullVectorBytes = vectorManager.GetFullVector(AssumedContext, internalIdBytes);
-                        var expectedFullVectorBytes = vectors[externalId];
+
+                        var expectedValues = new float[Dimensions];
+                        expectedValues.AsSpan().Fill((byte)externalId % 128);
+
+                        var expectedFullVectorBytes = MemoryMarshal.AsBytes(expectedValues.AsSpan());
 
                         if (actualFullVectorBytes.SequenceEqual(expectedFullVectorBytes))
                         {
@@ -2766,14 +2759,17 @@ namespace Garnet.test
                             _ = sb.Append($" false \t|");
 
                             int? otherMatch = null;
-                            for (var otherId = 0; otherId < vectors.Length; otherId++)
+                            for (var otherId = 0; otherId < Vectors; otherId++)
                             {
                                 if (otherId == externalId)
                                 {
                                     continue;
                                 }
 
-                                if (vectors[otherId].SequenceEqual(actualFullVectorBytes))
+                                var otherExpectedValues = new float[Dimensions];
+                                otherExpectedValues.AsSpan().Fill((byte)otherId % 128);
+
+                                if (MemoryMarshal.AsBytes(otherExpectedValues).SequenceEqual(actualFullVectorBytes))
                                 {
                                     otherMatch = otherId;
                                     break;
@@ -2797,7 +2793,7 @@ namespace Garnet.test
                         _ = sb.Append($" !!NONE!! \t| - \t| - \t| - \t|");
                     }
 
-                    
+
 
                     _ = sb.AppendLine();
                 }
