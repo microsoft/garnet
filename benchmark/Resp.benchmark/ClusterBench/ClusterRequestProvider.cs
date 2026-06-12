@@ -13,6 +13,9 @@ namespace Resp.benchmark
     /// </summary>
     public class ClusterBench : IDisposable
     {
+        static readonly long HISTOGRAM_LOWER_BOUND = 1;
+        static readonly long HISTOGRAM_UPPER_BOUND = TimeStamp.Seconds(100);
+
         readonly Options opts;
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
@@ -102,7 +105,7 @@ namespace Resp.benchmark
             var startSignal = new ManualResetEventSlim(false);
 
             Console.WriteLine($"Starting offline benchmark ({opts.RunTime}s, {providers.Length} workers, batch={opts.BatchSize.First()})...");
-            PrintHeader();
+            PrintOfflineHeader();
 
             var threads = new Thread[providers.Length];
             for (var i = 0; i < providers.Length; i++)
@@ -117,7 +120,7 @@ namespace Resp.benchmark
             startSignal.Set();
 
             // Monitor and report metrics periodically
-            MonitorAndReport(sw, runTime, threads);
+            MonitorAndReportOffline(sw, runTime, threads);
         }
 
         private void RunOnline()
@@ -126,7 +129,7 @@ namespace Resp.benchmark
             var startSignal = new ManualResetEventSlim(false);
 
             Console.WriteLine($"Starting online benchmark ({opts.RunTime}s, {providers.Length} workers, itp={opts.IntraThreadParallelism})...");
-            PrintHeader();
+            PrintOnlineHeader();
 
             var threads = new Thread[providers.Length];
             for (int i = 0; i < providers.Length; i++)
@@ -141,27 +144,32 @@ namespace Resp.benchmark
             startSignal.Set();
 
             // Monitor and report metrics periodically
-            MonitorAndReport(sw, runTime, threads);
+            MonitorAndReportOnline(sw, runTime, threads);
         }
 
-        private void MonitorAndReport(Stopwatch sw, TimeSpan runTime, Thread[] threads)
+        private void MonitorAndReportOnline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
         {
             long lastTotalOps = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
+            var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
 
             while (sw.Elapsed < runTime)
             {
                 Thread.Sleep(reportInterval);
 
+                // Aggregate histograms from all providers
+                summary.Reset();
                 long currentTotalOps = 0;
                 foreach (var provider in providers)
+                {
+                    summary.Add(provider.Histogram);
                     currentTotalOps += provider.OpsCompleted;
+                }
 
-                var iterOps = currentTotalOps - lastTotalOps;
-                var elapsedSecs = reportInterval.TotalSeconds;
-                var tptKops = iterOps / elapsedSecs / 1000.0;
+                long iterOps = currentTotalOps - lastTotalOps;
+                double tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
 
-                ReportIteration(currentTotalOps, iterOps, tptKops);
+                ReportOnlineIteration(summary, currentTotalOps, iterOps, tptKops);
                 lastTotalOps = currentTotalOps;
             }
 
@@ -177,7 +185,59 @@ namespace Resp.benchmark
             PrintFinalReport(sw.Elapsed);
         }
 
-        private void PrintHeader()
+        private void MonitorAndReportOffline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
+        {
+            long lastTotalOps = 0;
+            var reportInterval = TimeSpan.FromSeconds(2);
+
+            while (sw.Elapsed < runTime)
+            {
+                Thread.Sleep(reportInterval);
+
+                long currentTotalOps = 0;
+                foreach (var provider in providers)
+                    currentTotalOps += provider.OpsCompleted;
+
+                long iterOps = currentTotalOps - lastTotalOps;
+                double tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
+
+                ReportOfflineIteration(currentTotalOps, iterOps, tptKops);
+                lastTotalOps = currentTotalOps;
+            }
+
+            // Signal all providers to stop
+            foreach (var provider in providers)
+                provider.Stop();
+
+            // Wait for all threads to complete
+            foreach (var t in threads)
+                t.Join();
+
+            // Final report
+            PrintFinalReport(sw.Elapsed);
+        }
+
+        private void PrintOnlineHeader()
+        {
+            var header =
+                $"{"min (us)",-15}" +
+                $"{"5th (us)",-15}" +
+                $"{"median (us)",-15}" +
+                $"{"avg (us)",-15}" +
+                $"{"95th (us)",-15}" +
+                $"{"99th (us)",-15}" +
+                $"{"99.9th (us)",-15}" +
+                $"{"total_ops",-15}" +
+                $"{"iter_ops",-15}" +
+                $"{"tpt (Kops/sec)",-15}";
+
+            if (opts.DisableConsoleLogger && opts.FileLogger == null)
+                Console.WriteLine(header);
+            else
+                logger?.LogInformation("{msg}", header);
+        }
+
+        private void PrintOfflineHeader()
         {
             var header =
                 $"{"total_ops",-15}" +
@@ -190,7 +250,35 @@ namespace Resp.benchmark
                 logger?.LogInformation("{msg}", header);
         }
 
-        private void ReportIteration(long totalOps, long iterOps, double tptKops)
+        private void ReportOnlineIteration(LongHistogram summary, long totalOps, long iterOps, double tptKops)
+        {
+            string msg;
+            if (summary.TotalCount > 0)
+            {
+                msg =
+                    $"{Math.Round(summary.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{Math.Round(summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
+                    $"{totalOps,-15}" +
+                    $"{iterOps,-15}" +
+                    $"{Math.Round(tptKops, 2),-15}";
+            }
+            else
+            {
+                msg = $"{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{totalOps,-15}{iterOps,-15}{Math.Round(tptKops, 2),-15}";
+            }
+
+            if (opts.DisableConsoleLogger && opts.FileLogger == null)
+                Console.WriteLine(msg);
+            else
+                logger?.LogInformation("{msg}", msg);
+        }
+
+        private void ReportOfflineIteration(long totalOps, long iterOps, double tptKops)
         {
             var msg =
                 $"{totalOps,-15}" +
@@ -241,12 +329,12 @@ namespace Resp.benchmark
             if (summary.TotalCount > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine("Latency (batch-level):");
-                Console.WriteLine($"  p50:   {summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds:F1} us");
-                Console.WriteLine($"  p95:   {summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds:F1} us");
-                Console.WriteLine($"  p99:   {summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds:F1} us");
-                Console.WriteLine($"  p99.9: {summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds:F1} us");
-                Console.WriteLine($"  avg:   {summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds:F1} us");
+                var p50 = summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p95 = summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p99 = summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p999 = summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds;
+                var avg = summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds;
+                Console.WriteLine($"Latency (us): p50={p50:F1}  p95={p95:F1}  p99={p99:F1}  p99.9={p999:F1}  avg={avg:F1}");
             }
 
             Console.WriteLine();
