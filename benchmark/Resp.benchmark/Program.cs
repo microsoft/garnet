@@ -169,6 +169,22 @@ namespace Resp.benchmark
                 Console.WriteLine("Certificate file name is not required for non-TLS");
                 return true;
             }
+
+            if (opts.ClusterBench)
+            {
+                if (opts.Client == ClientType.InProc)
+                {
+                    Console.WriteLine("--client InProc is not supported with --cluster-bench");
+                    return true;
+                }
+
+                if (opts.Client == ClientType.SERedis)
+                {
+                    Console.WriteLine("--client SERedis is not yet supported with --cluster-bench. Use LightClient, GarnetClientSession, or GarnetClient.");
+                    return true;
+                }
+            }
+
             return false;
         }
 
@@ -253,6 +269,16 @@ namespace Resp.benchmark
                     throw new Exception("Skipload not supported with --online");
                 var bench = new RespOnlineBench(opts, runDuration: opts.RunTime == -1 ? int.MaxValue : opts.RunTime, loggerFactory: loggerFactory);
                 bench.Run();
+                return;
+            }
+            else if (opts.ClusterBench)
+            {
+                using var clusterBench = new ClusterRequestProvider(opts, loggerFactory);
+                clusterBench.DiscoverTopology();
+                if (!opts.SkipLoad)
+                    clusterBench.LoadData();
+                if (opts.RunTime != 0)
+                    clusterBench.Run();
                 return;
             }
             else if (opts.Txn)

@@ -113,6 +113,9 @@ namespace Resp.benchmark
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
 
+        [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
+        public bool ClusterBench { get; set; }
+
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
         public bool AofBench { get; set; }
 
