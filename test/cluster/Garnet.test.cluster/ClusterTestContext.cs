@@ -211,7 +211,7 @@ namespace Garnet.test.cluster
             }
 
             // Phase 4: Always runs — resets LightEpoch instances to prevent cross-test contamination
-            TestUtils.OnTearDown();
+            TestUtils.OnTearDown(logger: logger, suppressFailure: testAlreadyFailed || failureReason != null);
 
             // Fail the test at the end, after all cleanup is done
             if (failureReason != null)
