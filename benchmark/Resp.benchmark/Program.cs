@@ -211,7 +211,8 @@ namespace Resp.benchmark
             if (opts.Client == ClientType.SERedis)
                 redis = ConnectionMultiplexer.Connect(BenchUtils.GetConfig(opts.Address, opts.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost));
 
-            PrintBenchMarkSummary(opts);
+            if (!opts.ClusterBench)
+                PrintBenchMarkSummary(opts);
 
             if (opts.Op == OpType.PFADD || opts.Op == OpType.PFCOUNT || opts.Op == OpType.PFMERGE)
                 RunHLLBenchmark(opts);

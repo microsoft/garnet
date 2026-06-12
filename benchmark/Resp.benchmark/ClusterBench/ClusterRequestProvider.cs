@@ -39,10 +39,6 @@ namespace Resp.benchmark
             var clusterManager = new ClusterManager(opts);
             shards = clusterManager.DiscoverPrimaryShards();
 
-            Console.WriteLine($"Discovered {shards.Length} primary shard(s):");
-            foreach (var shard in shards)
-                Console.WriteLine($"  {shard}");
-
             var threadsPerShard = opts.NumThreads.First();
             var totalProviders = threadsPerShard * shards.Length;
             providers = new ClientRequestProvider[totalProviders];
@@ -57,7 +53,32 @@ namespace Resp.benchmark
                 }
             }
 
-            Console.WriteLine($"Created {totalProviders} ClientRequestProviders ({threadsPerShard} per shard)");
+            PrintConfiguration(threadsPerShard, totalProviders);
+        }
+
+        private void PrintConfiguration(int threadsPerShard, int totalProviders)
+        {
+            var mode = opts.Online ? "Online" : "Offline";
+            var tls = opts.EnableTLS ? "Yes" : "No";
+            var skipLoad = opts.SkipLoad ? "Yes" : "No";
+            var itp = opts.IntraThreadParallelism;
+            var batch = opts.BatchSize.First();
+
+            Console.WriteLine();
+            Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
+            Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
+            Console.WriteLine($"{"Op: " + opts.Op,-28}{"Threads: " + threadsPerShard + " (per shard)",-28}");
+            Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"ITP: " + itp,-28}");
+            Console.WriteLine($"{"Key/Val: " + opts.KeyLength + "/" + opts.ValueLength + " B",-28}{"Batch: " + batch,-28}");
+            Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders,-28}");
+            Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
+            Console.WriteLine("=======================================================");
+            Console.WriteLine();
+
+            foreach (var shard in shards)
+                Console.WriteLine($"  {shard}");
+            Console.WriteLine();
         }
 
         /// <summary>
