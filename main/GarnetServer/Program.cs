@@ -10,7 +10,7 @@ namespace Garnet
     /// </summary>
     public class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             try
             {
@@ -22,7 +22,61 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                Thread.Sleep(Timeout.Infinite);
+                using var runCts = new CancellationTokenSource();
+                using var shutdownForceCts = new CancellationTokenSource();
+                var shutdownSignals = 0;
+
+                void OnShutdownSignal()
+                {
+                    // First signal: graceful shutdown. Second signal (or ProcessExit while shutting down): fast path.
+                    if (Interlocked.Increment(ref shutdownSignals) >= 2)
+                        shutdownForceCts.Cancel();
+
+                    try
+                    {
+                        if (!runCts.IsCancellationRequested)
+                            runCts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // The cancellation source may already be disposed during process teardown.
+                    }
+                }
+
+                ConsoleCancelEventHandler cancelKeyPressHandler = (sender, e) =>
+                {
+                    e.Cancel = true; // Prevent the process from terminating immediately
+                    OnShutdownSignal();
+                };
+
+                EventHandler processExitHandler = (sender, e) => OnShutdownSignal();
+
+                // Signal cancellation on Ctrl+C; avoid blocking the event handler with async work
+                Console.CancelKeyPress += cancelKeyPressHandler;
+
+                // Signal cancellation on SIGTERM (e.g., container orchestrators, systemd)
+                AppDomain.CurrentDomain.ProcessExit += processExitHandler;
+
+                // Wait until a shutdown signal is received
+                try
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, runCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Graceful shutdown on first signal; second signal cancels persistence via shutdownForceCts.
+                        await server.ShutdownAsync(
+                            TimeSpan.FromSeconds(server.ShutdownTimeoutSeconds),
+                            token: shutdownForceCts.Token).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    Console.CancelKeyPress -= cancelKeyPressHandler;
+                    AppDomain.CurrentDomain.ProcessExit -= processExitHandler;
+                }
             }
             catch (Exception ex)
             {
