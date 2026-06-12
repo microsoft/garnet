@@ -125,7 +125,7 @@ namespace Garnet.server
                         curIx++;
                     }
                 }
-                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8))
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
                 {
                     curIx++;
                     if (curIx >= parseState.Count)
@@ -134,20 +134,47 @@ namespace Garnet.server
                     }
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    curIx++;
 
-                    vectorDims = asBytes.Length;
-                    if (vectorDims > VectorManager.MaxVectorDimensions)
+                    if (asBytes.Length > VectorManager.MaxVectorDimensions)
                     {
                         return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
                     }
 
+                    vectorDims = asBytes.Length;
+
+                    valueType = VectorValueType.XU8;
+                    values = asBytes;
+                }
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XI8"u8))
+                {
                     curIx++;
-                    valueType = VectorValueType.XB8;
+                    if (curIx >= parseState.Count)
+                    {
+                        return AbortWithWrongNumberOfArguments("VADD");
+                    }
+
+                    var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    curIx++;
+
+                    if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
+                    vectorDims = asBytes.Length;
+
+                    valueType = VectorValueType.XI8;
                     values = asBytes;
                 }
                 else
                 {
                     return AbortWithErrorMessage("ERR invalid vector specification");
+                }
+
+                if (vectorDims > VectorManager.MaxVectorDimensions)
+                {
+                    return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
                 }
 
                 if (reduceDim > vectorDims)
@@ -231,14 +258,50 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
                     {
                         if (quantType != null)
                         {
                             return AbortWithErrorMessage("Quantization specified multiple times");
                         }
 
-                        quantType = VectorQuantType.XPreQ8;
+                        quantType = VectorQuantType.XNoQuant_U8;
+                        curIx++;
+
+                        continue;
+                    }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XNoQuant_I8;
+                        curIx++;
+
+                        continue;
+                    }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XBin_I8;
+                        curIx++;
+
+                        continue;
+                    }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XBin_U8;
                         curIx++;
 
                         continue;
@@ -389,17 +452,11 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
-                {
-                    WriteError("ERR Unsupported quantization type"u8);
-                    return true;
-                }
-
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
                 VectorManagerResult result;
                 ReadOnlySpan<byte> customErrMsg;
-                if (quantType == VectorQuantType.XPreQ8 && reduceDim != 0)
+                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
@@ -536,7 +593,7 @@ namespace Garnet.server
                         values = asBytes;
                         curIx++;
                     }
-                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8))
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
                     {
                         if (curIx >= parseState.Count)
                         {
@@ -544,15 +601,33 @@ namespace Garnet.server
                         }
 
                         var asBytes = parseState.GetArgSliceByRef(curIx).Span;
-
                         if (asBytes.Length > VectorManager.MaxVectorDimensions)
                         {
                             return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
                         }
 
-                        valueType = VectorValueType.XB8;
-                        values = asBytes;
                         curIx++;
+
+                        valueType = VectorValueType.XU8;
+                        values = asBytes;
+                    }
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XI8"u8))
+                    {
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                        if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
+
+                        curIx++;
+
+                        valueType = VectorValueType.XI8;
+                        values = asBytes;
                     }
                     else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("VALUES"u8))
                     {
@@ -815,17 +890,18 @@ namespace Garnet.server
                 var filterBitmapResult = SpanByteAndMemory.FromPinnedSpan(bitmapSpace);
                 try
                 {
-
                     GarnetStatus res;
                     VectorManagerResult vectorRes;
                     VectorIdFormat idFormat;
+                    scoped ReadOnlySpan<byte> customErrMsg;
                     if (!element.HasValue)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, out customErrMsg, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                     }
                     else
                     {
                         res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                        customErrMsg = default;
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -978,6 +1054,15 @@ namespace Garnet.server
                                     writtenCount++;
                                 }
                             }
+                        }
+                        else if (vectorRes == VectorManagerResult.BadParams)
+                        {
+                            if (customErrMsg.IsEmpty)
+                            {
+                                return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
+                            }
+
+                            return AbortWithErrorMessage(customErrMsg);
                         }
                         else
                         {
@@ -1244,7 +1329,10 @@ namespace Garnet.server
                 VectorQuantType.NoQuant => "f32"u8,
                 VectorQuantType.Bin => "bin"u8,
                 VectorQuantType.Q8 => "q8"u8,
-                VectorQuantType.XPreQ8 => "xpreq8"u8,
+                VectorQuantType.XNoQuant_U8 => "xnoquant_u8"u8,
+                VectorQuantType.XNoQuant_I8 => "xnoquant_i8"u8,
+                VectorQuantType.XBin_I8 => "xbin_i8"u8,
+                VectorQuantType.XBin_U8 => "xbin_u8"u8,
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 

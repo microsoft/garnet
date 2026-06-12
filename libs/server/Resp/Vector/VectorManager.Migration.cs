@@ -173,9 +173,10 @@ namespace Garnet.server
                 var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
                 nint newlyAllocatedIndex;
+                bool requestQuantization;
                 unsafe
                 {
-                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, out requestQuantization);
                 }
 
                 var ctxArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
@@ -206,6 +207,12 @@ namespace Garnet.server
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorContext);
+
+                    // Post recreation the index might already need quantization - if so, queue it up
+                    if (requestQuantization)
+                    {
+                        _ = quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    }
 
                     // For REPLICAs which are following, we need to fake up a write
                     ReplicateMigratedIndexKey(ref ActiveThreadSession.basicContext, ref key, ref value, context, logger);
