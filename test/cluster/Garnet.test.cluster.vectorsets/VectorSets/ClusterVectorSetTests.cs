@@ -377,6 +377,11 @@ namespace Garnet.test.cluster
                                 if (readRes.Length > 0)
                                 {
                                     nonZeroReturns++;
+
+                                    for (var i = 0; i < readRes.Length; i++)
+                                    {
+                                        ClassicAssert.AreEqual(4, readRes[i].Length, $"Unexpected response: {Encoding.UTF8.GetString(readRes[i])}");
+                                    }
                                 }
                             }
                         }
