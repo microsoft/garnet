@@ -502,7 +502,8 @@ namespace Garnet.server
             }
 
             // empty is context metadata
-            VectorElementKey key = new(MetadataNamespace, []);
+            ReadOnlySpan<byte> nsBytes = [MetadataNamespace];
+            VectorElementKey key = new(nsBytes, []);
 
             VectorInput input = default;
             input.Callback = 0;

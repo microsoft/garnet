@@ -62,7 +62,8 @@ namespace Garnet.server
                 }
 
                 // Delete it
-                VectorElementKey toDeleteKey = new((byte)ns, logRecord.KeyBytes);
+                ReadOnlySpan<byte> nsBytes = [(byte)ns];
+                VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
 
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
                 if (status.IsPending)

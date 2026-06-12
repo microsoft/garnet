@@ -51,7 +51,7 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            VectorElementKey key = new((byte)namespaceBytes[0], keyWithoutNamespace);
+            VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
