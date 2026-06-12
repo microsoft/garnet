@@ -40,14 +40,14 @@ namespace Resp.benchmark
             foreach (var shard in shards)
                 Console.WriteLine($"  {shard}");
 
-            int threadsPerShard = opts.NumThreads.First();
-            int totalProviders = threadsPerShard * shards.Length;
+            var threadsPerShard = opts.NumThreads.First();
+            var totalProviders = threadsPerShard * shards.Length;
             providers = new ClientRequestProvider[totalProviders];
 
-            int idx = 0;
-            for (int s = 0; s < shards.Length; s++)
+            var idx = 0;
+            for (var s = 0; s < shards.Length; s++)
             {
-                for (int t = 0; t < threadsPerShard; t++)
+                for (var t = 0; t < threadsPerShard; t++)
                 {
                     providers[idx] = new ClientRequestProvider(shards[s], opts, idx);
                     idx++;
@@ -67,7 +67,7 @@ namespace Resp.benchmark
             var sw = Stopwatch.StartNew();
 
             var threads = new Thread[providers.Length];
-            for (int i = 0; i < providers.Length; i++)
+            for (var i = 0; i < providers.Length; i++)
             {
                 var p = providers[i];
                 threads[i] = new Thread(() => p.LoadData());
