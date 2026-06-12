@@ -16,7 +16,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -348,6 +347,13 @@ namespace Garnet.test.cluster
                                 if (readRes.Length > 0)
                                 {
                                     nonZeroReturns++;
+                                }
+
+                                if ((readRes.Length % 2) != 0)
+                                {
+                                    var joined = string.Join(Environment.NewLine, readRes.Select(static x => Encoding.UTF8.GetString(x)));
+
+                                    ClassicAssert.Fail($"Unexpected response structure, entries={readRes.Length}{Environment.NewLine}{joined}");
                                 }
 
                                 for (var i = 0; i < readRes.Length; i += 2)
@@ -821,10 +827,10 @@ namespace Garnet.test.cluster
 
             // Validate all nodes have same vector embeddings
             {
-                var primaryMap = FullMapOfVectorSet(context.nodes[PrimaryIndex], vectors, toDeleteVectors);
-                Console.WriteLine($"For primary");
-                Console.WriteLine("====");
-                Console.WriteLine(primaryMap);
+                //var primaryMap = FullMapOfVectorSet(context.nodes[PrimaryIndex], vectors, toDeleteVectors);
+                //Console.WriteLine($"For primary");
+                //Console.WriteLine("====");
+                //Console.WriteLine(primaryMap);
 
                 var idBytes = new byte[4];
                 for (var id = 0; id < vectors.Length; id++)
@@ -852,10 +858,10 @@ namespace Garnet.test.cluster
 
                     for (var secondaryIx = 0; secondaryIx < secondaries.Length; secondaryIx++)
                     {
-                        var secondaryMap = FullMapOfVectorSet(context.nodes[SecondaryStartIndex + secondaryIx], vectors, toDeleteVectors);
-                        Console.WriteLine($"For secondary {secondaryIx}");
-                        Console.WriteLine("====");
-                        Console.WriteLine(secondaryMap);
+                        //var secondaryMap = FullMapOfVectorSet(context.nodes[SecondaryStartIndex + secondaryIx], vectors, toDeleteVectors);
+                        //Console.WriteLine($"For secondary {secondaryIx}");
+                        //Console.WriteLine("====");
+                        //Console.WriteLine(secondaryMap);
 
                         var secondary = secondaries[secondaryIx];
                         var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
@@ -883,11 +889,11 @@ namespace Garnet.test.cluster
 
                                     if (matchesId != null)
                                     {
-                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); matches vector with Id = {matchesId.Value}\r\nsecondary\r\n{secondaryMap}\r\nvs primary\r\n{primaryMap}");
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); matches vector with Id = {matchesId.Value}");
                                     }
                                     else
                                     {
-                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); does not match any expected vector\r\n{secondaryMap}\r\nsecondary\r\n{secondaryMap}\r\nvs primary\r\n{primaryMap}");
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); does not match any expected vector");
                                     }
                                 }
                             }
@@ -901,89 +907,89 @@ namespace Garnet.test.cluster
             }
 
             // HACK HACK HACK
-            static string FullMapOfVectorSet(GarnetServer secondary, byte[][] vectors, HashSet<int> shouldHaveBeenDeleted)
-            {
-                const ulong AssumedContext = 8;
+            //static string FullMapOfVectorSet(GarnetServer secondary, byte[][] vectors, HashSet<int> shouldHaveBeenDeleted)
+            //{
+            //    const ulong AssumedContext = 8;
 
-                var vectorManager = GetStoreWrapper(secondary).DefaultDatabase.VectorManager;
+            //    var vectorManager = GetStoreWrapper(secondary).DefaultDatabase.VectorManager;
 
-                var sb = new StringBuilder();
-                _ = sb.AppendLine("External (Provided) Id \t| Internal Id \t| Full Vector Matches \t| Other External Id Matched \t| Actual Full Vector Data \t|");
+            //    var sb = new StringBuilder();
+            //    _ = sb.AppendLine("External (Provided) Id \t| Internal Id \t| Full Vector Matches \t| Other External Id Matched \t| Actual Full Vector Data \t|");
 
-                for (var externalId = 0; externalId < Vectors; externalId++)
-                {
-                    var externalIdBytes = new byte[sizeof(int)];
-                    BinaryPrimitives.WriteInt32LittleEndian(externalIdBytes, externalId);
+            //    for (var externalId = 0; externalId < Vectors; externalId++)
+            //    {
+            //        var externalIdBytes = new byte[sizeof(int)];
+            //        BinaryPrimitives.WriteInt32LittleEndian(externalIdBytes, externalId);
 
 
-                    byte[] internalIdBytes;
-                    try
-                    {
-                        internalIdBytes = vectorManager.GetInternalId(AssumedContext, externalIdBytes);
-                        if (shouldHaveBeenDeleted.Contains(externalId))
-                        {
-                            throw new GarnetException($"Deleted external id {externalId} was not actually deleted");
-                        }
-                    }
-                    catch (GarnetException)
-                    {
-                        if (shouldHaveBeenDeleted.Contains(externalId))
-                        {
-                            continue;
-                        }
+            //        byte[] internalIdBytes;
+            //        try
+            //        {
+            //            internalIdBytes = vectorManager.GetInternalId(AssumedContext, externalIdBytes);
+            //            if (shouldHaveBeenDeleted.Contains(externalId))
+            //            {
+            //                throw new GarnetException($"Deleted external id {externalId} was not actually deleted");
+            //            }
+            //        }
+            //        catch (GarnetException)
+            //        {
+            //            if (shouldHaveBeenDeleted.Contains(externalId))
+            //            {
+            //                continue;
+            //            }
 
-                        throw;
-                    }
+            //            throw;
+            //        }
 
-                    _ = sb.Append($"{externalId} \t|");
-                    _ = sb.Append($" {BinaryPrimitives.ReadInt32LittleEndian(internalIdBytes)} \t|");
+            //        _ = sb.Append($"{externalId} \t|");
+            //        _ = sb.Append($" {BinaryPrimitives.ReadInt32LittleEndian(internalIdBytes)} \t|");
 
-                    var actualFullVectorBytes = vectorManager.GetFullVector(AssumedContext, internalIdBytes);
-                    var expectedFullVectorBytes = vectors[externalId];
+            //        var actualFullVectorBytes = vectorManager.GetFullVector(AssumedContext, internalIdBytes);
+            //        var expectedFullVectorBytes = vectors[externalId];
 
-                    if (actualFullVectorBytes.SequenceEqual(expectedFullVectorBytes))
-                    {
-                        _ = sb.Append($" true \t| - \t|");
-                    }
-                    else
-                    {
-                        _ = sb.Append($" false \t|");
+            //        if (actualFullVectorBytes.SequenceEqual(expectedFullVectorBytes))
+            //        {
+            //            _ = sb.Append($" true \t| - \t|");
+            //        }
+            //        else
+            //        {
+            //            _ = sb.Append($" false \t|");
 
-                        int? otherMatch = null;
-                        for (var otherId = 0; otherId < vectors.Length; otherId++)
-                        {
-                            if (otherId == externalId)
-                            {
-                                continue;
-                            }
+            //            int? otherMatch = null;
+            //            for (var otherId = 0; otherId < vectors.Length; otherId++)
+            //            {
+            //                if (otherId == externalId)
+            //                {
+            //                    continue;
+            //                }
 
-                            if (vectors[otherId].SequenceEqual(actualFullVectorBytes))
-                            {
-                                otherMatch = otherId;
-                                break;
-                            }
-                        }
+            //                if (vectors[otherId].SequenceEqual(actualFullVectorBytes))
+            //                {
+            //                    otherMatch = otherId;
+            //                    break;
+            //                }
+            //            }
 
-                        if (otherMatch != null)
-                        {
-                            _ = sb.Append($" {otherMatch.Value} \t|");
-                        }
-                        else
-                        {
-                            _ = sb.Append($" !!NONE!! \t|");
-                        }
-                    }
+            //            if (otherMatch != null)
+            //            {
+            //                _ = sb.Append($" {otherMatch.Value} \t|");
+            //            }
+            //            else
+            //            {
+            //                _ = sb.Append($" !!NONE!! \t|");
+            //            }
+            //        }
 
-                    _ = sb.Append($" 0x{Convert.ToBase64String(actualFullVectorBytes)} \t|");
+            //        _ = sb.Append($" 0x{Convert.ToBase64String(actualFullVectorBytes)} \t|");
 
-                    _ = sb.AppendLine();
-                }
+            //        _ = sb.AppendLine();
+            //    }
 
-                return sb.ToString();
-            }
+            //    return sb.ToString();
+            //}
 
-            [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
-            static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
+            //[UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
+            //static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
             // END HACK HACK HACK
         }
 

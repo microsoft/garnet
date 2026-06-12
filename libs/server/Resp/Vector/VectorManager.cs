@@ -964,14 +964,14 @@ namespace Garnet.server
             try
             {
                 Span<byte> internalId = stackalloc byte[sizeof(int)];
-                SpanByteAndMemory internalIdBytes = new(SpanByte.FromPinnedSpan(internalId));
+                SpanByteAndMemory internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
 
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, externalId, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, externalId, ref internalIdBytes))
                 {
                     throw new GarnetException("No internal id map");
                 }
 
-                var ret = internalIdBytes.AsReadOnlySpan().ToArray();
+                var ret = internalIdBytes.ReadOnlySpan.ToArray();
                 internalIdBytes.Memory?.Dispose();
 
                 return ret;
@@ -997,14 +997,14 @@ namespace Garnet.server
             try
             {
                 Span<byte> fullVector = stackalloc byte[4 * 1024];
-                SpanByteAndMemory fullVectorBytes = new(SpanByte.FromPinnedSpan(fullVector));
+                SpanByteAndMemory fullVectorBytes = SpanByteAndMemory.FromPinnedSpan(fullVector);
 
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, externalId, ref fullVectorBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, externalId, ref fullVectorBytes))
                 {
                     throw new GarnetException("No full vector stored");
                 }
 
-                var ret = fullVectorBytes.AsReadOnlySpan().ToArray();
+                var ret = fullVectorBytes.ReadOnlySpan.ToArray();
                 fullVectorBytes.Memory?.Dispose();
 
                 return ret;
