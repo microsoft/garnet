@@ -61,6 +61,9 @@ namespace Garnet.server
                     return;
                 }
 
+                // Reset smashed length on advance
+                *(int*)currentPtr = currentLen;
+
                 // Most likely case, we're going one forward
                 if (i == (currentIndex + 1))
                 {
@@ -107,9 +110,12 @@ namespace Garnet.server
 
                 AdvanceTo(i);
 
+                Span<byte> nsBytes = new(currentPtr + 3, 1);
+                nsBytes[0] = (byte)context;
+
                 ReadOnlySpan<byte> keyBytes = new(currentPtr + 4, currentLen);
 
-                key = new((byte)context, keyBytes);
+                key = new(nsBytes, keyBytes);
             }
 
             /// <inheritdoc/>
@@ -152,6 +158,9 @@ namespace Garnet.server
                 {
                     _ = objectContext.CompletePending(wait: true);
                 }
+
+                // Reset smashed length now that we're done
+                *(int*)currentPtr = currentLen;
             }
         }
 
@@ -246,7 +255,8 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-            VectorElementKey keyWithNamespace = new((byte)context, key);
+            Span<byte> nsBytes = [(byte)context];
+            VectorElementKey keyWithNamespace = new(nsBytes, key);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
@@ -296,10 +306,13 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
-            // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key, but we aren't using it currently
+            // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key
+            Span<byte> nsBytes = new(((byte*)keyData) - 1, 1);
+            nsBytes[0] = (byte)context;
+
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 
-            return new((byte)context, keyBytes);
+            return new(nsBytes, keyBytes);
         }
     }
 }

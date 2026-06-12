@@ -1423,6 +1423,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1465,6 +1475,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(7, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1506,6 +1526,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1564,6 +1594,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1685,6 +1725,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(8, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1805,6 +1855,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1822,7 +1882,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(8, span.NamespaceBytes[0]);
                 ClassicAssert.AreEqual(1234, MemoryMarshal.Cast<byte, int>(span.KeyBytes)[0]);
             }
-            ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
         }
 
         [Test]

@@ -188,7 +188,8 @@ namespace Garnet.server
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-            VectorElementKey key = new(MetadataNamespace, []);
+            ReadOnlySpan<byte> nsBytes = [MetadataNamespace];
+            VectorElementKey key = new(nsBytes, []);
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
