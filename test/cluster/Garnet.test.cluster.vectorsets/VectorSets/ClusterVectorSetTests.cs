@@ -16,6 +16,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -296,140 +297,255 @@ namespace Garnet.test.cluster
 
             using var sync = new SemaphoreSlim(2);
 
-            var writeTask =
-                Task.Run(
-                    async () =>
-                    {
-                        await sync.WaitAsync().ConfigureAwait(false);
+            var successfullyAdded = new ConcurrentDictionary<int, bool>();
+            try
+            {
 
-                        var key = new byte[4];
-                        for (var i = 0; i < vectors.Length; i++)
+                var writeTask =
+                    Task.Run(
+                        async () =>
                         {
-                            BinaryPrimitives.WriteInt32LittleEndian(key, i);
-                            var val = vectors[i];
-                            int addRes;
-                            if (withAttributes)
+                            await sync.WaitAsync().ConfigureAwait(false);
+
+                            var key = new byte[4];
+                            for (var i = 0; i < vectors.Length; i++)
                             {
-                                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8", "SETATTR", $"{{ \"id\": {i} }}"]);
+                                BinaryPrimitives.WriteInt32LittleEndian(key, i);
+                                var val = vectors[i];
+                                int addRes;
+                                if (withAttributes)
+                                {
+                                    addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8", "SETATTR", $"{{ \"id\": {i} }}"]);
+                                }
+                                else
+                                {
+                                    addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
+                                }
+                                ClassicAssert.AreEqual(1, addRes);
+
+                                _ = successfullyAdded.TryAdd(i, true);
                             }
-                            else
-                            {
-                                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
-                            }
-                            ClassicAssert.AreEqual(1, addRes);
                         }
-                    }
-                );
+                    );
 
-            using var cts = new CancellationTokenSource();
+                using var cts = new CancellationTokenSource();
 
-            var readTask =
-                Task.Run(
-                    async () =>
-                    {
-                        var r = new Random(2025_09_15_01);
-
-                        var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
-                        ClassicAssert.AreEqual("OK", readonlyOnReplica);
-
-                        await sync.WaitAsync().ConfigureAwait(false);
-
-                        var nonZeroReturns = 0;
-                        var gotAttrs = 0;
-
-                        while (!cts.Token.IsCancellationRequested)
+                var readTask =
+                    Task.Run(
+                        async () =>
                         {
-                            var val = vectors[r.Next(vectors.Length)];
+                            var r = new Random(2025_09_15_01);
 
-                            if (withAttributes)
+                            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+                            await sync.WaitAsync().ConfigureAwait(false);
+
+                            var nonZeroReturns = 0;
+                            var gotAttrs = 0;
+
+                            while (!cts.Token.IsCancellationRequested)
                             {
-                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val, "WITHATTRIBS"]);
-                                if (readRes.Length > 0)
+                                var val = vectors[r.Next(vectors.Length)];
+
+                                if (withAttributes)
                                 {
-                                    nonZeroReturns++;
-                                }
-
-                                if ((readRes.Length % 2) != 0)
-                                {
-                                    var joined = string.Join(Environment.NewLine, readRes.Select(static x => Encoding.UTF8.GetString(x)));
-
-                                    ClassicAssert.Fail($"Unexpected response structure, entries={readRes.Length}{Environment.NewLine}{joined}");
-                                }
-
-                                for (var i = 0; i < readRes.Length; i += 2)
-                                {
-                                    var id = readRes[i];
-                                    var attr = readRes[i + 1];
-
-                                    var asInt = BinaryPrimitives.ReadInt32LittleEndian(id);
-
-                                    var actualAttr = Encoding.UTF8.GetString(attr);
-                                    var expectedAttr = $"{{ \"id\": {asInt} }}";
-
-                                    ClassicAssert.AreEqual(expectedAttr, actualAttr);
-
-                                    gotAttrs++;
-                                }
-                            }
-                            else
-                            {
-                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
-                                if (readRes.Length > 0)
-                                {
-                                    nonZeroReturns++;
-
-                                    for (var i = 0; i < readRes.Length; i++)
+                                    var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val, "WITHATTRIBS"]);
+                                    if (readRes.Length > 0)
                                     {
-                                        ClassicAssert.AreEqual(4, readRes[i].Length, $"Unexpected response: {Encoding.UTF8.GetString(readRes[i])}");
+                                        nonZeroReturns++;
+                                    }
+
+                                    if ((readRes.Length % 2) != 0)
+                                    {
+                                        var joined = string.Join(Environment.NewLine, readRes.Select(static x => Encoding.UTF8.GetString(x)));
+
+                                        ClassicAssert.Fail($"Unexpected response structure, entries={readRes.Length}{Environment.NewLine}{joined}");
+                                    }
+
+                                    for (var i = 0; i < readRes.Length; i += 2)
+                                    {
+                                        var id = readRes[i];
+                                        var attr = readRes[i + 1];
+
+                                        var asInt = BinaryPrimitives.ReadInt32LittleEndian(id);
+
+                                        var actualAttr = Encoding.UTF8.GetString(attr);
+                                        var expectedAttr = $"{{ \"id\": {asInt} }}";
+
+                                        ClassicAssert.AreEqual(expectedAttr, actualAttr);
+
+                                        gotAttrs++;
+                                    }
+                                }
+                                else
+                                {
+                                    var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
+                                    if (readRes.Length > 0)
+                                    {
+                                        nonZeroReturns++;
+
+                                        for (var i = 0; i < readRes.Length; i++)
+                                        {
+                                            ClassicAssert.AreEqual(4, readRes[i].Length, $"Unexpected response: {Encoding.UTF8.GetString(readRes[i])}");
+                                        }
                                     }
                                 }
                             }
+
+                            return (nonZeroReturns, gotAttrs);
                         }
+                    );
 
-                        return (nonZeroReturns, gotAttrs);
-                    }
-                );
+                _ = sync.Release(2);
+                await writeTask.ConfigureAwait(false);
 
-            _ = sync.Release(2);
-            await writeTask.ConfigureAwait(false);
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+                cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-            cts.CancelAfter(TimeSpan.FromSeconds(1));
+                var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask.ConfigureAwait(false);
 
-            var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask.ConfigureAwait(false);
+                ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
 
-            ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
-
-            if (withAttributes)
-            {
-                ClassicAssert.IsTrue(searchesWithAttrs > 0);
-            }
-
-            // Validate all nodes have same vector embeddings
-            {
-                var idBytes = new byte[4];
-                for (var id = 0; id < vectors.Length; id++)
+                if (withAttributes)
                 {
-                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
-                    var expected = vectors[id];
+                    ClassicAssert.IsTrue(searchesWithAttrs > 0);
+                }
 
-                    var fromPrimary = (string[])context.clusterTestUtils.Execute(primary, "VEMB", [Key, idBytes]);
-                    var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
-
-                    ClassicAssert.AreEqual(expected.Length, fromPrimary.Length);
-                    ClassicAssert.AreEqual(expected.Length, fromSecondary.Length);
-
-                    for (var i = 0; i < expected.Length; i++)
+                // Validate all nodes have same vector embeddings
+                {
+                    var idBytes = new byte[4];
+                    for (var id = 0; id < vectors.Length; id++)
                     {
-                        var p = (byte)float.Parse(fromPrimary[i]);
-                        var s = (byte)float.Parse(fromSecondary[i]);
+                        BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+                        var expected = vectors[id];
 
-                        ClassicAssert.AreEqual(expected[i], p);
-                        ClassicAssert.AreEqual(expected[i], s);
+                        var fromPrimary = (string[])context.clusterTestUtils.Execute(primary, "VEMB", [Key, idBytes]);
+                        var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
+
+                        ClassicAssert.AreEqual(expected.Length, fromPrimary.Length);
+                        ClassicAssert.AreEqual(expected.Length, fromSecondary.Length);
+
+                        for (var i = 0; i < expected.Length; i++)
+                        {
+                            var p = (byte)float.Parse(fromPrimary[i]);
+                            var s = (byte)float.Parse(fromSecondary[i]);
+
+                            ClassicAssert.AreEqual(expected[i], p);
+                            ClassicAssert.AreEqual(expected[i], s);
+                        }
                     }
                 }
+
             }
+            catch
+            {
+                try
+                {
+                    var primaryMap = FullMapOfVectorSet(context.nodes[PrimaryIndex], successfullyAdded.Keys, vectors, []);
+                    TestContext.Out.WriteLine("===Primary===");
+                    TestContext.Out.WriteLine(primaryMap);
+                }
+                catch { }
+
+                try
+                {
+                    var secondaryMap = FullMapOfVectorSet(context.nodes[SecondaryIndex], successfullyAdded.Keys, vectors, []);
+                    TestContext.Out.WriteLine("===Secondary===");
+                    TestContext.Out.WriteLine(secondaryMap);
+                }
+                catch { }
+
+                throw;
+            }
+
+            // HACK HACK HACK
+            static string FullMapOfVectorSet(GarnetServer secondary, IEnumerable<int> ids, byte[][] vectors, HashSet<int> shouldHaveBeenDeleted)
+            {
+                const ulong AssumedContext = 8;
+
+                var vectorManager = GetStoreWrapper(secondary).DefaultDatabase.VectorManager;
+
+                var sb = new StringBuilder();
+                _ = sb.AppendLine("External (Provided) Id \t| Internal Id \t| Full Vector Matches \t| Other External Id Matched \t| Actual Full Vector Data \t|");
+
+                foreach (var externalId in ids)
+                {
+                    var externalIdBytes = new byte[sizeof(int)];
+                    BinaryPrimitives.WriteInt32LittleEndian(externalIdBytes, externalId);
+
+                    byte[] internalIdBytes;
+                    try
+                    {
+                        internalIdBytes = vectorManager.GetInternalId(AssumedContext, externalIdBytes);
+                        if (shouldHaveBeenDeleted.Contains(externalId))
+                        {
+                            throw new GarnetException($"Deleted external id {externalId} was not actually deleted");
+                        }
+                    }
+                    catch (GarnetException)
+                    {
+                        internalIdBytes = null;
+                    }
+
+                    _ = sb.Append($"{externalId} \t|");
+
+                    if (internalIdBytes != null)
+                    {
+                        _ = sb.Append($" {BinaryPrimitives.ReadInt32LittleEndian(internalIdBytes)} \t|");
+
+                        var actualFullVectorBytes = vectorManager.GetFullVector(AssumedContext, internalIdBytes);
+                        var expectedFullVectorBytes = vectors[externalId];
+
+                        if (actualFullVectorBytes.SequenceEqual(expectedFullVectorBytes))
+                        {
+                            _ = sb.Append($" true \t| - \t|");
+                        }
+                        else
+                        {
+                            _ = sb.Append($" false \t|");
+
+                            int? otherMatch = null;
+                            for (var otherId = 0; otherId < vectors.Length; otherId++)
+                            {
+                                if (otherId == externalId)
+                                {
+                                    continue;
+                                }
+
+                                if (vectors[otherId].SequenceEqual(actualFullVectorBytes))
+                                {
+                                    otherMatch = otherId;
+                                    break;
+                                }
+                            }
+
+                            if (otherMatch != null)
+                            {
+                                _ = sb.Append($" {otherMatch.Value} \t|");
+                            }
+                            else
+                            {
+                                _ = sb.Append($" !!NONE!! \t|");
+                            }
+                        }
+
+                        _ = sb.Append($" 0x{Convert.ToBase64String(actualFullVectorBytes)} \t|");
+                    }
+                    else
+                    {
+                        _ = sb.Append($" !!NONE!! \t| - \t| - \t| - \t|");
+                    }
+
+
+
+                    _ = sb.AppendLine();
+                }
+
+                return sb.ToString();
+            }
+            // END HACK HACK HACK
         }
 
         [Test]
@@ -992,9 +1108,6 @@ namespace Garnet.test.cluster
 
             //    return sb.ToString();
             //}
-
-            //[UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
-            //static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
             // END HACK HACK HACK
         }
 
