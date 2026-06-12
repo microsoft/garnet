@@ -24,7 +24,7 @@ jobs:
         branch: [ continuousbenchmark, continuousbenchmark_net80 ]
     steps:
       - name: Checkout branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ matrix.branch }}
 
