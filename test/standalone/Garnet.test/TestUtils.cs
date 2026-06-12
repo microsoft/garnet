@@ -1312,16 +1312,20 @@ using System.Threading.Tasks;
             return RandomNumberGenerator.GetString(chars, len);
         }
 
-        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null, bool suppressFailure = false)
         {
+            var failTestOnLeak = !suppressFailure && TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
+
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+            var failMsg = "";
+
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
                 Tsavorite.core.LightEpoch.ResetAllInstances();
                 logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+                failMsg += $"Tsavorite.core.LightEpoch instances still active: {count}";
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();
@@ -1330,7 +1334,23 @@ using System.Threading.Tasks;
                 // Reset all instances to avoid impacting other tests
                 client.LightEpoch.ResetAllInstances();
                 logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
-                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+
+                if (!string.IsNullOrEmpty(failMsg))
+                {
+                    failMsg += Environment.NewLine;
+                }
+
+                failMsg += $"Garnet.client.LightEpoch instances still active: {count2}";
+            }
+
+            if (failTestOnLeak && !string.IsNullOrEmpty(failMsg))
+            {
+                Assert.Fail(failMsg);
+            }
+            else if (logger is null && !string.IsNullOrEmpty(failMsg))
+            {
+                // Guarantee the leak message goes _somewhere_ if it doesn't fail the test
+                TestContext.Out.WriteLine(failMsg);
             }
         }
     }
