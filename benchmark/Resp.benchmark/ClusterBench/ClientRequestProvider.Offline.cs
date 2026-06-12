@@ -28,7 +28,7 @@ namespace Resp.benchmark
             requestBuffers = new byte[batchCount][];
             requestLengths = new int[batchCount];
 
-            for (int b = 0; b < batchCount; b++)
+            for (var b = 0; b < batchCount; b++)
             {
                 var buffer = GenerateBatch(batchSize, b * batchSize);
                 requestBuffers[b] = buffer;
@@ -99,8 +99,8 @@ namespace Resp.benchmark
             startSignal.Wait();
 
             var sw = Stopwatch.StartNew();
-            int batchIdx = 0;
-            int batchSize = opts.BatchSize.First();
+            var batchIdx = 0;
+            var batchSize = opts.BatchSize.First();
 
             while (!done && sw.Elapsed < runTime)
             {
@@ -129,7 +129,7 @@ namespace Resp.benchmark
         {
             var sb = new StringBuilder();
 
-            for (int i = 0; i < batchSize; i++)
+            for (var i = 0; i < batchSize; i++)
             {
                 var key = keyGen.GenerateKey(rng, startKeyIndex + i);
                 AppendCommand(sb, opts.Op, key);
@@ -142,7 +142,7 @@ namespace Resp.benchmark
         {
             var sb = new StringBuilder();
 
-            for (int i = 0; i < batchSize; i++)
+            for (var i = 0; i < batchSize; i++)
             {
                 var key = keyGen.GenerateKey(rng, startKeyIndex + i);
                 var value = GenerateValue();

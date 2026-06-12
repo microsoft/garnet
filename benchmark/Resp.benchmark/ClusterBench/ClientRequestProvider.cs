@@ -37,7 +37,7 @@ namespace Resp.benchmark
             this.shard = shard;
             this.opts = opts;
             this.threadIndex = threadIndex;
-            this.rng = new Random(31337 + threadIndex * 1000 + shard.Port);
+            this.rng = new Random(31337 + (threadIndex * 1000) + shard.Port);
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
         }
@@ -99,16 +99,16 @@ namespace Resp.benchmark
             switch ((OpType)opType)
             {
                 case OpType.GET:
-                    for (int i = 0; i < bytesRead; i++)
+                    for (var i = 0; i < bytesRead; i++)
                         if (buf[i] == '$') count++;
                     break;
                 case OpType.SET:
-                    for (int i = 0; i < bytesRead; i++)
+                    for (var i = 0; i < bytesRead; i++)
                         if (buf[i] == '+') count++;
                     break;
                 default:
-                    for (int i = 0; i < bytesRead; i++)
-                        if (buf[i] == '+' || buf[i] == '$' || buf[i] == ':') count++;
+                    for (var i = 0; i < bytesRead; i++)
+                        if (buf[i] is (byte)'+' or (byte)'$' or (byte)':') count++;
                     break;
             }
             return (count, 0);
