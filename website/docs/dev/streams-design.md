@@ -27,9 +27,9 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 | **TsavoriteLog** for entry storage (internal to the object) | Append-only, page-aligned, supports recovery, tiered storage, and zero-copy reads via `Span<byte>`. The `StreamObject` owns a per-stream log; the log is committed during the object's checkpoint serialization. |
 | **BTree** for ID → address index (internal to the object) | O(log n) range scans, ordered iteration, in-place tombstoning, and prefix trimming — all needed for `XRANGE`/`XREVRANGE`/`XTRIM`. Rebuilt from the per-stream log when the object is deserialized. |
 | **Consumer groups serialized into the object blob** | `DoSerialize`/`(BinaryReader)` round-trip the groups, PEL, consumers, last-delivered-id, and entries-read, so the checkpoint/AOF path makes consumer-group state durable across restarts. |
-| **Default database (DB 0) only** | Streams are stored in the default database's unified store; they are not per-database and remain unsupported in cluster mode. |
+| **Per-database, like any key** | Streams are ordinary keys in the active database's unified store, so the same stream name in different databases is fully isolated, `FLUSHDB` is scoped to the current database, and `FLUSHALL` clears all. The per-stream on-disk log is namespaced by db id (`<stream-log-dir>/db{N}/<hex-key>`). Streams remain unsupported in cluster mode. |
 
-> **Note on durability coordination:** stream *entries* live in the per-stream `TsavoriteLog` and are committed when the object is serialized during a store checkpoint (`StreamObject.DoSerialize` calls `log.Commit`). On recovery the object is deserialized — it re-opens its per-stream log and rebuilds the BTree from it. `DEL`/`UNLINK`/`EXPIRE` route through the store and `GarnetRecordTriggers.OnDispose` (never fired on eviction) closes the per-stream log and removes its on-disk directory; `FLUSHDB`/`FLUSHALL` close all live stream log handles before sweeping the per-stream directories.
+> **Note on durability coordination:** stream *entries* live in the per-stream `TsavoriteLog` and are committed when the object is serialized during a store checkpoint (`StreamObject.DoSerialize` calls `log.Commit`). On recovery the object is deserialized — it re-opens its per-stream log (under its db-scoped directory, using the db id persisted in the blob) and rebuilds the BTree from it. `DEL`/`UNLINK`/`EXPIRE` route through the store and `GarnetRecordTriggers.OnDispose` closes the per-stream log and removes its on-disk directory. **Eviction:** when a disk-backed stream's record is evicted from the main log, `GarnetRecordTriggers.OnEvict` closes its per-stream log/device handles and frees the heap BTree (the on-disk data is preserved and re-opened on next access) — so handles are not held until GC. `FLUSHDB` closes the current database's live stream log handles and deletes only its db-scoped subtree; `FLUSHALL` does so for all databases.
 
 ---
 
@@ -45,12 +45,12 @@ Garnet Streams is a Redis-compatible implementation of the [Redis Streams](https
 │  RespServerSession  (libs/server/Resp/StreamCommands.cs)            │
 │  • Parses arguments from network buffer                             │
 │  • Builds ObjectInput (header = GarnetObjectType.Stream + StreamOp) │
-│  • Calls the DB 0 object store API (StorageSession.StreamObject*)   │
+│  • Calls the active database's object store API (StorageSession.*)  │
 │  • Formats RESP responses via RespMemoryWriter                      │
 └────────────┬────────────────────────────────────────────────────────┘
              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Unified object store (DB 0)  —  ObjectSessionFunctions RMW/Read    │
+│  Unified object store (active database)  — ObjectSessionFunctions   │
 │  • Stream key is a record whose value is a StreamObject             │
 │  • InitialUpdater creates the StreamObject from the record key      │
 │    (StreamObject.CreateForKey) on first XADD / XGROUP CREATE MKSTREAM│
@@ -491,7 +491,7 @@ When `--stream-log-dir` is set:
 On restart, recovery is mediated by the object store (there is no separate stream-directory scan):
 
 1. The store reconstructs each `StreamObject` from its checkpoint blob via the `StreamObject(BinaryReader)` constructor, which:
-   - re-opens the per-stream `TsavoriteLog` (using the ambient `StreamObjectConfig`),
+   - reads the db id from the blob and re-opens the per-stream `TsavoriteLog` under its db-scoped directory (`<stream-log-dir>/db{N}/<hex-key>`, using the ambient `StreamObjectConfig`),
    - rebuilds the BTree by scanning the log — `RebuildIndexFromLog`: data records (`numPairs ≥ 0`) → `InsertIntoTail`, tombstones (`numPairs == -1`) → `Delete`, updating `lastId`/`totalEntriesAdded`,
    - and deserializes the consumer-group state from the blob.
 2. The main AOF then replays any stream mutations recorded after the checkpoint.

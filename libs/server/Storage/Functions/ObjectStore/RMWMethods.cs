@@ -66,7 +66,7 @@ namespace Garnet.server
             IGarnetObject value;
             if (type == GarnetObjectType.Stream)
             {
-                var stream = StreamObject.CreateForKey(logRecord.Key);
+                var stream = StreamObject.CreateForKey(logRecord.Key, functionsState.dbId);
                 _ = stream.Operate(ref input, ref output, functionsState.respProtocolVersion);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(stream, in sizeInfo);
                 return true;

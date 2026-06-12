@@ -591,11 +591,9 @@ namespace Garnet.server
 
             databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
 
-            // Streams are not per-database, so any FLUSHDB wipes the entire stream namespace
-            // alongside the main store. This disposes each live StreamObject (deallocating its
-            // BTree and closing its TsavoriteLog) and deletes the on-disk subdirectories so a
-            // subsequent recovery sees no data.
-            StreamObjectConfig.FlushAll();
+            // Streams are per-database: FLUSHDB on database N disposes only that database's streams
+            // and deletes only its on-disk subtree, leaving other databases' streams intact.
+            StreamObjectConfig.FlushDatabase(dbId);
         }
 
         /// <summary>

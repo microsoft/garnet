@@ -1093,10 +1093,11 @@ namespace Garnet.test
                     s.Execute("SAVE");
                     System.Threading.Thread.Sleep(500);
 
-                    // Hex of the UTF-8 key bytes — matches the subdir naming in StreamObject.CreateForKey.
-                    dirA = System.IO.Path.Combine(saveDir,
+                    // Hex of the UTF-8 key bytes under the per-database subdir (db0) — matches the
+                    // layout in StreamObject.CreateForKey (streamsRootDir/db{N}/hex(key)).
+                    dirA = System.IO.Path.Combine(saveDir, "db0",
                         Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamA)));
-                    dirB = System.IO.Path.Combine(saveDir,
+                    dirB = System.IO.Path.Combine(saveDir, "db0",
                         Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamB)));
 
                     ClassicAssert.IsTrue(System.IO.Directory.Exists(dirA),
@@ -1179,9 +1180,9 @@ namespace Garnet.test
                         s.Execute("SAVE");
                         System.Threading.Thread.Sleep(500);
 
-                        dirA = System.IO.Path.Combine(saveDir,
+                        dirA = System.IO.Path.Combine(saveDir, "db0",
                             Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamA)));
-                        dirB = System.IO.Path.Combine(saveDir,
+                        dirB = System.IO.Path.Combine(saveDir, "db0",
                             Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(streamB)));
                         ClassicAssert.IsTrue(System.IO.Directory.Exists(dirA), "stream A dir should exist before DEL");
                         ClassicAssert.IsTrue(System.IO.Directory.Exists(dirB), "stream B dir should exist before DEL");

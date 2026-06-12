@@ -52,7 +52,7 @@ namespace Garnet.server
         public bool CallOnFlush => rangeIndexManager != null;
 
         /// <inheritdoc/>
-        public bool CallOnEvict => rangeIndexManager != null || vectorManager != null;
+        public bool CallOnEvict => rangeIndexManager != null || vectorManager != null || StreamObjectConfig.StreamsRootDir != null;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => rangeIndexManager != null || vectorManager != null;
@@ -117,6 +117,20 @@ namespace Garnet.server
                 {
                     vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
                 }
+
+                return;
+            }
+
+            // A disk-backed stream is being evicted from the main hybrid log: close its per-stream
+            // log/device handles and free the heap BTree so they don't linger until GC (file-handle
+            // pressure). Eviction != delete, so the on-disk log is preserved and a later access
+            // re-deserializes + re-opens it. A StreamObject is a single-owner resource (Clone() returns
+            // this, and CopyUpdate transfers ownership by clearing the source reference), so the
+            // main-log record being evicted is the sole owner and disposing it here is safe. Read-cache
+            // evictions are skipped (streams are not read-cached; see StreamObject.Clone).
+            if (source == EvictionSource.MainLog && logRecord.ValueObject is StreamObject stream)
+            {
+                stream.Dispose();
             }
         }
 

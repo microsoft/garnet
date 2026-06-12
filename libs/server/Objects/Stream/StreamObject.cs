@@ -150,9 +150,45 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// FLUSHDB/FLUSHALL cleanup: close every live stream's per-stream log/device handle, then delete
-        /// all per-stream on-disk directories. Streams are not per-database, so flushing any database
-        /// wipes the entire stream namespace.
+        /// FLUSHDB cleanup for a single database: dispose that database's live streams (closing each
+        /// per-stream log/device handle) and delete only its on-disk subtree (streamsRootDir/db{dbId}).
+        /// Streams are per-database, so other databases' streams are left untouched.
+        /// </summary>
+        internal static void FlushDatabase(int dbId)
+        {
+            foreach (var stream in liveStreams.Keys)
+            {
+                if (stream.DbId != dbId)
+                    continue;
+                try
+                {
+                    // Dispose unregisters the stream from liveStreams.
+                    stream.Dispose();
+                }
+                catch
+                {
+                    // Best-effort: a failed dispose must not block the remaining cleanup.
+                }
+            }
+
+            if (StreamsRootDir == null)
+                return;
+            var dbDir = Path.Combine(StreamsRootDir, StreamObject.DbDirName(dbId));
+            if (!Directory.Exists(dbDir))
+                return;
+            try
+            {
+                Directory.Delete(dbDir, recursive: true);
+            }
+            catch
+            {
+                // Best-effort: leftover directories are reclaimed on the next FLUSH.
+            }
+        }
+
+        /// <summary>
+        /// FLUSHALL cleanup: dispose every live stream's per-stream log/device handle, then delete all
+        /// per-database on-disk subtrees under the streams root.
         /// </summary>
         internal static void FlushAll()
         {
@@ -185,8 +221,16 @@ namespace Garnet.server
         readonly BTree index;
         readonly string streamsRootDir;
         readonly string streamDirName;
+
+        // Database this stream belongs to. Streams are per-database (like every other key), so the
+        // per-stream on-disk log is namespaced by db id under streamsRootDir; this is persisted in the
+        // blob so deserialize re-opens the correct directory, and used to scope FLUSHDB cleanup.
+        readonly int dbId;
         StreamID lastId;
         long totalEntriesAdded;
+
+        /// <summary>Database this stream belongs to. Used to scope FLUSHDB cleanup.</summary>
+        internal int DbId => dbId;
         // Set by Dispose. volatile because Dispose may run on the FLUSHDB/FLUSHALL thread while
         // another session concurrently observes the flag (e.g. via IsDisposed).
         volatile bool disposed;
@@ -217,18 +261,19 @@ namespace Garnet.server
         /// <param name="memorySize">Memory budget for the log.</param>
         /// <param name="recover">If true and a disk-backed log exists at the path, recover the
         ///     log and rebuild the in-memory BTree by scanning all entries.</param>
-        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, bool recover = false)
+        public StreamObject(string streamsRootDir, string streamDirName, long pageSize, long memorySize, int dbId = 0, bool recover = false)
             : base(StreamHeapOverhead)
         {
             this.streamsRootDir = streamsRootDir;
             this.streamDirName = streamDirName;
+            this.dbId = dbId;
             if (streamsRootDir == null || streamDirName == null)
             {
                 device = new NullDevice();
             }
             else
             {
-                var streamDir = Path.Combine(streamsRootDir, streamDirName);
+                var streamDir = Path.Combine(streamsRootDir, DbDirName(dbId), streamDirName);
                 Directory.CreateDirectory(streamDir);
                 device = Devices.CreateLogDevice(Path.Combine(streamDir, "streamLog"), preallocateFile: false);
             }
@@ -258,10 +303,11 @@ namespace Garnet.server
             : base(reader, StreamHeapOverhead)
         {
 
-            // Per-stream identity. The log directory name is persisted; the root dir and page/memory
-            // sizes are server-global and come from the ambient config.
+            // Per-stream identity. The log directory name + db id are persisted; the root dir and
+            // page/memory sizes are server-global and come from the ambient config.
             var hasDir = reader.ReadBoolean();
             streamDirName = hasDir ? reader.ReadString() : null;
+            dbId = reader.ReadInt32();
             streamsRootDir = StreamObjectConfig.StreamsRootDir;
 
             if (streamsRootDir == null || streamDirName == null)
@@ -270,7 +316,7 @@ namespace Garnet.server
             }
             else
             {
-                var streamDir = Path.Combine(streamsRootDir, streamDirName);
+                var streamDir = Path.Combine(streamsRootDir, DbDirName(dbId), streamDirName);
                 Directory.CreateDirectory(streamDir);
                 device = Devices.CreateLogDevice(Path.Combine(streamDir, "streamLog"), preallocateFile: false);
             }
@@ -284,9 +330,11 @@ namespace Garnet.server
 
             DeserializeConsumerGroups(reader);
 
-            // Phase 1: rebuild the index by scanning the recovered log. A future phase serializes the
-            // BTree into the blob (with the covered tail) and replays only the post-checkpoint suffix.
-            RebuildIndexFromLog();
+            // Rebuild the index by scanning the recovered log. In-memory (NullDevice) streams have no
+            // durable log, so there is nothing to rebuild — and scanning a fresh NullDevice log would
+            // fault on uninitialized pages. On-disk streams rebuild from their committed log.
+            if (streamsRootDir != null && streamDirName != null)
+                RebuildIndexFromLog();
 
             lastId = blobLastId;
             totalEntriesAdded = blobTotalEntriesAdded;
@@ -298,20 +346,31 @@ namespace Garnet.server
         public override byte Type => (byte)GarnetObjectType.Stream;
 
         /// <summary>
-        /// Create a fresh stream for the given key using the server-global <see cref="StreamObjectConfig"/>.
-        /// The per-stream log directory is derived from the hex-encoded key so it is filesystem-safe and
-        /// reversible. Used by the object-store RMW initial-update path, where the record key is available.
+        /// Create a fresh stream for the given key in the given database using the server-global
+        /// <see cref="StreamObjectConfig"/>. The per-stream log directory is derived from the db id and
+        /// the hex-encoded key so it is filesystem-safe, reversible, and isolated per database. Used by
+        /// the object-store RMW initial-update path, where the record key and db id are available.
         /// </summary>
-        internal static StreamObject CreateForKey(ReadOnlySpan<byte> key)
+        internal static StreamObject CreateForKey(ReadOnlySpan<byte> key, int dbId)
         {
             var rootDir = StreamObjectConfig.StreamsRootDir;
             var dirName = rootDir != null ? Convert.ToHexString(key) : null;
-            return new StreamObject(rootDir, dirName, StreamObjectConfig.DefaultPageSize, StreamObjectConfig.DefaultMemorySize);
+            return new StreamObject(rootDir, dirName, StreamObjectConfig.DefaultPageSize, StreamObjectConfig.DefaultMemorySize, dbId);
         }
 
+        /// <summary>Per-database subdirectory name under the streams root (e.g. "db0").</summary>
+        internal static string DbDirName(int dbId) => $"db{dbId}";
+
         /// <summary>
-        /// Streams are mutated in place rather than copied; the per-stream log and device cannot be
-        /// duplicated, so Clone shares this single owning instance.
+        /// A stream owns a per-stream log + device + native BTree that cannot be duplicated, so it is a
+        /// single-owner resource and <see cref="Clone"/> returns the same instance rather than copying.
+        /// This is sound because the store transfers ownership rather than aliasing: on an RMW CopyUpdate,
+        /// Tsavorite shallow-clones the value into the destination record and then clears the source
+        /// record's reference (DisposeReason.CopyUpdated), so exactly one live record references the
+        /// instance at any time. Eviction/DEL therefore dispose it safely (see GarnetRecordTriggers).
+        /// NOTE: enabling the read cache for streams would break this invariant (the read-cache copy and
+        /// the main-log record would both reference this instance while the main-log record can be
+        /// evicted+disposed); streams are not read-cached.
         /// </summary>
         public override IHeapObject Clone() => this;
 
@@ -833,6 +892,7 @@ namespace Garnet.server
             writer.Write(hasDir);
             if (hasDir)
                 writer.Write(streamDirName);
+            writer.Write(dbId);
 
             // Stream metadata.
             // Flush the per-stream log so entries up to the serialized metadata are durable on disk.
@@ -1302,7 +1362,7 @@ namespace Garnet.server
                 return;
             try
             {
-                var dir = Path.Combine(streamsRootDir, streamDirName);
+                var dir = Path.Combine(streamsRootDir, DbDirName(dbId), streamDirName);
                 if (Directory.Exists(dir))
                     Directory.Delete(dir, recursive: true);
             }
@@ -1315,7 +1375,15 @@ namespace Garnet.server
         /// <summary>Try to get a consumer group by name. For tests/diagnostics.</summary>
         internal bool TryGetConsumerGroupForTest(string name, out ConsumerGroup group) => consumerGroups.TryGetValue(name, out group);
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Releases the per-stream log/device handles and frees the native BTree, leaving any on-disk
+        /// data intact (use <see cref="DeleteOnDiskData"/> to also remove the directory). Invoked
+        /// deterministically by every lifecycle path: DEL/UNLINK/EXPIRE and main-log eviction via
+        /// GarnetRecordTriggers (OnDispose / OnEvict), FLUSHDB/FLUSHALL, and graceful shutdown
+        /// (StreamObjectConfig). As a safety net for any unforeseen abandonment, the native BTree
+        /// memory is also reclaimed by <c>~BTree()</c> and the device's OS handles by SafeFileHandle
+        /// finalizers, so no unmanaged resource leaks even if Dispose is somehow missed.
+        /// </summary>
         public override void Dispose()
         {
             // Idempotent: BTree.Deallocate is a native free that would crash on a second call.
