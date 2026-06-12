@@ -96,7 +96,7 @@ namespace Resp.benchmark
         {
             Console.WriteLine("Preparing offline buffers...");
             foreach (var provider in providers)
-                provider.PrepareOfflineBuffers();
+                provider.PrepareBuffers();
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);

@@ -17,20 +17,21 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Pre-generate request buffers for offline mode.
-        /// Each buffer contains a batch of commands with keys restricted to this shard's slots.
+        /// Each buffer contains a batch of commands with keys randomly sampled
+        /// from the shared key space (enabling overlap across threads on the same shard).
         /// </summary>
-        public void PrepareOfflineBuffers()
+        public void PrepareBuffers()
         {
-            var dbSizePerThread = opts.DbSize / opts.NumThreads.First();
             var batchSize = opts.BatchSize.First();
-            batchCount = Math.Max(1, dbSizePerThread / batchSize);
+            var dbSizePerShard = opts.DbSize;
+            batchCount = Math.Max(1, dbSizePerShard / batchSize);
 
             requestBuffers = new byte[batchCount][];
             requestLengths = new int[batchCount];
 
             for (var b = 0; b < batchCount; b++)
             {
-                var buffer = GenerateBatch(batchSize, b * batchSize);
+                var buffer = GenerateRandomBatch(batchSize, dbSizePerShard);
                 requestBuffers[b] = buffer;
                 requestLengths[b] = buffer.Length;
             }
@@ -61,7 +62,7 @@ namespace Resp.benchmark
             while (loaded < dbSizePerThread)
             {
                 var thisBatch = Math.Min(batchSize, dbSizePerThread - loaded);
-                var buffer = GenerateSetBatch(thisBatch, loaded);
+                var buffer = GenerateLoadBatch(thisBatch, loaded);
 
                 fixed (byte* bufPtr = buffer)
                 {
@@ -138,7 +139,20 @@ namespace Resp.benchmark
             return Encoding.ASCII.GetBytes(sb.ToString());
         }
 
-        private byte[] GenerateSetBatch(int batchSize, int startKeyIndex)
+        private byte[] GenerateRandomBatch(int batchSize, int dbSize)
+        {
+            var sb = new StringBuilder();
+
+            for (var i = 0; i < batchSize; i++)
+            {
+                var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
+                AppendCommand(sb, opts.Op, key);
+            }
+
+            return Encoding.ASCII.GetBytes(sb.ToString());
+        }
+
+        private byte[] GenerateLoadBatch(int batchSize, int startKeyIndex)
         {
             var sb = new StringBuilder();
 

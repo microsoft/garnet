@@ -50,11 +50,11 @@ namespace Resp.benchmark
             startSignal.Wait();
 
             var sw = Stopwatch.StartNew();
-            int keyIdx = threadIndex * 100_000;
+            var dbSizePerShard = opts.DbSize;
 
             while (!done && sw.Elapsed < runTime)
             {
-                var key = keyGen.GenerateKey(rng, keyIdx++);
+                var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
                 var request = FormatRequest(opts.Op, key);
 
                 var opStart = Stopwatch.GetTimestamp();
@@ -92,7 +92,7 @@ namespace Resp.benchmark
             startSignal.Wait();
 
             var sw = Stopwatch.StartNew();
-            int keyIdx = threadIndex * 100_000;
+            var dbSizePerShard = opts.DbSize;
             int itp = opts.IntraThreadParallelism;
 
             while (!done && sw.Elapsed < runTime)
@@ -101,7 +101,7 @@ namespace Resp.benchmark
 
                 for (int p = 0; p < itp; p++)
                 {
-                    var key = keyGen.GenerateKey(rng, keyIdx++);
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
                     if (opts.Op == OpType.GET)
                         client.Execute("GET", key);
@@ -137,7 +137,7 @@ namespace Resp.benchmark
             startSignal.Wait();
 
             var sw = Stopwatch.StartNew();
-            int keyIdx = threadIndex * 100_000;
+            var dbSizePerShard = opts.DbSize;
             int itp = opts.IntraThreadParallelism;
 
             try
@@ -149,7 +149,7 @@ namespace Resp.benchmark
 
                     for (int p = 0; p < itp; p++)
                     {
-                        var key = keyGen.GenerateKey(rng, keyIdx++);
+                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
                         if (opts.Op == OpType.GET)
                             tasks[p] = client.StringGetAsMemoryAsync(key);
