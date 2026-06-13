@@ -13,161 +13,249 @@ namespace Tsavorite.core
         // TODO: Make MLPA config numbers internally configurable (e.g. smaller log pages need less overhead). Should be able to do this internally
         //      and not expose another set of public config options.
         internal const int InitialBookSizeBits = 2;
-        internal const int PrimaryClearRetainedChapterSizeBits = InitialBookSizeBits << 1;
-        internal const int FreeListClearRetainedChapterSizeBits = InitialBookSizeBits;
-        internal const int ChapterSizeBits = 10;
+        internal const int PrimaryClearRetainedPageSizeBits = InitialBookSizeBits << 1;
+        internal const int FreeListClearRetainedPageSizeBits = InitialBookSizeBits;
+        internal const int PageSizeBits = 10;
 
         internal const int InitialBookSize = 1 << InitialBookSizeBits;
-        internal const int ChapterSize = 1 << ChapterSizeBits;
-        internal const int PageIndexMask = (1 << ChapterSizeBits) - 1;
+        internal const int PageSize = 1 << PageSizeBits;
+        internal const int BlockIndexMask = (1 << PageSizeBits) - 1;
     }
 
     /// <summary>
-    /// This creates a 3-d array of page vectors. This can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where
-    /// the user-visible allocations are created.
+    /// This creates a 3-d array of block vectors. This can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where
+    /// the user-visible allocations (blocks) are created.
     /// <list type="bullet">
-    ///     <item>The first dimension is the "book", which is a collection of "chapters".</item>
-    ///     <item>The second dimension is the "chapters", which is a collection of pages.</item>
-    ///     <item>The third dimension is the actual pages of data which are returned to the user</item>
+    ///     <item>The first dimension is the "book", which is a collection of "pages".</item>
+    ///     <item>The second dimension is the "pages", each a fixed-size collection of blocks.</item>
+    ///     <item>The third dimension is the actual blocks of data which are returned to the user.</item>
     /// </list>
-    /// This structure is chosen so that only the "book" is grown; individual chapters are allocated as a fixed size. This means that
-    /// getting and clearing items in the chapter does not have to take a latch to prevent a lost update as the array is grown, as
-    /// would be necessary if there was only a single level of infrastructure (i.e. a growable chapter).
+    /// This structure is chosen so that only the "book" is grown; individual pages are allocated as a fixed size. This means that
+    /// getting and clearing items in the page does not have to take a latch to prevent a lost update as the array is grown, as
+    /// would be necessary if there was only a single level of infrastructure (i.e. a growable page).
+    /// <para>
+    /// Concurrency model: <see cref="tail"/> is a packed <see cref="PageOffset"/> (<see cref="PageOffset.Page"/>/<see cref="PageOffset.Offset"/>
+    /// within a single 64-bit field, where <see cref="PageOffset.Offset"/> is reused to mean "block index within the page"). A single
+    /// <see cref="Interlocked.Add(ref long, long)"/> on <see cref="PageOffset.PageAndOffset"/> both claims the slot and identifies the unique
+    /// thread that owns the next page-turn: the natural owner is the thread whose post-Add Offset is exactly <c>PageSize + 1</c>. That thread
+    /// drives <see cref="AddPage"/> and then publishes the new (Page, Offset=1) with a single <see cref="Interlocked.Exchange(ref long, long)"/>
+    /// that simultaneously wipes any concurrent "loser" Adds (post-Offset &gt; PageSize + 1). On <see cref="AddPage"/> failure the owner rewinds
+    /// the same way, so the next Add becomes the new natural owner and retries; no slot ids are ever lost or duplicated.
+    /// </para>
     /// </summary>
     internal class MultiLevelPageArray<TElement>
     {
         internal TElement[][] book;
 
-        /// <summary>Value of the tail before initialization; start at -1 so Allocate() sets it to 0</summary>
-        private const int InitialTail = -1;
-
-        /// <summary>The next index to be returned; <see cref="InitialTail"/> if we are not yet initialized.</summary>
-        internal int tail = InitialTail;
+        /// <summary>The packed (Page, Offset) tail. <see cref="PageOffset.Offset"/> here represents the block index within the page rather
+        /// than a byte offset. <see cref="PageOffset.PageAndOffset"/> == 0 is the "uninitialized" sentinel; the live initial value (set by
+        /// <see cref="EnsureInitialized"/>) is <c>Page = -1, Offset = PageSize</c> so that the very first <see cref="Interlocked.Add(ref long, long)"/>
+        /// of 1 yields <c>Page = -1, Offset = PageSize + 1</c>, which is recognized as the natural owner of page 0.</summary>
+        internal PageOffset tail;
 
         public bool IsInitialized => book is not null;
 
-        public int Count => tail < 0 ? 0 : tail;   // InitialTail is -1, and tail is the next id to return
-
-        public int Allocate()
+        /// <summary>The number of ids that have been claimed (i.e. the next id that would be returned by <see cref="Allocate"/>).</summary>
+        /// <remarks>Snapshots <see cref="tail"/> via <see cref="Volatile"/>.Read so cross-thread reads do not tear on 32-bit. Clamps the
+        /// offset to <see cref="MultiLevelPageArray.PageSize"/> to avoid over-counting during the brief cold window where an owner has
+        /// observed its claim post-Add but has not yet published; this transiently under-counts by at most one until the publish lands.</remarks>
+        public int Count
         {
-            // The first loop ensures the book is initialized. It may be repeated up to three times; if either of the CompareExchanges fails,
-            // it will be because the desired condition was already set by another thread.
-            while (tail == InitialTail)
+            get
             {
-                // The book may be non-null due to Clear() (e.g. when we wrap around in the log to page 0) or to the newBook allocation below.
-                // If the book is not null but the tail is InitialTail, we need to set tail to 0 *once* to start allocations.
-                if (book is not null)
-                {
-                    _ = Interlocked.CompareExchange(ref tail, 0, InitialTail);
-                    continue;
-                }
-
-                // Another thread may have allocated and set the book since the last test; if not, try to do so now
-                if (book is null)
-                {
-                    // Allocate the book as a two-step process so we don't overwrite another thread's book allocation. Because we can't set both the
-                    // book and tail in a single atomic operation, we set only the book, and loop back up to detect the non-null book and set tail
-                    // instead of setting it here; otherwise, there is a race where multiple threads could set tail to 0 at the two locations.
-                    var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
-                    if (Interlocked.CompareExchange(ref book, newBook, null) == null)
-                        continue;
-                }
-                _ = Thread.Yield();
-            }
-
-            while (true)
-            {
-                var originalTail = tail;
-                var originalChapter = originalTail >> MultiLevelPageArray.ChapterSizeBits;
-                if ((originalChapter >= book.Length || book[originalChapter] is null) && ((originalTail & MultiLevelPageArray.PageIndexMask) > 0))
-                {
-                    // Only the first-page return in a chapter can allocate the chapter and one or more other threads has already incremented tail
-                    // into a new, not-yet-allocated chapter, which means the first one that did so owns the "latch" to allocate this chapter.
-                    // Other threads should exit without incrementing tail; just wait for that owning thread to allocate the new chapter.
-                    _ = Thread.Yield(); // TODO consider SpinWait.SpinOnce() with backoff
-                    continue;
-                }
-
-                // If we are here, our first test indicated we did not need to allocate a new chapter (but that may have changed), or we are a candidate to
-                // be the first to allocate it and thus own the new-chapter "latch". Increment tail and we'll return the prior-to-increment value once we have
-                // done any needed allocation. Because there is a gap between incrementing tail and checking for a null chapter, we need to track whether
-                // the next chapter is allocated; if not, we should not return the first index in the next chapter (that is done by the chapter-allocating thread).
-                var nextChapterWasNotAllocated = originalChapter + 1 >= book.Length || book[originalChapter + 1] is null;
-                var returnTail = Interlocked.Increment(ref tail) - 1;
-                var returnChapter = returnTail >> MultiLevelPageArray.ChapterSizeBits;
-                Debug.Assert(returnChapter >= originalChapter, $"newChapter {returnChapter} must not be < originalChapter {originalChapter}");
-
-                // If returnChapter is allocated and we are not returning trying to return the first page in a newly-allocated chapter (that should be only be
-                // done by the allocating thread, and we're not it), we can return returnTail.
-                if (returnChapter < book.Length && book[returnChapter] is not null && (returnChapter == originalChapter || !nextChapterWasNotAllocated || returnTail > 0))
-                    return returnTail;
-
-                // Multiple threads might have seen the initial "first page in chapter" condition and incremented tail. We only want to stay if we're the
-                // first; that is, if we are returning the first page in the new chapter. Others threads should exit and wait and the first thread will
-                // "release the increment" by resetting tail after it's allocated the chapter.
-                var newPage = returnTail & MultiLevelPageArray.PageIndexMask;
-                if (newPage > 0)
-                {
-                    _ = Thread.Yield();
-                    continue;
-                }
-
-                // We are allocating the first page on a new chapter so we "own the latch" on this newChapter, but it's (barely) possible that tail was incremented
-                // so many times it went to a second page. Therefore only try to allocate newChapter if it is the first in the book or the previous chapter is allocated.
-                if (returnChapter > 0 && book[returnChapter - 1] is null)
-                {
-                    _ = Thread.Yield();
-                    continue;
-                }
-
-                // We still own the latch and are allocating the new chapter, and possibly need to grow the book. If this returns false, tail is reset to the first page
-                // in the chapter; otherwise it is set to the second and we return the first. These are per tail's "next item to return" definition.
-                AddChapter(returnChapter, out returnTail);
-                Debug.Assert(returnTail >= originalTail, $"returnTail {returnTail} must be >= originalTail after AddChapter");
-                return returnTail;
+                PageOffset snap = default;
+                snap.PageAndOffset = Volatile.Read(ref tail.PageAndOffset);
+                if (snap.PageAndOffset == 0)
+                    return 0;
+                var offset = snap.Offset > MultiLevelPageArray.PageSize ? MultiLevelPageArray.PageSize : snap.Offset;
+                return (snap.Page * MultiLevelPageArray.PageSize) + offset;
             }
         }
 
         /// <summary>
-        /// Add a chapter. <paramref name="newChapterIndex"/> has been incremented to be the next chapter after the last non-null chapter.
+        /// Allocate a new id. Spins on <see cref="TryAllocate(out int)"/> while it returns false (a transient "cold window" or "loser of the
+        /// page-turn race"). May throw if <see cref="AddPage"/> throws (typically OOM); on throw <see cref="tail"/> is rewound atomically so a
+        /// subsequent <see cref="Allocate"/> can retry without losing or duplicating any slot ids.
         /// </summary>
-        private void AddChapter(int newChapterIndex, out int returnTail)
+        public int Allocate()
         {
-            // We should only be here after we have verified that we need to grow the book or allocate the newChapterIndex, and only one thread should
-            // be here due to the "latch" described above. If we are reusing a book, this should already have passed the "chapter is not null" test
-            // and we wouldn't be here.
-            Debug.Assert(newChapterIndex >= book.Length || book[newChapterIndex] is null, $"Trying to allocate an existing chapter {newChapterIndex}");
-            var firstPageInChapter = newChapterIndex << MultiLevelPageArray.ChapterSizeBits;
+            int id;
+            while (!TryAllocate(out id))
+                _ = Thread.Yield();
+            return id;
+        }
 
-            try
+        /// <summary>
+        /// Attempt a single allocation step. Returns <see langword="true"/> with a valid <paramref name="id"/> when our claim landed on the
+        /// fast path, or when we were the unique natural owner of a new page and successfully drove <see cref="AddPage"/>. Returns
+        /// <see langword="false"/> in two transient cases that the caller should handle by yielding and retrying: (a) the cold window in
+        /// which an owner is mid-<see cref="AddPage"/> and our snapshot would burn an Offset slot the owner is about to wipe, and (b) we
+        /// were a "loser" of the page-turn race -- our Add bumped the Offset past <c>PageSize + 1</c> and will be wiped by the owner's
+        /// publish-Exchange. Throws on <see cref="AddPage"/> failure (after rewinding <see cref="tail"/>).
+        /// </summary>
+        public bool TryAllocate(out int id)
+        {
+            // First-call cold path: lazily initialize 'book' and 'tail'. After the first successful TryAllocate on this instance (until Clear()
+            // resets us), tail.PageAndOffset stays non-zero and we skip this entirely.
+            if (tail.PageAndOffset == 0)
+                EnsureInitialized();
+
+            // Value-type snapshot. On 64-bit a single load of the long is atomic; on 32-bit it may tear, in which case a "weird" Offset will
+            // simply cause us to fail the cold-window check or land in the loser branch and the caller will retry. We do not need Volatile
+            // here because the Interlocked.Add below is the synchronization point that establishes our claim. 'default' initialization is
+            // required so the compiler treats the overlapping Offset/Page fields as definitely assigned alongside PageAndOffset.
+            PageOffset local = default;
+            local.PageAndOffset = tail.PageAndOffset;
+
+            // Cold window: an owner is in CompleteAsPageOwner with the next page mid-allocation. If we Add now we just burn an Offset slot
+            // that will be wiped by the owner's publish-Exchange. Bail without incrementing so we don't add to the loser pile-up.
+            if (local.Offset > MultiLevelPageArray.PageSize)
             {
-                // First see if we need to grow the book.
-                if (newChapterIndex == book.Length)
+                id = 0;
+                return false;
+            }
+
+            // Atomic claim. The post-image's Offset tells us our role:
+            //   <= PageSize           : fast path -- we claimed block (Offset - 1) of page Page.
+            //   == PageSize + 1       : unique natural owner of the next page -- drive AddPage + publish.
+            //   >  PageSize + 1       : loser; the owner's publish-Exchange will overwrite our Add. Bail; caller yields and retries.
+            local.PageAndOffset = Interlocked.Add(ref tail.PageAndOffset, 1);
+
+            if (local.Offset <= MultiLevelPageArray.PageSize)
+            {
+                id = (local.Page << MultiLevelPageArray.PageSizeBits) | (local.Offset - 1);
+                return true;
+            }
+
+            if (local.Offset == MultiLevelPageArray.PageSize + 1)
+            {
+                id = CompleteAsPageOwner(local);
+                return true;
+            }
+
+            // Loser of the page-turn race. Do not try to undo our Add; the owner's Exchange will overwrite it.
+            id = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Cold initial-state initializer for <see cref="TryAllocate(out int)"/>. Runs once per instance (or once after each <see cref="Clear(int)"/>).
+        /// Hoisted into its own NoInlining method so the hot path stays small enough to inline cleanly into callers.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void EnsureInitialized()
+        {
+            // The live initial value of tail is (Page = -1, Offset = PageSize); the first Add(1) yields (Page = -1, Offset = PageSize + 1)
+            // which is recognized by TryAllocate as the natural owner of page 0. tail.PageAndOffset == 0 is reserved as the "uninitialized"
+            // sentinel and never appears as a live value. 'default' initialization first so Offset and Page are definitely assigned for the
+            // compiler before we then write through their overlapping fields.
+            PageOffset initial = default;
+            initial.Page = -1;
+            initial.Offset = MultiLevelPageArray.PageSize;
+
+            while (tail.PageAndOffset == 0)
+            {
+                // The book may be non-null due to Clear() (e.g. when we wrap around in the log to page 0) or to the newBook allocation below.
+                // If the book is not null but tail is still the uninitialized sentinel, install the live initial value once via CAS.
+                if (book is not null)
                 {
-                    var newBook = new TElement[book.Length * 2][];
-                    Array.Copy(book, newBook, book.Length);
-                    book = newBook;
+                    _ = Interlocked.CompareExchange(ref tail.PageAndOffset, initial.PageAndOffset, 0);
+                    continue;
                 }
 
-                // Now allocate the new chapter.
-                var newChapter = new TElement[MultiLevelPageArray.ChapterSize];
+                // Allocate the book as a two-step process so we don't overwrite another thread's book allocation. Because we can't set both
+                // the book and tail in a single atomic operation, we set only the book, then loop back up to detect the non-null book and
+                // install the live initial tail; otherwise multiple threads could install tail at two distinct locations.
+                var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
+                if (Interlocked.CompareExchange(ref book, newBook, null) == null)
+                    continue;
+                _ = Thread.Yield();
+            }
+        }
 
-                // Before setting the new chapter into the book, set tail to the second page in the new chapter as "next to return", and we will return
-                // the first page after setting the chapter. This ensures that other threads entering Allocate() will see the second page as tail and
-                // the chapter as null, so will not try to increment tail until the state is consistent between book[newChapterIndex] and tail.
-                tail = firstPageInChapter + 1;
-                if (Interlocked.CompareExchange(ref book[newChapterIndex], newChapter, null) != null)
-                    throw new TsavoriteException("Unexpected multiple threads in AddChapter");
-                returnTail = firstPageInChapter;
+        /// <summary>
+        /// Slow path of <see cref="TryAllocate(out int)"/> for the unique thread whose post-Add Offset is <c>PageSize + 1</c>. Drives
+        /// <see cref="AddPage"/> for the next page and publishes the new <see cref="tail"/> via a single
+        /// <see cref="Interlocked.Exchange(ref long, long)"/> that simultaneously wipes any concurrent loser Adds. On <see cref="AddPage"/>
+        /// failure rewinds <see cref="tail"/> the same way so the next Add becomes the new natural owner.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private int CompleteAsPageOwner(PageOffset claim)
+        {
+            // claim.Page is the previous page; we are taking block 0 of (claim.Page + 1).
+            var newPageIdx = claim.Page + 1;
+            try
+            {
+                AddPage(newPageIdx);
             }
             catch
             {
-                // Restore tail to the first index in the newChapter. This keeps book[newChapterIndex[0]] as the next page to be returned, and we will
-                // retry from the beginning on the next Allocate() iteration (on a different thread, as we're re-throwing (probably OOM) on this one).
-                tail = firstPageInChapter;
+                // Rewind atomically to (claim.Page, PageSize) so the next thread's Add yields (claim.Page, PageSize + 1) and becomes the new
+                // natural owner of newPageIdx. Exchange (not CAS) because losers' concurrent Adds may have already bumped Offset past
+                // PageSize + 1; the Exchange wipes those as well.
+                PageOffset rewind = default;
+                rewind.Page = claim.Page;
+                rewind.Offset = MultiLevelPageArray.PageSize;
+                _ = Interlocked.Exchange(ref tail.PageAndOffset, rewind.PageAndOffset);
                 throw;
             }
+
+            // Publish: I just took block 0 of newPageIdx. Exchange wipes any losers' Adds in one shot.
+            PageOffset publish = default;
+            publish.Page = newPageIdx;
+            publish.Offset = 1;
+            _ = Interlocked.Exchange(ref tail.PageAndOffset, publish.PageAndOffset);
+            return newPageIdx << MultiLevelPageArray.PageSizeBits;
         }
+
+        /// <summary>
+        /// Add a new page. Only the natural owner of the next page-turn ever calls this, so no per-page CAS coordination is needed: the book
+        /// grow and page allocation are simple straight-line code. Idempotent for pages already populated by a previous generation that
+        /// <see cref="Clear(int)"/> retained. NoInlining because the call site is on the cold path of <see cref="TryAllocate(out int)"/>;
+        /// keeping it out of line lets the hot path stay compact.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void AddPage(int newPageIdx)
+        {
+            // Single-owner invariant: only the natural owner of the page-turn is here, and natural owners are serialized by the page-turn
+            // discipline (a thread can only become the owner of newPageIdx after the previous page's owner has published). So newPageIdx can
+            // never exceed book.Length by more than 1.
+            Debug.Assert(newPageIdx <= book.Length, $"newPageIdx {newPageIdx} cannot exceed book.Length {book.Length} (single-owner discipline broken?)");
+
+            // Test hook: in DEBUG builds, optionally throw before any state mutation so test code can deterministically exercise the rewind
+            // path in CompleteAsPageOwner. Stripped from Release builds via [Conditional("DEBUG")].
+            MaybeInjectAddPageFailure(newPageIdx);
+
+            // Idempotent on Clear-retained pages: if the page is already populated (because the previous generation's Clear kept it), reuse it.
+            if (newPageIdx < book.Length && book[newPageIdx] is not null)
+                return;
+
+            if (newPageIdx == book.Length)
+            {
+                var newBook = new TElement[book.Length * 2][];
+                Array.Copy(book, newBook, book.Length);
+                book = newBook;
+            }
+
+            book[newPageIdx] = new TElement[MultiLevelPageArray.PageSize];
+        }
+
+        /// <summary>Test-only hook for forcing <see cref="AddPage"/> failure. Stripped from Release builds via <see cref="ConditionalAttribute"/>.</summary>
+        [Conditional("DEBUG")]
+        private void MaybeInjectAddPageFailure(int newPageIdx)
+        {
+#if DEBUG
+            var hook = testInjectAddPageFailure;
+            if (hook is not null && hook(newPageIdx))
+                throw new OutOfMemoryException($"Test-injected OOM on AddPage({newPageIdx})");
+#endif
+        }
+
+#if DEBUG
+        /// <summary>Test-only injection hook: if non-null and returns <see langword="true"/> for the given new page index,
+        /// <see cref="AddPage"/> throws <see cref="OutOfMemoryException"/> before any state mutation. Field only exists in DEBUG builds.</summary>
+        internal Func<int, bool> testInjectAddPageFailure;
+#endif
 
         public TElement this[int index]
         {
@@ -180,70 +268,83 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TElement Get(int index)
         {
-            Debug.Assert(index < tail, $"Get(): index {index} must be less than tail {tail}");
-            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the chapter indexing remains unchanged and the chapter remains valid).
+            // Cache Count in a local so the assertion check and its message see the same value. (tail is monotonically non-decreasing in the
+            // non-OOM path, but a concurrent Allocate on another thread can advance it between the two reads we would otherwise do, producing
+            // a misleading assertion message such as "index 1 must be less than Count 7" when at the moment of the failing check Count was <= 1.)
+            var countSnapshot = Count;
+            Debug.Assert(index < countSnapshot, $"Get(): index {index} must be less than Count {countSnapshot}");
+            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the page indexing remains unchanged and the page remains valid).
 
-            var chapterIndex = index >> MultiLevelPageArray.ChapterSizeBits;
-            var pageIndex = index & MultiLevelPageArray.PageIndexMask;
-            Debug.Assert(localBook[chapterIndex] is not null, $"index {index} out of range of chapters {chapterIndex}");
-            return localBook[chapterIndex][pageIndex];
+            var pageIndex = index >> MultiLevelPageArray.PageSizeBits;
+            var blockIndex = index & MultiLevelPageArray.BlockIndexMask;
+            Debug.Assert(localBook[pageIndex] is not null, $"index {index} out of range of pages {pageIndex}");
+            return localBook[pageIndex][blockIndex];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Set(int index, TElement element)
         {
-            Debug.Assert(index < tail, $"Set(): index {index} must be less than tail {tail}");
-            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the chapter indexing remains unchanged and the chapter remains valid).
+            // Cache Count in a local; see comment in Get for rationale.
+            var countSnapshot = Count;
+            Debug.Assert(index < countSnapshot, $"Set(): index {index} must be less than Count {countSnapshot}");
+            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the page indexing remains unchanged and the page remains valid).
 
-            var chapterIndex = index >> MultiLevelPageArray.ChapterSizeBits;
-            var pageIndex = index & MultiLevelPageArray.PageIndexMask;
-            Debug.Assert(localBook[chapterIndex] is not null, $"index {index} out of range of chapters {chapterIndex}");
-            localBook[chapterIndex][pageIndex] = element;
+            var pageIndex = index >> MultiLevelPageArray.PageSizeBits;
+            var blockIndex = index & MultiLevelPageArray.BlockIndexMask;
+            Debug.Assert(localBook[pageIndex] is not null, $"index {index} out of range of pages {pageIndex}");
+            localBook[pageIndex][blockIndex] = element;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear(int retainedChapterCount = 1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits)
+        public void Clear(int retainedPageCount = 1 << MultiLevelPageArray.PrimaryClearRetainedPageSizeBits)
         {
-            if (!IsInitialized || tail == 0)
+            if (!IsInitialized)
+                return;
+            var count = Count;
+            if (count == 0)
                 return;
 
-            // Tail is the next item to return, so may be the first item in a chapter that may still be null--or may be past end of book.
-            var lastChapterIndex = (tail - 1) >> MultiLevelPageArray.ChapterSizeBits;
-            for (var chapter = 0; chapter <= lastChapterIndex; chapter++)
+            // Count is the next id to return, so claimed ids span [0, count-1]. lastPageIndex is the page containing the last claimed id.
+            var lastPageIndex = (count - 1) >> MultiLevelPageArray.PageSizeBits;
+            for (var page = 0; page <= lastPageIndex; page++)
             {
-                Array.Clear(book[chapter], 0, MultiLevelPageArray.ChapterSize);
-                if (chapter > retainedChapterCount)
-                    book[chapter] = null;
+                Array.Clear(book[page], 0, MultiLevelPageArray.PageSize);
+                if (page > retainedPageCount)
+                    book[page] = null;
             }
 
-            tail = InitialTail;
+            tail.PageAndOffset = 0;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear(Action<TElement> action, int retainedChapterCount = 1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits)
+        public void Clear(Action<TElement> action, int retainedPageCount = 1 << MultiLevelPageArray.PrimaryClearRetainedPageSizeBits)
         {
-            if (!IsInitialized || tail == 0)
+            if (!IsInitialized)
+                return;
+            var count = Count;
+            if (count == 0)
                 return;
 
-            // Tail is the next item to return, so may be the first item in a chapter that may still be null--or may be past end of book.
-            var lastChapterIndex = (tail - 1) >> MultiLevelPageArray.ChapterSizeBits;
-            var lastPageIndex = (tail - 1) & MultiLevelPageArray.PageIndexMask;
-            for (var chapter = 0; chapter <= lastChapterIndex; chapter++)
+            // Count is the next id to return; claimed ids span [0, count-1]. lastPageIndex is the page containing the last claimed id;
+            // lastBlockIndex is the block index of the last claimed id within that page.
+            var lastPageIndex = (count - 1) >> MultiLevelPageArray.PageSizeBits;
+            var lastBlockIndex = (count - 1) & MultiLevelPageArray.BlockIndexMask;
+            for (var page = 0; page <= lastPageIndex; page++)
             {
-                var maxPage = chapter < lastChapterIndex ? MultiLevelPageArray.ChapterSize : lastPageIndex;
-                for (var page = 0; page < maxPage; page++)
+                var maxBlock = page < lastPageIndex ? MultiLevelPageArray.PageSize : lastBlockIndex;
+                for (var block = 0; block < maxBlock; block++)
                 {
                     // Note: 'action' must check for null/default.
-                    action(book[chapter][page]);
-                    book[chapter][page] = default;
+                    action(book[page][block]);
+                    book[page][block] = default;
                 }
-                if (chapter > retainedChapterCount)
-                    book[chapter] = null;
+                if (page > retainedPageCount)
+                    book[page] = null;
             }
-            tail = InitialTail;
+            tail.PageAndOffset = 0;
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"Tail: {tail}, IsInit: {IsInitialized}, book.Len: {(book is not null ? book.Length : "null")}";
+        public override string ToString() => $"Tail: [{tail}], Count: {Count}, IsInit: {IsInitialized}, book.Len: {(book is not null ? book.Length : "null")}";
     }
 }

@@ -30,18 +30,34 @@ namespace BDN.benchmark.Operations
         /// </summary>
         public IEnumerable<OperationParams> OperationParamsProvider()
         {
-            yield return new(false, false);
-            if (ParamsNoneOnly)
-                yield break;
-            yield return new(true, false);
-            yield return new(false, true);
-            yield return new(false, false, useAad: true);
+            if (ParamsNone)
+                yield return new(false, false);
+            if (ParamsACL)
+                yield return new(true, false);
+            if (ParamsAOF)
+                yield return new(false, true);
+            if (ParamsAAD)
+                yield return new(false, false, useAad: true);
         }
 
         /// <summary>
-        /// Set by environment variable BDNRUN_OP_PARAM - determines if running with only "None" parameters (no ACLs, no AOF) or with all combinations of parameters
+        /// Clear and set all args before selecting the specific ones to be set by cmdline arg --bdnOpParam
         /// </summary>
-        internal static bool ParamsNoneOnly;
+        public static void SetAllParams(bool isEnabled)
+        {
+            ParamsNone = isEnabled;
+            ParamsACL = isEnabled;
+            ParamsAOF = isEnabled;
+            ParamsAAD = isEnabled;
+        }
+
+        /// <summary>
+        /// Set by cmdline arg --bdnOpParam
+        /// </summary>
+        internal static bool ParamsNone = true;
+        internal static bool ParamsACL = true;
+        internal static bool ParamsAOF = true;
+        internal static bool ParamsAAD = true;
 
         /// <summary>
         /// Batch size per method invocation

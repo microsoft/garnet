@@ -11,11 +11,53 @@ using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
 using Perfolizer.Metrology;
 
-BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
+class Program
+{
+    internal static string bdnFramework = string.Empty;
+    internal static string bdnOpParam = string.Empty;
+
+    static void Main(string[] args)
+    {
+        // Extract our custom CLI options (--runtime / --ops) before forwarding remaining args to BDN.
+        var passthroughArgs = ConsumeCustomArgs(args);
+
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 #if DEBUG
-    .Run(args, new DebugInProcessConfig());
+            .Run(passthroughArgs, new DebugInProcessConfig());
 #else
-    .Run(args, new BaseConfig());
+            .Run(passthroughArgs, new BaseConfig());
+#endif
+
+        string[] ConsumeCustomArgs(string[] args)
+        {
+            var remaining = new List<string>(args.Length);
+            for (var i = 0; i < args.Length; i++)
+            {
+                var arg = args[i];
+                if (arg == "--frameworks" || arg == "--fw")
+                {
+                    if (i + 1 >= args.Length)
+                        throw new ApplicationException($"{arg} requires a value");
+                    bdnFramework = args[++i].ToLower();
+                    continue;
+                }
+                if (arg == "--opparams" || arg == "--op")
+                {
+                    if (i + 1 >= args.Length)
+                        throw new ApplicationException($"{arg} requires a value");
+                    bdnOpParam = args[++i].ToLower();
+                    continue;
+                }
+                remaining.Add(arg);
+            }
+            return remaining.ToArray();
+        }
+    }
+}
+
+#if DEBUG
+
+#else
 #endif
 
 public class BaseConfig : ManualConfig
@@ -39,34 +81,42 @@ public class BaseConfig : ManualConfig
             .WithRuntime(CoreRuntime.Core10_0)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net10.0 or both (if env var is not set or invalid)
-        var bdnRunParam = (Environment.GetEnvironmentVariable("BDNRUNPARAM") ?? string.Empty).ToLower();
-
-        switch (bdnRunParam)
+        _ = Program.bdnFramework switch
         {
-            case "net8.0":
-                _ = AddJob(Net8BaseJob.WithId(".NET 8"));
-                break;
-            case "net10.0":
-                _ = AddJob(Net10BaseJob.WithId(".NET 10"));
-                break;
-            default:
-                _ = AddJob(
-                    Net8BaseJob.WithId(".NET 8"),
-                    Net10BaseJob.WithId(".NET 10")
-                    );
-                break;
-        }
+            "net8.0" => AddJob(Net8BaseJob.WithId(".NET 8")),
+            "net10.0" => AddJob(Net10BaseJob.WithId(".NET 10")),
+            "all" => AddJob(Net8BaseJob.WithId(".NET 8"), Net10BaseJob.WithId(".NET 10")),
+            _ when !string.IsNullOrEmpty(Program.bdnFramework) => throw new ApplicationException($"Unrecognized bdnFramework value: {Program.bdnFramework}"),
+            _ => AddJob(Net8BaseJob.WithId(".NET 8"), Net10BaseJob.WithId(".NET 10"))
+        };
 
-        // Get value of environment variable BDN_OP_PARAM - determines if running ACL and AOF as well as 'none'
-        var bdnOpParam = (Environment.GetEnvironmentVariable("BDN_OP_PARAM") ?? string.Empty).ToLower();
-        switch (bdnOpParam)
+        if (!string.IsNullOrEmpty(Program.bdnOpParam))
         {
-            case "none":
-                BDN.benchmark.Operations.OperationsBase.ParamsNoneOnly = true;
-                break;
-            default:
-                break;
+            BDN.benchmark.Operations.OperationsBase.SetAllParams(false);
+            var ops = Program.bdnOpParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => p.ToLower()).ToArray();
+            foreach (var op in ops)
+            {
+                switch (op)
+                {
+                    case "none":
+                        BDN.benchmark.Operations.OperationsBase.ParamsNone = true;
+                        break;
+                    case "acl":
+                        BDN.benchmark.Operations.OperationsBase.ParamsACL = true;
+                        break;
+                    case "aof":
+                        BDN.benchmark.Operations.OperationsBase.ParamsAOF = true;
+                        break;
+                    case "aad":
+                        BDN.benchmark.Operations.OperationsBase.ParamsAAD = true;
+                        break;
+                    case "all":
+                        BDN.benchmark.Operations.OperationsBase.SetAllParams(true);
+                        break;
+                    default:
+                        throw new ApplicationException($"Unrecognized bdnOpParam value: {op}");
+                }
+            }
         }
     }
 }
