@@ -1,0 +1,3 @@
+# Benchmark run artifacts land here under a per-run timestamp directory
+# (e.g. results/20260610T164500/garnet/...). Publish these raw artifacts alongside
+# any reported numbers (README section 10). They are not committed to the repo.

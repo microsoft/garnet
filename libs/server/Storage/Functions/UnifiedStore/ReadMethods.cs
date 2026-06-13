@@ -85,6 +85,9 @@ namespace Garnet.server
                     case HashObject:
                         writer.WriteSimpleString(CmdStrings.hash);
                         break;
+                    case StreamObject:
+                        writer.WriteSimpleString(CmdStrings.stream);
+                        break;
                 }
             }
             else

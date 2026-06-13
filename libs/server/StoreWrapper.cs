@@ -181,6 +181,7 @@ namespace Garnet.server
         /// </summary>
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
+
         /// <summary>
         /// Get task manager instance
         /// </summary>
@@ -291,6 +292,7 @@ namespace Garnet.server
                     StoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
+            StreamObjectConfig.Configure(serverOptions.StreamLogDirectory(), serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes());
         }
 
         /// <summary>
@@ -588,15 +590,20 @@ namespace Garnet.server
                 throw new GarnetException($"Unable to call {nameof(databaseManager.FlushDatabase)} with DB ID: {dbId}");
 
             databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
+
+            // Streams are per-database: FLUSHDB on database N disposes only that database's streams
+            // and deletes only its on-disk subtree, leaving other databases' streams intact.
+            StreamObjectConfig.FlushDatabase(dbId);
         }
 
         /// <summary>
-        /// Flush all active databases 
+        /// Flush all active databases
         /// </summary>
         /// <param name="unsafeTruncateLog">Truncate log</param>
         public void FlushAllDatabases(bool unsafeTruncateLog)
         {
             databaseManager.FlushAllDatabases(unsafeTruncateLog);
+            StreamObjectConfig.FlushAll();
         }
 
         /// <summary>
@@ -882,6 +889,13 @@ namespace Garnet.server
             ctsCommit?.Cancel();
             taskManager.Dispose();
             rangeIndexManager?.Dispose();
+
+            // Dispose all live streams' in-memory resources (per-stream TsavoriteLog/LightEpoch, device
+            // handle, BTree) on graceful shutdown. Unlike FlushAll this preserves on-disk data for recovery.
+            // StreamObjects are values in the unified store, which does not dispose value objects on teardown,
+            // so without this their LightEpoch instances would leak past server shutdown.
+            StreamObjectConfig.DisposeAll();
+
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();

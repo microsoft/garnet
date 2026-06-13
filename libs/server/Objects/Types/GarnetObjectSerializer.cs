@@ -58,6 +58,7 @@ namespace Garnet.server
                 GarnetObjectType.List => new ListObject(binaryReader),
                 GarnetObjectType.Hash => new HashObject(binaryReader),
                 GarnetObjectType.Set => new SetObject(binaryReader),
+                GarnetObjectType.Stream => new StreamObject(binaryReader),
                 _ => CustomDeserialize((byte)type, binaryReader),
             };
             return obj;

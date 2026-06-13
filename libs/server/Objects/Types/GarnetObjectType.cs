@@ -29,6 +29,11 @@ namespace Garnet.server
         /// </summary>        
         Set,
 
+        /// <summary>
+        /// Stream
+        /// </summary>
+        Stream,
+
         // Any new object type inserted here should update GarnetObjectTypeExtensions.LastObjectType
 
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
@@ -41,7 +46,7 @@ namespace Garnet.server
 
     public static class GarnetObjectTypeExtensions
     {
-        internal const GarnetObjectType LastObjectType = GarnetObjectType.Set;
+        internal const GarnetObjectType LastObjectType = GarnetObjectType.Stream;
 
         internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.All;
     }

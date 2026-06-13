@@ -121,6 +121,12 @@ namespace Garnet.server
             set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
         }
 
+        internal StreamOperation StreamOp
+        {
+            get => (StreamOperation)((byte)flags & FlagMask);
+            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+        }
+
         /// <summary>
         /// Set expiration flag, used for log replay
         /// </summary>

@@ -52,6 +52,7 @@
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
     <Project Path="playground/SampleModule/SampleModule.csproj" />
+    <Project Path="playground/StreamBench/StreamBench.csproj" />
     <Project Path="playground/TstRunner/TstRunner.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -96,4 +97,5 @@
     <Project Path="test/cluster/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster.replication.rangeindex/Garnet.test.cluster.replication.rangeindex.csproj" />
   </Folder>
+  <Project Path="playground/BTree/Btree.csproj" />
 </Solution>
