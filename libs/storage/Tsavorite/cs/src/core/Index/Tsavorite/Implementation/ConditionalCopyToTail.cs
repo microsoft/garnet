@@ -25,7 +25,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, in TSourceLogRecord srcLogRecord,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, long keyHash, in TSourceLogRecord srcLogRecord,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool wantIO = true, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
@@ -81,7 +81,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx2, minAddress, maxAddress);
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, keyHash, in srcLogRecord, ref stackCtx2, minAddress, maxAddress);
             }
         }
 
@@ -92,12 +92,13 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
-            PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord));
+            PendingContext<TInput, TOutput, TContext> pendingContext = default;
             // Plumb the source logical address so PostCopyToTail can name per-flush snapshot files
             // (used by RangeIndex's BfTree compaction path).
             pendingContext.originalAddress = currentAddress;
 
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            var keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             OperationStatus status;
             bool needIO;
             do
@@ -108,31 +109,38 @@ namespace Tsavorite.core
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress);
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, keyHash, in srcLogRecord, ref stackCtx, minAddress, maxAddress);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, maxAddress: maxAddress);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, keyHash, in srcLogRecord, ref stackCtx, maxAddress: maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                                         TSessionFunctionsWrapper sessionFunctions,
-                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, in TSourceLogRecord srcLogRecord,
+                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, long keyHash, in TSourceLogRecord srcLogRecord,
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            pendingContext.CopyKey(srcLogRecord, hlogBase.bufferPool, sessionFunctions);
-            pendingContext.type = opType;
-            pendingContext.minAddress = minAddress;
-            pendingContext.maxAddress = maxAddress;
+            // If a re-pend has already moved a populated slot onto pendingContext.pendingOp, reuse it; otherwise rent a
+            // fresh op. The slot carries the conditional-op-only payload (keyHash, requestKey, diskLogRecord, min/maxAddress).
+            var op = pendingContext.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            ref var slot = ref op.slot;
+            slot.CopyKey(srcLogRecord, hlogBase.bufferPool, sessionFunctions);
+            slot.type = opType;
+            slot.keyHash = keyHash;
+            slot.minAddress = minAddress;
+            slot.maxAddress = maxAddress;
+
+            pendingContext.pendingOp = op;
             pendingContext.initialEntryAddress = kInvalidAddress;
             pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
-            // Transfer the log record to the pending context. We do not want to dispose memory log records; those objects are still alive in the log.
-            if (!pendingContext.diskLogRecord.IsSet)
-                pendingContext.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap);
+            // Transfer the log record to the slot. We do not want to dispose memory log records; those objects are still alive in the log.
+            if (!slot.diskLogRecord.IsSet)
+                slot.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

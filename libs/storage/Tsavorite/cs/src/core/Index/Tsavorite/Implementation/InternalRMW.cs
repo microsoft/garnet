@@ -58,8 +58,11 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // pendingContext.keyHash and pendingContext.logicalAddress are NOT written here on the in-memory hot path:
+            //   - keyHash is only consumed pending-side (ContinuePendingRMW) — set lazily in CreatePendingRMWContext if we go pending.
+            //   - logicalAddress defaults to 0 (== kInvalidAddress) for a fresh pendingContext; the in-memory IPU/CU paths
+            //     below overwrite it on success, and HandleRetryStatus resets it on retry, so the in-memory path needs no write here.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -259,8 +262,16 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            pendingContext.type = OperationType.RMW;
-            pendingContext.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            // If a re-pend has already moved a populated slot onto pendingContext.pendingOp, reuse it; otherwise rent a
+            // fresh op and populate its slot. HandleOperationStatus will pick up pendingContext.pendingOp on RECORD_ON_DISK
+            // to finalize the IO issue.
+            var op = pendingContext.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            ref var slot = ref op.slot;
+            slot.type = OperationType.RMW;
+            slot.keyHash = stackCtx.hei.hash;
+            slot.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+
+            pendingContext.pendingOp = op;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 

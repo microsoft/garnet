@@ -50,20 +50,29 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
+
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
+                    // Reset pendingContext.logicalAddress so a prior in-memory match's address does not bleed into
+                    // the retry's RecordMetadata if the retry takes an early-out (NOTFOUND, etc.). InternalRead/RMW/
+                    // Upsert/Delete no longer pay for this reset on the first call (default(PendingContext).logicalAddress
+                    // is 0 == kInvalidAddress); only the cold retry path here does.
+                    pendingContext.logicalAddress = LogAddress.kInvalidAddress;
                     _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
+                    pendingContext.logicalAddress = LogAddress.kInvalidAddress;
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
                     _ = Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
+                    pendingContext.logicalAddress = LogAddress.kInvalidAddress;
                     SynchronizeEpoch(sessionFunctions.Ctx, ref pendingContext, sessionFunctions);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
+                    pendingContext.logicalAddress = LogAddress.kInvalidAddress;
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
                     Debug.Assert(!pendingContext.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
                     try
@@ -78,6 +87,8 @@ namespace Tsavorite.core
                     }
                     return true;
                 default:
+                    // RECORD_ON_DISK falls here: do NOT reset pendingContext.logicalAddress, the caller (HandleOperationStatus)
+                    // is about to issue the disk IO at that address.
                     return false;
             }
         }
@@ -130,34 +141,47 @@ namespace Tsavorite.core
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
             {
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
-                pendingContext.id = sessionCtx.totalPending++;
 
-                // The pending op carries the PendingContext directly (no ioPendingRequests dictionary). Rent the
-                // op and copy the context onto it; for non-conditional ops clear the new op's diskLogRecord so its
-                // completion's TransferFrom sees an unset slot (CONDITIONAL_* keep it as their copy/push source).
-                // On re-pend, `pendingContext` is the previous op's context, so copying it here moves the input /
-                // requestKey ownership to this fresh op — the drain then clears the old op without disposing them.
-                var op = sessionCtx.RentAsyncIOContext();
-                op.pendingContext = pendingContext;
-                if (!pendingContext.IsConditionalOp)
-                    op.pendingContext.diskLogRecord = default;
+                // The pending-going helper (CreatePendingReadContext / CreatePendingRMWContext /
+                // PrepareIOForConditionalOperation / PrepareIOForConditionalScan) has already rented the op and
+                // populated `op.slot` in place. Pick it up here, snapshot the in-memory hot-path bookkeeping into
+                // `op.basePendingContext`, fill the device-facing fields on the op base, and issue the IO.
+                var op = pendingContext.pendingOp;
+                Debug.Assert(op is not null, "RECORD_ON_DISK requires the pending-going helper to have stashed pendingOp");
+                pendingContext.pendingOp = null;
+
+                op.basePendingContext = pendingContext;
+                op.basePendingContext.pendingOp = null;
+
+                // For non-conditional ops, clear the slot's diskLogRecord so the next completion's TransferFrom sees
+                // an empty slot. CONDITIONAL_* keep it as their copy/push source. On the first call from CreatePending*
+                // the slot's diskLogRecord is already default; on a re-pend (slot moved from old op) the diskLogRecord
+                // carries the previous IO's record image, which the next IO will overwrite — dispose it first to
+                // release the SectorAlignedMemory buffer.
+                if (!op.slot.IsConditionalOp && op.slot.diskLogRecord.IsSet)
+                {
+                    OnDisposeDiskRecord(ref op.slot.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    op.slot.diskLogRecord.Dispose();
+                    op.slot.diskLogRecord = default;
+                }
 
                 // Fill the device-facing fields directly (each set is a single store, no Buffer.BulkMoveWithWriteBarrier).
-                op.id = pendingContext.id;
-                // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
-                op.requestKey = pendingContext.requestKey;
+                // The diagnostic id lives on the AsyncIOContext (not on PendingContext) so it is assigned here only.
+                op.id = sessionCtx.totalPending++;
+                // Copying the key is stable; the slot.requestKey will remain valid until it is freed (after the callback is invoked).
+                op.requestKey = op.slot.requestKey;
                 op.logicalAddress = pendingContext.logicalAddress;
-                op.minAddress = pendingContext.minAddress;
+                op.minAddress = op.slot.minAddress;
                 op.record = null;
                 op.callbackQueue = sessionCtx.readyResponses;
 
                 // The IO record size is resolved on the first call to this method. Usually this is from InternalRead/InternalRMW before returning
                 // RECORD_ON_DISK but may be from elsewhere such as ReadCache or ConditionalCopyToTail, so do the setting of initial IO record size here.
-                if (pendingContext.initialIORecordSize <= 0)
-                    ResolveInitialIORecordSize(sessionCtx, ref pendingContext);
+                if (op.basePendingContext.initialIORecordSize <= 0)
+                    ResolveInitialIORecordSize(sessionCtx, ref op.basePendingContext);
                 // Count the op as pending before issuing; the drain decrements when this op completes.
                 sessionCtx.pendingCount++;
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, pendingContext.initialIORecordSize, op);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, op.basePendingContext.initialIORecordSize, op);
                 request = op;
                 return new(StatusCode.Pending);
             }

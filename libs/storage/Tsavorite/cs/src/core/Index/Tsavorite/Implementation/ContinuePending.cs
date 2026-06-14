@@ -29,17 +29,19 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
-                                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                                        ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                                        ref PendingIoSlot<TInput, TOutput, TContext> slot,
+                                                        TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
+            if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < slot.minAddress)
                 goto NotFound;
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.DiskLogRecord, pendingContext.requestKey))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(slot.DiskLogRecord, slot.requestKey))
                 goto NotFound;
 
             SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.DiskLogRecord));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(slot.DiskLogRecord));
 
             while (true)
             {
@@ -59,7 +61,7 @@ namespace Tsavorite.core
                     LogRecord memoryRecord = default;
                     if (!pendingContext.IsReadAtAddress)
                     {
-                        if (TryFindRecordInMemory(pendingContext.DiskLogRecord, ref stackCtx, ref pendingContext))
+                        if (TryFindRecordInMemory(slot.DiskLogRecord, ref stackCtx, ref pendingContext))
                         {
                             memoryRecord = stackCtx.recSrc.CreateLogRecord();
                             if (memoryRecord.Info.Tombstone)
@@ -79,15 +81,36 @@ namespace Tsavorite.core
                             // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
                             // after our just-completed TryFindRecordInMemory.
                             if (stackCtx.recSrc.LogicalAddress > pendingContext.initialLatestLogicalAddress
-                                && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
+                                && (!slot.HasMinAddress || stackCtx.recSrc.LogicalAddress >= slot.minAddress))
                             {
+                                // Re-issue InternalRead. If it goes pending again, CreatePendingReadContext needs a fresh op
+                                // to hold the slot (the current op is being drained). Rent a fresh op and MOVE the populated
+                                // slot to it so the heap-owning fields (requestKey, input, diskLogRecord) transfer without
+                                // re-allocation. Clear this slot so the drain does not double-dispose.
+                                var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+                                newOp.slot = slot;
+                                slot = default;
+                                pendingContext.pendingOp = newOp;
+
                                 OperationStatus internalStatus;
                                 do
                                 {
-                                    internalStatus = InternalRead(pendingContext.DiskLogRecord, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
-                                        pendingContext.userContext, ref pendingContext, sessionFunctions);
+                                    internalStatus = InternalRead(newOp.slot.DiskLogRecord, newOp.slot.keyHash, ref newOp.slot.input.Get(), ref newOp.slot.output,
+                                        newOp.slot.userContext, ref pendingContext, sessionFunctions, isFromPending: true);
                                 }
                                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
+
+                                // If the re-issued read did NOT go pending (it succeeded in-memory or returned NOTFOUND), move the
+                                // slot back to the caller's slot so the completion callback / completedOutputs.TransferFrom can read
+                                // its key/input/output. Return the unused fresh op to the pool. For RECORD_ON_DISK (which
+                                // HandleOperationStatus already consumed via newOp), newOp's slot now lives on a different in-flight
+                                // op, so there's nothing to move back.
+                                if (internalStatus != OperationStatus.RECORD_ON_DISK)
+                                {
+                                    slot = newOp.slot;
+                                    newOp.slot = default;
+                                    sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
+                                }
                                 return internalStatus;
                             }
                         }
@@ -97,16 +120,16 @@ namespace Tsavorite.core
                     {
                         Version = sessionFunctions.Ctx.version,
                         Address = request.logicalAddress,
-                        IsFromPending = pendingContext.type != OperationType.NONE,
+                        IsFromPending = true,
                     };
                     pendingContext.logicalAddress = request.logicalAddress;
 
-                    if (!memoryRecord.IsSet && pendingContext.diskLogRecord.Info.Tombstone)
+                    if (!memoryRecord.IsSet && slot.diskLogRecord.Info.Tombstone)
                     {
                         if (pendingContext.IsReadAtAddress)
                         {
                             // Be consistent with InternalReadAtAddress and return the tombstoned record we retrieved from disk.
-                            _ = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                            _ = sessionFunctions.Reader(in slot.diskLogRecord, ref slot.input.Get(), ref slot.output, ref readInfo);
                         }
                         goto NotFound;
                     }
@@ -115,7 +138,7 @@ namespace Tsavorite.core
                     if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                     {
                         // If this succeeds, we don't need to copy to tail or readcache, so return success.
-                        if (sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
+                        if (sessionFunctions.Reader(in memoryRecord, ref slot.input.Get(), ref slot.output, ref readInfo))
                         {
                             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                             return OperationStatus.SUCCESS;
@@ -124,10 +147,10 @@ namespace Tsavorite.core
                     else if (memoryRecord.IsSet)
                     {
                         // This may be in the immutable region, which means it may be an updated version of the record.
-                        success = sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                        success = sessionFunctions.Reader(in memoryRecord, ref slot.input.Get(), ref slot.output, ref readInfo);
                     }
                     else // Not found in memory so return the disk copy.
-                        success = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                        success = sessionFunctions.Reader(in slot.diskLogRecord, ref slot.input.Get(), ref slot.output, ref readInfo);
 
                     if (!success)
                     {
@@ -147,10 +170,10 @@ namespace Tsavorite.core
                         {
                             // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
                             pendingContext.originalAddress = request.logicalAddress;
-                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx);
+                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, slot.keyHash, in slot.diskLogRecord, ref stackCtx);
                         }
                         else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
-                                && TryCopyToReadCache(in pendingContext.diskLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
+                                && TryCopyToReadCache(in slot.diskLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                             status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                     }
                     else
@@ -196,10 +219,12 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
-                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                                ref PendingIoSlot<TInput, TOutput, TContext> slot,
+                                                TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var keyFound = request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress;
+            var keyFound = request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= slot.minAddress;
             if (keyFound)
                 SpinWaitUntilClosed(request.logicalAddress);
 
@@ -213,7 +238,7 @@ namespace Tsavorite.core
 
             while (true)
             {
-                OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+                OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(slot.keyHash);
                 if (!FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out status))
                     goto CheckRetry;
 
@@ -221,7 +246,7 @@ namespace Tsavorite.core
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
-                    if (TryFindRecordForPendingOperation(pendingContext.requestKey, ref stackCtx, out status, ref pendingContext))
+                    if (TryFindRecordForPendingOperation(slot.requestKey, ref stackCtx, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
                             goto CheckRetry;
@@ -239,15 +264,15 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' comes from the request, so populate the RecordSource copy from that.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    status = CreateNewRecordRMW(pendingContext.requestKey, in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
-                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone, ref rmwInfo);
+                    status = CreateNewRecordRMW(slot.requestKey, in slot.diskLogRecord, ref slot.input.Get(), ref slot.output,
+                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !slot.diskLogRecord.Info.Tombstone, ref rmwInfo);
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
                     try
                     {
-                        sessionFunctions.PostRMWOperation(pendingContext.requestKey, ref pendingContext.input.Get(), ref rmwInfo, epoch);
+                        sessionFunctions.PostRMWOperation(slot.requestKey, ref slot.input.Get(), ref rmwInfo, epoch);
                     }
                     finally
                     {
@@ -262,10 +287,26 @@ namespace Tsavorite.core
             } // end while (true)
 
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
-            // HeadAddress, and this should be rare.
+            // HeadAddress, and this should be rare. If the re-issued InternalRMW goes pending again, we move the slot to a fresh op so the heap-owning fields
+            // transfer cleanly (the current op is mid-drain; clearing this slot avoids double-dispose).
+            var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+            newOp.slot = slot;
+            slot = default;
+            pendingContext.pendingOp = newOp;
             do
-                status = InternalRMW(pendingContext.requestKey, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                status = InternalRMW(newOp.slot.requestKey, newOp.slot.keyHash, ref newOp.slot.input.Get(), ref newOp.slot.output, ref newOp.slot.userContext, ref pendingContext, sessionFunctions);
             while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
+
+            // If the re-issued RMW did NOT go pending again (it succeeded in-memory), move the slot back to the caller's slot so
+            // the completion callback / completedOutputs.TransferFrom can read its key/input/output. Return the unused fresh op
+            // to the pool. For RECORD_ON_DISK (which HandleOperationStatus already consumed via newOp), newOp's slot now lives
+            // on a different in-flight op, so there's nothing to move back.
+            if (status != OperationStatus.RECORD_ON_DISK)
+            {
+                slot = newOp.slot;
+                newOp.slot = default;
+                sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
+            }
             return status;
         }
 
@@ -293,24 +334,26 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
-                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                                ref PendingIoSlot<TInput, TOutput, TContext> slot,
+                                                TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing.
             // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.
-            if (request.logicalAddress >= pendingContext.minAddress)
+            if (request.logicalAddress >= slot.minAddress)
                 return OperationStatus.SUCCESS;
 
-            // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            // Prepare to copy to tail. Use data from slot, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(slot.keyHash);
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.initialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<ConditionallyHoistedKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey, ref stackCtx,
-                        currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<ConditionallyHoistedKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, slot.requestKey, ref stackCtx,
+                        currentAddress: request.logicalAddress, minAddress, slot.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
@@ -318,10 +361,20 @@ namespace Tsavorite.core
                     // request.logicalAddress is the actual disk-resolved source (AsyncGetFromDiskCallback
                     // walks the chain to skip colliding keys).
                     pendingContext.originalAddress = request.logicalAddress;
-                    // HeadAddress may have risen above minAddress; if so, we need IO.
-                    internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx);
+                    if (needIO)
+                    {
+                        // We need a fresh op to carry the slot for the next IO (this op is mid-drain). Move the slot.
+                        var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+                        newOp.slot = slot;
+                        slot = default;
+                        pendingContext.pendingOp = newOp;
+                        // HeadAddress may have risen above minAddress; if so, we need IO.
+                        internalStatus = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, newOp.slot.keyHash, in newOp.slot.diskLogRecord, ref stackCtx, minAddress, newOp.slot.maxAddress);
+                    }
+                    else
+                    {
+                        internalStatus = ConditionalCopyToTail(sessionFunctions, ref pendingContext, slot.keyHash, in slot.diskLogRecord, ref stackCtx);
+                    }
                 }
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
@@ -352,20 +405,22 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         internal OperationStatus ContinuePendingConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
-                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                                ref PendingIoSlot<TInput, TOutput, TContext> slot,
+                                                TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
             // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.
-            if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)
+            if (request.logicalAddress >= slot.minAddress || slot.scanCursorState.stop)
                 return OperationStatus.SUCCESS;
 
-            // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
+            // Prepare to push to caller's iterator functions. Use data from slot, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
-            _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(sessionFunctions, pendingContext.scanCursorState,
-                in pendingContext.diskLogRecord, originalAddress: pendingContext.originalAddress, currentAddress: request.logicalAddress,
-                minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
+            _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(sessionFunctions, slot.scanCursorState,
+                in slot.diskLogRecord, originalAddress: pendingContext.originalAddress, currentAddress: request.logicalAddress,
+                minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: slot.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

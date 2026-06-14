@@ -7,8 +7,6 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    using static LogAddress;
-
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -58,8 +56,10 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // pendingContext.keyHash is NOT written here: Upsert never goes pending, so keyHash (a pending-only field) is dead.
+            // pendingContext.logicalAddress is NOT written here: it defaults to 0 (== kInvalidAddress) for a fresh pendingContext;
+            //   the in-memory write paths below overwrite it on success, and HandleRetryStatus resets it on retry.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);

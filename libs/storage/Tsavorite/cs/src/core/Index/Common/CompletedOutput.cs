@@ -20,7 +20,10 @@ namespace Tsavorite.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingIoSlot<TInput, TOutput, TContext> slot,
+                Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -28,7 +31,7 @@ namespace Tsavorite.core
             if (maxIndex >= vector.Length - 1)
                 Array.Resize(ref vector, vector.Length * kReallocMultuple);
             ++maxIndex;
-            vector[maxIndex].TransferFrom(ref pendingContext, status);
+            vector[maxIndex].TransferFrom(ref pendingContext, ref slot, status);
         }
 
         /// <summary>
@@ -115,18 +118,21 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingIoSlot<TInput, TOutput, TContext> slot,
+                Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
-            keyContainer = pendingContext.requestKey;
-            pendingContext.requestKey = default;
-            inputContainer = pendingContext.input;
-            pendingContext.input = default;
+            // Transfers the containers from the pending slot, then nulls them; this is called before slot.Dispose().
+            keyContainer = slot.requestKey;
+            slot.requestKey = default;
+            inputContainer = slot.input;
+            slot.input = default;
 
-            Output = pendingContext.output;
-            Context = pendingContext.userContext;
+            Output = slot.output;
+            Context = slot.userContext;
             RecordMetadata = new(pendingContext.logicalAddress);
             Status = status;
         }

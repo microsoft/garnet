@@ -1,52 +1,35 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using static LogAddress;
-    using static Utility;
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
+        /// <summary>
+        /// The in-memory hot-path state for a Read/RMW/Upsert/Delete operation. Carried by value on the
+        /// caller's stack for the duration of the in-memory call, and never embedded directly on a pending
+        /// IO op object — the pending-only fields (key/input/output/userContext/diskLogRecord/etc.) live on
+        /// <see cref="PendingIoSlot{TInput, TOutput, TContext}"/> inside the rented
+        /// <see cref="PendingIoContext{TInput, TOutput, TContext}"/>.
+        /// </summary>
+        /// <remarks>
+        /// When an operation decides to go pending, the appropriate pending-going helper
+        /// (<see cref="TsavoriteKV{TStoreFunctions, TAllocator}.CreatePendingReadContext"/>,
+        /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.CreatePendingRMWContext"/>,
+        /// or <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.PrepareIOForConditionalOperation"/>)
+        /// rents a <see cref="PendingIoContext{TInput, TOutput, TContext}"/> from the per-session pool,
+        /// populates <c>op.slot</c> in place, and stashes the op reference on <see cref="pendingOp"/>.
+        /// <c>HandleOperationStatus</c> then finalizes
+        /// the IO issue on <see cref="OperationStatus.RECORD_ON_DISK"/>.
+        /// </remarks>
         internal struct PendingContext<TInput, TOutput, TContext>
         {
-            // User provided information
-            internal OperationType type;
-            internal readonly bool IsConditionalOp => type is OperationType.CONDITIONAL_INSERT or OperationType.CONDITIONAL_SCAN_PUSH;
-
-            /// <summary>
-            /// DiskLogRecord carries a log record image. It is used for pending ConditionalCopy operations, where it is one of:
-            /// <list type="bullet">
-            ///     <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
-            ///     <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
-            /// </list>
-            /// </summary>
-            internal DiskLogRecord diskLogRecord;
-
-            /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
-            internal ConditionallyHoistedKey requestKey;
-            /// <summary>The hash of <see cref="requestKey"/> if it is present.</summary>
-            internal long keyHash;
-
-            /// <summary>The Input that was sent to this operation if it was RUMD.</summary>
-            internal IHeapContainer<TInput> input;
-            /// <summary>The Output to be returned from this operation if it was RUM.</summary>
-            internal TOutput output;
-            /// <summary>The user Context that was sent to this operation if it was RUMD.</summary>
-            internal TContext userContext;
-
-            /// <summary>The id assigned to this operation when it goes pending (diagnostic; the pending op is
-            /// carried directly on its <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.PendingIoContext{TInput, TOutput, TContext}"/>).</summary>
-            internal long id;
-
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
 
@@ -78,9 +61,6 @@ namespace Tsavorite.core
             /// Note: default(PendingContext) leaves this as 0, which is also treated as "use default" by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.ResolveInitialIORecordSize"/>.</summary>
             internal int initialIORecordSize;
 
-            internal long minAddress;
-            internal long maxAddress;
-
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
 
@@ -90,28 +70,25 @@ namespace Tsavorite.core
             // Address of the initial entry in the hash chain upon start of Internal(RUMD).
             internal long initialEntryAddress;
 
-            internal ScanCursorState scanCursorState;
+            /// <summary>
+            /// The pending IO op rented + populated by the pending-going helper. Non-null only when we are
+            /// going pending; <c>HandleOperationStatus</c>
+            /// reads this on <see cref="OperationStatus.RECORD_ON_DISK"/> to finalize the IO issue. The
+            /// op's slot (<see cref="PendingIoContext{TInput, TOutput, TContext}.slot"/>) carries the
+            /// pending-only payload (key/input/output/diskLogRecord/etc.).
+            /// </summary>
+            internal PendingIoContext<TInput, TOutput, TContext> pendingOp;
 
             /// <inheritdoc/>
             public override readonly string ToString()
             {
-                var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
-                var keyHashStr = GetHashString(keyHash);
-                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}, InitIORecSz={initialIORecordSize}";
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(long keyHash)
-            {
-                this.keyHash = keyHash;
-                operationFlags = kNoOpFlags;
-                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
+                return $"LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, ReadCopyOpt={readCopyOptions}, InitIORecSz={initialIORecordSize}, Flags=0x{operationFlags:x}, HasPendingOp={pendingOp is not null}";
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
-                operationFlags = kNoOpFlags;
+                // operationFlags defaults to 0 (== kNoOpFlags); skip the redundant write.
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
                 initialIORecordSize = readOptions.InitialIORecordSize;
             }
@@ -119,176 +96,16 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions readCopyOptions)
             {
-                operationFlags = kNoOpFlags;
+                // operationFlags defaults to 0 (== kNoOpFlags) and initialIORecordSize defaults to 0 (treated as
+                // "use default" by ResolveInitialIORecordSize); skip the redundant writes.
                 this.readCopyOptions = readCopyOptions;
-                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
             }
 
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
             internal void SetIsNoKey() => operationFlags |= kIsNoKey;
 
-            internal readonly bool HasMinAddress => minAddress != kInvalidAddress;
-
             internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
             internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;
-
-            public void Dispose()
-            {
-                if (diskLogRecord.IsSet)
-                    diskLogRecord.Dispose();
-                diskLogRecord = default;
-                requestKey = default;
-                input?.Dispose();
-                input = default;
-            }
-
-            #region Serialized Record Creation
-            /// <summary>
-            /// Serialize for Read and RMW operations; no Value is passed
-            /// </summary>
-            /// <param name="key">Record key</param>
-            /// <param name="input">Input to the operation</param>
-            /// <param name="output">Output from the operation</param>
-            /// <param name="userContext">User context for the operation</param>
-            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
-            /// <param name="bufferPool">Allocator for backing storage</param>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void CopyInputsForReadOrRMW<TKey, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
-                    TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            {
-                CopyKey(key, bufferPool, sessionFunctions);
-
-                if (this.input == default)
-                {
-                    // Rent a heap-container wrapper from the per-session pool so the disk-pending
-                    // hot path is allocation-free in steady state. The wrapper returns itself to
-                    // the pool when its Dispose() is invoked by PendingContext.Dispose(); on a
-                    // cold session (pool empty) we allocate once and the wrapper joins the pool
-                    // on first disposal.
-                    var pool = sessionFunctions.Ctx.heapContainerPool;
-                    if (typeof(TInput) == typeof(PinnedSpanByte))
-                    {
-                        // Under this typeof-folded branch, TInput is statically PinnedSpanByte at JIT
-                        // specialization, so the Stack<IHeapContainer<TInput>> is the same CLR type as
-                        // Stack<IHeapContainer<PinnedSpanByte>>; reinterpret the reference without a
-                        // CLR type check.
-                        var spanByteInput = Unsafe.As<TInput, PinnedSpanByte>(ref input);
-                        var spanBytePool = Unsafe.As<Stack<IHeapContainer<PinnedSpanByte>>>(pool);
-                        if (spanBytePool.TryPop(out var rented))
-                        {
-                            Unsafe.As<SpanByteHeapContainer>(rented).Initialize(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool);
-                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref rented);
-                        }
-                        else
-                        {
-                            this.input = new SpanByteHeapContainer(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool) as IHeapContainer<TInput>;
-                        }
-                    }
-                    else
-                    {
-                        if (pool.TryPop(out var rented))
-                        {
-                            Unsafe.As<StandardHeapContainer<TInput>>(rented).Initialize(ref input, pool);
-                            this.input = rented;
-                        }
-                        else
-                        {
-                            this.input = new StandardHeapContainer<TInput>(ref input, pool);
-                        }
-                    }
-                }
-                this.output = output;
-                sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);
-                this.userContext = userContext;
-            }
-
-            /// <summary>Copy the passed key into our <see cref="requestKey"/></summary>
-            internal void CopyKey<TKey, TSessionFunctionsWrapper>(TKey key, SectorAlignedBufferPool bufferPool, TSessionFunctionsWrapper sessionFunctions)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            {
-                if (requestKey.IsEmpty)
-                    requestKey = ConditionallyHoistedKey.Create(key, bufferPool);
-                else
-                    Debug.Assert(sessionFunctions.Store.StoreFunctions.KeysEqual(requestKey, key), "pendingContext.requestKey should not change keys");
-            }
-
-            /// <summary>
-            /// Does an in-memory transfer of a record into the pending context. The transfer operates based on the implementation of the <typeparamref name="TSourceLogRecord"/>:
-            /// <list type="bullet">
-            ///     <item>If it is a <see cref="LogRecord"/>, it comes from the log or possibly an iterator; we copy the inline record data into a <see cref="SectorAlignedMemory"/>
-            ///         and then reassign its ObjectIds to the <paramref name="transientObjectIdMap"/>.</item>
-            ///     <item>Otherwise it is a <see cref="DiskLogRecord"/> and we can transfer its <see cref="SectorAlignedMemory"/> into the local <see cref="DiskLogRecord"/>.
-            ///         It will already have a <paramref name="transientObjectIdMap"/> in its contained <see cref="LogRecord"/>.</item>
-            /// </list>
-            /// </summary>
-            /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
-            /// <param name="bufferPool">The memory pool used for allocating the space for inline data to be copied</param>
-            /// <param name="transientObjectIdMap">The objectIdMap to reassign the objectIds to</param>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
-                where TSourceLogRecord : ISourceLogRecord
-            {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                if (srcLogRecord.IsMemoryLogRecord)
-                {
-                    ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                    diskLogRecord = DiskLogRecord.CopyFrom(in memoryLogRecord, bufferPool, transientObjectIdMap);
-                    return;
-                }
-
-                Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
-                ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
-                // If the inputDiskLogRecord owns its memory this will efficiently transfer it to the local diskLogRecord; otherwise it will deep copy.
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
-            }
-
-            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
-            {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
-            }
-
-            #endregion // Serialized Record Creation
-
-            #region Shortcuts to contained DiskLogRecord
-            public readonly DiskLogRecord DiskLogRecord
-            {
-                get
-                {
-                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'DiskLogRecord'");
-                    return diskLogRecord;
-                }
-            }
-
-            /// <inheritdoc/>
-            public readonly RecordInfo Info
-            {
-                get
-                {
-                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Info'");
-                    return diskLogRecord.Info;
-                }
-            }
-
-            /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key
-            {
-                get
-                {
-                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Key'");
-                    return diskLogRecord.Key;
-                }
-            }
-            #endregion Shortcuts to contained DiskLogRecord
         }
     }
 }

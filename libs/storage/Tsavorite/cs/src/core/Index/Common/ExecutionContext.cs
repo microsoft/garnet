@@ -102,7 +102,8 @@ namespace Tsavorite.core
                 // moved by the drain) so a pooled op retains no stale references, then reset the base fields.
                 // Uncapped, matching the sibling per-session heapContainerPool with the same rent-on-IO-issue /
                 // return-on-drain lifecycle; the pool self-bounds at this session's peak concurrent pending depth.
-                ctx.pendingContext = default;
+                ctx.basePendingContext = default;
+                ctx.slot = default;
                 ctx.Reset();
                 asyncIOContextPool.Push(ctx);
             }

@@ -53,7 +53,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output,
-                                    TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                    TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, bool isFromPending = false)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -61,8 +61,11 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // pendingContext.keyHash and pendingContext.logicalAddress are NOT written here on the in-memory hot path:
+            //   - keyHash now lives on the pending slot (op.slot.keyHash) — set lazily in CreatePendingReadContext if we go pending.
+            //   - logicalAddress defaults to 0 (== kInvalidAddress) for a fresh pendingContext; the in-memory match paths
+            //     below overwrite it on success, and HandleRetryStatus resets it on retry, so the in-memory path needs no write here.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -73,7 +76,7 @@ namespace Tsavorite.core
             {
                 Version = sessionFunctions.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
-                IsFromPending = pendingContext.type != OperationType.NONE,
+                IsFromPending = isFromPending,
             };
 
             try
@@ -148,7 +151,7 @@ namespace Tsavorite.core
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
-                    CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(key, keyHash, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
                 }
 
@@ -173,7 +176,7 @@ namespace Tsavorite.core
             {
                 // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
                 pendingContext.originalAddress = stackCtx.recSrc.LogicalAddress;
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, wantIO: false);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, stackCtx.hei.hash, in srcLogRecord, ref stackCtx, wantIO: false);
                 return status;
             }
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && TryCopyToReadCache(in srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
@@ -255,26 +258,31 @@ namespace Tsavorite.core
                 // Do not trace back in the pending callback if it is a key mismatch.
                 pendingContext.SetIsNoKey();
 
-                CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
+                // keyHash=0 is intentional: ContinuePendingRead derives the hash from pendingContext.DiskLogRecord
+                // for IsReadAtAddress/IsNoKey, and the in-memory re-issue path (which reads pendingContext.keyHash)
+                // is gated on !IsReadAtAddress so it cannot fire here.
+                CreatePendingReadContext(key, keyHash: 0L, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
                 return OperationStatus.RECORD_ON_DISK;
             }
 
             // We're in-memory, so it is safe to get the address now.
             var srcLogRecord = hlog.CreateLogRecord(readAtAddress);
 
-            // Get the key hash.
+            // Get the key hash; we don't write it to pendingContext (a hot-path struct on the caller's stack) — keyHash
+            // is a pending-only field that lives on the rented op's slot, and this in-memory branch never goes pending.
+            long localKeyHash;
             if (readOptions.KeyHash.HasValue)
-                pendingContext.keyHash = readOptions.KeyHash.Value;
+                localKeyHash = readOptions.KeyHash.Value;
             else if (!pendingContext.IsNoKey)
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(key);
+                localKeyHash = storeFunctions.GetKeyHashCode64(key);
             else
             {
                 // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
                 // possibly lock the bucket, etc.
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord);
+                localKeyHash = storeFunctions.GetKeyHashCode64(srcLogRecord);
             }
 
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(localKeyHash);
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
@@ -302,7 +310,7 @@ namespace Tsavorite.core
                 {
                     Version = sessionFunctions.Ctx.version,
                     Address = stackCtx.recSrc.LogicalAddress,
-                    IsFromPending = pendingContext.type != OperationType.NONE,
+                    IsFromPending = false,
                 };
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
@@ -318,7 +326,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
+        private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
              where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -326,8 +334,16 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            pendingContext.type = OperationType.READ;
-            pendingContext.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            // If a re-pend has already moved a populated slot onto pendingContext.pendingOp, reuse it; otherwise rent a
+            // fresh op and populate its slot. HandleOperationStatus will pick up pendingContext.pendingOp on RECORD_ON_DISK
+            // to finalize the IO issue.
+            var op = pendingContext.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            ref var slot = ref op.slot;
+            slot.type = OperationType.READ;
+            slot.keyHash = keyHash;
+            slot.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+
+            pendingContext.pendingOp = op;
             pendingContext.logicalAddress = logicalAddress;
         }
     }
