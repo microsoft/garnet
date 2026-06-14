@@ -293,6 +293,7 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             bool aclStrictCustomCommands = true,
+            RespProtocolMode allowedProtocols = RespProtocolMode.Both,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -383,6 +384,7 @@ namespace Garnet.test
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 AclStrictCustomCommands = aclStrictCustomCommands,
+                AllowedProtocols = allowedProtocols,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
