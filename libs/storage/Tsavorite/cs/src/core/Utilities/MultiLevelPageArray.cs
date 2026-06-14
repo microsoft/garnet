@@ -309,7 +309,7 @@ namespace Tsavorite.core
             for (var page = 0; page <= lastPageIndex; page++)
             {
                 Array.Clear(book[page], 0, MultiLevelPageArray.PageSize);
-                if (page > retainedPageCount)
+                if (page >= retainedPageCount)
                     book[page] = null;
             }
 
@@ -331,14 +331,14 @@ namespace Tsavorite.core
             var lastBlockIndex = (count - 1) & MultiLevelPageArray.BlockIndexMask;
             for (var page = 0; page <= lastPageIndex; page++)
             {
-                var maxBlock = page < lastPageIndex ? MultiLevelPageArray.PageSize : lastBlockIndex;
-                for (var block = 0; block < maxBlock; block++)
+                var numBlocks = page < lastPageIndex ? MultiLevelPageArray.PageSize : lastBlockIndex + 1;
+                for (var block = 0; block < numBlocks; block++)
                 {
                     // Note: 'action' must check for null/default.
                     action(book[page][block]);
                     book[page][block] = default;
                 }
-                if (page > retainedPageCount)
+                if (page >= retainedPageCount)
                     book[page] = null;
             }
             tail.PageAndOffset = 0;

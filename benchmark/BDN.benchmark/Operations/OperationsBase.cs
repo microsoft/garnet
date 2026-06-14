@@ -41,7 +41,7 @@ namespace BDN.benchmark.Operations
         }
 
         /// <summary>
-        /// Clear and set all args before selecting the specific ones to be set by cmdline arg --bdnOpParam
+        /// Clear and set all params that are set by cmdline arg --opparams
         /// </summary>
         public static void SetAllParams(bool isEnabled)
         {
@@ -52,7 +52,7 @@ namespace BDN.benchmark.Operations
         }
 
         /// <summary>
-        /// Set by cmdline arg --bdnOpParam
+        /// Set by cmdline arg --opparams
         /// </summary>
         internal static bool ParamsNone = true;
         internal static bool ParamsACL = true;
