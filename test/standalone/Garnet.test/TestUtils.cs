@@ -350,7 +350,8 @@ namespace Garnet.test
             int compactionMaxSegments = 32,
             string segmentSize = "1g",
             bool? nativeAllocator = null,
-            string bufferPoolMemoryBudget = null
+            string bufferPoolMemoryBudget = null,
+            RespProtocolMode allowedProtocols = RespProtocolMode.Both
         )
         {
             if (useAzureStorage)
@@ -404,6 +405,7 @@ namespace Garnet.test
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 AclStrictCustomCommands = aclStrictCustomCommands,
+                AllowedProtocols = allowedProtocols,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
                     certFileName: tlsCertFileName ?? certFile,
                     certPassword: tlsCertPassword ?? certPassword,
