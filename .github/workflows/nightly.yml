@@ -25,9 +25,9 @@ jobs:
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Install dependencies
         run: dotnet restore
       - name: Check style format
@@ -38,7 +38,7 @@ jobs:
         run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
@@ -57,9 +57,9 @@ jobs:
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
@@ -68,7 +68,7 @@ jobs:
         run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
@@ -87,7 +87,7 @@ jobs:
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -95,13 +95,13 @@ jobs:
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Setup Node.js for Azurite
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Cache Azurite
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.os == 'Windows' && '%APPDATA%\npm-cache' || '~/.npm' }}
           key: azurite-${{ runner.os }}
@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           npm install -g azurite
-          azurite &
+          azurite --skipApiVersionCheck &
       - name: Install dependencies
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Build Tsavorite
@@ -132,7 +132,7 @@ jobs:
         run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
