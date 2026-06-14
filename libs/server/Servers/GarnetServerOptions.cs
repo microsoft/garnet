@@ -54,6 +54,11 @@ namespace Garnet.server
         public bool AclStrictCustomCommands = true;
 
         /// <summary>
+        /// RESP protocol versions accepted by client sessions.
+        /// </summary>
+        public RespProtocolMode AllowedProtocols = RespProtocolMode.Both;
+
+        /// <summary>
         /// Enable append-only file (write ahead log)
         /// </summary>
         public bool EnableAOF = false;
@@ -601,6 +606,16 @@ namespace Garnet.server
         {
             this.logger = logger;
         }
+
+        /// <summary>
+        /// Check whether a RESP protocol version is allowed by server configuration.
+        /// </summary>
+        public bool IsRespProtocolVersionAllowed(byte version) => AllowedProtocols switch
+        {
+            RespProtocolMode.Resp2 => version == 2,
+            RespProtocolMode.Resp3 => version == 3,
+            _ => version is 2 or 3,
+        };
 
         /// <summary>
         /// Initialize Garnet server options

@@ -3924,6 +3924,54 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task HelloRespectsResp2OnlyPolicy()
+        {
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, allowedProtocols: RespProtocolMode.Resp2);
+            server.Start();
+
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            response = await c.ExecuteAsync("HELLO", "3").ConfigureAwait(false);
+            ClassicAssert.AreEqual($"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED)}\r\n", response);
+
+            response = await c.ExecuteAsync("HELLO", "2").ConfigureAwait(false);
+            ClassicAssert.IsTrue(response.Contains("$5\r\nproto\r\n:2\r\n"), response);
+        }
+
+        [Test]
+        public async Task HelloRespectsResp3OnlyPolicy()
+        {
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, allowedProtocols: RespProtocolMode.Resp3);
+            server.Start();
+
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual($"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED)}\r\n", response);
+
+            response = await c.ExecuteAsync("HELLO").ConfigureAwait(false);
+            ClassicAssert.AreEqual($"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED)}\r\n", response);
+
+            response = await c.ExecuteAsync("HELLO", "2").ConfigureAwait(false);
+            ClassicAssert.AreEqual($"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED)}\r\n", response);
+
+            response = await c.ExecuteAsync("HELLO", "3").ConfigureAwait(false);
+            ClassicAssert.IsTrue(response.Contains("$5\r\nproto\r\n:3\r\n"), response);
+
+            response = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+        }
+
+        [Test]
         [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
         public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)

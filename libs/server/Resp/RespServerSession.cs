@@ -646,7 +646,11 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
-                        if (txnManager.state != TxnState.None)
+                        if (!IsCommandAllowedByRespProtocolPolicy(cmd))
+                        {
+                            WriteError(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED);
+                        }
+                        else if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
                             {
@@ -724,6 +728,15 @@ namespace Garnet.server
                     networkSender.DisposeNetworkSender(true);
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsCommandAllowedByRespProtocolPolicy(RespCommand cmd)
+        {
+            if (storeWrapper.serverOptions.AllowedProtocols != RespProtocolMode.Resp3)
+                return true;
+
+            return respProtocolVersion == 3 || cmd == RespCommand.HELLO;
         }
 
         // Make first command in string as uppercase

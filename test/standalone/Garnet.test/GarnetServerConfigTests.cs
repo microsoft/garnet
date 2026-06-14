@@ -1259,6 +1259,41 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AllowedProtocols()
+        {
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(RespProtocolMode.Both, options.GetServerOptions().AllowedProtocols);
+            }
+
+            {
+                var args = new[] { "--allowed-protocols", "RESP3" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(RespProtocolMode.Resp3, options.GetServerOptions().AllowedProtocols);
+            }
+
+            {
+                var args = new[] { "--allowed-protocols", "resp2" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(RespProtocolMode.Resp2, options.GetServerOptions().AllowedProtocols);
+            }
+
+            {
+                const string JSON = @"{ ""AllowedProtocols"": ""Resp3"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(RespProtocolMode.Resp3, options.GetServerOptions().AllowedProtocols);
+            }
+        }
+
+        [Test]
         public void EnableVectorSetPreview()
         {
             // Command line args

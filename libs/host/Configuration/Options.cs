@@ -177,6 +177,9 @@ namespace Garnet
         [Option("acl-strict-custom-commands", Required = false, HelpText = "If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings.")]
         public bool? AclStrictCustomCommands { get; set; }
 
+        [Option("allowed-protocols", Required = false, HelpText = "RESP protocol versions accepted by client sessions. Value options: Both, Resp2, Resp3")]
+        public RespProtocolMode AllowedProtocols { get; set; }
+
         [Option("aad-authority", Required = false, HelpText = "The authority of AAD authentication.")]
         public string AadAuthority { get; set; }
 
@@ -860,6 +863,7 @@ namespace Garnet
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
+                AllowedProtocols = AllowedProtocols,
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
