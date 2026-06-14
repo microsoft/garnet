@@ -1,0 +1,379 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/garnet/docs",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/garnet/docs",
+          "mainDocId": "welcome/intro",
+          "docs": [
+            {
+              "id": "azure/api-compatibility",
+              "path": "/garnet/docs/azure/api-compatibility",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/cluster-configuration",
+              "path": "/garnet/docs/azure/cluster-configuration",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/faq",
+              "path": "/garnet/docs/azure/faq",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/monitoring",
+              "path": "/garnet/docs/azure/monitoring",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/overview",
+              "path": "/garnet/docs/azure/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/quickstart",
+              "path": "/garnet/docs/azure/quickstart",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/resiliency",
+              "path": "/garnet/docs/azure/resiliency",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "azure/security",
+              "path": "/garnet/docs/azure/security",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "benchmarking/overview",
+              "path": "/garnet/docs/benchmarking/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "benchmarking/resp-bench",
+              "path": "/garnet/docs/benchmarking/resp-bench",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "benchmarking/results-resp-bench",
+              "path": "/garnet/docs/benchmarking/results-resp-bench",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "cluster/key-migration",
+              "path": "/garnet/docs/cluster/key-migration",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "cluster/overview",
+              "path": "/garnet/docs/cluster/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "cluster/replication",
+              "path": "/garnet/docs/cluster/replication",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/acl-commands",
+              "path": "/garnet/docs/commands/acl",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/analytics-commands",
+              "path": "/garnet/docs/commands/analytics",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/api-compatibility",
+              "path": "/garnet/docs/commands/api-compatibility",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/checkpoint-commands",
+              "path": "/garnet/docs/commands/checkpoint",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/client-commands",
+              "path": "/garnet/docs/commands/client",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/cluster",
+              "path": "/garnet/docs/commands/cluster",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/data-structures",
+              "path": "/garnet/docs/commands/data-structures",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/garnet-specific-commands",
+              "path": "/garnet/docs/commands/garnet-specific-commands",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/generic-commands",
+              "path": "/garnet/docs/commands/generic",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/json",
+              "path": "/garnet/docs/commands/json",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/overview",
+              "path": "/garnet/docs/commands/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/raw-string",
+              "path": "/garnet/docs/commands/raw-string",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/scripting-commands",
+              "path": "/garnet/docs/commands/scripting",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/server-commands",
+              "path": "/garnet/docs/commands/server",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "commands/transactions-commands",
+              "path": "/garnet/docs/commands/transactions",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/cluster",
+              "path": "/garnet/docs/dev/cluster",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "dev/cluster/overview",
+              "path": "/garnet/docs/dev/cluster/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/cluster/sharding",
+              "path": "/garnet/docs/dev/cluster/sharding",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/cluster/slot-migration",
+              "path": "/garnet/docs/dev/cluster/slot-migration",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/code-structure",
+              "path": "/garnet/docs/dev/code-structure",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/collection-broker",
+              "path": "/garnet/docs/dev/collection-broker",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/configuration",
+              "path": "/garnet/docs/dev/configuration",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/contributing",
+              "path": "/garnet/docs/dev/contributing",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/custom-commands",
+              "path": "/garnet/docs/dev/custom-commands",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/garnet-api",
+              "path": "/garnet/docs/dev/garnet-api",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/multi-db",
+              "path": "/garnet/docs/dev/multi-db",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/network",
+              "path": "/garnet/docs/dev/network",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/onboarding",
+              "path": "/garnet/docs/dev/onboarding",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/processing",
+              "path": "/garnet/docs/dev/processing",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/transactions",
+              "path": "/garnet/docs/dev/transactions",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/tsavorite/epoch",
+              "path": "/garnet/docs/dev/tsavorite/epoch",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/tsavorite/intro",
+              "path": "/garnet/docs/dev/tsavorite/intro",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/tsavorite/locking",
+              "path": "/garnet/docs/dev/tsavorite/locking",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/tsavorite/reviv",
+              "path": "/garnet/docs/dev/tsavorite/reviv",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "dev/tsavorite/storefunctions",
+              "path": "/garnet/docs/dev/tsavorite/storefunctions",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/module",
+              "path": "/garnet/docs/extensions/module",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/objects",
+              "path": "/garnet/docs/extensions/objects",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/overview",
+              "path": "/garnet/docs/extensions/overview",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/procedure",
+              "path": "/garnet/docs/extensions/procedure",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/raw-strings",
+              "path": "/garnet/docs/extensions/raw-strings",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "extensions/transactions",
+              "path": "/garnet/docs/extensions/transactions",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "getting-started/build",
+              "path": "/garnet/docs/getting-started",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "getting-started/compaction",
+              "path": "/garnet/docs/getting-started/compaction",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "getting-started/configuration",
+              "path": "/garnet/docs/getting-started/configuration",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "getting-started/memory",
+              "path": "/garnet/docs/getting-started/memory",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "getting-started/security",
+              "path": "/garnet/docs/security",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "research/papers",
+              "path": "/garnet/docs/research/papers",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/about-us",
+              "path": "/garnet/docs/welcome/about-us",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/compatibility",
+              "path": "/garnet/docs/welcome/compatibility",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/faq",
+              "path": "/garnet/docs/welcome/faq",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/features",
+              "path": "/garnet/docs/welcome/features",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/intro",
+              "path": "/garnet/docs/",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/news",
+              "path": "/garnet/docs/welcome/news",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/releases",
+              "path": "/garnet/docs/welcome/releases",
+              "sidebar": "garnetDocSidebar"
+            },
+            {
+              "id": "welcome/roadmap",
+              "path": "/garnet/docs/welcome/roadmap",
+              "sidebar": "garnetDocSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "tutorialSidebar": {
+              "link": {
+                "path": "/garnet/docs/azure/api-compatibility",
+                "label": "API Compatibility"
+              }
+            },
+            "garnetDocSidebar": {
+              "link": {
+                "path": "/garnet/docs/",
+                "label": "welcome/intro"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

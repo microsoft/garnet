@@ -1,0 +1,29 @@
+{
+  "id": "getting-started/build",
+  "title": "Build and Test",
+  "description": "Clone from Sources",
+  "source": "@site/docs/getting-started/build.md",
+  "sourceDirName": "getting-started",
+  "slug": "/getting-started",
+  "permalink": "/garnet/docs/getting-started",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/getting-started/build.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "build",
+    "sidebar_label": "Build",
+    "title": "Build and Test",
+    "slug": "/getting-started"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "About Us",
+    "permalink": "/garnet/docs/welcome/about-us"
+  },
+  "next": {
+    "title": "Configuration",
+    "permalink": "/garnet/docs/getting-started/configuration"
+  }
+}
