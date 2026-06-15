@@ -1578,6 +1578,24 @@ namespace Garnet.test
             Assert.CatchAsync<OperationCanceledException>(async () => _ = await reader.ReadNextChunkAsync(buffer, cts.Token));
         }
 
+        /// <summary>
+        /// Reader-specific: a chunk size below the trailer size is rejected by the constructor,
+        /// since such a stream could never frame its trailer and would never complete.
+        /// </summary>
+        [Test]
+        public void Reader_ChunkSizeBelowMinimumThrows()
+        {
+            var srcPath = Path.Combine(testDir, "reader-minchunk.bftree");
+            File.WriteAllBytes(srcPath, new byte[8]);
+
+            using var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+            var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 8);
+
+            ClassicAssert.Greater(RangeIndexMigrationReader.MinChunkSize, 0);
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new RangeIndexMigrationReader(serializer, fs, srcPath, RangeIndexMigrationReader.MinChunkSize - 1));
+        }
+
         #endregion
     }
 }

@@ -22,6 +22,13 @@ namespace Garnet.server
         private readonly Memory<byte> readBuffer;
         private bool disposed;
 
+        /// <summary>
+        /// Minimum supported chunk size. A chunk must be able to hold the largest single-chunk
+        /// framing element — the trailer (<c>[8-byte hash][4-byte stubLen][stub]</c>) — otherwise
+        /// the stream can never complete (the serializer would never be able to emit the trailer).
+        /// </summary>
+        public const int MinChunkSize = sizeof(ulong) + sizeof(int) + RangeIndexManager.IndexSizeBytes;
+
         /// <summary>Whether the serializer has emitted all data.</summary>
         public bool IsComplete => serializer.IsComplete;
 
@@ -36,10 +43,14 @@ namespace Garnet.server
         /// <param name="serializer">The pure state-machine serializer.</param>
         /// <param name="fileStream">The file stream to read snapshot data from.</param>
         /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
-        /// <param name="chunkSize">Buffer size for file reads.</param>
+        /// <param name="chunkSize">Buffer size for file reads. Must be at least <see cref="MinChunkSize"/>.</param>
         /// <param name="logger">Optional logger for delete failures.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="chunkSize"/> is below <see cref="MinChunkSize"/>.</exception>
         public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int chunkSize, ILogger logger = null)
         {
+            if (chunkSize < MinChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, $"chunkSize must be at least {MinChunkSize} bytes (the trailer size) so the stream can complete.");
+
             this.serializer = serializer;
             this.fileStream = fileStream;
             this.tempFilePath = tempFilePath;
