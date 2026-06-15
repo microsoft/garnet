@@ -34,6 +34,14 @@ namespace Garnet.server
 
         private enum Phase : byte { KeyHeader, KeyData, FileHeader, FileData, Trailer, Done }
 
+        /// <summary>
+        /// Minimum chunk/destination size that guarantees the serializer can make progress.
+        /// A chunk must be able to hold the largest single-chunk framing element — the trailer
+        /// (<c>[8-byte hash][4-byte stubLen][stub]</c>) — otherwise the stream can never complete
+        /// (<see cref="MoveNext"/> would never be able to emit the trailer).
+        /// </summary>
+        public const int MinChunkSize = sizeof(ulong) + sizeof(int) + RangeIndexManager.IndexSizeBytes;
+
         /// <summary>Whether the serializer has emitted all data.</summary>
         public bool IsComplete => phase == Phase.Done;
 

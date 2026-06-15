@@ -23,11 +23,11 @@ namespace Garnet.server
         private bool disposed;
 
         /// <summary>
-        /// Minimum supported chunk size. A chunk must be able to hold the largest single-chunk
-        /// framing element — the trailer (<c>[8-byte hash][4-byte stubLen][stub]</c>) — otherwise
-        /// the stream can never complete (the serializer would never be able to emit the trailer).
+        /// Minimum supported chunk size — delegates to <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>,
+        /// which owns the wire format. A chunk smaller than the trailer can never frame the stream's
+        /// trailer, so the stream would never complete.
         /// </summary>
-        public const int MinChunkSize = sizeof(ulong) + sizeof(int) + RangeIndexManager.IndexSizeBytes;
+        public const int MinChunkSize = RangeIndexChunkedSerializer.MinChunkSize;
 
         /// <summary>Whether the serializer has emitted all data.</summary>
         public bool IsComplete => serializer.IsComplete;
