@@ -1107,10 +1107,19 @@ namespace Tsavorite.core
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
-            if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
-
             var result = (PageAsyncReadResult<TContext>)context;
+
+            if (errorCode != 0)
+            {
+                // The page read failed or was cancelled. The destination buffer may contain partial or
+                // garbage data, so do not attempt to parse record headers or deserialize objects from it
+                // (doing so can compute bogus lengths and throw OutOfMemoryException/AccessViolation).
+                // Surface the error to the real page-read callback, which handles the failure.
+                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
+                result.callback(errorCode, numBytes, context);
+                return;
+            }
+
             var pageStartAddress = (long)result.destinationPtr;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
