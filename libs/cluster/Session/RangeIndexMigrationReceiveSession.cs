@@ -83,6 +83,10 @@ namespace Garnet.cluster
                 return false;
             }
 
+            // Test-only seam (DEBUG): lets a test park ProcessRecord here, while the dispose guard
+            // is held, so it can race Dispose() against an in-flight ProcessRecord. No-op otherwise.
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.RangeIndex_Migration_Receive_Pause_In_ProcessRecord);
+
             if (currentDeserializer.IsComplete)
             {
                 var keyBytes = currentDeserializer.Key;

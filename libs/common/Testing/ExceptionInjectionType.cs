@@ -106,5 +106,11 @@ namespace Garnet.common
         /// RangeIndex migration: pause after entering DELETING state, before deleting keys.
         /// </summary>
         RangeIndex_Migration_After_Deleting,
+        /// <summary>
+        /// RangeIndex migration (receive side): pause inside ProcessRecord after a chunk has been
+        /// processed, while the dispose guard is held. Lets a test race Dispose() against an
+        /// in-flight ProcessRecord.
+        /// </summary>
+        RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
     }
 }
