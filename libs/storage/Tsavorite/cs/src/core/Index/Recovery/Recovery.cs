@@ -580,7 +580,7 @@ namespace Tsavorite.core
         private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline page space.
-            TrimLogPages(recoveryStatus, tailPage: page, numPagesToRead);
+            TrimLogPages(recoveryStatus, tailPage: page, numPagesToRead, untilAddress: endAddress);
 
             // Set all page read statuses to Pending
             for (var p = page; p < endPage; p++)
@@ -591,17 +591,20 @@ namespace Tsavorite.core
                 recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1);
         }
 
-        private void TrimLogPages(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead)
+        private void TrimLogPages(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead, long untilAddress)
         {
             if (hlogBase.logSizeTracker is null)
                 return;
 
             var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
             var loadedPages = tailPage - headPage + 1;
-            var overBudgetAmount = hlogBase.logSizeTracker.RemainingBudget - (loadedPages + numPagesToRead) * hlogBase.PageSize;
+            var totalPagesNeeded = loadedPages + numPagesToRead;
+            var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
-            // We can only evict loadedPages, and only until we get to MinResizeTargetPageCount
-            for (var evictablePageCount = loadedPages; overBudgetAmount > 0 && evictablePageCount > LogSizeTracker.MinResizeTargetPageCount; evictablePageCount--)
+            // Evict pages from headAddress upward while over budget, respecting MinEvictionHeadAddressLag
+            while (totalPagesNeeded > 1
+                && hlogBase.logSizeTracker.RemainingBudget < numPagesToRead * hlogBase.PageSize
+                && recoveryStatus.headAddress < maxHeadAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(headPage);
                 if (hlogBase.IsAllocated(pageIndex))
@@ -609,9 +612,14 @@ namespace Tsavorite.core
                     recoveryStatus.WaitFlush(pageIndex);
                     hlogBase.EvictPageForRecovery(headPage);
                 }
-                overBudgetAmount -= hlogBase.PageSize;
                 headPage++;
                 recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(headPage);
+                if (recoveryStatus.headAddress > maxHeadAddress)
+                {
+                    recoveryStatus.headAddress = maxHeadAddress;
+                    break;
+                }
+                totalPagesNeeded--;
             }
         }
 
@@ -667,7 +675,7 @@ namespace Tsavorite.core
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-            RecoveryLoadObjectsPass2(startPage, endPage, recoveryStatus.headAddress, untilAddress, objectLogDevice: null);
+            RecoveryLoadObjectsPass2(startPage, endPage, recoveryStatus, untilAddress, objectLogDevice: null);
             return recoveryStatus;
         }
 
@@ -689,8 +697,8 @@ namespace Tsavorite.core
             if (untilAddress > hlogBase.GetFirstValidLogicalAddressOnPage(endPage) && untilAddress > scanFromAddress)
                 endPage++;
 
-            // Read multiple pages up to the max page range we're loading, but eviction must keep at least LogSizeTracker.MinResizeTargetPageCount in the buffer.
-            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount, (int)(endPage - startPage));
+            // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
             return new RecoveryStatus(hlogBase.BufferSize);
         }
 
@@ -821,16 +829,13 @@ namespace Tsavorite.core
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-            RecoveryLoadObjectsPass2(startPage, endPage, scanFromAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice);
+            RecoveryLoadObjectsPass2(startPage, endPage, recoveryStatus, untilAddress, recoveryStatus.objectLogRecoveryDevice);
             recoveryStatus.Dispose();
         }
 
-        private void RecoveryLoadObjectsPass2(long startPage, long endPage, long headAddress, long untilAddress, IDevice objectLogDevice)
+        private void RecoveryLoadObjectsPass2(long startPage, long endPage, RecoveryStatus recoveryStatus, long untilAddress, IDevice objectLogDevice)
         {
-            var logicalHeadAddress = headAddress;
-            hlogBase.HeadAddress = logicalHeadAddress;
-
-            // If there is no size tracker, load all objects without eviction.
+            // Without a size tracker, load all objects from headAddress to untilAddress.
             if (hlogBase.logSizeTracker is null)
             {
                 for (var page = startPage; page < endPage; page++)
@@ -839,65 +844,84 @@ namespace Tsavorite.core
                     if (!hlogBase.IsAllocated(pageIndex))
                         continue;
 
-                    var fromAddress = page == hlogBase.GetPage(logicalHeadAddress) ? logicalHeadAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
+                    var fromAddress = page == hlogBase.GetPage(recoveryStatus.headAddress) ? recoveryStatus.headAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
                     var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
-                    _ = hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice);
                 }
                 return;
             }
 
-            // We have a size tracker so must consider eviction
-            for (var page = endPage - 1; page >= hlogBase.GetPage(logicalHeadAddress); page--)
+            // With a size tracker, iterate pages from highest to lowest with budget control.
+            var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
+
+            for (var page = endPage - 1; page >= hlogBase.GetPage(recoveryStatus.headAddress); page--)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(page);
                 if (!hlogBase.IsAllocated(pageIndex))
                     continue;
 
-                var fromAddress = page == hlogBase.GetPage(logicalHeadAddress) ? logicalHeadAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
+                var fromAddress = Math.Max(recoveryStatus.headAddress, hlogBase.GetFirstValidLogicalAddressOnPage(page));
                 var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
                 if (fromAddress >= pageUntilAddress)
                     continue;
 
+                // Enforce MinEvictionHeadAddressLag: clamp fromAddress
+                if (fromAddress > maxHeadAddress)
+                    fromAddress = maxHeadAddress;
+
                 var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, fromAddress, pageUntilAddress);
                 if (totalPageObjectSize == 0)
-                    continue;
-
-                var remainingBudget = hlogBase.logSizeTracker.RemainingBudget;
-                if (totalPageObjectSize <= remainingBudget)
                 {
-                    _ = hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice, remainingBudget);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, fromAddress, pageUntilAddress, objectLogDevice);
                     continue;
                 }
 
-                var currentHeadPage = hlogBase.GetPage(logicalHeadAddress);
-                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, (int)(page - currentHeadPage), remainingBudget, out var numPagesBelowToEvict);
-                var pageCountFreed = 0;
+                var remainingBudget = hlogBase.logSizeTracker.RemainingBudget;
+                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, (int)(page - hlogBase.GetPage(recoveryStatus.headAddress)), remainingBudget, out var numPagesBelowToEvict);
+
+                // Evict pages below if needed
+                var currentHeadPage = hlogBase.GetPage(recoveryStatus.headAddress);
                 while (numPagesBelowToEvict > 0 && currentHeadPage < page)
                 {
                     var headPageIndex = hlogBase.GetPageIndexForPage(currentHeadPage);
                     if (hlogBase.IsAllocated(headPageIndex))
-                    {
                         hlogBase.EvictPageForRecovery(currentHeadPage);
-                        pageCountFreed++;
-                    }
 
-                    logicalHeadAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage + 1);
                     currentHeadPage++;
+                    recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage);
                     numPagesBelowToEvict--;
                 }
 
-                var stopAddress = hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice,
-                    remainingBudget + ((long)pageCountFreed * hlogBase.GetPageSize()));
-                if (pageCutoff > logicalHeadAddress)
-                    logicalHeadAddress = pageCutoff;
-                if (stopAddress < pageUntilAddress)
-                    logicalHeadAddress = stopAddress;
+                // Load objects, using per-record budget checking via DeserializeObjectsOnPage.
+                // The method handles all records from pageCutoff to pageUntilAddress.
+                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice);
 
-                if (logicalHeadAddress > hlogBase.GetFirstValidLogicalAddressOnPage(page))
+                // After loading, recheck budget. If over budget, evict from headAddress up to and including loaded records.
+                if (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
+                {
+                    // Evict from headAddress upward until under budget or at the lag limit
+                    while (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
+                    {
+                        currentHeadPage = hlogBase.GetPage(recoveryStatus.headAddress);
+                        if (currentHeadPage >= page)
+                            break;
+
+                        var headPageIndex = hlogBase.GetPageIndexForPage(currentHeadPage);
+                        if (hlogBase.IsAllocated(headPageIndex))
+                            hlogBase.EvictPageForRecovery(currentHeadPage);
+
+                        recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage + 1);
+                    }
+                }
+
+                // Update headAddress from cutoff if it was raised
+                if (pageCutoff > recoveryStatus.headAddress)
+                    recoveryStatus.headAddress = pageCutoff;
+
+                // If headAddress is on or above the current page, we're done
+                if (recoveryStatus.headAddress >= hlogBase.GetFirstValidLogicalAddressOnPage(page))
                     break;
             }
-
-            hlogBase.HeadAddress = logicalHeadAddress;
         }
 
         /// <summary>
@@ -963,8 +987,8 @@ namespace Tsavorite.core
                 recoveryDevicePageOffset = snapshotStartPage
             };
 
-            // Read multiple pages up to the max page range we're loading, but eviction must keep at least LogSizeTracker.MinResizeTargetPageCount in the buffer.
-            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount, (int)(endPage - startPage));
+            // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
         }
 
         private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)

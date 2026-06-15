@@ -35,10 +35,8 @@ namespace Tsavorite.core
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
-        /// <summary>This is used as the memory budget if we are not enforcing memory constraints.</summary>
-        internal const long NoBudget = long.MaxValue;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
-        internal virtual long LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice, long budgetLimit = NoBudget) => untilAddress;
+        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice) { }
     }
 
     /// <summary>

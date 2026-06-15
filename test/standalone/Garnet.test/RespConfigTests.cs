@@ -715,8 +715,8 @@ namespace Garnet.test
             // Sanity-check the preconditions for the shrink/eviction we are about to trigger.
             var apcBefore = store.Log.AllocatedPageCount;
             var heapBefore = tracker.LogHeapSizeBytes;
-            Assert.That(apcBefore, Is.GreaterThan(LogSizeTracker.MinResizeTargetPageCount),
-                "Test precondition: need more than MinResizeTargetPageCount pages for eviction to be possible.");
+            Assert.That(apcBefore, Is.GreaterThan(1),
+                "Test precondition: need more than one page for eviction to be possible.");
             Assert.That(heapBefore, Is.GreaterThan(0), "Test precondition: heap should be non-empty after inserts.");
 
             // Shrink the memory target. The 'shrink' branch of LogSizeTracker.UpdateTargetSize signals the

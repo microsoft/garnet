@@ -1095,16 +1095,6 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
 
             var result = (PageAsyncReadResult<TContext>)context;
-            var pageStartAddress = (long)result.destinationPtr;
-
-            // Iterate all records in range to determine how many bytes we need to read from objlog.
-            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
-            var endKeyLength = 0;
-            ulong endValueLength = 0;
-            ulong totalBytesToRead = 0;
-            var recordAddress = pageStartAddress + PageHeader.Size;
-            var endAddress = pageStartAddress + result.maxAddressOffsetOnPage;
-            var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
 
             if (result.recoveryPhase == RecoveryPhase.Pass1)
             {
@@ -1115,9 +1105,33 @@ namespace Tsavorite.core
                 return;
             }
 
+            var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+            DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
+
+            // Call the "real" page read callback
+            result.callback(errorCode, numBytes, context);
+            result.Free();
+        }
+
+        /// <summary>
+        /// Deserialize objects on a page that has already been loaded into memory (physical addresses).
+        /// Scans records to determine object log ranges, reads from the object log via the provided readBuffers, and deserializes objects.
+        /// </summary>
+        /// <param name="pageStartPhysicalAddress">Physical start address of the page in memory</param>
+        /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
+        /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
+        /// <param name="readBuffers">The circular read buffers for object log reading</param>
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers)
+        {
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            var endKeyLength = 0;
+            ulong endValueLength = 0;
+            var recordAddress = pageStartPhysicalAddress + PageHeader.Size;
+            var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
+
+            // First pass: determine the range of object log bytes to read
             while (recordAddress < endAddress)
             {
-                // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                 var logRecord = new LogRecord(recordAddress);
                 recordAddress += logRecord.AllocatedSize;
 
@@ -1130,22 +1144,23 @@ namespace Tsavorite.core
             }
 
             // The page may not have contained any records with objects
-            if (startPosition.IsSet)
+            if (!startPosition.IsSet)
+                return;
+
+            endPosition.Advance((ulong)endKeyLength + endValueLength);
+            var totalBytesToRead = endPosition - startPosition;
+
+            // Second pass: deserialize objects
+            readBuffers.nextFileReadPosition = startPosition;
+            recordAddress = pageStartPhysicalAddress + PageHeader.Size;
+            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
+
+            try
             {
-                endPosition.Advance((ulong)endKeyLength + endValueLength);
-                totalBytesToRead = endPosition - startPosition;
-
-                // Iterate all records again to actually do the deserialization. We are only in "Load Objects" mode for frame load; recovery loads objects
-                // via LoadObjectsForRecoveryPass2. So we do not consider eviction here.
-                result.readBuffers.nextFileReadPosition = startPosition;
-                recordAddress = pageStartAddress + PageHeader.Size;
-                var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
-                logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-
                 while (recordAddress < endAddress)
                 {
-                    // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
-                    var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
+                    var logRecord = new LogRecord(recordAddress, objectIdMap);
                     recordAddress += logRecord.AllocatedSize;
 
                     if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
@@ -1154,15 +1169,11 @@ namespace Tsavorite.core
                         TrackRecoveredObjectRecord(in logRecord);
                     }
                 }
-
-                // Ensure we have finished all object reads
+            }
+            finally
+            {
                 logReader.OnEndReadRecords();
             }
-
-            // Call the "real" page read callback
-            result.callback(errorCode, numBytes, context);
-            result.Free();
-            return;
         }
 
         private void TrackRecoveredObjectRecord(in LogRecord logRecord)
@@ -1239,82 +1250,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice, long budgetLimit = NoBudget)
+        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice)
         {
-            var address = Math.Max(fromAddress, GetFirstValidLogicalAddressOnPage(page));
+            var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
+            var address = Math.Max(fromAddress, pageStartAddress);
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
             if (address >= endAddress)
-                return endAddress;
+                return;
 
-            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
-            var endKeyLength = 0;
-            ulong endValueLength = 0;
-
-            for (var recordAddress = address; recordAddress < endAddress; /*incremented in loop*/)
-            {
-                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
-                var allocatedSize = logRecord.AllocatedSize;
-                if (allocatedSize <= 0)
-                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
-
-                recordAddress += allocatedSize;
-                if (recordAddress > PageSize)
-                    ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - endAddress} bytes");
-
-                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
-                {
-                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
-                    if (!startPosition.IsSet)
-                        startPosition = endPosition;
-                }
-            }
-
-            if (!startPosition.IsSet)
-                return endAddress;
-
-            endPosition.Advance((ulong)endKeyLength + endValueLength);
-            var totalBytesToRead = endPosition - startPosition;
+            var pagePhysicalAddress = GetPhysicalAddress(GetLogicalAddressOfStartOfPage(page));
+            var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            readBuffers.nextFileReadPosition = startPosition;
-            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-
-            long budgetUsed = 0;
-            try
-            {
-                while (address < endAddress)
-                {
-                    var logRecord = new LogRecord(GetPhysicalAddress(address), objectIdMapToUse);
-                    var allocatedSize = logRecord.AllocatedSize;
-                    if (allocatedSize <= 0)
-                        ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
-
-                    var nextAddress = address + allocatedSize;
-                    if (nextAddress > endAddress)
-                        ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {nextAddress - endAddress} bytes");
-
-                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
-                    {
-                        _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-                        var recordSerializedObjectSize = keyLength + (long)valueLength;
-                        if (budgetLimit != NoBudget && budgetUsed + recordSerializedObjectSize > budgetLimit)
-                            return address;
-
-                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        TrackRecoveredObjectRecord(in logRecord);
-                        budgetUsed += recordSerializedObjectSize;
-                    }
-
-                    address = nextAddress;
-                }
-            }
-            finally
-            {
-                logReader.OnEndReadRecords();
-            }
-
-            return endAddress;
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers);
         }
 
         /// <inheritdoc/>
