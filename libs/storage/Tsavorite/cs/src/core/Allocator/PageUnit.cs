@@ -32,6 +32,7 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit)]
     internal struct PageOffset
     {
+        /// <summary>This offset may be a byte offset into a page of possibly variable-length records, or the index of a block in a page of uniformly-sized blocks.</summary>
         [FieldOffset(0)]
         public int Offset;
         [FieldOffset(4)]
