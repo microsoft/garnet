@@ -60,11 +60,7 @@ namespace Garnet.cluster
         private bool ProcessRecordInternal(ReadOnlySpan<byte> recordPayload, ClusterConfig currentConfig, ref StringBasicContext stringBasicContext, bool replaceOption)
         {
             if (recordPayload.Length == 0)
-            {
-                receiveActivity?.OnError("Empty payload");
-                Reset();
-                return false;
-            }
+                return HandleError("Empty payload");
 
             if (currentDeserializer == null)
             {
@@ -75,11 +71,7 @@ namespace Garnet.cluster
 
             receiveActivity.OnChunkReceived(recordPayload.Length);
             if (!currentDeserializer.ProcessChunk(recordPayload))
-            {
-                receiveActivity.OnError("ProcessChunk failed");
-                Reset();
-                return false;
-            }
+                return HandleError("ProcessChunk failed");
 
             ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.RangeIndex_Migration_Receive_Pause_In_ProcessRecord);
 
@@ -88,29 +80,17 @@ namespace Garnet.cluster
                 var keyBytes = currentDeserializer.Key;
                 var slot = HashSlotUtils.HashSlot(keyBytes);
                 if (!currentConfig.IsImportingSlot(slot))
-                {
-                    receiveActivity.OnError("Slot not in importing state");
-                    Reset();
-                    return false;
-                }
+                    return HandleError("Slot not in importing state");
 
                 if (disposeGuard.IsDisposed)
-                {
-                    receiveActivity.OnError("Disposed before publish");
-                    Reset();
-                    return false;
-                }
+                    return HandleError("Disposed before publish");
 
                 receiveActivity.OnPublishing();
                 var publishResult = rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext);
                 receiveActivity.OnPublishResult(publishResult);
 
                 if (publishResult == RangeIndexManager.PublishMigratedIndexResult.Failed)
-                {
-                    receiveActivity.OnError("PublishMigratedIndex failed");
-                    Reset();
-                    return false;
-                }
+                    return HandleError("PublishMigratedIndex failed");
 
                 // Success, SkippedAlreadyExists, and SkippedReplaceNotSupported are all
                 // non-error outcomes: the destination is in a consistent state and the
@@ -120,6 +100,17 @@ namespace Garnet.cluster
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Record an error on the current activity (if any), reset state for the next stream,
+        /// and return <c>false</c> so callers can <c>return HandleError(...)</c>.
+        /// </summary>
+        private bool HandleError(string error)
+        {
+            receiveActivity?.OnError(error);
+            Reset();
+            return false;
         }
 
         /// <summary>
