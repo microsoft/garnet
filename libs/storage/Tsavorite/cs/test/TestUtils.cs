@@ -39,6 +39,12 @@ namespace Tsavorite.test
         internal const string OverflowFieldCategory = "OverflowField";
         internal const string LogRecordCategory = "LogRecord";
 
+        // Use 4KB page size for tests, independent of device sector size
+        public const int MinKvLogPageSizeBits = LogSettings.kMinPageSizeBits;
+        public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+        public const int MinKvLogMemorySizeBits = MinKvLogPageSizeBits + 1;
+        public const int MinKvLogMemorySize = 1 << MinKvLogMemorySizeBits;
+
         public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 
         /// <summary>
@@ -157,7 +163,7 @@ namespace Tsavorite.test
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyUs) and emulates an IDevice using main memory, serving data at specified latency
                 case TestDeviceType.LocalMemory:
-                    device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyUs: latencyUs);  // 64 MB (1L << 26) is enough for our test cases
+                    device = new LocalMemoryDevice(capacity: 1L << 28, segmentSize: 1L << 25, parallelism: 2, sectorSize: 512, latencyUs: latencyUs);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 

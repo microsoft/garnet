@@ -8,7 +8,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
-        /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
+        /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (detaching any read-cache prefix).
         /// </summary>
         /// <param name="inputLogRecord">The source record, either from readonly region of the in-memory log, or from disk</param>
         /// <param name="sessionFunctions"></param>
@@ -38,7 +38,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecord(newLogicalAddress);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {

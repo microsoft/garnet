@@ -4,10 +4,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -89,6 +87,7 @@ namespace Tsavorite.core
         private readonly ILogger logger;
         private readonly SafeConcurrentDictionary<int, SegmentHandles> logHandles;
         private readonly SectorAlignedBufferPool pool;
+        private static uint sectorSize = 0;
 
         // Lock-free pool of UnmanagedMemoryManager<byte> wrappers reused across IOs.
         // Each in-flight RandomAccess.ReadAsync/WriteAsync needs a Memory<byte> over its
@@ -106,6 +105,13 @@ namespace Tsavorite.core
         private int numPending = 0;
 
         private bool _disposed;
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
+        }
 
         /// <summary>
         /// 
@@ -402,18 +408,9 @@ namespace Tsavorite.core
 
         private static uint GetSectorSize(string filename)
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);
-                return 512;
-            }
-
-            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3), out _, out uint _sectorSize, out _, out _))
-            {
-                Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
-                _sectorSize = 512;
-            }
-            return _sectorSize;
+            if (sectorSize <= 0)
+                sectorSize = Native32.GetDeviceSectorSize(filename);
+            return sectorSize;
         }
 
         private SafeFileHandle CreateReadHandle(int segmentId)

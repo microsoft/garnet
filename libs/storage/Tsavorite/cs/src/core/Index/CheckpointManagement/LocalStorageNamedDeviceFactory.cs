@@ -32,7 +32,7 @@ namespace Tsavorite.core
         /// <param name="preallocateFile">Whether files should be preallocated</param>
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
-        /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
+        /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance. For DeviceType.LocalMemory (which has no device-wide throttle) it instead sets the per-ring capacity, rounded up to a power of two.</param>
         /// <param name="deviceType">Device type to use</param>
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
         /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of IO completion drain threads (default 1). Ignored otherwise.</param>
@@ -56,6 +56,17 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
+            // LocalMemory has no device-wide Throttle()/numPending counter; its per-ring SPSC backpressure
+            // (the producer blocks on a full ring) IS the in-flight bound. So a user-specified throttle maps
+            // to the per-ring capacity (rounded up to a power of two, capped at the largest power-of-two int),
+            // mirroring KV.benchmark. Other device types honor the throttle via ThrottleLimit (set below).
+            int localMemoryRingCapacity = 0;
+            if (deviceType == DeviceType.LocalMemory && throttleLimit is > 0)
+            {
+                const int MaxRing = 1 << 30;
+                localMemoryRingCapacity = throttleLimit.Value >= MaxRing ? MaxRing : (int)Utility.NextPowerOf2(throttleLimit.Value);
+            }
+
             var device = Devices.CreateLogDevice(
                 logPath: Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName),
                 deviceType: deviceType,
@@ -65,6 +76,7 @@ namespace Tsavorite.core
                 readOnly: readOnly,
                 ioBackend: ioBackend,
                 numCompletionThreads: numCompletionThreads,
+                localMemoryRingCapacity: localMemoryRingCapacity,
                 logger: logger);
             if (throttleLimit.HasValue)
             {

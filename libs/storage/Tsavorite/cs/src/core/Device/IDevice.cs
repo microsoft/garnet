@@ -18,6 +18,9 @@ namespace Tsavorite.core
     /// </summary>
     public interface IDevice : IDisposable
     {
+        /// <summary>Device sector size used when the actual sector size cannot be determined, or is smaller than this (the optimal read size).</summary>
+        public const int MinDeviceSectorSize = 1 << 9;  // 512 bytes
+
         /// <summary>
         /// Size of sector
         /// </summary>

@@ -74,36 +74,40 @@ namespace Tsavorite.core
         // When capacity is unspecified, cap the segment-pointer arrays at this many segments
         // (≈ 32 KB of overhead per array at 4096 entries). Segments themselves are still lazily
         // allocated, so this bounds the upper limit of data that can be stored, not the working
-        // set. With the default 1 GB sz_segment this admits 4 TB of virtual address space.
+        // set. With the default 1 GB segmentSize this admits 4 TB of virtual address space.
         private const int DefaultMaxSegments = 4096;
 
         /// <summary>
         /// Constructor.
         /// </summary>
-        /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity of <c>sz_segment * DefaultMaxSegments</c> (segments are still allocated lazily, so this only sizes the per-segment lookup arrays). When &gt; 0 it must be a multiple of <paramref name="sz_segment"/>.</param>
-        /// <param name="sz_segment">Size in bytes of each segment.</param>
+        /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity of <c>segmentSize * DefaultMaxSegments</c> (segments are still allocated lazily, so this only sizes the per-segment lookup arrays). When &gt; 0 it must be a multiple of <paramref name="segmentSize"/>.</param>
+        /// <param name="segmentSize">Size in bytes of each segment.</param>
         /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Must be &gt;= 1.</param>
         /// <param name="latencyUs">Per-IO simulated wall-clock latency in microseconds (0 = none). Microsecond
         /// granularity models modern low-latency devices (single-digit microsecond NVMe).</param>
-        /// <param name="sector_size">Sector size for device (default 512).</param>
+        /// <param name="sectorSize">Sector size for device (default 512).</param>
         /// <param name="ringCapacity">Per-ring slot count (power of two). Defaults to 4096.</param>
         /// <param name="fileName">Virtual path used as the device identifier.</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyUs = 0, uint sector_size = 512, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
-            : base(fileName, sector_size, capacity > 0 ? capacity : checked(sz_segment * DefaultMaxSegments))
+        public LocalMemoryDevice(long capacity, long segmentSize, int parallelism, int latencyUs = 0, uint sectorSize = 512, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
+            : base(fileName, sectorSize, capacity > 0 ? capacity : checked(segmentSize * DefaultMaxSegments))
         {
-            if (sz_segment <= 0) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be > 0");
-            if (sz_segment > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(sz_segment), "sz_segment must be <= int.MaxValue");
-            if (parallelism < 1) throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 1");
-            if (latencyUs < 0) throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
+            if (segmentSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be > 0");
+            if (segmentSize > int.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be <= int.MaxValue");
+            if (parallelism < 1)
+                throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 1");
+            if (latencyUs < 0)
+                throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
             if (ringCapacity <= 0 || (ringCapacity & (ringCapacity - 1)) != 0)
                 throw new ArgumentOutOfRangeException(nameof(ringCapacity), "ringCapacity must be a positive power of two");
-            if (capacity > 0 && capacity % sz_segment != 0)
-                throw new ArgumentException("capacity must be a multiple of sz_segment", nameof(capacity));
+            if (capacity > 0 && capacity % segmentSize != 0)
+                throw new ArgumentException("capacity must be a multiple of segmentSize", nameof(capacity));
 
             // base.Capacity already holds the effective capacity (the caller's value when > 0, else the
-            // lazily-backed sz_segment * DefaultMaxSegments default passed to the base ctor above).
-            this.sz_segment = sz_segment;
-            maxSegments = checked((int)(Capacity / sz_segment));
+            // lazily-backed segmentSize * DefaultMaxSegments default passed to the base ctor above).
+            this.sz_segment = segmentSize;
+            maxSegments = checked((int)(Capacity / segmentSize));
             this.parallelism = parallelism;
 
             latencyTimestampTicks = latencyUs > 0
@@ -129,7 +133,7 @@ namespace Tsavorite.core
                 processors[i].Start();
             }
 
-            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
+            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={segmentSize} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
         }
 
         /// <summary>

@@ -44,7 +44,9 @@ namespace Tsavorite.core
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
-            if (store.UseReadCache)
+            // Gate on hei.IsReadCache (same cost as UseReadCache): skips the call when this chain has no RC prefix, and
+            // lets SkipReadCache's UseReadCache assert flag an RC-record-while-!UseReadCache anomaly.
+            if (stackCtx.hei.IsReadCache)
                 store.SkipReadCache(ref stackCtx, out _);
             if (stackCtx.recSrc.LogicalAddress < store.hlogBase.BeginAddress)
                 return false;
@@ -173,7 +175,7 @@ namespace Tsavorite.core
                 return false;
 
             completionEvent.Prepare(key, logicalAddress, bufferPool);
-            AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, IStreamBuffer.DefaultInitialIORecordSize, completionEvent.request);
             completionEvent.Wait();
 
             ref var request = ref completionEvent.request;

@@ -31,6 +31,8 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
+        /// <summary>Initial IO record size from <see cref="KVSettings"/>; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means unset.</summary>
+        internal readonly int InitialIORecordSize;
         internal readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
@@ -196,6 +198,7 @@ namespace Tsavorite.core
             }
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
+            InitialIORecordSize = kvSettings.InitialIORecordSize;
             Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
             LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
@@ -483,8 +486,8 @@ namespace Tsavorite.core
         {
             // Keep PendingContext on the stack: the overwhelmingly common in-memory read never goes pending,
             // so it must not pay any heap cost. Only when the read goes pending (RECORD_ON_DISK) does
-            // HandleOperationStatus copy this context into the per-session ioPendingRequests dictionary
-            // (a holder/reference wrapper was measured net-slower here, so the struct is stored directly).
+            // HandleOperationStatus copy this context onto the per-session pending op it rents (a holder /
+            // reference wrapper was measured net-slower, so the struct is carried directly on the op).
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             var keyHash = storeFunctions.GetKeyHashCode64(key);
@@ -763,6 +766,33 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            OperationStatus internalStatus;
+
+            do
+                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+        }
+
+        /// <summary>
+        /// RMW overload that carries a per-operation <paramref name="initialIORecordSize"/> override. Used by the
+        /// <see cref="RMWOptions"/>-taking client-context overloads; the no-options overloads call the other
+        /// <see cref="ContextRMW{TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper}(TKey, long, ref TInput, ref TOutput, out RecordMetadata, TContext, TSessionFunctionsWrapper)"/>
+        /// to keep the hot path free of any RMWOptions handling.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize,
+                                                                          out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            pcontext.initialIORecordSize = initialIORecordSize;
             OperationStatus internalStatus;
 
             do

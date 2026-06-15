@@ -94,18 +94,44 @@ namespace Tsavorite.kvbench
                 long needSegments = (approxBytes + segSize - 1) / segSize + 4;
                 long capacity = needSegments * segSize;
 
-                int parallelism = opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount;
+                // Inline completion => parallelism 0 (no completion threads/rings). Otherwise the configured
+                // count, or ProcessorCount when unset.
+                int parallelism = opts.DeviceInlineCompletion
+                    ? 0
+                    : (opts.DeviceCompletionThreads > 0 ? opts.DeviceCompletionThreads : System.Environment.ProcessorCount);
 
                 System.Console.WriteLine(
-                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}");
+                    $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}{(opts.DeviceInlineCompletion ? " (inline completion)" : "")}");
+
+                // LocalMemoryDevice has no Throttle() override; its per-ring SPSC backpressure (the producer
+                // blocks when its ring is full) IS the in-flight bound. So map --device-throttle onto the ring
+                // capacity (rounded up to a power of two) — this actually caps in-flight, with no contended
+                // device-wide numPending counter. 0 = device default ring.
+                int localMemRing = 0;
+                if (opts.DeviceThrottle > 0)
+                {
+                    // Round up to a power of two, overflow-safe. --device-throttle is user-supplied, so a
+                    // naive `while (r < throttle) r <<= 1` would overflow to a negative r and spin forever
+                    // for values > 2^30; cap at the largest power-of-two int instead.
+                    const int MaxRing = 1 << 30;
+                    if (opts.DeviceThrottle >= MaxRing)
+                        localMemRing = MaxRing;
+                    else
+                    {
+                        localMemRing = 1;
+                        while (localMemRing < opts.DeviceThrottle)
+                            localMemRing <<= 1;
+                    }
+                }
 
                 dev = Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize);
-                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;
+                    localMemorySegmentSize: segSize,
+                    localMemoryRingCapacity: localMemRing);
+                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;   // reflect intent in reporting (LocalMemory enforces it via the ring)
                 return dev;
             }
 

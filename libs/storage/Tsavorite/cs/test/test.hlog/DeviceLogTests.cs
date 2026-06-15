@@ -65,7 +65,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test for in memory device
-            using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyUs: 20_000, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
+            using var device = new LocalMemoryDevice(capacity: 1L << 28, segmentSize: 1L << 25, 2, latencyUs: TestUtils.DefaultLocalMemoryDeviceLatencyUs, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
             using var LocalMemorylog = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;
@@ -156,8 +156,8 @@ namespace Tsavorite.test
             // bounded submission ring, that re-entrant submit must NOT block waiting on a full ring that
             // only this same thread can drain — otherwise the drain thread waits on itself (deadlock).
             // A tiny ring plus a flooding producer keep the ring full so the condition is exercised.
-            var device = new LocalMemoryDevice(capacity: 1L << 20, sz_segment: 1L << 20, parallelism: 1,
-                latencyUs: 50, sector_size: 64, ringCapacity: 8,
+            var device = new LocalMemoryDevice(capacity: 1L << 20, segmentSize: 1L << 20, parallelism: 1,
+                latencyUs: 50, sectorSize: 64, ringCapacity: 8,
                 fileName: Path.Join(TestUtils.MethodTestDir, "reentrant.log"));
 
             var pin = GCHandle.Alloc(new byte[4096], GCHandleType.Pinned);

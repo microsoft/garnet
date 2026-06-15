@@ -16,7 +16,7 @@ namespace Tsavorite.test
     [TestFixture]
     public class DeviceTests : TestBase
     {
-        const int entryLength = 1024;
+        const int entryLength = IDevice.MinDeviceSectorSize * 2;
         SectorAlignedBufferPool bufferPool;
         readonly byte[] entry = new byte[entryLength];
         SemaphoreSlim semaphore;

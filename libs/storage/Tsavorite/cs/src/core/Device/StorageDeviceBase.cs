@@ -12,7 +12,6 @@ namespace Tsavorite.core
     /// </summary>
     public abstract class StorageDeviceBase : IDevice
     {
-
         /// <summary>
         /// Required alignment (in bytes) of buffers, offsets, and lengths for this device's
         /// direct I/O. Computed once at device construction (typically from a kernel probe of
