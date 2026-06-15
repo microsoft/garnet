@@ -98,6 +98,7 @@ namespace Garnet.server
                     // Protocol requires the key length header to fit entirely in one chunk
                     if (data.Length < sizeof(int))
                     {
+                        logger?.LogError("RangeIndexChunkedDeserializer: split key length header ({Size} bytes)", data.Length);
                         state = State.Error;
                         return false;
                     }
@@ -107,6 +108,7 @@ namespace Garnet.server
 
                     if (keyLen <= 0)
                     {
+                        logger?.LogError("RangeIndexChunkedDeserializer: invalid key length {KeyLen}", keyLen);
                         state = State.Error;
                         return false;
                     }
