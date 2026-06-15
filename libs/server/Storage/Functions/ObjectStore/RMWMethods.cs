@@ -22,6 +22,9 @@ namespace Garnet.server
         {
             var type = input.header.type;
 
+            if (type == GarnetObjectType.Stream)
+                return NeedToCreateStream(ref input);
+
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
                 return GarnetObject.NeedToCreate(input.header);
 
@@ -40,6 +43,20 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Whether an RMW on a missing stream key should create the stream. Mirrors
+        /// <see cref="GarnetObject.NeedToCreate"/> but for stream sub-operations (only XADD without
+        /// NOMKSTREAM auto-creates today; other creating ops are added as their commands are wired up).
+        /// </summary>
+        static bool NeedToCreateStream(ref ObjectInput input)
+            => input.header.StreamOp switch
+            {
+                StreamOperation.XADD => ((StreamAddOptions)input.arg1 & StreamAddOptions.NoMkStream) == 0,
+                // XGROUP CREATE creates the stream only when MKSTREAM is set (carried in arg1).
+                StreamOperation.XGROUP_CREATE => input.arg1 != 0,
+                _ => false,
+            };
+
         /// <inheritdoc />
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -47,6 +64,13 @@ namespace Garnet.server
 
             var type = input.header.type;
             IGarnetObject value;
+            if (type == GarnetObjectType.Stream)
+            {
+                var stream = StreamObject.CreateForKey(logRecord.Key, functionsState.dbId);
+                _ = stream.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                _ = logRecord.TrySetValueObjectAndPrepareOptionals(stream, in sizeInfo);
+                return true;
+            }
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);

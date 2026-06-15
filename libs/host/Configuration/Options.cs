@@ -644,6 +644,9 @@ namespace Garnet
         [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
         public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
 
+        [Option("stream-log-dir", Required = false, HelpText = "Directory for per-stream Tsavorite logs. When unset, streams are kept in-memory only and lost on restart.")]
+        public string StreamLogDir { get; set; }
+
         [IntRangeValidation(0, int.MaxValue, includeMin: true, isRequired: false)]
         [Option("cluster-replication-reestablishment-timeout")]
         public int ClusterReplicationReestablishmentTimeout { get; set; }
@@ -956,6 +959,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                StreamLogDir = StreamLogDir,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,

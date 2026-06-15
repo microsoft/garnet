@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Garnet.test;
 using NUnit.Framework;
@@ -412,6 +414,94 @@ namespace Tsavorite.test
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             ClassicAssert.AreEqual(entryLength, currentEntry);
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 20)]
+        struct FakeStreamHeader
+        {
+            public long ms;
+            public long seq;
+            public int numPairs;
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ScanAcrossPageBoundaryWithHeaderTest()
+        {
+            // Verifies that Enqueue<THeader> + Scan works correctly across page boundaries
+            // with a NullDevice. This exercises the same code path as Garnet Streams.
+            var nullDevice = new NullDevice();
+            log = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = nullDevice,
+                PageSize = 1L << 22,     // 4MB pages (same as Stream default)
+                MemorySize = 1L << 30,   // 1GB
+                AutoCommit = false,
+            });
+
+            // Simulate Stream entries: FakeStreamHeader (20 bytes) + serialized span (4+14=18 bytes)
+            // Record size: 4 (header) + Align(38) = 4 + 40 = 44 bytes
+            // 100K entries span ~2 pages at 4MB/page
+            byte[] spanData = new byte[14];
+            for (int i = 0; i < spanData.Length; i++)
+                spanData[i] = (byte)(0x41 + (i % 26));
+
+            const int count = 100000;
+            long[] addresses = new long[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                var header = new FakeStreamHeader
+                {
+                    ms = i + 1,
+                    seq = 0,
+                    numPairs = 2
+                };
+                log.Enqueue(header, new ReadOnlySpan<byte>(spanData), out long addr);
+                addresses[i] = addr;
+            }
+
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
+                _ = Thread.Yield();
+
+            long pageSize = 1L << 22;
+            long firstValidPage1 = pageSize + PageHeader.Size;
+
+            // Find the first entry on page 1
+            int firstOnPage1 = -1;
+            for (int i = 0; i < count; i++)
+            {
+                if (addresses[i] >= firstValidPage1)
+                {
+                    firstOnPage1 = i;
+                    break;
+                }
+            }
+            ClassicAssert.IsTrue(firstOnPage1 > 0, "Should have entries on page 1");
+
+            // Verify entries on page 1 start after the page header
+            ClassicAssert.AreEqual(firstValidPage1, addresses[firstOnPage1],
+                "First entry on page 1 should start at offset PageHeader.Size");
+
+            // Scan across the page boundary
+            long scanStart = addresses[firstOnPage1 - 10];
+            long scanEnd = addresses[Math.Min(firstOnPage1 + 10, count - 1)];
+
+            int scannedCount = 0;
+            int expectedHeaderSize = Marshal.SizeOf<FakeStreamHeader>();
+            using (var iter = log.Scan(scanStart, scanEnd + 100, scanUncommitted: true))
+            {
+                while (iter.GetNext(out byte[] resultEntry, out int resultLen, out long currentAddr, out long nextAddr))
+                {
+                    ClassicAssert.IsTrue(resultLen >= expectedHeaderSize,
+                        $"Entry at addr {currentAddr} has length {resultLen}, expected >= {expectedHeaderSize}");
+                    scannedCount++;
+                }
+            }
+
+            ClassicAssert.IsTrue(scannedCount >= 20, $"Expected at least 20 entries, got {scannedCount}");
+
+            nullDevice.Dispose();
         }
     }
 }

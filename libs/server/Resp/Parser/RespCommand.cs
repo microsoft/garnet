@@ -115,7 +115,7 @@ namespace Garnet.server
         ZEXPIRETIME,
         ZPEXPIRETIME,
         ZSCAN,
-        ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+        ZSCORE,
         ZUNION,
 
         // Read-only RangeIndex commands
@@ -125,6 +125,16 @@ namespace Garnet.server
         RIMETRICS,
         RIRANGE,
         RISCAN,
+
+        // Read-only stream commands
+        XLEN,
+        XRANGE,
+        XREVRANGE,
+        XPENDING,
+        XREAD,
+        XINFO_CONSUMERS,
+        XINFO_GROUPS,
+        XINFO_STREAM, // Note: Last read command should immediately precede FirstWriteCommand
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -222,6 +232,18 @@ namespace Garnet.server
         VADD,
         VREM,
         VSETATTR,
+        XADD,
+        XDEL,
+        XTRIM,
+        XACK,
+        XCLAIM,
+        XAUTOCLAIM,
+        XREADGROUP,
+        XGROUP_CREATE,
+        XGROUP_CREATECONSUMER,
+        XGROUP_DELCONSUMER,
+        XGROUP_DESTROY,
+        XGROUP_SETID,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -364,6 +386,10 @@ namespace Garnet.server
         SLOWLOG_LEN,
         SLOWLOG_GET,
         SLOWLOG_RESET,
+
+        // Stream container commands (dispatch to subcommands; classified as neither read nor write)
+        XGROUP,
+        XINFO,
 
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
@@ -1057,6 +1083,25 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXADD\r\n"u8))
+                                        {
+                                            return RespCommand.XADD;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXLEN\r\n"u8))
+                                        {
+                                            return RespCommand.XLEN;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXDEL\r\n"u8))
+                                        {
+                                            return RespCommand.XDEL;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXACK\r\n"u8))
+                                        {
+                                            return RespCommand.XACK;
+                                        }
+                                        break;
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {
@@ -1252,6 +1297,20 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
                                             return RespCommand.WATCH;
+                                        }
+                                        break;
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXTRIM\r\n"u8))
+                                        {
+                                            return RespCommand.XTRIM;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXREAD\r\n"u8))
+                                        {
+                                            return RespCommand.XREAD;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXINFO\r\n"u8))
+                                        {
+                                            return RespCommand.XINFO;
                                         }
                                         break;
 
@@ -1457,6 +1516,21 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XRANGE\r\n"u8))
+                                        {
+                                            return RespCommand.XRANGE;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XGROUP\r\n"u8))
+                                        {
+                                            return RespCommand.XGROUP;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XCLAIM\r\n"u8))
+                                        {
+                                            return RespCommand.XCLAIM;
+                                        }
+                                        break;
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZCOUNT\r\n"u8))
                                         {
@@ -1646,6 +1720,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.VSETATTR;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XPENDING"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.XPENDING;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1687,6 +1765,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("VISMEMBE"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("ER\r\n"u8))
                                 {
                                     return RespCommand.VISMEMBER;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XREVRANG"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("GE\r\n"u8))
+                                {
+                                    return RespCommand.XREVRANGE;
                                 }
                                 break;
                             case 10:
@@ -1765,6 +1847,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZPEX"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PIREAT\r\n"u8))
                                 {
                                     return RespCommand.ZPEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nXAUT"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("OCLAIM\r\n"u8))
+                                {
+                                    return RespCommand.XAUTOCLAIM;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nXREA"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("DGROUP\r\n"u8))
+                                {
+                                    return RespCommand.XREADGROUP;
                                 }
                                 break;
                             case 11:

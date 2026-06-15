@@ -85,10 +85,12 @@ namespace Garnet.server
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key);
-
-                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
-                if (status == GarnetStatus.OK)
+                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append.
+                // Streams are now first-class objects in the unified store, so a stream key is removed by the
+                // store DELETE like any other object; its per-stream log/device and on-disk directory are
+                // cleaned up by GarnetRecordTriggers.OnDispose (reason = Deleted).
+                bool storeHit = storageApi.DELETE(key) == GarnetStatus.OK;
+                if (storeHit)
                     keysDeleted++;
             }
 

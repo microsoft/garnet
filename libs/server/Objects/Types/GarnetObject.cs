@@ -23,6 +23,10 @@ namespace Garnet.server
                 GarnetObjectType.List => new ListObject(),
                 GarnetObjectType.Hash => new HashObject(),
                 GarnetObjectType.Set => new SetObject(),
+                // Stream objects carry per-stream config (log directory, page/memory size) and are
+                // created through the RMW initial-update path (StreamObject.CreateForKey), not the
+                // generic initial-value factory.
+                GarnetObjectType.Stream => throw new Exception("Stream objects must be created via the RMW initial-update path"),
                 _ => throw new Exception("Unsupported data type"),
             };
         }

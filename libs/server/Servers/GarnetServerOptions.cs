@@ -595,6 +595,24 @@ namespace Garnet.server
             Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
 
         /// <summary>
+        /// Page size for BTree index for STREAM
+        /// </summary>
+        public string StreamPageSize = "4m";
+
+        /// <summary>
+        /// Memory for STREAM
+        /// </summary>
+        public string StreamMemorySize = "1g";
+
+        /// <summary>
+        /// Directory under which per-stream Tsavorite logs are stored. When null/empty, all
+        /// streams remain in-memory only (no durability across restarts). Set to a writable
+        /// directory to enable durability — SAVE will commit each stream's log, and on startup
+        /// each subdirectory is replayed to rebuild the BTree index.
+        /// </summary>
+        public string StreamLogDir = null;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -813,6 +831,41 @@ namespace Garnet.server
             }
 
             return kvSettings;
+        }
+
+        /// <summary>
+        /// Get stream page size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamPageSizeBytes()
+        {
+            long size = ParseSize(StreamPageSize, out int _);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
+        }
+
+        /// <summary>
+        /// Get stream memory size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamMemorySizeBytes()
+        {
+            long size = ParseSize(StreamMemorySize, out int _);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
+        }
+
+        /// <summary>
+        /// Resolved root directory for per-stream logs. Returns null when persistence is disabled
+        /// (i.e. <see cref="StreamLogDir"/> is null/empty).
+        /// </summary>
+        public string StreamLogDirectory()
+        {
+            return string.IsNullOrEmpty(StreamLogDir) ? null : StreamLogDir;
         }
 
         /// <summary>

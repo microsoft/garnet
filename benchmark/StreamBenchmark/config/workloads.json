@@ -1,0 +1,98 @@
+{
+  "_comment": "Declarative workload matrix for the Garnet Streams benchmark. Consumed by scripts/run-suite.sh. See README.md sections 4-5 for semantics. memtier placeholders: __key__ (varied by --key-* flags) and __data__ (varied by --data-size).",
+
+  "defaults": {
+    "warmup_seconds": 5,
+    "runtime_seconds": 30,
+    "repetitions": 5,
+    "cv_threshold_pct": 5,
+    "key_prefix": "stream:",
+    "key_minimum": 1,
+    "key_maximum": 1000,
+    "command_key_pattern": "R"
+  },
+
+  "sweeps": {
+    "data_sizes_bytes": [16, 100, 1024],
+    "pipeline_depths": [1, 16, 64, 256],
+    "connections": [1, 2, 4, 8, 16, 32, 64],
+    "preload_entries": [1000000, 10000000]
+  },
+
+  "workloads": [
+    {
+      "id": "W1-ingest",
+      "name": "Ingest (XADD)",
+      "measures": ["throughput", "latency"],
+      "preload": null,
+      "tools": {
+        "memtier": { "command": "XADD __key__ * field __data__" },
+        "resp.benchmark": { "op": "XADD" }
+      },
+      "notes": "Also run a MAXLEN-trimming variant: XADD __key__ MAXLEN ~ 1000000 * field __data__"
+    },
+    {
+      "id": "W2-range",
+      "name": "Range read (XRANGE / XREVRANGE)",
+      "measures": ["throughput", "latency"],
+      "preload": { "op": "XADD", "entries_key": "preload_entries", "data_size_bytes": 100 },
+      "tools": {
+        "memtier": { "command": "XRANGE __key__ - + COUNT 10" },
+        "resp.benchmark": { "op": "XRANGE", "status": "planned-optype" }
+      },
+      "notes": "Sweep COUNT in {1,10,100}. XREVRANGE is a symmetric variant."
+    },
+    {
+      "id": "W3-tail",
+      "name": "Tail read (XREAD)",
+      "measures": ["throughput", "latency"],
+      "preload": { "op": "XADD", "entries_key": "preload_entries", "data_size_bytes": 100 },
+      "tools": {
+        "memtier": { "command": "XREAD COUNT 10 STREAMS __key__ 0" },
+        "resp.benchmark": { "op": "XREAD", "status": "planned-optype" }
+      },
+      "notes": "BLOCK is intentionally omitted (parsed-but-not-implemented in Garnet). Tail-follow with a moving last-id is best done by the group/closed-loop driver."
+    },
+    {
+      "id": "W4-group",
+      "name": "Consumer group (XREADGROUP + XACK)",
+      "measures": ["throughput", "latency"],
+      "preload": { "op": "XADD", "entries_key": "preload_entries", "data_size_bytes": 100, "create_group": true },
+      "tools": {
+        "group-driver": { "status": "planned", "consumers_per_group": [1, 4, 16], "count": [1, 10, 100] }
+      },
+      "notes": "Stateful: ack IDs come from the prior read. Requires the closed-loop driver (README section 9)."
+    },
+    {
+      "id": "W5-mixed",
+      "name": "Mixed (80% XADD / 15% XREADGROUP / 5% XACK)",
+      "measures": ["throughput", "latency"],
+      "preload": { "op": "XADD", "entries": 100000, "data_size_bytes": 100, "create_group": true },
+      "tools": {
+        "group-driver": { "status": "planned", "mix": { "XADD": 80, "XREADGROUP": 15, "XACK": 5 } }
+      },
+      "notes": "Realistic producer+consumer blend."
+    },
+    {
+      "id": "W6-meta",
+      "name": "Metadata (XLEN / XINFO STREAM)",
+      "measures": ["throughput", "latency"],
+      "preload": { "op": "XADD", "entries": 1000, "data_size_bytes": 16 },
+      "tools": {
+        "memtier": { "command": "XLEN __key__" },
+        "resp.benchmark": { "op": "XLEN", "status": "planned-optype" }
+      },
+      "notes": "Cheap-op baseline / protocol-overhead ceiling."
+    },
+    {
+      "id": "W7-trim",
+      "name": "Trim under load (XADD + periodic XTRIM)",
+      "measures": ["throughput"],
+      "preload": null,
+      "tools": {
+        "group-driver": { "status": "planned", "trim_maxlen": 1000000, "trim_every_ops": 10000 }
+      },
+      "notes": "Steady-state ingest with bounded stream length; measures the trim path under continuous append."
+    }
+  ]
+}

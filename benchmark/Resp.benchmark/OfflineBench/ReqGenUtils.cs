@@ -96,6 +96,7 @@ namespace Resp.benchmark
                 case OpType.SCRIPTRETKEY:
                 case OpType.PUBLISH:
                 case OpType.SPUBLISH:
+                case OpType.XADD:
                     if (!WriteKey(ref curr, vend, out keyData))
                         return false;
                     break;
@@ -307,6 +308,11 @@ namespace Resp.benchmark
                     if (!WriteStringBytes(ref curr, vend, valueBuffer))
                         return false;
                     break;
+                case OpType.XADD:
+                    // Auto-generate ID with *
+                    if (!WriteStringBytes(ref curr, vend, System.Text.Encoding.ASCII.GetBytes("*")))
+                        return false;
+                    break;
                 default:
                     break;
             }
@@ -317,6 +323,15 @@ namespace Resp.benchmark
                 case OpType.GEOADD:
                     n = Start + r.Next(DbSize);
                     if (!WriteInteger(n, ref curr, vend))
+                        return false;
+                    break;
+                case OpType.XADD:
+                    // Write field name
+                    if (!WriteStringBytes(ref curr, vend, System.Text.Encoding.ASCII.GetBytes("field")))
+                        return false;
+                    // Write field value
+                    RandomString();
+                    if (!WriteStringBytes(ref curr, vend, valueBuffer))
                         return false;
                     break;
                 default:

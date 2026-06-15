@@ -208,6 +208,7 @@ namespace Garnet.server
         /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "ERR unknown command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BLOCK_NOT_SUPPORTED => "ERR BLOCK is not supported"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_SUPPORTED_RESP2 => "ERR command not supported in RESP2"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER_DISABLED => "ERR This instance has cluster support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LUA_DISABLED => "ERR This instance has Lua scripting support disabled"u8;
@@ -311,6 +312,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS => "ERR checkpoint already in progress"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xadd' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_INVALID_STREAM_ID => "ERR Invalid stream ID specified as stream command argument"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_ID_NOT_GREATER => "ERR The ID specified in XADD is equal or smaller than the target stream top item"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XLEN_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xlen' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XRANGE_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xrange' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XDEL_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xdel' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XTRIM_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xtrim' command"u8;
 
         /// <summary>
         /// Response string templates
@@ -365,6 +373,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> hash => "hash"u8;
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
+        public static ReadOnlySpan<byte> STREAM => "STREAM"u8;
+        public static ReadOnlySpan<byte> stream => "stream"u8;
         public static ReadOnlySpan<byte> rangeindext => "rangeindex"u8;
         public static ReadOnlySpan<byte> none => "none"u8;
 

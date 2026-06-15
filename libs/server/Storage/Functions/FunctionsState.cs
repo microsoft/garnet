@@ -30,11 +30,17 @@ namespace Garnet.server
         public bool StoredProcMode;
         public readonly VectorManager vectorManager;
 
+        /// <summary>
+        /// Id of the database this functions state operates on. Used by per-database value objects
+        /// (e.g. streams) that own out-of-store, on-disk state which must be namespaced per database.
+        /// </summary>
+        public readonly int dbId;
+
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
         public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, VectorManager vectorManager, ILogger logger,
-            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION, int dbId = 0)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
@@ -52,6 +58,7 @@ namespace Garnet.server
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
             this.vectorManager = vectorManager;
+            this.dbId = dbId;
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)

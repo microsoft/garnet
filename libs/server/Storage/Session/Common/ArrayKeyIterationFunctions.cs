@@ -70,6 +70,10 @@ namespace Garnet.server
                 {
                     matchType = typeof(HashObject);
                 }
+                else if (typeObject.SequenceEqual(CmdStrings.STREAM) || typeObject.SequenceEqual(CmdStrings.stream))
+                {
+                    matchType = typeof(StreamObject);
+                }
                 else if (typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt))
                 {
                     matchType = typeof(string);

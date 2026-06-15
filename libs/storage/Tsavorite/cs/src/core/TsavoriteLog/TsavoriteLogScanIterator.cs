@@ -664,7 +664,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Align(int length)
+        internal static int Align(int length)
         {
             return (length + 3) & ~3;
         }
@@ -798,8 +798,8 @@ namespace Tsavorite.core
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
                 {
-                    // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
-                    var nextStart = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
+                    // Zero-ed out bytes could be padding at the end of page, first jump to the first valid address of next page.
+                    var nextStart = allocator.GetFirstValidLogicalAddressOnPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
                         var pageOffset = allocator.GetOffsetOnPage(currentAddress);
@@ -840,7 +840,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetFirstValidLogicalAddressOnPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 
@@ -961,7 +961,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetFirstValidLogicalAddressOnPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 

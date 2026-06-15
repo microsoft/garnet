@@ -1,0 +1,4 @@
+# Benchmark run artifacts are published alongside reports, not committed to the repo.
+*
+!.gitignore
+!.gitkeep

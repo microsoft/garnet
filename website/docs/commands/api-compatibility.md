@@ -353,29 +353,29 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
 |  | [ZUNION](data-structures.md#zunion) | ➕ |  |
 |  | [ZUNIONSTORE](data-structures.md#zunionstore) | ➕ |  |
-| <span id="stream">**STREAM**</span> | XACK | ➖ |  |
-|  | XADD | ➖ |  |
-|  | XAUTOCLAIM | ➖ |  |
-|  | XCLAIM | ➖ |  |
-|  | XDEL | ➖ |  |
-|  | XGROUP CREATE | ➖ |  |
-|  | XGROUP CREATECONSUMER | ➖ |  |
-|  | XGROUP DELCONSUMER | ➖ |  |
-|  | XGROUP DESTROY | ➖ |  |
+| <span id="stream">**STREAM**</span> | [XACK](data-structures.md#xack) | ➕ | Experimental |
+|  | [XADD](data-structures.md#xadd) | ➕ | Experimental. Does not support Capped Streams |
+|  | [XAUTOCLAIM](data-structures.md#xautoclaim) | ➕ | Experimental |
+|  | [XCLAIM](data-structures.md#xclaim) | ➕ | Experimental |
+|  | [XDEL](data-structures.md#xdel) | ➕ | Experimental |
+|  | [XGROUP CREATE](data-structures.md#xgroup) | ➕ | Experimental |
+|  | [XGROUP CREATECONSUMER](data-structures.md#xgroup) | ➕ | Experimental |
+|  | [XGROUP DELCONSUMER](data-structures.md#xgroup) | ➕ | Experimental |
+|  | [XGROUP DESTROY](data-structures.md#xgroup) | ➕ | Experimental |
 |  | XGROUP HELP | ➖ |  |
-|  | XGROUP SETID | ➖ |  |
-|  | XINFO CONSUMERS | ➖ |  |
-|  | XINFO GROUPS | ➖ |  |
+|  | [XGROUP SETID](data-structures.md#xgroup) | ➕ | Experimental |
+|  | [XINFO CONSUMERS](data-structures.md#xinfo) | ➕ | Experimental |
+|  | [XINFO GROUPS](data-structures.md#xinfo) | ➕ | Experimental |
 |  | XINFO HELP | ➖ |  |
-|  | XINFO STREAM | ➖ |  |
-|  | XLEN | ➖ |  |
-|  | XPENDING | ➖ |  |
-|  | XRANGE | ➖ |  |
-|  | XREAD | ➖ |  |
-|  | XREADGROUP | ➖ |  |
-|  | XREVRANGE | ➖ |  |
+|  | [XINFO STREAM](data-structures.md#xinfo) | ➕ | Experimental |
+|  | [XLEN](data-structures.md#xlen) | ➕ | Experimental |
+|  | [XPENDING](data-structures.md#xpending) | ➕ | Experimental |
+|  | [XRANGE](data-structures.md#xrange) | ➕ | Experimental |
+|  | [XREAD](data-structures.md#xread) | ➕ | Experimental. `BLOCK` option not implemented |
+|  | [XREADGROUP](data-structures.md#xreadgroup) | ➕ | Experimental. `BLOCK` option not implemented |
+|  | [XREVRANGE](data-structures.md#xrevrange) | ➕ | Experimental |
 |  | XSETID | ➖ |  |
-|  | XTRIM | ➖ |  |
+|  | [XTRIM](data-structures.md#xtrim) | ➕ | Experimental. Does not support near-exact trimming |
 | <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |

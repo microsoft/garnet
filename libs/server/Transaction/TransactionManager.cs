@@ -452,7 +452,10 @@ namespace Garnet.server
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
 
-            // Acquire transaction version
+            // Acquire transaction version.
+            // Version is associated to the version the state machine runs in. Version is incremented everytime Checkpointing state machine goes from Prepare to in-progress
+            // We acquire the version here to ensure that we have the latest version before acquiring locks.
+            // This call may block if the system is in prepare_grow phase of the index resizing state machine till it moves to In-progress_grow phase.
             txnVersion = stateMachineDriver.AcquireTransactionVersion();
 
             // Acquire lock sessions
@@ -482,7 +485,7 @@ namespace Garnet.server
                 return false;
             }
 
-            // Verify transaction version
+            // verify and possibly update txn version after locks are acquired
             txnVersion = stateMachineDriver.VerifyTransactionVersion(txnVersion);
 
             // Update sessions with transaction version

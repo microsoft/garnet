@@ -281,6 +281,7 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
+
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
             enableScatterGatherGet = storeWrapper.serverOptions.EnableScatterGatherGet;
 
@@ -1016,6 +1017,21 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
+                // Stream Commands
+                RespCommand.XADD => StreamAdd(respProtocolVersion),
+                RespCommand.XLEN => StreamLength(),
+                RespCommand.XDEL => StreamDelete(),
+                RespCommand.XRANGE => StreamRange(respProtocolVersion),
+                RespCommand.XREVRANGE => StreamRange(respProtocolVersion, isReverse: true),
+                RespCommand.XTRIM => StreamTrim(),
+                RespCommand.XGROUP => StreamGroup(respProtocolVersion),
+                RespCommand.XREADGROUP => StreamReadGroup(respProtocolVersion),
+                RespCommand.XACK => StreamAck(respProtocolVersion),
+                RespCommand.XPENDING => StreamPending(respProtocolVersion),
+                RespCommand.XCLAIM => StreamClaim(respProtocolVersion),
+                RespCommand.XAUTOCLAIM => StreamAutoClaim(respProtocolVersion),
+                RespCommand.XINFO => StreamInfoCmd(respProtocolVersion),
+                RespCommand.XREAD => StreamRead(respProtocolVersion),
                 // Vector Commands
                 RespCommand.VADD => NetworkVADD(ref storageApi),
                 RespCommand.VCARD => NetworkVCARD(ref storageApi),

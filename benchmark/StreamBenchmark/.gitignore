@@ -1,0 +1,3 @@
+# Python analysis caches
+__pycache__/
+*.pyc
