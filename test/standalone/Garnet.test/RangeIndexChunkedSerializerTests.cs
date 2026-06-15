@@ -6,6 +6,8 @@ using System.Buffers.Binary;
 using System.IO;
 using System.IO.Hashing;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1435,6 +1437,145 @@ namespace Garnet.test
             ClassicAssert.IsTrue(deserializer.ProcessChunk(payload.AsSpan(sizeof(int))));
             ClassicAssert.IsTrue(deserializer.IsComplete);
             ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
+        }
+
+        #endregion
+
+        #region Reader/serializer parity round-trip
+
+        /// <summary>
+        /// Identifies which chunk-producing path drives a round-trip: the synchronous serializer
+        /// test helper (<see cref="SerializerMoveNext"/>), or the real async production
+        /// <see cref="RangeIndexMigrationReader"/>. Round-trip assertions are shared across both so
+        /// the reader path gets the same coverage as the serializer.
+        /// </summary>
+        public enum ChunkDriver { SerializerHelper, MigrationReader }
+
+        private static byte[] RandomBytes(int length, int seed)
+        {
+            var bytes = new byte[length];
+            new Random(seed).NextBytes(bytes);
+            return bytes;
+        }
+
+        /// <summary>
+        /// Drive a full key + file + stub stream to completion using the chosen
+        /// <paramref name="driver"/>, feeding each produced chunk into a fresh deserializer, then
+        /// assert the key, stub, and file content all round-trip intact. The two drivers share this
+        /// body, so any shape covered here is validated against both the serializer helper and the
+        /// real reader.
+        /// </summary>
+        private async Task AssertRoundTripAsync(ChunkDriver driver, byte[] key, byte[] fileData, int chunkSize)
+        {
+            var stub = CreateStub();
+            var srcPath = Path.Combine(testDir, $"rt-{Guid.NewGuid():N}.bftree");
+            File.WriteAllBytes(srcPath, fileData);
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            var buffer = new byte[chunkSize];
+
+            if (driver == ChunkDriver.SerializerHelper)
+            {
+                using var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+                var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
+                while (!serializer.IsComplete)
+                {
+                    var len = SerializerMoveNext(serializer, buffer, fs);
+                    ClassicAssert.Greater(len, 0, "serializer made no progress");
+                    ClassicAssert.IsTrue(deserializer.ProcessChunk(buffer.AsSpan(0, len).ToArray()));
+                }
+            }
+            else
+            {
+                // The reader owns the FileStream and srcPath (deletes it on Dispose).
+                var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
+                var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+                using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, chunkSize);
+                while (!reader.IsComplete)
+                {
+                    var len = await reader.ReadNextChunkAsync(buffer);
+                    ClassicAssert.Greater(len, 0, "reader made no progress");
+                    ClassicAssert.IsTrue(deserializer.ProcessChunk(buffer.AsSpan(0, len).ToArray()));
+                }
+            }
+
+            ClassicAssert.IsTrue(deserializer.IsComplete);
+            ClassicAssert.IsFalse(deserializer.HasError);
+            ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
+            ClassicAssert.AreEqual(stub, deserializer.Stub.ToArray());
+            ClassicAssert.AreEqual(fileData, File.ReadAllBytes(deserializer.TempPath));
+        }
+
+        /// <summary>Small file + large buffer: the whole stream fits in one chunk.</summary>
+        [Test]
+        public Task RoundTrip_SingleChunk([Values] ChunkDriver driver)
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("mykey"), RandomBytes(1024, 42), RangeIndexManager.DefaultMigrationChunkSize);
+
+        /// <summary>File spanning several default-size chunks.</summary>
+        [Test]
+        public Task RoundTrip_MultiChunk([Values] ChunkDriver driver)
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("largekey"), RandomBytes(RangeIndexManager.DefaultMigrationChunkSize * 3 + 1000, 123), RangeIndexManager.DefaultMigrationChunkSize);
+
+        /// <summary>Key larger than the chunk size — forces the key to span multiple chunks.</summary>
+        [Test]
+        public Task RoundTrip_KeyLargerThanChunk([Values] ChunkDriver driver)
+            => AssertRoundTripAsync(driver, RandomBytes(200, 66), RandomBytes(100, 55), 64);
+
+        /// <summary>Small chunk size with a multi-chunk file (chunk &gt;= trailer size).</summary>
+        [Test]
+        public Task RoundTrip_SmallChunk([Values] ChunkDriver driver)
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("k"), RandomBytes(500, 77), 64);
+
+        /// <summary>File data sized so the first chunk is exactly filled by header + file bytes.</summary>
+        [Test]
+        public Task RoundTrip_FileExactlyFillsFirstChunk([Values] ChunkDriver driver)
+            // chunk 64; first-chunk overhead = keyHdr(4) + key(1) + fileHdr(8) = 13 → file 51 fills the chunk exactly.
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("k"), RandomBytes(51, 88), 64);
+
+        /// <summary>
+        /// Reader-specific: when the declared file size exceeds the actual file, the reader hits a
+        /// zero-byte read mid-stream and throws (it does not silently produce a short stream).
+        /// </summary>
+        [Test]
+        public void Reader_TruncatedFileThrows()
+        {
+            var srcPath = Path.Combine(testDir, "reader-trunc.bftree");
+            File.WriteAllBytes(srcPath, new byte[10]);
+
+            // Claim 1000 file bytes but only 10 exist on disk.
+            var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 1000);
+            var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 256);
+
+            var buffer = new byte[256];
+            Assert.ThrowsAsync<Exception>(async () =>
+            {
+                while (!reader.IsComplete)
+                    _ = await reader.ReadNextChunkAsync(buffer);
+            });
+        }
+
+        /// <summary>
+        /// Reader-specific: an already-cancelled token aborts the file read with
+        /// <see cref="OperationCanceledException"/>.
+        /// </summary>
+        [Test]
+        public void Reader_CancellationThrows()
+        {
+            var srcPath = Path.Combine(testDir, "reader-cancel.bftree");
+            File.WriteAllBytes(srcPath, RandomBytes(4096, 9));
+
+            var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 4096);
+            var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 64);
+
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            var buffer = new byte[64];
+            Assert.CatchAsync<OperationCanceledException>(async () => _ = await reader.ReadNextChunkAsync(buffer, cts.Token));
         }
 
         #endregion
