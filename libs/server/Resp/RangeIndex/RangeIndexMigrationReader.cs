@@ -96,6 +96,8 @@ namespace Garnet.server
 
                 var written = serializer.MoveNext(destination.Span);
 
+                // No progress: the remaining destination is too small to fit the next framing
+                // element (header/trailer). Stop and let the caller send what we have so far.
                 if (written == 0)
                     break;
 
