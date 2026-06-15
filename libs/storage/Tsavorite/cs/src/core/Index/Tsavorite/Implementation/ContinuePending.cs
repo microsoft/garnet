@@ -87,6 +87,13 @@ namespace Tsavorite.core
                                 // to hold the slot (the current op is being drained). Rent a fresh op and MOVE the populated
                                 // slot to it so the heap-owning fields (requestKey, input, diskLogRecord) transfer without
                                 // re-allocation. Clear this slot so the drain does not double-dispose.
+                                //
+                                // We set newOp.slot but NOT newOp.basePendingContext here: the slot must be in place BEFORE
+                                // the InternalRead call so CreatePendingReadContext finds a populated slot (and the call can
+                                // read newOp.slot.input/etc. by ref). The basePendingContext, by contrast, is snapshotted by
+                                // HandleOperationStatus's RECORD_ON_DISK branch AFTER the Internal call has mutated
+                                // pendingContext (logicalAddress, initialEntryAddress, initialLatestLogicalAddress).
+                                // Setting it here would just be overwritten with a stale value.
                                 var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
                                 newOp.slot = slot;
                                 slot = default;
@@ -289,6 +296,12 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare. If the re-issued InternalRMW goes pending again, we move the slot to a fresh op so the heap-owning fields
             // transfer cleanly (the current op is mid-drain; clearing this slot avoids double-dispose).
+            //
+            // We set newOp.slot but NOT newOp.basePendingContext here: the slot must be in place BEFORE the InternalRMW call
+            // so CreatePendingRMWContext finds a populated slot (and the call can read newOp.slot.input/etc. by ref). The
+            // basePendingContext, by contrast, is snapshotted by HandleOperationStatus's RECORD_ON_DISK branch AFTER the
+            // Internal call has mutated pendingContext (logicalAddress, initialEntryAddress, initialLatestLogicalAddress).
+            // Setting it here would just be overwritten with a stale value.
             var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
             newOp.slot = slot;
             slot = default;
@@ -364,6 +377,12 @@ namespace Tsavorite.core
                     if (needIO)
                     {
                         // We need a fresh op to carry the slot for the next IO (this op is mid-drain). Move the slot.
+                        //
+                        // We set newOp.slot but NOT newOp.basePendingContext here: the slot must be in place BEFORE the
+                        // PrepareIOForConditionalOperation call so it finds a populated slot (and reads its requestKey /
+                        // diskLogRecord). The basePendingContext, by contrast, is snapshotted by HandleOperationStatus's
+                        // RECORD_ON_DISK branch AFTER the prepare call has mutated pendingContext (originalAddress,
+                        // initialLatestLogicalAddress, logicalAddress). Setting it here would just be overwritten with a stale value.
                         var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
                         newOp.slot = slot;
                         slot = default;
