@@ -140,7 +140,7 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (disposeGuard.TryDispose() == DisposeResult.CleanupNow)
+            if (disposeGuard.TryDispose() == CooperativeDisposeGuard.DisposeResult.CleanupNow)
             {
                 receiveActivity?.OnSessionDisposed();
                 Reset();

@@ -7,22 +7,6 @@ using System.Threading;
 namespace Garnet.common
 {
     /// <summary>
-    /// Result of calling <see cref="CooperativeDisposeGuard.TryDispose"/>.
-    /// </summary>
-    public enum DisposeResult
-    {
-        /// <summary>The guard was already disposed by a prior call.</summary>
-        AlreadyDisposed,
-
-        /// <summary>Disposal was marked, but a worker is in-flight. Cleanup is deferred
-        /// to the worker's exit path via <see cref="CooperativeDisposeGuard.ExitAndCheckShouldCleanup"/>.</summary>
-        DeferredToWorker,
-
-        /// <summary>Disposal was marked and no worker is active. The caller should perform cleanup now.</summary>
-        CleanupNow,
-    }
-
-    /// <summary>
     /// A lock-free, non-blocking dispose guard for protecting a critical section against
     /// concurrent disposal without blocking the disposing thread.
     /// </summary>
@@ -71,6 +55,22 @@ namespace Garnet.common
     /// </remarks>
     public struct CooperativeDisposeGuard
     {
+        /// <summary>
+        /// Result of calling <see cref="TryDispose"/>.
+        /// </summary>
+        public enum DisposeResult
+        {
+            /// <summary>The guard was already disposed by a prior call.</summary>
+            AlreadyDisposed,
+
+            /// <summary>Disposal was marked, but a worker is in-flight. Cleanup is deferred
+            /// to the worker's exit path via <see cref="ExitAndCheckShouldCleanup"/>.</summary>
+            DeferredToWorker,
+
+            /// <summary>Disposal was marked and no worker is active. The caller should perform cleanup now.</summary>
+            CleanupNow,
+        }
+
         private const int FLAG_ACTIVE = 1 << 0;
         private const int FLAG_DISPOSED = 1 << 1;
 
