@@ -280,7 +280,15 @@ namespace Garnet.server
         {
             if (state == State.Disposed) return;
             state = State.Disposed;
-            CloseStream();
+
+            try
+            {
+                // The temp file is deleted below regardless, so a flush failure during disposal
+                // is irrelevant — and Dispose must never throw. CloseStream's finally still
+                // disposes the underlying stream even if Flush throws.
+                CloseStream();
+            }
+            catch { }
 
             try
             {
