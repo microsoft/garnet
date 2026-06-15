@@ -191,6 +191,8 @@ namespace Garnet.server
                         return false;
                     }
 
+                    return true;
+
                 case State.WaitingForTrailer:
                     // Empty chunk is a no-op — not an error, just no data to process yet
                     if (data.Length == 0)
