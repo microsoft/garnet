@@ -23,8 +23,8 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// This creates a 3-d array of block vectors. This can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where
-    /// the user-visible allocations (blocks) are created.
+    /// This creates a 3-d array of block vectors. This can be envisioned as a book and its pages (these are infrastructure dimensions),
+    /// and each page returns uniformly-sized blocks.
     /// <list type="bullet">
     ///     <item>The first dimension is the "book", which is a collection of "pages".</item>
     ///     <item>The second dimension is the "pages", each a fixed-size collection of blocks.</item>
@@ -55,6 +55,11 @@ namespace Tsavorite.core
 
         public bool IsInitialized => book is not null;
 
+#if DEBUG
+        /// <summary>Number of <see cref="Allocate"/> calls currently in flight on any thread. DEBUG-only because incrementing it on every
+        /// call costs a contended atomic. Used by <see cref="Clear(int)"/> to assert quiescence.</summary>
+        internal int inFlightAllocCount;
+#endif
         /// <summary>The number of ids that have been claimed (i.e. the next id that would be returned by <see cref="Allocate"/>).</summary>
         /// <remarks>Snapshots <see cref="tail"/> via <see cref="Volatile"/>.Read so cross-thread reads do not tear on 32-bit. Clamps the
         /// offset to <see cref="MultiLevelPageArray.PageSize"/> to avoid over-counting during the brief cold window where an owner has
@@ -77,12 +82,25 @@ namespace Tsavorite.core
         /// page-turn race"). May throw if <see cref="AddPage"/> throws (typically OOM); on throw <see cref="tail"/> is rewound atomically so a
         /// subsequent <see cref="Allocate"/> can retry without losing or duplicating any slot ids.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Allocate()
         {
-            int id;
-            while (!TryAllocate(out id))
-                _ = Thread.Yield();
-            return id;
+#if DEBUG
+            _ = Interlocked.Increment(ref inFlightAllocCount);
+            try
+            {
+#endif
+                int id;
+                while (!TryAllocate(out id))
+                    _ = Thread.Yield();
+                return id;
+#if DEBUG
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref inFlightAllocCount);
+            }
+#endif
         }
 
         /// <summary>
@@ -93,19 +111,23 @@ namespace Tsavorite.core
         /// were a "loser" of the page-turn race -- our Add bumped the Offset past <c>PageSize + 1</c> and will be wiped by the owner's
         /// publish-Exchange. Throws on <see cref="AddPage"/> failure (after rewinding <see cref="tail"/>).
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocate(out int id)
         {
-            // First-call cold path: lazily initialize 'book' and 'tail'. After the first successful TryAllocate on this instance (until Clear()
-            // resets us), tail.PageAndOffset stays non-zero and we skip this entirely.
-            if (tail.PageAndOffset == 0)
-                EnsureInitialized();
-
-            // Value-type snapshot. On 64-bit a single load of the long is atomic; on 32-bit it may tear, in which case a "weird" Offset will
-            // simply cause us to fail the cold-window check or land in the loser branch and the caller will retry. We do not need Volatile
-            // here because the Interlocked.Add below is the synchronization point that establishes our claim. 'default' initialization is
-            // required so the compiler treats the overlapping Offset/Page fields as definitely assigned alongside PageAndOffset.
+            // Single snapshot for both the uninitialized-sentinel check and the cold-window check. After EnsureInitialized() runs we re-snapshot
+            // because tail has been published with the live initial value (Page=-1, Offset=PageSize). In the steady state (the common case) this
+            // collapses what was previously two reads of `tail.PageAndOffset` into one. On 64-bit a single load of the long is atomic; on 32-bit
+            // it may tear, in which case a "weird" Offset will simply cause us to fail the cold-window check or land in the loser branch and the
+            // caller will retry. We do not need Volatile here because the Interlocked.Add below is the synchronization point that establishes
+            // our claim. 'default' initialization is required so the compiler treats the overlapping Offset/Page fields as definitely assigned
+            // alongside PageAndOffset.
             PageOffset local = default;
             local.PageAndOffset = tail.PageAndOffset;
+            if (local.PageAndOffset == 0)
+            {
+                EnsureInitialized();
+                local.PageAndOffset = tail.PageAndOffset;
+            }
 
             // Cold window: an owner is in CompleteAsPageOwner with the next page mid-allocation. If we Add now we just burn an Offset slot
             // that will be wiped by the owner's publish-Exchange. Bail without incrementing so we don't add to the loser pile-up.
@@ -217,27 +239,37 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AddPage(int newPageIdx)
         {
+            // Snapshot 'book' once: we are the unique natural owner of newPageIdx, so no other thread will mutate book/book[newPageIdx] for us,
+            // but a previous-generation grow may still be propagating to this CPU; Volatile.Read provides acquire so we observe the latest
+            // book reference and any page contents released with it.
+            var localBook = Volatile.Read(ref book);
+
             // Single-owner invariant: only the natural owner of the page-turn is here, and natural owners are serialized by the page-turn
             // discipline (a thread can only become the owner of newPageIdx after the previous page's owner has published). So newPageIdx can
             // never exceed book.Length by more than 1.
-            Debug.Assert(newPageIdx <= book.Length, $"newPageIdx {newPageIdx} cannot exceed book.Length {book.Length} (single-owner discipline broken?)");
+            Debug.Assert(newPageIdx <= localBook.Length, $"newPageIdx {newPageIdx} cannot exceed book.Length {localBook.Length} (single-owner discipline broken?)");
 
             // Test hook: in DEBUG builds, optionally throw before any state mutation so test code can deterministically exercise the rewind
             // path in CompleteAsPageOwner. Stripped from Release builds via [Conditional("DEBUG")].
             MaybeInjectAddPageFailure(newPageIdx);
 
             // Idempotent on Clear-retained pages: if the page is already populated (because the previous generation's Clear kept it), reuse it.
-            if (newPageIdx < book.Length && book[newPageIdx] is not null)
+            if (newPageIdx < localBook.Length && Volatile.Read(ref localBook[newPageIdx]) is not null)
                 return;
 
-            if (newPageIdx == book.Length)
+            if (newPageIdx == localBook.Length)
             {
-                var newBook = new TElement[book.Length * 2][];
-                Array.Copy(book, newBook, book.Length);
-                book = newBook;
+                var newBook = new TElement[localBook.Length * 2][];
+                Array.Copy(localBook, newBook, localBook.Length);
+                // Volatile.Write provides release semantics so any reader that observes the new book reference also observes the Array.Copy
+                // of the page references into newBook. On ARM, a plain assignment would not provide that ordering.
+                Volatile.Write(ref book, newBook);
+                localBook = newBook;
             }
 
-            book[newPageIdx] = new TElement[MultiLevelPageArray.PageSize];
+            // Volatile.Write so readers that observe the non-null page slot (whether through this MLPA's book or via an id returned from
+            // Allocate) also observe the array allocation's writes (length, header, etc.) on weak memory models.
+            Volatile.Write(ref localBook[newPageIdx], new TElement[MultiLevelPageArray.PageSize]);
         }
 
         /// <summary>Test-only hook for forcing <see cref="AddPage"/> failure. Stripped from Release builds via <see cref="ConditionalAttribute"/>.</summary>
@@ -273,12 +305,19 @@ namespace Tsavorite.core
             // a misleading assertion message such as "index 1 must be less than Count 7" when at the moment of the failing check Count was <= 1.)
             var countSnapshot = Count;
             Debug.Assert(index < countSnapshot, $"Get(): index {index} must be less than Count {countSnapshot}");
-            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the page indexing remains unchanged and the page remains valid).
+
+            // Volatile.Read on book (acquire) so an `index` handed to us via a non-synchronized channel from the allocating thread still sees the
+            // book reference (post-grow if applicable) that was current when `index` was assigned. On ARM a plain read could observe an older,
+            // shorter book and IndexOutOfRange. Plain reads are sufficient on x86/x64 TSO but Volatile is free there.
+            var localBook = Volatile.Read(ref book);
 
             var pageIndex = index >> MultiLevelPageArray.PageSizeBits;
             var blockIndex = index & MultiLevelPageArray.BlockIndexMask;
-            Debug.Assert(localBook[pageIndex] is not null, $"index {index} out of range of pages {pageIndex}");
-            return localBook[pageIndex][blockIndex];
+            // Volatile.Read on the page slot for the same reason: ensures the page array reference and its contents (length, header) are
+            // observed in a state consistent with the writer's Volatile.Write in AddPage.
+            var localPage = Volatile.Read(ref localBook[pageIndex]);
+            Debug.Assert(localPage is not null, $"index {index} out of range of pages {pageIndex}");
+            return localPage[blockIndex];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -287,17 +326,38 @@ namespace Tsavorite.core
             // Cache Count in a local; see comment in Get for rationale.
             var countSnapshot = Count;
             Debug.Assert(index < countSnapshot, $"Set(): index {index} must be less than Count {countSnapshot}");
-            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the page indexing remains unchanged and the page remains valid).
+
+            // See Get() for the rationale on Volatile.Read.
+            var localBook = Volatile.Read(ref book);
 
             var pageIndex = index >> MultiLevelPageArray.PageSizeBits;
             var blockIndex = index & MultiLevelPageArray.BlockIndexMask;
-            Debug.Assert(localBook[pageIndex] is not null, $"index {index} out of range of pages {pageIndex}");
-            localBook[pageIndex][blockIndex] = element;
+            var localPage = Volatile.Read(ref localBook[pageIndex]);
+            Debug.Assert(localPage is not null, $"index {index} out of range of pages {pageIndex}");
+            localPage[blockIndex] = element;
         }
 
+        /// <summary>
+        /// Reset all per-page contents to <see langword="default"/>, drop pages past <paramref name="retainedPageCount"/>, and reset
+        /// <see cref="tail"/> so the next <see cref="Allocate"/> reissues ids from 0.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Quiescence required.</b> This method is <b>not</b> safe to call while any other thread is in <see cref="Allocate"/>,
+        /// <see cref="TryAllocate(out int)"/>, <see cref="Get(int)"/>, or <see cref="Set(int, TElement)"/>. The caller is responsible for
+        /// establishing quiescence (e.g. via an epoch barrier, a join on all writer threads, or a higher-level state machine) before invoking.
+        /// Behavior under a quiescence violation is undefined: concurrent allocators can observe a half-cleared book, reissue ids that another
+        /// thread still considers valid, or NullReferenceException through a slot whose page has just been nulled.</para>
+        /// <para>In DEBUG builds, an <see cref="Debug.Assert(bool, string)"/> verifies that <c>inFlightAllocCount</c> is 0 at entry as a
+        /// best-effort guard. The counter only tracks <see cref="Allocate"/>, not <see cref="Get(int)"/>/<see cref="Set(int, TElement)"/>;
+        /// the caller is still responsible for ensuring those are also quiescent.</para>
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear(int retainedPageCount = 1 << MultiLevelPageArray.PrimaryClearRetainedPageSizeBits)
         {
+#if DEBUG
+            Debug.Assert(Volatile.Read(ref inFlightAllocCount) == 0,
+                $"Clear() requires quiescence: {Volatile.Read(ref inFlightAllocCount)} Allocate call(s) currently in flight");
+#endif
             if (!IsInitialized)
                 return;
             var count = Count;
@@ -316,9 +376,19 @@ namespace Tsavorite.core
             tail.PageAndOffset = 0;
         }
 
+        /// <summary>
+        /// Reset all per-page contents by calling <paramref name="action"/> on each populated block then zeroing the slot, drop pages past
+        /// <paramref name="retainedPageCount"/>, and reset <see cref="tail"/> so the next <see cref="Allocate"/> reissues ids from 0.
+        /// </summary>
+        /// <remarks>See <see cref="Clear(int)"/> for the quiescence contract; the same requirement applies here. <paramref name="action"/>
+        /// must tolerate <see langword="default"/>/<see langword="null"/> inputs since not every claimed slot may have been Set.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear(Action<TElement> action, int retainedPageCount = 1 << MultiLevelPageArray.PrimaryClearRetainedPageSizeBits)
         {
+#if DEBUG
+            Debug.Assert(Volatile.Read(ref inFlightAllocCount) == 0,
+                $"Clear(Action) requires quiescence: {Volatile.Read(ref inFlightAllocCount)} Allocate call(s) currently in flight");
+#endif
             if (!IsInitialized)
                 return;
             var count = Count;
