@@ -284,17 +284,10 @@ namespace Garnet.cluster
             /// </summary>
             public void DeleteRangeIndex(PinnedSpanByte key)
             {
-                // COPY option is not yet supported for RangeIndex keys. Supporting it would require
-                // an atomic swap or transactional approach for replacing BfTree data files when the
-                // stub already exists at the destination, with proper recovery semantics in case the
-                // process crashes mid-swap. For now, we always delete the source key.
                 if (session._copyOption)
-                {
-                    session.logger?.LogWarning("COPY option ignored for RangeIndex key {key}", Encoding.UTF8.GetString(key));
-                }
+                    return;
 
                 var delRes = localServerSession.BasicGarnetApi.DELETE(key);
-
                 session.logger?.LogDebug("Deleted RangeIndex key {key} after migration: {delRes}", Encoding.UTF8.GetString(key), delRes);
             }
         }
