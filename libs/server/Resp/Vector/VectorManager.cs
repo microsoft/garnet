@@ -471,7 +471,7 @@ namespace Garnet.server
         /// 
         /// This happens when a record is evicted to disk.
         /// 
-        /// There's subtlty here because the DiskANN index might be in use (on the current or other threads)
+        /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
         /// and we can't allow the index to be recreated until any requested drops are processed.
         /// </summary>
         /// <param name="key"></param>

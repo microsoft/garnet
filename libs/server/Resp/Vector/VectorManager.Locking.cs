@@ -136,7 +136,7 @@ namespace Garnet.server
 
                     if (needsRecreate)
                     {
-                        // If we need to recreate the index, BUT we haven't finished drop from the last itme
+                        // If we need to recreate the index, BUT we haven't finished drop from the last time
                         // we need to spin (without holding a lock) until that happens
                         //
                         // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
@@ -337,7 +337,7 @@ namespace Garnet.server
                         nint newlyAllocatedIndex;
                         if (needsRecreate)
                         {
-                            // If we need to recreate the index, BUT we haven't finished drop from the last itme
+                            // If we need to recreate the index, BUT we haven't finished drop from the last time
                             // we need to spin (without holding a lock) until that happens
                             //
                             // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
