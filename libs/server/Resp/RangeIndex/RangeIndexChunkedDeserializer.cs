@@ -164,6 +164,7 @@ namespace Garnet.server
                         state = State.Error;
                         return false;
                     }
+
                     goto case State.ReceivingFileData;
 
                 case State.ReceivingFileData:
@@ -176,12 +177,12 @@ namespace Garnet.server
                         if (fileBytesRemaining > 0)
                             WriteFileBytes(ref data);
 
-                        if (fileBytesRemaining > 0)
-                            return true;
-
-                        CloseStream();
-                        state = State.WaitingForTrailer;
-                        goto case State.WaitingForTrailer;
+                        if (fileBytesRemaining == 0)
+                        {
+                            CloseStream();
+                            state = State.WaitingForTrailer;
+                            goto case State.WaitingForTrailer;
+                        }
                     }
                     catch (Exception ex)
                     {
