@@ -148,6 +148,7 @@ namespace Garnet.server
 
                     if (fileBytesRemaining <= 0)
                     {
+                        logger?.LogError("RangeIndexChunkedDeserializer: invalid file size {FileSize}", fileBytesRemaining);
                         state = State.Error;
                         return false;
                     }
