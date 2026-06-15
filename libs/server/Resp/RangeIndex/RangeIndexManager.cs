@@ -225,10 +225,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "RangeIndexManager: failed to create riLogRoot {Path}", riLogRoot);
-                throw new IOException(
-                    $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
-                    "Check that the parent directory exists and the process has write permissions.",
-                    ex);
+                throw new IOException($"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. Check that the parent directory exists and the process has write permissions.", ex);
             }
 
             // Clean up partial migration artifacts from prior crashes, then ensure directory exists
@@ -242,10 +239,7 @@ namespace Garnet.server
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "RangeIndexManager: failed to clean up migration temp directory {Path}", migrationTempDir);
-                    throw new Exception(
-                        $"RangeIndexManager: failed to clean up migration temp directory '{migrationTempDir}'. " +
-                        "Check for locked files or insufficient permissions.",
-                        ex);
+                    throw new Exception($"RangeIndexManager: failed to clean up migration temp directory '{migrationTempDir}'. Check for locked files or insufficient permissions.", ex);
                 }
             }
 
