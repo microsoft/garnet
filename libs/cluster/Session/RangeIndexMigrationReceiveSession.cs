@@ -105,7 +105,7 @@ namespace Garnet.cluster
                 var publishResult = rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext);
                 receiveActivity.OnPublishResult(publishResult);
 
-                if (publishResult == PublishMigratedIndexResult.Failed)
+                if (publishResult == RangeIndexManager.PublishMigratedIndexResult.Failed)
                 {
                     receiveActivity.OnError("PublishMigratedIndex failed");
                     Reset();

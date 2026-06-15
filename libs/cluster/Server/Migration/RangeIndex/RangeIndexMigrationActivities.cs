@@ -106,7 +106,7 @@ namespace Garnet.cluster
             private long totalBytesReceived;
             private string error;
             private bool sessionDisposed;
-            private PublishMigratedIndexResult? publishResult;
+            private RangeIndexManager.PublishMigratedIndexResult? publishResult;
 
             private ReceiveActivity() => timestampFirstChunk = Stopwatch.GetTimestamp();
 
@@ -122,7 +122,7 @@ namespace Garnet.cluster
 
             internal void OnPublishing() => timestampPublish = Stopwatch.GetTimestamp();
 
-            internal void OnPublishResult(PublishMigratedIndexResult result) => publishResult = result;
+            internal void OnPublishResult(RangeIndexManager.PublishMigratedIndexResult result) => publishResult = result;
 
             internal void OnError(string error) => this.error = error;
 

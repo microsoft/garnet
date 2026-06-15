@@ -20,6 +20,26 @@ namespace Garnet.server
     public sealed partial class RangeIndexManager
     {
         /// <summary>
+        /// Outcome of <see cref="PublishMigratedIndex"/> for a single migrated RI key.
+        /// </summary>
+        public enum PublishMigratedIndexResult
+        {
+            /// <summary>The migrated RangeIndex was published successfully.</summary>
+            Success,
+
+            /// <summary>A RangeIndex already existed at this key and MIGRATE REPLACE was not specified;
+            /// no destructive action was taken.</summary>
+            SkippedAlreadyExists,
+
+            /// <summary>A RangeIndex already existed at this key and MIGRATE REPLACE was specified,
+            /// but RI key replacement is not yet supported; no destructive action was taken.</summary>
+            SkippedReplaceNotSupported,
+
+            /// <summary>Publish failed due to an exception or store-level error (logged).</summary>
+            Failed,
+        }
+
+        /// <summary>
         /// Default chunk size for streaming BfTree snapshot data during migration.
         /// </summary>
         public const int DefaultMigrationChunkSize = 256 * 1024;
