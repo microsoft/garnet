@@ -1579,30 +1579,49 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Reader-specific: a chunk size below the trailer size is rejected by the constructor,
-        /// since such a stream could never frame its trailer and would never complete.
+        /// Reader-specific: a non-positive chunk size (internal file-read buffer) is rejected
+        /// by the constructor.
         /// </summary>
         [Test]
-        public void Reader_ChunkSizeBelowMinimumThrows()
+        public void Reader_NonPositiveChunkSizeThrows()
         {
-            var srcPath = Path.Combine(testDir, "reader-minchunk.bftree");
+            var srcPath = Path.Combine(testDir, "reader-chunksize.bftree");
             File.WriteAllBytes(srcPath, new byte[8]);
 
             using var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 8);
 
-            ClassicAssert.Greater(RangeIndexMigrationReader.MinChunkSize, 0);
             Assert.Throws<ArgumentOutOfRangeException>(() =>
-                new RangeIndexMigrationReader(serializer, fs, srcPath, RangeIndexMigrationReader.MinChunkSize - 1));
+                new RangeIndexMigrationReader(serializer, fs, srcPath, 0));
         }
 
         /// <summary>
-        /// Reader-specific: a chunk size of exactly <see cref="RangeIndexMigrationReader.MinChunkSize"/>
+        /// Reader-specific: the forward-progress minimum applies to the <c>destination</c> buffer
+        /// (where the trailer is framed). A destination smaller than the trailer size is rejected.
+        /// </summary>
+        [Test]
+        public void Reader_DestinationBelowMinimumThrows()
+        {
+            var srcPath = Path.Combine(testDir, "reader-destmin.bftree");
+            File.WriteAllBytes(srcPath, RandomBytes(64, 7));
+
+            var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 64);
+            var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
+            // A small internal read buffer is fine; the destination is what must be >= trailer size.
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 8);
+
+            ClassicAssert.Greater(RangeIndexChunkedSerializer.MinChunkSize, 0);
+            var tooSmall = new byte[RangeIndexChunkedSerializer.MinChunkSize - 1];
+            Assert.ThrowsAsync<ArgumentException>(async () => _ = await reader.ReadNextChunkAsync(tooSmall));
+        }
+
+        /// <summary>
+        /// Reader-specific: a destination of exactly <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>
         /// is accepted and a stream round-trips correctly (the trailer just fits in one chunk).
         /// </summary>
         [Test]
         public Task RoundTrip_ExactMinChunkSize([Values] ChunkDriver driver)
-            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("k"), RandomBytes(300, 31), RangeIndexMigrationReader.MinChunkSize);
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("k"), RandomBytes(300, 31), RangeIndexChunkedSerializer.MinChunkSize);
 
         #endregion
     }
