@@ -100,6 +100,7 @@ namespace Garnet.cluster
         internal sealed class ReceiveActivity
         {
             private readonly long timestampFirstChunk;
+            private readonly string rangeIndexMigratedFilePath;
             private long timestampPublish;
             private long timestampEnd;
             private int chunkCount;
@@ -108,11 +109,15 @@ namespace Garnet.cluster
             private bool sessionDisposed;
             private RangeIndexManager.PublishMigratedIndexResult? publishResult;
 
-            private ReceiveActivity() => timestampFirstChunk = Stopwatch.GetTimestamp();
+            private ReceiveActivity(string rangeIndexMigratedFilePath)
+            {
+                this.rangeIndexMigratedFilePath = rangeIndexMigratedFilePath;
+                timestampFirstChunk = Stopwatch.GetTimestamp();
+            }
 
             internal int ChunkCount => chunkCount;
 
-            internal static ReceiveActivity StartActivity() => new();
+            internal static ReceiveActivity StartActivity(string rangeIndexMigratedFilePath) => new(rangeIndexMigratedFilePath);
 
             internal void OnChunkReceived(int chunkLength)
             {
@@ -134,8 +139,8 @@ namespace Garnet.cluster
             {
                 var totalTicks = Stopwatch.GetElapsedTime(timestampFirstChunk, timestampEnd).Ticks;
                 var publishTicks = timestampPublish > 0 ? Stopwatch.GetElapsedTime(timestampPublish, timestampEnd).Ticks : -1;
-                logger?.LogInformation("RangeIndexMigrationReceive: key={key} isError={isError} errorStr={errorStr} sessionDisposed={sessionDisposed} publishResult={publishResult} chunkCount={chunkCount} totalBytesReceived={totalBytesReceived} publishTicks={publishTicks} totalTicks={totalTicks}",
-                    keyBytes.Length > 0 ? Encoding.UTF8.GetString(keyBytes) : "null", error != null, error, sessionDisposed, publishResult?.ToString() ?? "n/a", chunkCount, totalBytesReceived, publishTicks, totalTicks);
+                logger?.LogInformation("RangeIndexMigrationReceive: key={key} filePath={filePath} isError={isError} errorStr={errorStr} sessionDisposed={sessionDisposed} publishResult={publishResult} chunkCount={chunkCount} totalBytesReceived={totalBytesReceived} publishTicks={publishTicks} totalTicks={totalTicks}",
+                    keyBytes.Length > 0 ? Encoding.UTF8.GetString(keyBytes) : "null", rangeIndexMigratedFilePath, error != null, error, sessionDisposed, publishResult?.ToString() ?? "n/a", chunkCount, totalBytesReceived, publishTicks, totalTicks);
             }
 
             internal void EndAndLogActivity(ILogger logger, ReadOnlySpan<byte> keyBytes)

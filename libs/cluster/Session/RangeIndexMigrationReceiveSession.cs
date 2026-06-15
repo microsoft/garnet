@@ -68,8 +68,9 @@ namespace Garnet.cluster
 
             if (currentDeserializer == null)
             {
-                currentDeserializer = new RangeIndexChunkedDeserializer(rangeIndexManager.DeriveTempMigrationPath());
-                receiveActivity = RangeIndexMigrationActivities.ReceiveActivity.StartActivity();
+                var tempMigrationPath = rangeIndexManager.DeriveTempMigrationPath();
+                currentDeserializer = new RangeIndexChunkedDeserializer(tempMigrationPath);
+                receiveActivity = RangeIndexMigrationActivities.ReceiveActivity.StartActivity(tempMigrationPath);
             }
 
             receiveActivity.OnChunkReceived(recordPayload.Length);
