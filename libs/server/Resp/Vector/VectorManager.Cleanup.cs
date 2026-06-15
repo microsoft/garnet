@@ -134,32 +134,47 @@ namespace Garnet.server
                 {
                 }
 
-                // Process all pending drops
-                foreach (var (k, (context, indexPtr)) in requestedDrops)
+                // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                using var dropSession = (RespServerSession)getCleanupSession();
+                if (dropSession.activeDbId != dbId && !dropSession.TrySwitchActiveDatabaseSession(dbId))
                 {
-                    long keyHash;
-                    unsafe
+                    throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                }
+
+                ActiveThreadSession = dropSession.storageSession;
+                try
+                {
+                    // Process all pending drops
+                    foreach (var (k, (context, indexPtr)) in requestedDrops)
                     {
-                        fixed (byte* keyPtr = k)
+                        long keyHash;
+                        unsafe
                         {
-                            keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedPointer(keyPtr, k.Length));
+                            fixed (byte* keyPtr = k)
+                            {
+                                keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedPointer(keyPtr, k.Length));
+                            }
+                        }
+
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+
+                        try
+                        {
+                            Service.DropIndex(context, indexPtr);
+                        }
+                        finally
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            if (!requestedDrops.TryRemove(k, out _))
+                            {
+                                logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
+                            }
                         }
                     }
-
-                    vectorSetLocks.AcquireExclusiveLock(keyHash, out var lockToken);
-
-                    try
-                    {
-                        Service.DropIndex(context, indexPtr);
-                    }
-                    finally
-                    {
-                        vectorSetLocks.ReleaseLock(lockToken);
-                        if (!requestedDrops.TryRemove(k, out _))
-                        {
-                            logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
-                        }
-                    }
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
                 }
             }
         }
