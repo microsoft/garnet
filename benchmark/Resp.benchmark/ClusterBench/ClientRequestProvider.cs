@@ -31,6 +31,7 @@ namespace Resp.benchmark
         public long OpsCompleted => Interlocked.Read(ref opsCompleted);
         public LongHistogram Histogram => histogram;
         public ShardInfo Shard => shard;
+        public string KeyPrefix => keyGen.KeyPrefix;
 
         public ClientRequestProvider(ShardInfo shard, Options opts, int threadIndex)
         {

@@ -76,9 +76,31 @@ namespace Resp.benchmark
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
-            foreach (var shard in shards)
-                Console.WriteLine($"  {shard}");
+            // Topology table
+            Console.WriteLine($"  {"Shard",-7}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Prefix",-10}");
+            Console.WriteLine($"  {new string('-', 7)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}");
+
+            for (int s = 0; s < shards.Length; s++)
+            {
+                var shard = shards[s];
+                var endpoint = $"{shard.Address}:{shard.Port}";
+                var range = FormatSlotRanges(shard.SlotRanges);
+                var prefix = providers[s * threadsPerShard].KeyPrefix;
+                Console.WriteLine($"  {s,-7}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {prefix,-10}");
+            }
+
             Console.WriteLine();
+        }
+
+        private static string FormatSlotRanges(List<(int Start, int End)> ranges)
+        {
+            if (ranges.Count == 1)
+                return $"[{ranges[0].Start,5},{ranges[0].End,5}]";
+
+            if (ranges.Count == 2)
+                return $"[{ranges[0].Start,5},{ranges[0].End,5}],[{ranges[1].Start,5},{ranges[1].End,5}]";
+
+            return $"[{ranges[0].Start,5},{ranges[0].End,5}],...,[{ranges[^1].Start,5},{ranges[^1].End,5}]";
         }
 
         /// <summary>
@@ -125,7 +147,7 @@ namespace Resp.benchmark
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);
 
-            Console.WriteLine($"Starting offline benchmark ({opts.RunTime}s, {providers.Length} workers, batch={opts.BatchSize.First()})...");
+            Console.WriteLine($"Starting offline benchmark ({opts.RunTime}s, {shards.Length} shards x {opts.NumThreads.First()} workers/shard = {providers.Length} workers, batch={opts.BatchSize.First()})...");
             PrintOfflineHeader();
 
             var threads = new Thread[providers.Length];
@@ -149,7 +171,7 @@ namespace Resp.benchmark
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);
 
-            Console.WriteLine($"Starting online benchmark ({opts.RunTime}s, {providers.Length} workers, itp={opts.IntraThreadParallelism})...");
+            Console.WriteLine($"Starting online benchmark ({opts.RunTime}s, {shards.Length} shards x {opts.NumThreads.First()} workers/shard = {providers.Length} workers, itp={opts.IntraThreadParallelism})...");
             PrintOnlineHeader();
 
             var threads = new Thread[providers.Length];
@@ -240,35 +262,42 @@ namespace Resp.benchmark
 
         private void PrintOnlineHeader()
         {
-            var header =
-                $"{"min (us)",-15}" +
-                $"{"5th (us)",-15}" +
-                $"{"median (us)",-15}" +
-                $"{"avg (us)",-15}" +
-                $"{"95th (us)",-15}" +
-                $"{"99th (us)",-15}" +
-                $"{"99.9th (us)",-15}" +
-                $"{"total_ops",-15}" +
-                $"{"iter_ops",-15}" +
-                $"{"tpt (Kops/sec)",-15}";
+            string[] hdrs = ["min (us)", "5th (us)", "med (us)", "avg (us)", "95th (us)", "99th (us)", "99.9th (us)", "total_ops", "iter_ops", "Kops/sec"];
+            var header = string.Join(" | ", hdrs.Select(h => $"{h,12}"));
+            var separator = string.Join("-+-", Enumerable.Repeat(new string('-', 12), hdrs.Length));
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
+            {
                 Console.WriteLine(header);
+                Console.WriteLine(separator);
+            }
             else
+            {
                 logger?.LogInformation("{msg}", header);
+                logger?.LogInformation("{msg}", separator);
+            }
         }
 
         private void PrintOfflineHeader()
         {
+            var totalOpsHdr = "total_ops";
+            var iterOpsHdr = "iter_ops";
+            var tptHdr = "tpt (Kops/sec)";
             var header =
-                $"{"total_ops",-15}" +
-                $"{"iter_ops",-15}" +
-                $"{"tpt (Kops/sec)",-15}";
+                $"{totalOpsHdr,15} | {iterOpsHdr,15} | {tptHdr,15}";
+            var separator =
+                $"{new string('-', 15)}-+-{new string('-', 15)}-+-{new string('-', 15)}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
+            {
                 Console.WriteLine(header);
+                Console.WriteLine(separator);
+            }
             else
+            {
                 logger?.LogInformation("{msg}", header);
+                logger?.LogInformation("{msg}", separator);
+            }
         }
 
         private void ReportOnlineIteration(LongHistogram summary, long totalOps, long iterOps, double tptKops)
@@ -277,20 +306,22 @@ namespace Resp.benchmark
             if (summary.TotalCount > 0)
             {
                 msg =
-                    $"{Math.Round(summary.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{Math.Round(summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds, 2),-15}" +
-                    $"{totalOps,-15}" +
-                    $"{iterOps,-15}" +
-                    $"{Math.Round(tptKops, 2),-15}";
+                    $"{Math.Round(summary.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{Math.Round(summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds, 2),12} | " +
+                    $"{totalOps,12:N0} | " +
+                    $"{iterOps,12:N0} | " +
+                    $"{Math.Round(tptKops, 2),12}";
             }
             else
             {
-                msg = $"{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{0,-15}{totalOps,-15}{iterOps,-15}{Math.Round(tptKops, 2),-15}";
+                msg =
+                    $"{0,12} | {0,12} | {0,12} | {0,12} | {0,12} | {0,12} | {0,12} | " +
+                    $"{totalOps,12:N0} | {iterOps,12:N0} | {Math.Round(tptKops, 2),12}";
             }
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
@@ -302,9 +333,7 @@ namespace Resp.benchmark
         private void ReportOfflineIteration(long totalOps, long iterOps, double tptKops)
         {
             var msg =
-                $"{totalOps,-15}" +
-                $"{iterOps,-15}" +
-                $"{tptKops,-15:F2}";
+                $"{totalOps,15:N0} | {iterOps,15:N0} | {tptKops,15:N2}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
                 Console.WriteLine(msg);
