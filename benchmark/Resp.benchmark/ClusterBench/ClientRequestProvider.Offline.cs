@@ -73,7 +73,7 @@ namespace Resp.benchmark
                 loaded += thisBatch;
             }
 
-            Console.WriteLine($"  Shard {shard.Address}:{shard.Port} thread[{threadIndex}]: loaded {loaded} keys");
+            Interlocked.Add(ref keysLoaded, loaded);
         }
 
         /// <summary>

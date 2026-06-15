@@ -109,7 +109,7 @@ namespace Resp.benchmark
         /// </summary>
         public void LoadData()
         {
-            Console.WriteLine("Loading data into cluster...");
+            Console.WriteLine(" Loading keys...");
             var sw = Stopwatch.StartNew();
 
             var threads = new Thread[providers.Length];
@@ -124,7 +124,25 @@ namespace Resp.benchmark
                 t.Join();
 
             sw.Stop();
-            Console.WriteLine($"Load complete in {sw.ElapsedMilliseconds}ms");
+
+            // Per-shard summary
+            int threadsPerShard = opts.NumThreads.First();
+            long totalKeys = 0;
+            int maxEndpointLen = shards.Max(s => $"{s.Address}:{s.Port}".Length);
+
+            for (int s = 0; s < shards.Length; s++)
+            {
+                long shardKeys = 0;
+                for (int t = 0; t < threadsPerShard; t++)
+                    shardKeys += providers[s * threadsPerShard + t].KeysLoaded;
+                totalKeys += shardKeys;
+
+                var endpoint = $"{shards[s].Address}:{shards[s].Port}";
+                Console.WriteLine($"   Loaded {shardKeys} keys to {endpoint.PadLeft(maxEndpointLen)}");
+            }
+
+            Console.WriteLine($" Total: {totalKeys} keys ({shards.Length} shards, {providers.Length} threads) in {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine();
         }
 
         /// <summary>

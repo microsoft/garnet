@@ -26,11 +26,13 @@ namespace Resp.benchmark
         readonly LongHistogram histogram;
         long opsCompleted;
         long bytesSent;
+        long keysLoaded;
 
         volatile bool done;
 
         public long OpsCompleted => Interlocked.Read(ref opsCompleted);
         public long BytesSent => Interlocked.Read(ref bytesSent);
+        public long KeysLoaded => Interlocked.Read(ref keysLoaded);
         public LongHistogram Histogram => histogram;
         public ShardInfo Shard => shard;
         public string KeyPrefix => keyGen.KeyPrefix;
