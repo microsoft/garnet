@@ -491,6 +491,46 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A trailer that declares the correct stub length but carries extra bytes after the stub
+        /// (over-long trailer) must transition to Error — the stream ends after the stub.
+        /// </summary>
+        [Test]
+        public void OverLongTrailerIsError()
+        {
+            var key = Encoding.UTF8.GetBytes("overlong");
+            var fileData = new byte[] { 0xAB }; // 1-byte file so we reach the trailer
+
+            var hasher = new XxHash64();
+            hasher.Append(fileData);
+            Span<byte> hashBytes = stackalloc byte[sizeof(ulong)];
+            hasher.GetHashAndReset(hashBytes);
+
+            // Declare stubLen == IndexSizeBytes but supply extra trailing bytes after the stub.
+            const int extraBytes = 3;
+            // [4-byte keyLen][key][8-byte fileSize][fileData][8-byte hash][4-byte stubLen][stub][extra]
+            var payload = new byte[sizeof(int) + key.Length + sizeof(long) + fileData.Length + sizeof(ulong) + sizeof(int) + RangeIndexManager.IndexSizeBytes + extraBytes];
+            var offset = 0;
+            BinaryPrimitives.WriteInt32LittleEndian(payload, key.Length);
+            offset += sizeof(int);
+            key.CopyTo(payload.AsSpan(offset));
+            offset += key.Length;
+            BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(offset), fileData.Length);
+            offset += sizeof(long);
+            fileData.CopyTo(payload.AsSpan(offset));
+            offset += fileData.Length;
+            hashBytes.CopyTo(payload.AsSpan(offset));
+            offset += sizeof(ulong);
+            BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(offset), RangeIndexManager.IndexSizeBytes);
+            // stub bytes + extraBytes are left zero-initialized.
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
+            ClassicAssert.IsTrue(deserializer.HasError);
+        }
+
+        /// <summary>
         /// Key spanning multiple chunks with a tiny chunkSize round-trips correctly.
         /// </summary>
         [Test]

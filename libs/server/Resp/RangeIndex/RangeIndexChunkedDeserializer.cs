@@ -176,8 +176,12 @@ namespace Garnet.server
                         if (fileBytesRemaining > 0)
                             WriteFileBytes(ref data);
 
-                        if (fileBytesRemaining == 0)
-                            CloseStream();
+                        if (fileBytesRemaining > 0)
+                            return true;
+
+                        CloseStream();
+                        state = State.WaitingForTrailer;
+                        goto case State.WaitingForTrailer;
                     }
                     catch (Exception ex)
                     {
@@ -185,14 +189,6 @@ namespace Garnet.server
                         state = State.Error;
                         return false;
                     }
-
-                    if (fileBytesRemaining == 0)
-                    {
-                        state = State.WaitingForTrailer;
-                        goto case State.WaitingForTrailer;
-                    }
-
-                    return true;
 
                 case State.WaitingForTrailer:
                     // Empty chunk is a no-op — not an error, just no data to process yet
@@ -228,17 +224,17 @@ namespace Garnet.server
                 return false;
             }
 
-            // Guard against a truncated/corrupt trailer chunk: the stub bytes must be
-            // present in their entirety. A well-formed stream always delivers the full
-            // trailer in one chunk, so a short chunk here means the payload is malformed.
-            if (data.Length < RangeIndexManager.IndexSizeBytes)
+            // After the hash + stubLen header, the remaining bytes must be exactly the stub.
+            // A well-formed stream delivers the full trailer in one chunk and ends after the stub,
+            // so any other length means the payload is malformed (truncated or has trailing bytes).
+            if (data.Length != RangeIndexManager.IndexSizeBytes)
             {
-                logger?.LogError("RangeIndexChunkedDeserializer: truncated stub ({Available} bytes available, {Expected} expected)", data.Length, RangeIndexManager.IndexSizeBytes);
+                logger?.LogError("RangeIndexChunkedDeserializer: unexpected trailer stub length ({Available} bytes available, {Expected} expected)", data.Length, RangeIndexManager.IndexSizeBytes);
                 state = State.Error;
                 return false;
             }
 
-            finalizerStub = data[..RangeIndexManager.IndexSizeBytes].ToArray();
+            finalizerStub = data.ToArray();
 
             Span<byte> computedHashBytes = stackalloc byte[sizeof(ulong)];
             hasher.GetHashAndReset(computedHashBytes);
