@@ -293,7 +293,10 @@ namespace Garnet.server
                 // disposes the underlying stream even if Flush throws.
                 CloseStream();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "RangeIndexChunkedDeserializer: failed to close stream during dispose (ignored)");
+            }
 
             try
             {
