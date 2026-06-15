@@ -53,10 +53,7 @@ namespace Garnet.cluster
             finally
             {
                 if (disposeGuard.ExitAndCheckShouldCleanup())
-                {
-                    receiveActivity?.OnSessionDisposed();
-                    Reset();
-                }
+                    DisposeInternal();
             }
         }
 
@@ -145,10 +142,18 @@ namespace Garnet.cluster
         public void Dispose()
         {
             if (disposeGuard.TryDispose() == CooperativeDisposeGuard.DisposeResult.CleanupNow)
-            {
-                receiveActivity?.OnSessionDisposed();
-                Reset();
-            }
+                DisposeInternal();
+        }
+
+        /// <summary>
+        /// Perform the actual disposal cleanup. Invoked exactly once — either directly from
+        /// <see cref="Dispose"/> (when no worker is in-flight) or deferred to an in-flight
+        /// <see cref="ProcessRecord"/>'s exit path via the dispose guard.
+        /// </summary>
+        private void DisposeInternal()
+        {
+            receiveActivity?.OnSessionDisposed();
+            Reset();
         }
     }
 }
