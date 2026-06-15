@@ -51,10 +51,23 @@ namespace Garnet.server
         /// Read the next chunk: reads file data asynchronously if needed, then calls the
         /// sync serializer to frame it into the destination buffer. Loops to handle
         /// phase transitions (e.g., headers → file data → trailer) within a single call.
+        ///
+        /// <para><b>Completion protocol:</b> the caller drives the stream by looping while
+        /// <see cref="IsComplete"/> is <c>false</c>, sending each returned chunk. Once the
+        /// trailer has been framed, <see cref="IsComplete"/> flips to <c>true</c> and the loop
+        /// ends — i.e., the call that emits the final bytes is also the one after which
+        /// <see cref="IsComplete"/> becomes <c>true</c>. Do not call this method again after
+        /// <see cref="IsComplete"/> is <c>true</c> (the underlying serializer throws).</para>
+        ///
+        /// <para>A well-sized <paramref name="destination"/> (at least the trailer size) always
+        /// makes progress, so a return value of <c>0</c> while <see cref="IsComplete"/> is still
+        /// <c>false</c> indicates the buffer is too small for the next framing element and the
+        /// caller should treat it as an error rather than loop indefinitely.</para>
         /// </summary>
-        /// <param name="destination">Output buffer.</param>
+        /// <param name="destination">Output buffer. Must be at least the trailer size to guarantee progress.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Number of bytes written to <paramref name="destination"/>.</returns>
+        /// <returns>Number of bytes written to <paramref name="destination"/>; <c>0</c> only if the
+        /// buffer was too small to advance.</returns>
         public async ValueTask<int> ReadNextChunkAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
         {
             var initialLength = destination.Length;
