@@ -122,7 +122,7 @@ namespace Garnet.server
         /// This needs to be in the background because we can't drop DiskANN indexes while
         /// they are in use, which means we can't drop them in response to <see cref="GarnetRecordTriggers"/>.
         /// 
-        /// An additional subtlty is that indexes which are requested to be dropped cannot be recreated
+        /// An additional subtlety is that indexes which are requested to be dropped cannot be recreated
         /// until that drop is processed.
         /// </summary>
         private async Task RunRequestDropTaskAsync()
