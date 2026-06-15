@@ -300,11 +300,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TElement Get(int index)
         {
+#if DEBUG
             // Cache Count in a local so the assertion check and its message see the same value. (tail is monotonically non-decreasing in the
             // non-OOM path, but a concurrent Allocate on another thread can advance it between the two reads we would otherwise do, producing
             // a misleading assertion message such as "index 1 must be less than Count 7" when at the moment of the failing check Count was <= 1.)
             var countSnapshot = Count;
             Debug.Assert(index < countSnapshot, $"Get(): index {index} must be less than Count {countSnapshot}");
+#endif
 
             // Volatile.Read on book (acquire) so an `index` handed to us via a non-synchronized channel from the allocating thread still sees the
             // book reference (post-grow if applicable) that was current when `index` was assigned. On ARM a plain read could observe an older,
@@ -323,9 +325,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Set(int index, TElement element)
         {
+#if DEBUG
             // Cache Count in a local; see comment in Get for rationale.
             var countSnapshot = Count;
             Debug.Assert(index < countSnapshot, $"Set(): index {index} must be less than Count {countSnapshot}");
+#endif
 
             // See Get() for the rationale on Volatile.Read.
             var localBook = Volatile.Read(ref book);
