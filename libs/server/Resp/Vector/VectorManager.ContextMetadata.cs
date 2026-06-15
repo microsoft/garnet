@@ -501,8 +501,11 @@ namespace Garnet.server
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
             }
 
-            // empty is context metadata
+#pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = [MetadataNamespace];
+#pragma warning restore IDE0302
+
+            // empty key is context metadata
             VectorElementKey key = new(nsBytes, []);
 
             VectorInput input = default;

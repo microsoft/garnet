@@ -1878,7 +1878,6 @@ namespace Garnet.test
         public unsafe void MakeVectorElementKey()
         {
             var data = new int[] { 4, 1234 };
-            var dataCopy = data.ToArray();
             fixed (int* intPtr = data)
             {
                 var bytePtr = (byte*)intPtr;

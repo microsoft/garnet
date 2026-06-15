@@ -62,10 +62,12 @@ namespace Garnet.server
                     return true;
                 }
 
-                // Delete it
+#pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
                 ReadOnlySpan<byte> nsBytes = [(byte)ns];
+#pragma warning restore IDE0302
                 VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
 
+                // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
                 if (status.IsPending)
                 {

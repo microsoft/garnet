@@ -196,7 +196,9 @@ namespace Garnet.server
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-            ReadOnlySpan<byte> nsBytes = [MetadataNamespace];
+#pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+            Span<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
+#pragma warning restore IDE0302 
             VectorElementKey key = new(nsBytes, []);
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
