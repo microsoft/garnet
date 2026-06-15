@@ -256,7 +256,7 @@ namespace Garnet.server
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
 #pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            Span<byte> nsBytes = [(byte)context];
+            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
 #pragma warning restore IDE0302
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);

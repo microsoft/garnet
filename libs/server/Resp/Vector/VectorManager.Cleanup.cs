@@ -63,7 +63,7 @@ namespace Garnet.server
                 }
 
 #pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-                ReadOnlySpan<byte> nsBytes = [(byte)ns];
+                ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)ns };
 #pragma warning restore IDE0302
                 VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
 
