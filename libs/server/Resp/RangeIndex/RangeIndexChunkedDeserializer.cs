@@ -154,16 +154,36 @@ namespace Garnet.server
                     }
 
                     state = State.ReceivingFileData;
-                    stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    try
+                    {
+                        stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "RangeIndexChunkedDeserializer: failed to create temp file {Path}", tempPath);
+                        state = State.Error;
+                        return false;
+                    }
                     goto case State.ReceivingFileData;
 
                 case State.ReceivingFileData:
-                    if (fileBytesRemaining > 0)
-                        WriteFileBytes(ref data);
+                    try
+                    {
+                        if (fileBytesRemaining > 0)
+                            WriteFileBytes(ref data);
+
+                        if (fileBytesRemaining == 0)
+                            CloseStream();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "RangeIndexChunkedDeserializer: failed writing migrated file data");
+                        state = State.Error;
+                        return false;
+                    }
 
                     if (fileBytesRemaining == 0)
                     {
-                        CloseStream();
                         state = State.WaitingForTrailer;
                         goto case State.WaitingForTrailer;
                     }

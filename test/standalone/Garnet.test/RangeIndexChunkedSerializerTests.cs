@@ -235,6 +235,29 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// An I/O failure when opening the temp snapshot file (e.g., parent directory missing)
+        /// must transition to the Error state and return false, not throw out of ProcessChunk.
+        /// </summary>
+        [Test]
+        public void FileOpenFailureGoesToErrorState()
+        {
+            // Temp path under a directory that does not exist → FileStream(Create) throws.
+            var badPath = Path.Combine(testDir, "no", "such", "dir", "snapshot.bftree");
+
+            using var deserializer = new RangeIndexChunkedDeserializer(badPath);
+
+            // [4-byte keyLen=1]['k'][8-byte fileSize=10] — reaches the FileStream open in ReceivingFileData.
+            var key = Encoding.UTF8.GetBytes("k");
+            var payload = new byte[sizeof(int) + key.Length + sizeof(long)];
+            BinaryPrimitives.WriteInt32LittleEndian(payload, key.Length);
+            key.CopyTo(payload.AsSpan(sizeof(int)));
+            BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(sizeof(int) + key.Length), 10);
+
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(payload));
+            ClassicAssert.IsTrue(deserializer.HasError);
+        }
+
+        /// <summary>
         /// Too-small first record (less than 4 bytes for key header) should cause Error state.
         /// </summary>
         [Test]
