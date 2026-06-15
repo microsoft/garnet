@@ -189,8 +189,8 @@ namespace Garnet.server
 
                 // Exclusive lock to prevent other modification of this key
 
-            waitForDrop:
                 var needsWaitForDrop = false;
+            waitForDrop:
                 if (needsWaitForDrop)
                 {
                     WaitForDiskANNIndexDrop(key);

@@ -486,9 +486,13 @@ namespace Garnet.server
 
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-            _ = requestedDrops.TryAdd(key.ToArray(), (context, indexPtr));
+            // It's possible for an index to be recovered from disk but never initialized, which means we need no drop
+            if (indexPtr != 0)
+            {
+                _ = requestedDrops.TryAdd(key.ToArray(), (context, indexPtr));
 
-            _ = requestDropTaskChannel.Writer.TryWrite(null);
+                _ = requestDropTaskChannel.Writer.TryWrite(null);
+            }
         }
 
         /// <summary>
