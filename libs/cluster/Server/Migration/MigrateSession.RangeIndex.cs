@@ -24,7 +24,6 @@ namespace Garnet.cluster
         /// Transmit a single RangeIndex key to the destination node.
         /// Uses <see cref="RangeIndexManager.SnapshotRangeIndexAndCreateReader"/> to obtain an async
         /// migration reader that snapshots and streams the BfTree data.
-        /// Forces a flush and awaits ACK.
         /// </summary>
         private async Task<bool> TransmitRangeIndexAsync(MigrateOperation migrateOperation, byte[] keyBytes, int chunkSize, CancellationToken cancellationToken)
         {
@@ -78,7 +77,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                transmitActivity.OnError(ex.Message);
+                transmitActivity.OnError(ex.ToString());
                 logger?.LogError(ex, "TransmitRangeIndexAsync: error during snapshot or transmission for key {key}", Encoding.UTF8.GetString(keyBytes));
                 return false;
             }
