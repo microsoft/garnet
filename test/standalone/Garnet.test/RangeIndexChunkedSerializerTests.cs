@@ -1596,6 +1596,14 @@ namespace Garnet.test
                 new RangeIndexMigrationReader(serializer, fs, srcPath, RangeIndexMigrationReader.MinChunkSize - 1));
         }
 
+        /// <summary>
+        /// Reader-specific: a chunk size of exactly <see cref="RangeIndexMigrationReader.MinChunkSize"/>
+        /// is accepted and a stream round-trips correctly (the trailer just fits in one chunk).
+        /// </summary>
+        [Test]
+        public Task RoundTrip_ExactMinChunkSize([Values] ChunkDriver driver)
+            => AssertRoundTripAsync(driver, Encoding.UTF8.GetBytes("k"), RandomBytes(300, 31), RangeIndexMigrationReader.MinChunkSize);
+
         #endregion
     }
 }
