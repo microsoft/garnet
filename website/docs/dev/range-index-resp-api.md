@@ -2668,7 +2668,7 @@ and restores from the snapshot files at the expected paths.
 > - `libs/server/Resp/RangeIndex/RangeIndexMigrationReader.cs` — async wrapper that reads file data
 > - `libs/server/Resp/RangeIndex/RangeIndexChunkedDeserializer.cs` — stateful deserializer with file I/O
 > - `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` — snapshot + factory methods
-> - `libs/cluster/Session/MigrationReceiveSession.cs` — receive-side state machine
+> - `libs/cluster/Session/RangeIndexMigrationReceiveSession.cs` — receive-side state machine (`RangeIndexMigrationReceiveState`)
 > - `libs/cluster/Session/RespClusterMigrateCommands.cs` — destination record dispatcher
 
 **Problem.** During slot migration, a stub-only transfer is insufficient: the 35-byte stub
@@ -2690,7 +2690,7 @@ Source side (async):
   SnapshotRangeIndexAndCreateReader()
     ├→ SnapshotForMigration() — exclusive lock, snapshot to temp file
     ├→ new RangeIndexChunkedSerializer(key, stub, fileSize) — pure state machine
-    └→ new RangeIndexMigrationReader(serializer, fileStream, chunkSize) — async I/O wrapper
+    └→ new RangeIndexMigrationReader(serializer, fileStream, tempFilePath, chunkSize) — async I/O wrapper
 
   TransmitRangeIndexAsync loop:
     reader.ReadNextChunkAsync(buffer)
@@ -2700,8 +2700,9 @@ Source side (async):
 
 Destination side (sync):
   RangeIndexMigrationReceiveState.ProcessRecord()
-    └→ RangeIndexChunkedDeserializer.ProcessChunk(data) — sync, writes to temp file
-    └→ RangeIndexChunkedDeserializer.Publish() — move file, recover BfTree, RMW stub
+    ├→ RangeIndexChunkedDeserializer.ProcessChunk(data) — sync, writes to temp file
+    └→ on completion: slot check, then RangeIndexManager.PublishMigratedIndex()
+       — move file, recover BfTree, RICREATE RMW stub
 ```
 
 #### Wire format
@@ -2780,10 +2781,12 @@ The stream format across one or more chunks:
 #### Source side — KEYS path
 
 1. **Upfront discovery.** `RangeIndexManager.GetRangeIndexKeysForMigration` reads each key
-   via `RIGET` through the string context. RI keys return OK + stub bytes.
+   via `RIGET` through the string context and returns the set of keys that are RangeIndex
+   type. Stub bytes are **not** captured here (to avoid TOCTOU) — the authoritative stub is
+   re-read later under exclusive lock by `SnapshotForMigration`.
 
 2. **Regular key transmission.** `TransmitKeysAsync` skips RI keys (they appear in the
-   `rangeIndexKeysToIgnore` dictionary).
+   `rangeIndexKeysToMigrate` set passed as the skip predicate).
 
 3. **RI key transmission.** Each RI key is transmitted via `TransmitRangeIndexAsync`.
    After successful transmission, the key is marked in the sketch (`Item2 = true`) so
@@ -2805,16 +2808,25 @@ receiving a stream, only `SerializedRangeIndexStream` records are accepted.
    updating an xxHash64 incrementally.
 4. Parses the trailer: validates checksum, extracts stub.
 
-On completion, `Publish()`:
-1. Moves the temp file to the working path (`{riLogRoot}/{key_hash}.data.bftree`).
-   If a data file already exists (e.g., from a previous migration of the same key), it is
-   deleted first — this enables round-trip migration (P0→P1→P0).
-2. Calls `BfTreeService.RecoverFromCprSnapshot()` to load the native tree.
-3. Rewrites the stub: `TreeHandle = bfTree.NativePtr`, calls `ResetFlags()` and clears `SerializationPhase`.
-4. Publishes via `RICREATE` RMW into the main store.
-5. Registers the tree via `RegisterIndex()`.
+Once the deserializer reports `IsComplete`, `RangeIndexMigrationReceiveState.ProcessRecord`
+finalizes the stream:
+1. Computes the key's hash slot and verifies the slot is in the `IMPORTING` state on this
+   node (`currentConfig.IsImportingSlot`); otherwise the record is rejected.
+2. Calls `RangeIndexManager.PublishMigratedIndex(key, stub, tempPath, replaceOption, ...)`,
+   which returns a `PublishMigratedIndexResult`:
+   - **`KeyExists` gate** — if any key already exists at this name (string, object, RI, or
+     vector), publish is skipped with `SkippedAlreadyExists` (or `SkippedReplaceNotSupported`
+     when `MIGRATE REPLACE` was requested — REPLACE is not yet implemented for RI keys). No
+     destructive action is taken; these are non-error outcomes.
+   - **Otherwise (no existing key)**: deletes any stale `{riLogRoot}/{key_hash}.data.bftree`
+     left from a prior migration of the same key (enables round-trip P0→P1→P0), moves the temp
+     file into place, calls `BfTreeService.RecoverFromCprSnapshot()` to load the native tree,
+     rewrites the stub (`TreeHandle = bfTree.NativePtr`, `ResetFlags()`, clears
+     `SerializationPhase`), publishes via `RICREATE` RMW, and registers the tree via
+     `RegisterIndex()` → `Success`.
+   - Only `Failed` (an exception or store-level error) is propagated as an error.
 
-On disposal (error or abort), the temp file is deleted.
+On disposal (error or abort), the deserializer's temp file is deleted.
 
 #### Write protection during migration
 
@@ -2881,8 +2893,10 @@ unblocked, and the client can implement retry logic with backoff.
   client operations. The migration session fails and `TryRecoverFromFailure` reverts slot state.
 - **Checksum mismatch.** The deserializer enters `Error` state and returns `false`. The
   receive state resets and the migration fails.
-- **File already exists at working path.** The existing file is deleted before moving the
-  new one — this supports round-trip migration scenarios.
+- **Key already exists at destination.** `PublishMigratedIndex` skips publishing
+  (`SkippedAlreadyExists`, or `SkippedReplaceNotSupported` under `MIGRATE REPLACE`) without
+  touching any existing data — a non-error outcome. A stale `data.bftree` file is only deleted
+  on the publish path that runs when no key exists (supporting round-trip migration).
 - **Source crash mid-stream.** The partial temp file on the destination is cleaned up by
   the deserializer's `Dispose`, or by `RangeIndexManager` startup cleanup which deletes
   the `migration-tmp` directory.
@@ -2921,18 +2935,22 @@ trees (scan not supported). Future fix: use `StorageBackend::Memory` with
 | # | File Path | Purpose |
 |---|---|---|
 | NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | `DisposeRecord` handler, `OnSnapshotRecord` handler, snapshot path derivation |
-| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | Source: `SnapshotForMigration()`, `CleanupMigrationArtifacts()`. Destination: `HandleMigratedRangeIndexChunk()`, `HandleMigratedRangeIndexStub()`, `InboundRestoreState`, path helpers. `DefaultMigrationChunkSize` const. |
-| NEW | `libs/cluster/Server/Migration/MigrateSessionRangeIndex.cs` | Source-side driver `TransmitRangeIndex(MigrateOperation, keyBytes, stubBytes)` — snapshots, opens the data file, streams chunks via `TryWriteRecordSpan`, emits the final stub record. |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | Source: `SnapshotForMigration()`, `SnapshotRangeIndexAndCreateReader()`, `GetRangeIndexKeysForMigration()`, `DeriveTempMigrationPath()`. Destination: `PublishMigratedIndex()`, `KeyExists()`. `DefaultMigrationChunkSize` const, nested `PublishMigratedIndexResult` enum. |
+| NEW | `libs/cluster/Server/Migration/MigrateSession.RangeIndex.cs` | Source-side driver: `TransmitRangeIndexAsync()` (snapshot → chunk stream → flush+ACK) and `MigrateRangeIndexKeysAsync()` (sketch-protected batch cycle). |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexChunkedSerializer.cs` | Pure state-machine serializer (no I/O); `MinChunkSize` const. |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexMigrationReader.cs` | Async wrapper that reads snapshot file data and frames it via the serializer. |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexChunkedDeserializer.cs` | Stateful deserializer with file I/O; validates checksum, exposes `Key`/`Stub`/`TempPath`. |
+| NEW | `libs/cluster/Session/RangeIndexMigrationReceiveSession.cs` | `RangeIndexMigrationReceiveState` — per-`ClusterSession` receive-side state machine; finalizes via `PublishMigratedIndex`. |
 | MOD | `libs/server/Databases/DatabaseManagerBase.cs` | *(no RangeIndex-specific changes needed — checkpoint handled via per-record callback)* |
 | MOD | `libs/server/Databases/SingleDatabaseManager.cs` | *(no RangeIndex-specific changes needed — recovery is lazy)* |
 | MOD | `libs/cluster/Server/Replication/CheckpointFileType.cs` | Add `RANGEINDEX_SNAPSHOT` enum value |
 | MOD | `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` | Send BfTree snapshot files during replica sync |
-| MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Destination dispatcher: add `RangeIndexSnapshotChunk` and `RangeIndexStub` branches inside `NetworkClusterMigrate`. |
-| MOD | `libs/cluster/Server/Migration/MigrateOperation.cs` | Add `rangeIndexKeysToMigrate` dict, `RangeIndexes`, `AddRangeIndexKey`, `DeleteRangeIndex`. Mirrors the Vector Set hooks. |
-| MOD | `libs/cluster/Server/Migration/MigrateSessionSlots.cs` | After the scan workers finish and the Vector Set drain, run a new inline loop over `mo.RangeIndexes` that calls `TransmitRangeIndex`. |
-| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | KEYS path: when the per-key probe sees `RangeIndexRecordType`, route through `TransmitRangeIndex` instead of the default `TryWriteRecordSpan(LogRecord)` branch. |
+| MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Destination dispatcher: route `SerializedRangeIndexStream` records to `RangeIndexMigrationReceiveState` (protocol-ordered). |
+| MOD | `libs/cluster/Server/Migration/MigrateOperation.cs` | Add `rangeIndexKeysToMigrate` set, `RangeIndexKeys`, `AddRangeIndexKey`, `DeleteRangeIndex`. Mirrors the Vector Set hooks. |
+| MOD | `libs/cluster/Server/Migration/MigrateSessionSlots.cs` | SLOTS path: after the scan workers finish and the Vector Set drain, run `MigrateRangeIndexKeysAsync` over the discovered RI keys. |
+| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | KEYS path: discover RI keys via `GetRangeIndexKeysForMigration`, skip them in `TransmitKeysAsync`, transmit each via `TransmitRangeIndexAsync`, then mark for deletion. |
 | MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | `Reader`: detect `RangeIndexRecordType` and call `mo.AddRangeIndexKey(key.ToArray())` instead of shipping the record verbatim. |
-| MOD | `libs/client/ClientSession/GarnetClientSessionIncremental.cs` | Add `MigrationRecordSpanType.RangeIndexSnapshotChunk = 4` and `RangeIndexStub = 5`. |
+| MOD | `libs/client/ClientSession/GarnetClientSessionIncremental.cs` | Add `MigrationRecordSpanType.SerializedRangeIndexStream = 4`. |
 | MOD | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | Make `RangeIndexRecordType` and migration entry points `public` — they are called from `Garnet.cluster`, which is a separate assembly without `InternalsVisibleTo`. |
 
 ---
