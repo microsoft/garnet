@@ -263,15 +263,20 @@ namespace Garnet.server
 
         private void CloseStream()
         {
-            if (stream == null) return;
+            var s = stream;
+            if (s == null) return;
+
+            // Clear the field first so it is always nulled even if Flush/Dispose throws (Dispose
+            // can throw because FileStream flushes buffered bytes during disposal). Callers that
+            // care about a flush failure (the ReceivingFileData path) catch and go to State.Error.
+            stream = null;
             try
             {
-                stream.Flush();
+                s.Flush();
             }
             finally
             {
-                stream.Dispose();
-                stream = null;
+                s.Dispose();
             }
         }
 
