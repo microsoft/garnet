@@ -1139,6 +1139,63 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Empty chunk (zero bytes) delivered as the very first input, while in WaitingForKeyHeader —
+        /// should be a graceful no-op, leaving the stream still receivable.
+        /// </summary>
+        [Test]
+        public void EmptyChunkAtWaitingForKeyHeader()
+        {
+            var key = Encoding.UTF8.GetBytes("mykey");
+            var fileData = new byte[] { 0x01, 0x02 };
+            var stub = CreateStub();
+            var payload = BuildPayload(key, fileData, stub);
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            // Empty chunk before any data — no-op, no error, not complete.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk([]));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+            ClassicAssert.IsFalse(deserializer.HasError);
+
+            // The full stream still completes correctly afterwards.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload));
+            ClassicAssert.IsTrue(deserializer.IsComplete);
+            ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
+        }
+
+        /// <summary>
+        /// Empty chunk (zero bytes) after the full key is received but before the file size header,
+        /// while in WaitingForFileHeader — should be a graceful no-op.
+        /// </summary>
+        [Test]
+        public void EmptyChunkDuringWaitingForFileHeader()
+        {
+            var key = Encoding.UTF8.GetBytes("mykey");
+            var fileData = new byte[] { 0x01, 0x02 };
+            var stub = CreateStub();
+            var payload = BuildPayload(key, fileData, stub);
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            // Send exactly the key length header + key bytes — deserializer is now in WaitingForFileHeader.
+            var keyEnd = sizeof(int) + key.Length;
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload.AsSpan(0, keyEnd)));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+
+            // Empty chunk — no-op, no error, still waiting for the file header.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk([]));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+            ClassicAssert.IsFalse(deserializer.HasError);
+
+            // Send the rest (file header + file data + trailer) — stream completes.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload.AsSpan(keyEnd)));
+            ClassicAssert.IsTrue(deserializer.IsComplete);
+            ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
+        }
+
+        /// <summary>
         /// Key spans multiple chunks — first chunk has partial key, second has the rest + file + trailer.
         /// </summary>
         [Test]
