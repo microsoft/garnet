@@ -226,20 +226,6 @@ namespace Garnet.server
         /// given key name on this node. Returns <c>true</c> regardless of type — used as a
         /// pre-publish gate so we never overwrite an existing key with a migrated RangeIndex.
         /// </summary>
-        /// <remarks>
-        /// <para>Implementation: issues a plain <see cref="RespCommand.GET"/> through the
-        /// string context and checks <c>status.Found || status.IsWrongType</c>:</para>
-        /// <list type="bullet">
-        /// <item><b>String record</b> → <c>Found = true</c></item>
-        /// <item><b>Object record</b> (hash, list, set, sorted-set) → <c>IsWrongType = true</c>
-        /// (<c>ReadMethods.Reader</c> rejects GET on <c>ValueIsObject</c> records).</item>
-        /// <item><b>RangeIndex / Vector record</b> → <c>IsWrongType = true</c>
-        /// (<c>CheckRecordTypeMismatch</c> rejects GET on typed records).</item>
-        /// <item><b>Missing key</b> → both false.</item>
-        /// </list>
-        /// <para>Does not take the RI shared lock — destination-side publish already runs
-        /// after the migration sketch gate is closed, so no concurrent RI writes can race.</para>
-        /// </remarks>
         internal unsafe bool KeyExists(ReadOnlySpan<byte> keyBytes, ref StringBasicContext ctx)
         {
             Span<byte> outputSpan = stackalloc byte[1];
@@ -258,6 +244,7 @@ namespace Garnet.server
                 if (!output.SpanByteAndMemory.IsSpanByte)
                     output.SpanByteAndMemory.Dispose();
 
+                // Found = string key; IsWrongType = object/RI/vector key (GET rejects typed records).
                 return status.Found || status.IsWrongType;
             }
         }
