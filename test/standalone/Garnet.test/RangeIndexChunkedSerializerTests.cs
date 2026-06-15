@@ -235,6 +235,61 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A file-size header that does not fit entirely in one chunk (fewer than 8 bytes
+        /// available at WaitingForFileHeader) must transition to Error.
+        /// </summary>
+        [Test]
+        public void SplitFileHeaderIsError()
+        {
+            var key = Encoding.UTF8.GetBytes("k");
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            // Chunk 1: full key header + key → deserializer is now at WaitingForFileHeader.
+            var keyChunk = new byte[sizeof(int) + key.Length];
+            BinaryPrimitives.WriteInt32LittleEndian(keyChunk, key.Length);
+            key.CopyTo(keyChunk.AsSpan(sizeof(int)));
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(keyChunk));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+
+            // Chunk 2: only 4 bytes — less than the 8-byte file-size header → Error.
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(new byte[sizeof(int)]));
+            ClassicAssert.IsTrue(deserializer.HasError);
+        }
+
+        /// <summary>
+        /// A trailer chunk smaller than the fixed [8-byte hash][4-byte stubLen] header
+        /// must transition to Error.
+        /// </summary>
+        [Test]
+        public void TrailerTooSmallIsError()
+        {
+            var key = Encoding.UTF8.GetBytes("k");
+            var fileData = new byte[] { 0xAB }; // 1-byte file so we reach WaitingForTrailer
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            // Chunk 1: key header + key + file header + the full file → now at WaitingForTrailer.
+            var preTrailer = new byte[sizeof(int) + key.Length + sizeof(long) + fileData.Length];
+            var o = 0;
+            BinaryPrimitives.WriteInt32LittleEndian(preTrailer.AsSpan(o), key.Length);
+            o += sizeof(int);
+            key.CopyTo(preTrailer.AsSpan(o));
+            o += key.Length;
+            BinaryPrimitives.WriteInt64LittleEndian(preTrailer.AsSpan(o), fileData.Length);
+            o += sizeof(long);
+            fileData.CopyTo(preTrailer.AsSpan(o));
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(preTrailer));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+
+            // Chunk 2: a trailer of only 11 bytes — less than the 12-byte [hash][stubLen] header → Error.
+            ClassicAssert.IsFalse(deserializer.ProcessChunk(new byte[sizeof(ulong) + sizeof(int) - 1]));
+            ClassicAssert.IsTrue(deserializer.HasError);
+        }
+
+        /// <summary>
         /// An I/O failure when opening the temp snapshot file (e.g., parent directory missing)
         /// must transition to the Error state and return false, not throw out of ProcessChunk.
         /// </summary>
