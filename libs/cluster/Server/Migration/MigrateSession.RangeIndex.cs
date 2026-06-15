@@ -149,6 +149,7 @@ namespace Garnet.cluster
                     }
                     catch (Exception ex)
                     {
+                        migrateActivity.OnError($"failed to delete key {Encoding.UTF8.GetString(key)}: {ex.Message}");
                         logger?.LogError(ex, "MigrateRangeIndexKeysAsync: failed to delete RangeIndex key {key} after migration", Encoding.UTF8.GetString(key));
                         throw;
                     }
