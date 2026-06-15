@@ -573,7 +573,9 @@ namespace Tsavorite.core
         {
             Debug.Assert(numCompletionThreads >= 1);
 
-            if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+            // The 260-char MAX_PATH limit does not apply to extended-length paths (those prefixed with
+            // "\\?\"); only enforce it for normal paths.
+            if (!Native32.IsExtendedLengthPath(filename) && filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new TsavoriteException($"Path {filename} is too long");
 
             // Configuration is captured here; the native device handle (and its completion-drainer
