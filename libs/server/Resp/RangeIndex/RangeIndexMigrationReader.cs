@@ -65,21 +65,22 @@ namespace Garnet.server
         /// <see cref="IsComplete"/> becomes <c>true</c>. Do not call this method again after
         /// <see cref="IsComplete"/> is <c>true</c> (the underlying serializer throws).</para>
         ///
-        /// <para>A well-sized <paramref name="destination"/> (at least the trailer size) always
-        /// makes progress, so a return value of <c>0</c> while <see cref="IsComplete"/> is still
-        /// <c>false</c> indicates the buffer is too small for the next framing element and the
-        /// caller should treat it as an error rather than loop indefinitely.</para>
+        /// <para><paramref name="destination"/> must be at least
+        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/> bytes (the trailer size); smaller
+        /// buffers are rejected with <see cref="ArgumentException"/>. With a valid destination the
+        /// method always makes progress, so it returns a positive count while
+        /// <see cref="IsComplete"/> is <c>false</c> (it returns <c>0</c> only if called when already
+        /// complete).</para>
         /// </summary>
-        /// <param name="destination">Output buffer. Must be at least the trailer size to guarantee progress.</param>
+        /// <param name="destination">Output buffer. Must be at least <see cref="RangeIndexChunkedSerializer.MinChunkSize"/> bytes.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Number of bytes written to <paramref name="destination"/>; <c>0</c> only if the
-        /// buffer was too small to advance.</returns>
+        /// <returns>Number of bytes written to <paramref name="destination"/> (always positive while the stream is incomplete).</returns>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="destination"/> is smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</exception>
         public async ValueTask<int> ReadNextChunkAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
         {
-            // The destination is the buffer the serializer frames into, so it — not the internal
-            // file-read buffer — must be able to hold the largest single-chunk element (the trailer).
-            // A fresh full-size destination below this could never frame the trailer and the stream
-            // would never complete.
+            // The destination is the buffer the serializer frames into, so it must be able to hold
+            // the largest single-chunk element (the trailer). A destination below this could never
+            // frame the trailer and the stream would never complete.
             if (destination.Length < RangeIndexChunkedSerializer.MinChunkSize)
                 throw new ArgumentException($"destination must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes (the trailer size) so the stream can complete.", nameof(destination));
 
