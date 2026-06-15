@@ -52,7 +52,6 @@ namespace Garnet.server
         XTRIM,
         XSETID,
         XREAD,
-        XLAST,
         XINFO_STREAM,
         XINFO_GROUPS,
         XINFO_CONSUMERS,
@@ -398,9 +397,6 @@ namespace Garnet.server
                     return true;
                 case StreamOperation.XTRIM:
                     OperateXTrim(ref input, ref output, respProtocolVersion);
-                    return true;
-                case StreamOperation.XLAST:
-                    ReadLastEntry(ref output.SpanByteAndMemory, respProtocolVersion);
                     return true;
                 case StreamOperation.XGROUP_CREATE:
                     OperateXGroupCreate(ref input, ref output, respProtocolVersion);

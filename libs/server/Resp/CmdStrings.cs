@@ -208,6 +208,7 @@ namespace Garnet.server
         /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "ERR unknown command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BLOCK_NOT_SUPPORTED => "ERR BLOCK is not supported"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_SUPPORTED_RESP2 => "ERR command not supported in RESP2"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER_DISABLED => "ERR This instance has cluster support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LUA_DISABLED => "ERR This instance has Lua scripting support disabled"u8;

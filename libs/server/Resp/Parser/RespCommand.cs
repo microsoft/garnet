@@ -132,7 +132,6 @@ namespace Garnet.server
         XREVRANGE,
         XPENDING,
         XREAD,
-        XLAST,
         XINFO_CONSUMERS,
         XINFO_GROUPS,
         XINFO_STREAM, // Note: Last read command should immediately precede FirstWriteCommand
@@ -1304,10 +1303,6 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXTRIM\r\n"u8))
                                         {
                                             return RespCommand.XTRIM;
-                                        }
-                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXLAST\r\n"u8))
-                                        {
-                                            return RespCommand.XLAST;
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXREAD\r\n"u8))
                                         {

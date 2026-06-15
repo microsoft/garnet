@@ -173,36 +173,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        ///  Gets last entry in the stream.
-        /// XLAST key
-        /// </summary>
-        /// <returns></returns>
-        public bool StreamLast(byte respProtocolVersion)
-        {
-            if (parseState.Count != 1)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS);
-            }
-
-            var key = parseState.GetArgSliceByRef(0);
-
-            var header = new RespInputHeader(GarnetObjectType.Stream) { StreamOp = StreamOperation.XLAST };
-            var input = new ObjectInput(header, ref parseState);
-            var output = new ObjectOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageSession.StreamObjectRead(key, ref input, ref output);
-            if (status == GarnetStatus.NOTFOUND)
-            {
-                // return empty array
-                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-            ProcessOutput(output.SpanByteAndMemory);
-            return true;
-        }
-
-        /// <summary>
         /// XGROUP CREATE|SETID|DESTROY|CREATECONSUMER|DELCONSUMER
         /// </summary>
         private bool StreamGroup(byte respProtocolVersion)
@@ -396,6 +366,10 @@ namespace Garnet.server
                 {
                     argIdx++; // consume STREAMS keyword
                     break;
+                }
+                else if (opt == "BLOCK")
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_BLOCK_NOT_SUPPORTED);
                 }
                 else
                 {
@@ -660,7 +634,7 @@ namespace Garnet.server
             int argIdx = 0;
             int count = -1;
 
-            // Parse optional COUNT and BLOCK (BLOCK not supported yet)
+            // Parse optional COUNT and STREAMS. BLOCK is rejected (not supported) rather than ignored.
             while (argIdx < parseState.Count)
             {
                 var opt = parseState.GetArgSliceByRef(argIdx).ToString().ToUpperInvariant();
@@ -677,8 +651,7 @@ namespace Garnet.server
                 }
                 else if (opt == "BLOCK")
                 {
-                    // BLOCK not supported yet — skip the timeout arg
-                    argIdx += 2;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_BLOCK_NOT_SUPPORTED);
                 }
                 else
                 {

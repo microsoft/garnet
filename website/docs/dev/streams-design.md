@@ -170,10 +170,6 @@ XTRIM key MAXLEN|MINID [=|~] threshold
 
 Returns `index.Count` (number of non-tombstoned entries in the BTree).
 
-### XLAST — Last entry
-
-Returns the most recent entry by looking up `lastId` in the BTree and reading from the log.
-
 ---
 
 ## BTree Index
@@ -521,7 +517,7 @@ Consumer group state (groups, consumers, PELs, `LastDeliveredId`, `EntriesRead`)
 
 ### `BLOCK` is parsed but not implemented
 
-`XREAD` and `XREADGROUP` accept the `BLOCK milliseconds` option for compatibility but ignore it: the call returns immediately whether or not entries are available. Implementing blocking requires hooking streams into the `CollectionItemBroker` (the same mechanism used by `BLPOP`/`BRPOP`).
+`XREAD` and `XREADGROUP` reject the `BLOCK milliseconds` option with an error (`ERR BLOCK is not supported`) rather than silently treating the call as non-blocking — a busy client that expected to block would otherwise spin. Implementing real blocking requires hooking streams into the `CollectionItemBroker` (the same mechanism used by `BLPOP`/`BRPOP`).
 
 ### `XTRIM` near-exact trimming (`~`) and `LIMIT` are not supported
 
@@ -543,7 +539,6 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 | `XREVRANGE` | ✅ | `StreamRange(isReverse)` | Reverse range scan |
 | `XDEL` | ✅ | `StreamDelete` | Delete entries by ID |
 | `XTRIM` | ✅ | `StreamTrim` | Trim by MAXLEN or MINID |
-| `XLAST` | ✅ | `StreamLast` | Last entry (Garnet extension) |
 | `XGROUP` | ✅ | `StreamGroup` | CREATE/SETID/DESTROY/CREATECONSUMER/DELCONSUMER |
 | `XREADGROUP` | ✅ | `StreamReadGroup` | Consumer group read |
 | `XACK` | ✅ | `StreamAck` | Acknowledge entries |
@@ -552,7 +547,7 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 | `XAUTOCLAIM` | ✅ | `StreamAutoClaim` | Auto-reclaim idle entries |
 | `XINFO` | ✅ | `StreamInfoCmd` | STREAM/GROUPS/CONSUMERS introspection |
 | `XREAD` | ✅ | `StreamRead` | Multi-stream read (no groups) |
-| `BLOCK` | ⏳ | — | Parsed but ignored (returns immediately) |
+| `BLOCK` | ❌ | — | Rejected with an error (`ERR BLOCK is not supported`) |
 
 ---
 
@@ -561,7 +556,7 @@ Only exact trimming is implemented. The `~` modifier (approximate trimming, "tri
 | Path | Purpose |
 |------|---------|
 | `libs/server/Objects/Stream/StreamObject.cs` | `StreamObject` (partial) — class scaffolding, `Operate` dispatch, serialization/recovery, ID parsing & RESP-encoding helpers; also the static `StreamObjectConfig` holder |
-| `libs/server/Objects/Stream/StreamObjectImpl.cs` | `StreamObject` (partial) — per-command operation implementations: entry ops (XADD/XLEN/XDEL/XRANGE/XREVRANGE/XLAST/XTRIM) and the consumer-group operations |
+| `libs/server/Objects/Stream/StreamObjectImpl.cs` | `StreamObject` (partial) — per-command operation implementations: entry ops (XADD/XLEN/XDEL/XRANGE/XREVRANGE/XTRIM) and the consumer-group operations |
 | `libs/server/Objects/Stream/ConsumerGroup.cs` | `ConsumerGroup`, `StreamConsumer`, `PendingEntry` data model |
 | `libs/server/Objects/Stream/StreamID.cs` | `StreamID` — 128-bit stream entry identifier |
 | `libs/server/BTreeIndex/BTree.cs` | BTree root — create, insert dispatch |

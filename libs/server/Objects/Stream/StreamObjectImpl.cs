@@ -98,47 +98,6 @@ namespace Garnet.server
         }
 
 
-        // Read the last entry in the stream and into output
-        internal unsafe void ReadLastEntry(ref SpanByteAndMemory output, byte respProtocolVersion)
-        {
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
-            try
-            {
-                if (index.ValidCount == 0)
-                {
-                    writer.WriteNull();
-                    return;
-                }
-
-                // BTree retains tombstones until trim, so use LastAlive() to skip them.
-                var lastEntry = index.LastAlive();
-                if (!lastEntry.Value.Valid)
-                {
-                    writer.WriteNull();
-                    return;
-                }
-
-                long addressOnLog = lastEntry.Value.address;
-
-                using (var iter = log.Scan(addressOnLog, addressOnLog + 1, scanUncommitted: true))
-                {
-                    if (iter.GetNext(out byte[] entry, out _, out _, out _))
-                    {
-                        // XLAST returns the single last entry directly as [id, [field, value, ...]].
-                        WriteEntryToWriter(entry, ref writer);
-                    }
-                    else
-                    {
-                        writer.WriteNull();
-                    }
-                }
-            }
-            finally
-            {
-                writer.Dispose();
-            }
-        }
-
         /// <summary>
         /// Read entries from the stream from given range
         /// </summary>

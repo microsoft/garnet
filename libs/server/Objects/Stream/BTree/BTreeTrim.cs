@@ -18,7 +18,7 @@ namespace Garnet.server.BTreeIndex
         // root, crashing the test host on Dispose. This implementation tombstones in
         // place: it walks leaves from `head` forward, flips Value.Valid to false, and
         // decrements per-leaf and global valid counters. Reads (BTree.Get / LastAlive)
-        // already filter on Value.Valid, so XLEN/XRANGE/XLAST observe the correct
+        // already filter on Value.Valid, so XLEN/XRANGE observe the correct
         // post-trim state.
         //
         // Trade-offs of tombstone-only trim:

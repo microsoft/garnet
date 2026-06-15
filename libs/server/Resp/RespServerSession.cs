@@ -1024,7 +1024,6 @@ namespace Garnet.server
                 RespCommand.XRANGE => StreamRange(respProtocolVersion),
                 RespCommand.XREVRANGE => StreamRange(respProtocolVersion, isReverse: true),
                 RespCommand.XTRIM => StreamTrim(),
-                RespCommand.XLAST => StreamLast(respProtocolVersion),
                 RespCommand.XGROUP => StreamGroup(respProtocolVersion),
                 RespCommand.XREADGROUP => StreamReadGroup(respProtocolVersion),
                 RespCommand.XACK => StreamAck(respProtocolVersion),
