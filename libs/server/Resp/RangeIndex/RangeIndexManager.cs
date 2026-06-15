@@ -246,7 +246,15 @@ namespace Garnet.server
                 }
             }
 
-            Directory.CreateDirectory(migrationTempDir);
+            try
+            {
+                Directory.CreateDirectory(migrationTempDir);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "RangeIndexManager: failed to create migration temp directory {Path}", migrationTempDir);
+                throw new Exception($"RangeIndexManager: failed to create migration temp directory '{migrationTempDir}'.", ex);
+            }
         }
 
         /// <summary>
