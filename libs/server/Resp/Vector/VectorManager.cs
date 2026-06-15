@@ -489,7 +489,10 @@ namespace Garnet.server
             // It's possible for an index to be recovered from disk but never initialized, which means we need no drop
             if (indexPtr != 0)
             {
-                _ = requestedDrops.TryAdd(key.ToArray(), (context, indexPtr));
+                if (!requestedDrops.TryAdd(key.ToArray(), (context, indexPtr)))
+                {
+                    throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
+                }
 
                 _ = requestDropTaskChannel.Writer.TryWrite(null);
             }
