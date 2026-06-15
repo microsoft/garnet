@@ -1162,6 +1162,37 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Empty chunk (zero bytes) while receiving file data (file not yet fully received),
+        /// in ReceivingFileData — should be a graceful no-op, leaving the stream still receivable.
+        /// </summary>
+        [Test]
+        public void EmptyChunkDuringReceivingFileData()
+        {
+            var key = Encoding.UTF8.GetBytes("mykey");
+            var fileData = new byte[] { 0x01, 0x02, 0x03, 0x04 };
+            var stub = CreateStub();
+            var payload = BuildPayload(key, fileData, stub);
+
+            var manager = new RangeIndexManager(testDir);
+            using var deserializer = new RangeIndexChunkedDeserializer(manager.DeriveTempMigrationPath());
+
+            // Send key + file header + only the first 2 of 4 file bytes — now mid-ReceivingFileData.
+            var partialEnd = sizeof(int) + key.Length + sizeof(long) + 2;
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload.AsSpan(0, partialEnd)));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+
+            // Empty chunk — no-op, no error, still receiving file data.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk([]));
+            ClassicAssert.IsFalse(deserializer.IsComplete);
+            ClassicAssert.IsFalse(deserializer.HasError);
+
+            // Send the rest (remaining file bytes + trailer) — stream completes.
+            ClassicAssert.IsTrue(deserializer.ProcessChunk(payload.AsSpan(partialEnd)));
+            ClassicAssert.IsTrue(deserializer.IsComplete);
+            ClassicAssert.AreEqual(key, deserializer.Key.ToArray());
+        }
+
+        /// <summary>
         /// Empty chunk (zero bytes) delivered as the very first input, while in WaitingForKeyHeader —
         /// should be a graceful no-op, leaving the stream still receivable.
         /// </summary>
