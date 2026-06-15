@@ -167,8 +167,16 @@ namespace Garnet.server
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            requestDropTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
+            requestDropTask = RunRequestDropTaskAsync();
+
+            requestedDrops = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+            requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
             recoveredIndexes = new();
 
@@ -286,6 +294,11 @@ namespace Garnet.server
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             replicationBlockEvent.Dispose();
+
+            // Wait for any _drops_ in progress to finish
+            requestDropTaskChannel.Writer.Complete();
+            AsyncUtils.BlockingWait(requestDropTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(requestDropTask);
 
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
@@ -452,9 +465,34 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Request that the DiskANN side of an index be dropped.
+        /// 
+        /// This happens when a record is evicted to disk.
+        /// 
+        /// There's subtlty here because the DiskANN index might be in use (on the current or other threads)
+        /// and we can't allow the index to be recreated until any requested drops are processed.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
+        {
+            if (value.Length != IndexSize)
+            {
+                logger?.LogWarning($"Ignored Vector Set drop index due to size mismatch");
+                return;
+            }
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            _ = requestedDrops.TryAdd(key.ToArray(), (context, indexPtr));
+
+            _ = requestDropTaskChannel.Writer.TryWrite(null);
+        }
+
+        /// <summary>
         /// Ask DiskANN to drop its index.
         /// </summary>
-        internal void DropInMemoryIndex(ReadOnlySpan<byte> value)
+        private void DropInMemoryIndex(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {

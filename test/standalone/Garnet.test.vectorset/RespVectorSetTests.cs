@@ -988,6 +988,10 @@ namespace Garnet.test
             s.FlushDatabase(0);
 
 #if DEBUG
+            // Drops are requested and processed in the background, wait for them to drop
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            vectorManager.WaitForDiskANNIndexDrop("foo"u8);
+
             var finalCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
             var finalDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
 
@@ -2588,6 +2592,56 @@ namespace Garnet.test
                     ClassicAssert.IsEmpty(embRes);
                 }
             }
+        }
+
+        /// <summary>
+        /// Regression test for namespace corruption on the storage-tiered (disk-backed) Vector Set path.
+        ///
+        /// With a tiny main-log (lowMemory) and storage tiering enabled, vector records spill to disk and
+        /// are read back via pending (async-IO) RMW during DiskANN graph construction. The namespaced key
+        /// carried across that pending boundary must round-trip its namespace byte intact. A regression here
+        /// surfaces server-side as "Extended namespace not yet supported" (the namespace byte is read back
+        /// with bit 7 set), which kills the connection mid-load.
+        /// </summary>
+        [Test]
+        public void VADDLowMemoryStorageTierForcesDiskSpill()
+        {
+            // Recreate the server with a tiny main log + storage tiering so inserts spill to disk.
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = "lowmem-vs";
+            const int Dim = 16;
+            const int Count = 4000;     // far exceeds the low-memory main log, forcing records to disk
+            var rng = new Random(0);
+
+            var id = new byte[4];
+            for (var i = 0; i < Count; i++)
+            {
+                var vec = new float[Dim];
+                for (var d = 0; d < Dim; d++)
+                    vec[d] = (float)rng.NextDouble();
+
+                BinaryPrimitives.WriteInt32LittleEndian(id, i);
+
+                // VADD of a namespaced record; once data spills to disk, building the graph reads
+                // earlier records back via pending RMW (the path that corrupts the namespace).
+                var res = db.Execute("VADD", [Key, "FP32", MemoryMarshal.Cast<float, byte>(vec).ToArray(), id, "NOQUANT", "EF", "16", "M", "16"]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD #{i} should succeed (server must not crash on the disk-backed path)");
+            }
+
+            // The disk-backed set must still be searchable.
+            var query = new float[Dim];
+            for (var d = 0; d < Dim; d++)
+                query[d] = (float)rng.NextDouble();
+
+            var sim = (RedisResult[])db.Execute("VSIM", [Key, "FP32", MemoryMarshal.Cast<float, byte>(query).ToArray(), "COUNT", "10", "EF", "64"]);
+            ClassicAssert.IsNotEmpty(sim);
         }
 
         /// <summary>
