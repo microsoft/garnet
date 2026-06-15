@@ -87,8 +87,18 @@ namespace Garnet.server
             if (disposed) return;
             disposed = true;
 
-            fileStream?.Dispose();
-            fileStream = null;
+            try
+            {
+                fileStream?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to dispose file stream for {Path} (ignored)", tempFilePath);
+            }
+            finally
+            {
+                fileStream = null;
+            }
 
             if (tempFilePath != null)
             {
