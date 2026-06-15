@@ -225,7 +225,10 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "RangeIndexManager: failed to create riLogRoot {Path}", riLogRoot);
-                throw new Exception($"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'.", ex);
+                throw new IOException(
+                    $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
+                    "Check that the parent directory exists and the process has write permissions.",
+                    ex);
             }
 
             // Clean up partial migration artifacts from prior crashes, then ensure directory exists
