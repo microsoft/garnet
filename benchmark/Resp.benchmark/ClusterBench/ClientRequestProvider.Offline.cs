@@ -132,6 +132,7 @@ namespace Resp.benchmark
                     histogram.RecordValue(elapsed);
 
                 Interlocked.Add(ref opsCompleted, batchSize);
+                Interlocked.Add(ref bytesSent, len);
                 batchIdx++;
             }
         }

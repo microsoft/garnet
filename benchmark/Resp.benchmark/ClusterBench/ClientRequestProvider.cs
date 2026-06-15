@@ -25,10 +25,12 @@ namespace Resp.benchmark
         // Metrics
         readonly LongHistogram histogram;
         long opsCompleted;
+        long bytesSent;
 
         volatile bool done;
 
         public long OpsCompleted => Interlocked.Read(ref opsCompleted);
+        public long BytesSent => Interlocked.Read(ref bytesSent);
         public LongHistogram Histogram => histogram;
         public ShardInfo Shard => shard;
         public string KeyPrefix => keyGen.KeyPrefix;

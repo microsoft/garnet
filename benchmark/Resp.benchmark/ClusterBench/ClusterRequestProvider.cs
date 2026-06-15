@@ -231,21 +231,31 @@ namespace Resp.benchmark
         private void MonitorAndReportOffline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
         {
             long lastTotalOps = 0;
+            long lastTotalBytes = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
+            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
 
             while (sw.Elapsed < runTime)
             {
                 Thread.Sleep(reportInterval);
 
                 long currentTotalOps = 0;
+                long currentTotalBytes = 0;
                 foreach (var provider in providers)
+                {
                     currentTotalOps += provider.OpsCompleted;
+                    currentTotalBytes += provider.BytesSent;
+                }
 
                 long iterOps = currentTotalOps - lastTotalOps;
+                long iterBytes = currentTotalBytes - lastTotalBytes;
                 double tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
+                double dataGBps = (iterOps * logicalBytesPerOp) / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
+                double wireGBps = iterBytes / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
 
-                ReportOfflineIteration(currentTotalOps, iterOps, tptKops);
+                ReportOfflineIteration(currentTotalOps, iterOps, tptKops, dataGBps, wireGBps);
                 lastTotalOps = currentTotalOps;
+                lastTotalBytes = currentTotalBytes;
             }
 
             // Signal all providers to stop
@@ -282,11 +292,13 @@ namespace Resp.benchmark
         {
             var totalOpsHdr = "total_ops";
             var iterOpsHdr = "iter_ops";
-            var tptHdr = "tpt (Kops/sec)";
+            var tptHdr = "Kops/sec";
+            var dataHdr = "data (GB/s)";
+            var wireHdr = "wire (GB/s)";
             var header =
-                $"{totalOpsHdr,15} | {iterOpsHdr,15} | {tptHdr,15}";
+                $"{totalOpsHdr,15} | {iterOpsHdr,15} | {tptHdr,15} | {dataHdr,12} | {wireHdr,12}";
             var separator =
-                $"{new string('-', 15)}-+-{new string('-', 15)}-+-{new string('-', 15)}";
+                $"{new string('-', 15)}-+-{new string('-', 15)}-+-{new string('-', 15)}-+-{new string('-', 12)}-+-{new string('-', 12)}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
             {
@@ -330,10 +342,10 @@ namespace Resp.benchmark
                 logger?.LogInformation("{msg}", msg);
         }
 
-        private void ReportOfflineIteration(long totalOps, long iterOps, double tptKops)
+        private void ReportOfflineIteration(long totalOps, long iterOps, double tptKops, double dataGBps, double wireGBps)
         {
             var msg =
-                $"{totalOps,15:N0} | {iterOps,15:N0} | {tptKops,15:N2}";
+                $"{totalOps,15:N0} | {iterOps,15:N0} | {tptKops,15:N2} | {dataGBps,12:N3} | {wireGBps,12:N3}";
 
             if (opts.DisableConsoleLogger && opts.FileLogger == null)
                 Console.WriteLine(msg);
@@ -349,6 +361,7 @@ namespace Resp.benchmark
 
             var summary = new LongHistogram(1, TimeStamp.Seconds(100), 2);
             long totalOps = 0;
+            long totalBytes = 0;
 
             // Per-shard summary
             Console.WriteLine($"{"Shard",-8}{"Endpoint",-25}{"Threads",-10}{"Ops",-15}{"Ops/sec",-15}");
@@ -359,13 +372,16 @@ namespace Resp.benchmark
             for (int s = 0; s < shards.Length; s++)
             {
                 long shardOps = 0;
+                long shardBytes = 0;
                 for (int t = 0; t < threadsPerShard; t++)
                 {
                     var provider = providers[s * threadsPerShard + t];
                     shardOps += provider.OpsCompleted;
+                    shardBytes += provider.BytesSent;
                     summary.Add(provider.Histogram);
                 }
                 totalOps += shardOps;
+                totalBytes += shardBytes;
 
                 double shardOpsPerSec = shardOps / totalElapsed.TotalSeconds;
                 Console.WriteLine($"{s,-8}{shards[s].Address + ":" + shards[s].Port,-25}{threadsPerShard,-10}{shardOps,-15}{shardOpsPerSec,-15:N0}");
@@ -387,9 +403,16 @@ namespace Resp.benchmark
                 Console.WriteLine($"Latency (us): p50={p50:F1}  p95={p95:F1}  p99={p99:F1}  p99.9={p999:F1}  avg={avg:F1}");
             }
 
+            // Throughput summary
+            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+            double dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            double wireGBps = totalBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+
             Console.WriteLine();
             Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
+            Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
+            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP bytes sent)");
             Console.WriteLine("================================================");
         }
 
