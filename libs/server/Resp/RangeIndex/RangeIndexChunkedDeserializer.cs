@@ -303,7 +303,10 @@ namespace Garnet.server
                 if (File.Exists(tempPath))
                     File.Delete(tempPath);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "RangeIndexChunkedDeserializer: failed to delete temp file {Path} during dispose (ignored)", tempPath);
+            }
         }
     }
 }
