@@ -133,17 +133,6 @@ namespace Garnet.server
         /// Publish a migrated RangeIndex key: move the temp file to the working path,
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
-        /// <remarks>
-        /// If ANY key (string, object, RI, vector, etc.) already exists at this key name
-        /// on the destination, the migration is skipped regardless of
-        /// <paramref name="replaceOption"/>:
-        /// <list type="bullet">
-        /// <item><paramref name="replaceOption"/> = false → <see cref="PublishMigratedIndexResult.SkippedAlreadyExists"/></item>
-        /// <item><paramref name="replaceOption"/> = true  → <see cref="PublishMigratedIndexResult.SkippedReplaceNotSupported"/>
-        /// (REPLACE for RI keys is not yet implemented; safe overwrite requires the staging-file
-        /// + in-progress-marker design described in the TODO inside this method).</item>
-        /// </list>
-        /// </remarks>
         public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
         {
             var keyExists = KeyExists(keyBytes, ref ctx);
