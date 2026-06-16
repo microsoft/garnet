@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -378,6 +379,111 @@ namespace Garnet.test.Resp
 
                 ClassicAssert.IsFalse(success);
                 ClassicAssert.AreEqual(0, recordSpan.Length);
+            }
+        }
+
+        [Test]
+        public static unsafe void RejectOversizedLengths()
+        {
+            var bigBuffer = GC.AllocateUninitializedArray<byte>(RespReadUtils.MaxArgumentLengthBytes + 1, pinned: true);
+
+            var smallToCopy = Encoding.ASCII.GetBytes("$1234\r\n" + new string('a', 1234) + "\r\n");
+            var bigToCopy = "$536870913\r\n"u8;
+
+            fixed (byte* startPtr = bigBuffer)
+            {
+                var endPtr = startPtr + bigBuffer.Length;
+
+                // TryReadPtrWithSignedLengthHeader
+                {
+                    // Pass in bounds
+                    var ptr = startPtr;
+                    smallToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+
+                    var len = 0;
+                    byte* outPtr = null;
+                    ClassicAssert.True(RespReadUtils.TryReadPtrWithSignedLengthHeader(ref outPtr, ref len, ref ptr, endPtr));
+                    ClassicAssert.True(outPtr == (startPtr + 7));
+                    ClassicAssert.AreEqual(1234, len);
+                    ClassicAssert.True(ptr == (outPtr + len + 2));
+
+                    // Fail too big
+                    ptr = startPtr;
+
+                    len = 0;
+                    outPtr = null;
+                    bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+                    ClassicAssert.False(RespReadUtils.TryReadPtrWithSignedLengthHeader(ref outPtr, ref len, ref ptr, endPtr));
+                }
+
+                // TrySkipByteArrayWithLengthHeader
+                {
+                    // Pass in bounds
+                    var ptr = startPtr;
+                    smallToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+
+                    ClassicAssert.True(RespReadUtils.TrySkipByteArrayWithLengthHeader(ref ptr, endPtr));
+                    ClassicAssert.True(ptr == (startPtr + 7 + 1234 + 2));
+
+                    // Fail too big
+                    ptr = startPtr;
+                    bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+                    ClassicAssert.False(RespReadUtils.TrySkipByteArrayWithLengthHeader(ref ptr, endPtr));
+                }
+
+                // TrySliceWithLengthHeader
+                {
+                    // Pass in bounds
+                    var ptr = startPtr;
+                    smallToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+
+                    ClassicAssert.True(RespReadUtils.TrySliceWithLengthHeader(out var slice, ref ptr, endPtr));
+                    ClassicAssert.AreEqual(1234, slice.Length);
+                    ClassicAssert.True(ptr == (startPtr + 7 + slice.Length + 2));
+
+                    // Fail too big
+                    ptr = startPtr;
+                    bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+                    ClassicAssert.False(RespReadUtils.TrySliceWithLengthHeader(out slice, ref ptr, endPtr));
+                }
+
+                // TryReadSpanWithLengthHeader
+                {
+                    // Pass in bounds
+                    var ptr = startPtr;
+                    smallToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+
+                    ClassicAssert.True(RespReadUtils.TryReadSpanWithLengthHeader(out var slice, ref ptr, endPtr));
+                    ClassicAssert.AreEqual(1234, slice.Length);
+                    ClassicAssert.True(ptr == (startPtr + 7 + slice.Length + 2));
+
+                    // Fail too big
+                    ptr = startPtr;
+                    bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+                    ClassicAssert.False(RespReadUtils.TryReadSpanWithLengthHeader(out slice, ref ptr, endPtr));
+                }
+
+                // TryReadPtrWithLengthHeader
+                {
+                    // Pass in bounds
+                    var ptr = startPtr;
+                    smallToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+
+                    var len = 0;
+                    byte* resultPtr = null;
+                    ClassicAssert.True(RespReadUtils.TryReadPtrWithLengthHeader(ref resultPtr, ref len, ref ptr, endPtr));
+                    ClassicAssert.True(resultPtr == (startPtr + 7));
+                    ClassicAssert.AreEqual(1234, len);
+                    ClassicAssert.True(ptr == (startPtr + 7 + len + 2));
+
+                    // Fail too big
+                    ptr = startPtr;
+                    
+                    len = 0;
+                    resultPtr = null;
+                    bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
+                    ClassicAssert.False(RespReadUtils.TryReadPtrWithLengthHeader(ref resultPtr, ref len, ref ptr, endPtr));
+                }
             }
         }
     }
