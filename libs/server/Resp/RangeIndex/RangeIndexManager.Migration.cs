@@ -263,8 +263,6 @@ namespace Garnet.server
         /// </summary>
         internal bool SnapshotForMigration(StorageSession session, PinnedSpanByte key, out string path, out long totalBytes, out byte[] stubBytes)
         {
-            // TODO(RI): Is there a risk of a checkpoint happening that's outside the regular checkpoint CPR path?
-
             path = null;
             totalBytes = 0;
             stubBytes = null;
