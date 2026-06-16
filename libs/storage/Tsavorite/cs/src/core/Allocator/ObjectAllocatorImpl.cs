@@ -1112,17 +1112,12 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
 
-            if (result.recoveryPhase == RecoveryPhase.Pass1)
+            // If this is Recovery Pass 1 we skip object deserialization (frame reads are in RecoveryPhase.None).
+            if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
-                // This is Recovery Pass 1, so skip object deserialization. (Frame reads are in RecoveryPhase.None)
-                _ = result.handle?.Signal();
-                result.callback(errorCode, numBytes, context);
-                result.Free();
-                return;
+                var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
             }
-
-            var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-            DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
 
             // Call the "real" page read callback
             result.callback(errorCode, numBytes, context);

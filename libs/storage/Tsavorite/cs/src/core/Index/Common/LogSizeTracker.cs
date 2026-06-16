@@ -278,31 +278,24 @@ namespace Tsavorite.core
             var maxEvictUntilAddress = allocator.UnstableGetTailAddress(out _) - MinEvictionHeadAddressLag;
             var maxEvictUntilPage = allocator.GetPage(maxEvictUntilAddress);
 
-            // If there is nothing to trim from the heap, we can just do math to advance HA.
+            // If there is nothing to trim from the heap, we just do math to trim as many pages as we need to (up to the limit).
             if (heapSize.Total == 0)
             {
+                // We are evicting in units of pages, so we set this to the start of the maxEvictUntilPage.
+                maxEvictUntilAddress = allocator.GetLogicalAddressOfStartOfPage(maxEvictUntilPage);
                 var evictableSize = maxEvictUntilAddress - headAddress;
-                var isComplete = overBudgetAmount <= evictableSize;
-                if (!isComplete)
-                    overBudgetAmount = evictableSize;
-
-                // Scan from start of page to snap headAddress to the highest valid record boundary before targetHeadAddress.
-                var targetHeadAddress = headAddress + overBudgetAmount;
-                var updatedHeadPage = allocator.GetPage(targetHeadAddress);
-                var scanAddress = allocator.GetFirstValidLogicalAddressOnPage(updatedHeadPage);
-                headAddress = scanAddress;
-                while (scanAddress < targetHeadAddress)
+                var margin = overBudgetAmount - evictableSize;
+                var isComplete = margin > 0;
+                if (isComplete)
                 {
-                    var logRecord = new LogRecord(allocator.GetPhysicalAddress(scanAddress));
-                    if (logRecord.Info.Valid)
-                        headAddress = scanAddress;
-                    var allocatedSize = logRecord.AllocatedSize;
-                    if (allocatedSize <= 0)
-                        ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
-                    scanAddress += allocatedSize;
+                    var additionalPagesToKeep = margin / allocator.PageSize;
+                    maxEvictUntilPage -= additionalPagesToKeep;
                 }
 
-                allocatedPageCount -= (int)(updatedHeadPage - startingHeadPage);
+                // We'll evict the page so start at the first valid logical address on the next page.
+                headAddress = allocator.GetFirstValidLogicalAddressOnPage(maxEvictUntilPage);
+
+                allocatedPageCount -= (int)(maxEvictUntilPage - startingHeadPage);
                 return isComplete;
             }
 

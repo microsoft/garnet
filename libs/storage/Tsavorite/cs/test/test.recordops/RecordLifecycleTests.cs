@@ -253,7 +253,7 @@ namespace Tsavorite.test
             }
 
             ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.CopyUpdated),
-                "CopyUpdated is handled internally by logSizeTracker — OnDispose must not fire for it");
+                "CopyUpdated is handled internally by logSizeTracker; OnDispose must not fire for it");
             ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.Deleted),
                 "Deleted must not fire on a CopyUpdate path");
             ClassicAssert.AreEqual(0, tracker.TotalEvict(),

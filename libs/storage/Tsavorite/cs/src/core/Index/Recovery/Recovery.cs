@@ -601,7 +601,8 @@ namespace Tsavorite.core
             var totalPagesNeeded = loadedPages + numPagesToRead;
             var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
-            // Evict pages from headAddress upward while over budget, respecting MinEvictionHeadAddressLag
+            // Evict pages from headAddress upward while over budget, respecting MinEvictionHeadAddressLag. This is during Pass1,
+            // so there are no objects to evict; we're evicting a full page each iteration.
             while (totalPagesNeeded > 1
                 && hlogBase.logSizeTracker.RemainingBudget < numPagesToRead * hlogBase.PageSize
                 && recoveryStatus.headAddress < maxHeadAddress)

@@ -2851,7 +2851,15 @@ namespace Tsavorite.core
 
                 if (headAddress == 0)
                     headAddress = FirstValidAddress;
-                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure)
+                        throw;
+                }
             }
 
             CompleteRestoreFromCommit(info);
@@ -2920,7 +2928,15 @@ namespace Tsavorite.core
 
                 if (headAddress == 0)
                     headAddress = FirstValidAddress;
-                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure)
+                        throw;
+                }
             }
 
             CompleteRestoreFromCommit(info);
