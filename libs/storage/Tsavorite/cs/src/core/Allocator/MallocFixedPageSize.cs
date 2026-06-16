@@ -50,6 +50,7 @@ namespace Tsavorite.core
         private AllocationMode allocationMode;
 #endif
 
+        // This is used only for Flush and Restore, not random reads, so 512 is fine.
         const int SectorSize = 512;
 
         private int initialAllocation = 0;

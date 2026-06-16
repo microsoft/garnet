@@ -48,12 +48,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Creates a memory-backed chunk read result.
         /// </summary>
-        public DataSourceReadResult(byte[] data, long chunkStartAddress)
+        public DataSourceReadResult(byte[] data, int bytesRead, long chunkStartAddress)
         {
             Buffer = null;
             Data = data;
-            BytesRead = data.Length;
+            BytesRead = bytesRead;
             ChunkStartAddress = chunkStartAddress;
+        }
+
+        /// <summary>
+        /// Creates a memory-backed chunk read result where all bytes in the array are valid.
+        /// </summary>
+        public DataSourceReadResult(byte[] data, long chunkStartAddress)
+            : this(data, data.Length, chunkStartAddress)
+        {
         }
     }
 }

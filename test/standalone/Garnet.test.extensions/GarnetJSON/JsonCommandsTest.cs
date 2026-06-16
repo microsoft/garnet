@@ -368,7 +368,8 @@ namespace Garnet.test
                 // Issue and wait for DB save
                 var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
-                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);

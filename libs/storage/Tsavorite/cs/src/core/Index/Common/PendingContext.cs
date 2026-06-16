@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -42,7 +43,8 @@ namespace Tsavorite.core
             /// <summary>The user Context that was sent to this operation if it was RUMD.</summary>
             internal TContext userContext;
 
-            /// <summary>The id of this operation in the <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.TsavoriteExecutionContext{TInput, TOutput, TContext}.ioPendingRequests"/> queue.</summary>
+            /// <summary>The id assigned to this operation when it goes pending (diagnostic; the pending op is
+            /// carried directly on its <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.PendingIoContext{TInput, TOutput, TContext}"/>).</summary>
             internal long id;
 
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
@@ -72,6 +74,10 @@ namespace Tsavorite.core
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
+            /// <summary>Initial IO record size for disk reads; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from session or store level.
+            /// Note: default(PendingContext) leaves this as 0, which is also treated as "use default" by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.ResolveInitialIORecordSize"/>.</summary>
+            internal int initialIORecordSize;
+
             internal long minAddress;
             internal long maxAddress;
 
@@ -91,17 +97,23 @@ namespace Tsavorite.core
             {
                 var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
-                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}";
+                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}, InitIORecSz={initialIORecordSize}";
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(long keyHash) => this.keyHash = keyHash;
+            internal PendingContext(long keyHash)
+            {
+                this.keyHash = keyHash;
+                operationFlags = kNoOpFlags;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
                 operationFlags = kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
+                initialIORecordSize = readOptions.InitialIORecordSize;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -109,6 +121,7 @@ namespace Tsavorite.core
             {
                 operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
+                initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize;
             }
 
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
@@ -152,10 +165,42 @@ namespace Tsavorite.core
 
                 if (this.input == default)
                 {
+                    // Rent a heap-container wrapper from the per-session pool so the disk-pending
+                    // hot path is allocation-free in steady state. The wrapper returns itself to
+                    // the pool when its Dispose() is invoked by PendingContext.Dispose(); on a
+                    // cold session (pool empty) we allocate once and the wrapper joins the pool
+                    // on first disposal.
+                    var pool = sessionFunctions.Ctx.heapContainerPool;
                     if (typeof(TInput) == typeof(PinnedSpanByte))
-                        this.input = new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), sessionFunctions.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                    {
+                        // Under this typeof-folded branch, TInput is statically PinnedSpanByte at JIT
+                        // specialization, so the Stack<IHeapContainer<TInput>> is the same CLR type as
+                        // Stack<IHeapContainer<PinnedSpanByte>>; reinterpret the reference without a
+                        // CLR type check.
+                        var spanByteInput = Unsafe.As<TInput, PinnedSpanByte>(ref input);
+                        var spanBytePool = Unsafe.As<Stack<IHeapContainer<PinnedSpanByte>>>(pool);
+                        if (spanBytePool.TryPop(out var rented))
+                        {
+                            Unsafe.As<SpanByteHeapContainer>(rented).Initialize(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool);
+                            this.input = Unsafe.As<IHeapContainer<PinnedSpanByte>, IHeapContainer<TInput>>(ref rented);
+                        }
+                        else
+                        {
+                            this.input = new SpanByteHeapContainer(spanByteInput, sessionFunctions.Store.hlogBase.bufferPool, spanBytePool) as IHeapContainer<TInput>;
+                        }
+                    }
                     else
-                        this.input = new StandardHeapContainer<TInput>(ref input);
+                    {
+                        if (pool.TryPop(out var rented))
+                        {
+                            Unsafe.As<StandardHeapContainer<TInput>>(rented).Initialize(ref input, pool);
+                            this.input = rented;
+                        }
+                        else
+                        {
+                            this.input = new StandardHeapContainer<TInput>(ref input, pool);
+                        }
+                    }
                 }
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);

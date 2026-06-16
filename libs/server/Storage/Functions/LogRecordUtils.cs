@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -17,6 +17,6 @@ namespace Garnet.server
         /// <returns>True if the log record has expired; otherwise, false.</returns>
         internal static bool CheckExpiry<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
+            => srcLogRecord.DataHeader.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
     }
 }

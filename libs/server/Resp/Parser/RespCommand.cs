@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -707,6 +708,12 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// Maximum number of arguments (excluding the command name) allowed in a single RESP command.
+        /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
+        /// </summary>
+        const int MaxRespArrayLength = 1 << 20; // 1,048,576
+
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
@@ -2798,14 +2805,15 @@ namespace Garnet.server
         /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
         private bool AttemptSkipLine()
         {
-            // We might have received an inline command package.Try to find the end of the line.
-            logger?.LogWarning("Received malformed input message. Trying to skip line.");
-
+            // We might have received an inline command package. Try to find the end of the line.
             for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
                 if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
-                    // Skip to the end of the string
+                    // We found a complete line that was not a valid RESP array - this is malformed input.
+                    // Only log here (not on the partial-frame path below) to avoid spurious warnings
+                    // when speculative parsers (e.g. NetworkGET_SG) peek past end-of-batch.
+                    logger?.LogWarning("Received malformed input message. Trying to skip line.");
                     readHead = endReadHead = stringEnd + 2;
                     return true;
                 }
@@ -2929,6 +2937,11 @@ namespace Garnet.server
             {
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
+            }
+
+            if (count > MaxRespArrayLength)
+            {
+                RespParsingException.ThrowExcessiveArgumentCount(count, MaxRespArrayLength);
             }
 
             // Set up parse state

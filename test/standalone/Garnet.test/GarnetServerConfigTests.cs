@@ -1194,6 +1194,71 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AclStrictCustomCommands()
+        {
+            // Command line args
+            {
+                // Default (option unset) - must apply the strict default (true).
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Explicit true is accepted.
+                {
+                    var args = new[] { "--acl-strict-custom-commands", "true" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Explicit false overrides the strict default (operator opt-out path).
+                {
+                    var args = new[] { "--acl-strict-custom-commands", "false" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AclStrictCustomCommands);
+                }
+            }
+
+            // JSON args
+            {
+                // Default (key omitted) - falls back to strict.
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // True is accepted.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // False is accepted.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AclStrictCustomCommands);
+                }
+
+                // Invalid value is rejected.
+                {
+                    const string JSON = @"{ ""AclStrictCustomCommands"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
         public void EnableVectorSetPreview()
         {
             // Command line args
@@ -1379,13 +1444,85 @@ namespace Garnet.test
             }
 
             // AofPageSize > AofSegmentSize should throw.
-            args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m"];
+            args = ["--aof", "--aof-page-size", "8m", "--aof-segment-size", "4m", "--aof-memory", "16m"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(0, invalidOptions.Count);
             serverOptions = options.GetServerOptions();
             var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
-            ClassicAssert.IsTrue(ex.Message.Contains("AOF Page size cannot be more than the AOF segment size."));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofSegmentSize"));
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-segment-size"));
+
+            // AofMemorySize == AofPageSize should throw with a Garnet-specific message naming both
+            // AofMemorySize and AofPageSize (regression test for misleading
+            // "MemorySize must be at least twice the page size" error surfaced in issue #1811).
+            args = ["--aof", "--aof-page-size", "64m", "--aof-memory", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofMemorySize"), $"Expected message to mention AofMemorySize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-memory"), $"Expected message to mention --aof-memory, got: {ex.Message}");
+
+            // AofMemorySize == 2 * AofPageSize should be the minimum that succeeds.
+            args = ["--aof", "--aof-page-size", "64m", "--aof-memory", "128m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 26, logSettings[0].PageSize);
+                ClassicAssert.AreEqual(1L << 27, logSettings[0].MemorySize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+
+            // AofPageSize < 2 * (main-log) PageSize should throw, because an AOF entry can be as
+            // large as the underlying main-log record. Regression test for the runtime
+            // "Entry does not fit on page" surfaced in issue #1811.
+            args = ["--aof", "--aof-page-size", "8m", "--aof-memory", "32m", "--page", "16m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("PageSize"), $"Expected message to mention PageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--aof-page-size"), $"Expected message to mention --aof-page-size, got: {ex.Message}");
+
+            // AofPageSize == 2 * (main-log) PageSize should be the minimum that succeeds against the new rule.
+            args = ["--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "16m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+                ClassicAssert.AreEqual(1L << 25, logSettings[0].PageSize);
+                ClassicAssert.AreEqual(1L << 26, logSettings[0].MemorySize);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
         }
 
         [Test]
@@ -1404,7 +1541,7 @@ namespace Garnet.test
             }
 
             // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (256m) passes the cross-property fit check.
-            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("256m", 1 << 28) })
+            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("2m", 1 << 21) })
             {
                 var args = new[] { "--page", "1g", "--value-overflow-threshold", input };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
@@ -1477,13 +1614,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(64, options.GetServerOptions().ValueOverflowThresholdBytes());
             }
 
-            // Accept exactly the maximum (256m = 1<<28). Use a 1g PageSize so the cross-property fit check passes.
+            // Accept exactly the maximum (2m = 1<<21). Use a 1g PageSize so the cross-property fit check passes.
             {
-                var args = new[] { "--page", "1g", "--value-overflow-threshold", "256m" };
+                var args = new[] { "--page", "1g", "--value-overflow-threshold", "2m" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual(1 << 28, options.GetServerOptions().ValueOverflowThresholdBytes());
+                ClassicAssert.AreEqual(1 << 21, options.GetServerOptions().ValueOverflowThresholdBytes());
             }
 
             // JSON: reject invalid format
@@ -1651,6 +1788,44 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
                 ClassicAssert.AreEqual(10, serverOptions.ReadCachePageSizeBits());
+            }
+        }
+
+        [Test]
+        public void InitialIORecordSizeParsing()
+        {
+            // Default value from defaults.conf is null (unset)
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.IsNull(options.InitialIORecordSize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsNull(serverOptions.InitialIORecordSize);
+                ClassicAssert.AreEqual(KVSettings.UseDefaultInitialIORecordSize, serverOptions.GetInitialIORecordSizeBytes());
+            }
+
+            // Various valid memory size strings (CLI)
+            foreach (var (input, expectedBytes) in new[] { ("24", 24), ("4k", 4096), ("8k", 8192) })
+            {
+                var args = new[] { "--initial-io-record-size", input };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"CLI parsing failed for '{input}'");
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(input, options.InitialIORecordSize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(expectedBytes, serverOptions.GetInitialIORecordSizeBytes(), $"Expected {expectedBytes} bytes for '{input}'");
+            }
+
+            // JSON parsing of a valid memory size string
+            {
+                const string JSON = @"{ ""InitialIORecordSize"": ""4k"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual("4k", options.InitialIORecordSize);
+                ClassicAssert.AreEqual(4096, options.GetServerOptions().GetInitialIORecordSizeBytes());
             }
         }
     }

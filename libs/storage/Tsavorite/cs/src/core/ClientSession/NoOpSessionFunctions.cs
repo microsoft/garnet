@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -99,7 +99,7 @@ namespace Tsavorite.core
 #endif
             where TSourceLogRecord : ISourceLogRecord
             // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject };
 
         /// <summary>
         /// No reads during compaction

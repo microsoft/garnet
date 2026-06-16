@@ -18,6 +18,9 @@ namespace Tsavorite.core
     /// </summary>
     public interface IDevice : IDisposable
     {
+        /// <summary>Device sector size used when the actual sector size cannot be determined, or is smaller than this (the optimal read size).</summary>
+        public const int MinDeviceSectorSize = 1 << 9;  // 512 bytes
+
         /// <summary>
         /// Size of sector
         /// </summary>
@@ -59,17 +62,23 @@ namespace Tsavorite.core
         int ThrottleLimit { get; set; }
 
         /// <summary>
-        /// Initialize device. This function is used to pass optional information that may only be known after
-        /// Tsavorite initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
-        /// information if it does not need the supplied information.
-        /// 
-        /// This is a bit of a hack. 
+        /// Override device defaults. The ctor already establishes a valid configuration
+        /// (unbounded single segment — equivalent to <paramref name="segmentSize"/> = -1), so
+        /// callers may issue IO immediately after construction without calling this method;
+        /// <see cref="Initialize"/> is purely an opt-in configuration step.
+        ///
+        /// Passing <paramref name="segmentSize"/> = -1 selects unbounded single-segment mode:
+        /// the device keeps a single growing segment file and every IO routes to segment 0.
+        /// Any other value must be a positive power of two and at least the device sector size.
         /// </summary>
-        /// <param name="segmentSize"></param>
-        /// <param name="epoch">
-        /// <param name="omitSegmentIdFromFilename"></param>
-        /// The instance of the epoch protection framework to use, if needed
-        /// </param>
+        /// <param name="segmentSize">Segment size in bytes (power of two), or -1 for an
+        /// unbounded single segment.</param>
+        /// <param name="epoch">The instance of the epoch protection framework to use, if
+        /// needed.</param>
+        /// <param name="omitSegmentIdFromFilename">When true, the segment index is not appended
+        /// to the filename. Only permitted when <paramref name="segmentSize"/> = -1 (unbounded
+        /// single segment) — devices reject this flag in any other configuration. Supported by
+        /// both managed devices and <c>NativeStorageDevice</c>.</param>
         void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false);
 
         /// <summary>

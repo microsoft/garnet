@@ -27,7 +27,7 @@ namespace Tsavorite.core
 #endif
         {
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
-            logRecord.InfoRef.WriteInfo(inNewVersion, previousAddress);
+            logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);
             log._wrapper.InitializeRecord(key, logicalAddress, in sizeInfo, ref logRecord);
             return logRecord;
         }
@@ -170,58 +170,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == kInvalidAddress
-                ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx, newLogicalAddress);
+            // Latch-free read cache: the only structural CAS is on the hash-table entry. The new record's PreviousAddress is
+            // already the first main-log address (recSrc.LatestLogicalAddress), so CAS'ing it into the hash entry atomically
+            // commits the record and *detaches* (drops) any read-cache prefix from the reachable chain. We never splice into
+            // the read-cache/main-log boundary (no interior-record CAS). Dropped read-cache records are orphaned and reclaimed
+            // by ReadCacheEvict when their page is closed. This keeps the head monotonic (it only advances to the new record,
+            // never back to a superseded read-cache address), which is what makes the operation correct without a bucket latch.
+            var result = stackCtx.hei.TryCAS(newLogicalAddress);
             if (result)
                 newLogRecord.InfoRef.UnsealAndValidate();
             return result;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TSourceLogRecord : ISourceLogRecord
-            => PostCopyToTail(in srcLogRecord, ref stackCtx, stackCtx.hei.Address);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            // Nothing required here if not using ReadCache
-            if (!UseReadCache)
-                return;
-
-            // We're using the read cache, so any insertion must check that a readcache insertion wasn't done
-            if (stackCtx.recSrc.HasReadCacheSrc)
-            {
-                // If we already have a readcache source, there will not be another inserted, so we can just invalidate the source directly.
-                srcLogRecord.InfoRef.SetInvalidAtomic();
-            }
-            else if (stackCtx.recSrc.HasMainLogSrc)
-            {
-                // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
-                // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
-                // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
-                ReadCacheCheckTailAfterSplice(srcLogRecord, ref stackCtx.hei, highestReadCacheAddressChecked);
-            }
-        }
-
-        // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
-        // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
+        // Called after BlockAllocate or anything else that could shift HeadAddress, to return false for RETRY as needed.
+        // The caller still rechecks that the BlockAllocated address is above the position it will insert at.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool VerifyInMemoryAddresses(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
-            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
-                return false;
-
-            // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
-                return true;
-
-            // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,
-            // so just return RETRY_LATER and restart the operation.
-            return false;
+            // (We no longer need to guard the read-cache prefix boundary here: with the latch-free design nothing
+            // consumes the boundary after FindInReadCache - the update detaches and the promotion head-inserts via the
+            // hash-entry CAS, which itself fails if the prefix was concurrently evicted and the head changed.)
+            return !(stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

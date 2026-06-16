@@ -106,4 +106,26 @@ namespace Garnet.server
         CheckpointType = 0x4,
         FlushDbType = 0x5,
     }
+
+    internal static class AofEntryTypeExtensions
+    {
+        /// <summary>
+        /// Returns true if the entry type carries a key payload after the header.
+        /// Keyless entries (transactions, checkpoints, flush, stored procedures) have no key.
+        /// </summary>
+        internal static bool HasKey(this AofEntryType opType) => opType switch
+        {
+            AofEntryType.StoreUpsert or
+            AofEntryType.StoreRMW or
+            AofEntryType.StoreDelete or
+            AofEntryType.ObjectStoreUpsert or
+            AofEntryType.ObjectStoreRMW or
+            AofEntryType.ObjectStoreDelete or
+            AofEntryType.UnifiedStoreStringUpsert or
+            AofEntryType.UnifiedStoreObjectUpsert or
+            AofEntryType.UnifiedStoreRMW or
+            AofEntryType.UnifiedStoreDelete => true,
+            _ => false,
+        };
+    }
 }

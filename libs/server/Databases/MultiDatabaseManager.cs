@@ -454,7 +454,7 @@ namespace Garnet.server
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
-            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
+            var aofProcessor = new AofProcessor(StoreWrapper, clusterProvider: StoreWrapper.clusterProvider, recordToAof: false, logger: Logger);
 
             var replicationOffset = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
             try
@@ -715,7 +715,7 @@ namespace Garnet.server
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, db.VectorManager, Logger, respProtocolVersion);
+            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: PooledArrayMemoryPool.Shared, db.SizeTracker, db.VectorManager, Logger, respProtocolVersion);
         }
 
         /// <inheritdoc/>

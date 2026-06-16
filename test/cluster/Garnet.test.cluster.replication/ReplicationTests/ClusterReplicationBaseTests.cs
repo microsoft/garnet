@@ -36,14 +36,6 @@ namespace Garnet.test.cluster
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(false, true)), "ClusterSRPrimaryCheckpointAsync(false, true)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, false)), "ClusterSRPrimaryCheckpointAsync(true, false)"),
                 new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, true)), "ClusterSRPrimaryCheckpointAsync(true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false)"),
-                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)"),
                 new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)"),
@@ -142,8 +134,9 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
-            if (useTLS)
-                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
+            // Disable excessive logging; Leave for future debugging
+            //if (useTLS)
+            //    context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
 
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -211,8 +204,9 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public async Task ClusterSRPrimaryCheckpointAsync([Values] bool performRMW, [Values] bool disableObjects)
         {
-            if (useTLS)
-                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
+            // Disable excessive logging; Leave for future debugging
+            //if (useTLS)
+            //    context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
 
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -246,6 +240,8 @@ namespace Garnet.test.cluster
 
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
             var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Populate Primary
@@ -360,8 +356,9 @@ namespace Garnet.test.cluster
                     context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
 
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Restart secondary
@@ -612,6 +609,8 @@ namespace Garnet.test.cluster
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryIndex);
                 context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
@@ -685,6 +684,7 @@ namespace Garnet.test.cluster
             if (takePrimaryCheckpoint)
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(0, primaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(0, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
             }
@@ -711,6 +711,7 @@ namespace Garnet.test.cluster
             if (takeNewPrimaryCheckpoint)
             {
                 var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(1, newPrimaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(1, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(1, newPrimaryLastSaveTime, logger: context.logger);
             }
@@ -820,7 +821,7 @@ namespace Garnet.test.cluster
         [Test, Order(16)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
-            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
+            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false);
 
         [Test, Order(17)]
         [Category("REPLICATION")]
@@ -830,8 +831,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: false,
-                fastCommit: false);
+                mainMemoryReplication: false);
 
         [Test, Order(18)]
         [Category("REPLICATION")]
@@ -841,8 +841,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence,
                 multiCheckpointAfterDivergence: false,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(19)]
         [Category("REPLICATION")]
@@ -852,8 +851,7 @@ namespace Garnet.test.cluster
                 disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: true,
-                fastCommit: false);
+                mainMemoryReplication: true);
 
         [Test, Order(20)]
         [Category("REPLICATION")]
@@ -863,24 +861,21 @@ namespace Garnet.test.cluster
                 disableObjects: disableObjects,
                 ckptBeforeDivergence: true,
                 multiCheckpointAfterDivergence: true,
-                mainMemoryReplication: mainMemoryReplication,
-                fastCommit: true);
+                mainMemoryReplication: mainMemoryReplication);
 
-        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication, bool fastCommit)
+        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication)
         {
             var set = false;
             var replica_count = 2;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            fastCommit = sublogCount > 1;
             context.CreateInstances(
                 nodes_count,
                 disableObjects: disableObjects,
                 FastAofTruncate: mainMemoryReplication,
                 CommitFrequencyMs: mainMemoryReplication ? -1 : 0,
                 OnDemandCheckpoint: mainMemoryReplication,
-                FastCommit: fastCommit,
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
@@ -912,6 +907,9 @@ namespace Garnet.test.cluster
                 var oldPrimaryLastSaveTime = context.clusterTestUtils.LastSave(oldPrimaryIndex, logger: context.logger);
                 var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(newPrimaryIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(oldPrimaryIndex, oldPrimaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(newPrimaryIndex, newPrimaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(oldPrimaryIndex, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(oldPrimaryIndex, oldPrimaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(newPrimaryIndex, newPrimaryLastSaveTime, logger: context.logger);
@@ -1047,6 +1045,8 @@ namespace Garnet.test.cluster
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryNodeIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaNodeIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryNodeIndex, primaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaNodeIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryNodeIndex);
                 context.clusterTestUtils.WaitCheckpoint(primaryNodeIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaNodeIndex, replicaLastSaveTime, logger: context.logger);

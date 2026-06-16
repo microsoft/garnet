@@ -37,7 +37,8 @@ namespace Tsavorite.core
         /// <summary>Do not copy.</summary>
         None,
 
-        /// <summary>Copy to the tail of the main log (or splice into the readcache/mainlog boundary, if readcache records are present).</summary>
+        /// <summary>Copy to the tail of the main log. If readcache records are present for the key, CAS'ing the new
+        /// record into the hash entry detaches (drops) the entire read-cache prefix, which is re-promoted on a later read.</summary>
         MainLog,
 
         /// <summary>Copy to the readcache. This requires that <see cref="ReadCacheSettings"/> be supplied to the TsavoriteKV ctor.</summary>
@@ -93,12 +94,21 @@ namespace Tsavorite.core
         /// </summary>
         public long? KeyHash { get; set; }
 
+        /// <summary>
+        /// Initial IO size for reading this record from disk; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means
+        /// inherit from the session or store level setting.
+        /// </summary>
+        public int InitialIORecordSize { get; set; } = KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <summary>Default constructor.</summary>
+        public ReadOptions() { }
+
         /// <inheritdoc/>
-        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}";
+        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}";
     }
 
     /// <summary>
-    /// Options for the Read() operation
+    /// Options for the RMW() operation
     /// </summary>
     public struct RMWOptions
     {
@@ -107,8 +117,17 @@ namespace Tsavorite.core
         /// </summary>
         public long? KeyHash { get; set; }
 
+        /// <summary>
+        /// Initial IO size for reading this record from disk; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means
+        /// inherit from the session or store level setting.
+        /// </summary>
+        public int InitialIORecordSize { get; set; } = KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <summary>Default constructor.</summary>
+        public RMWOptions() { }
+
         /// <inheritdoc/>
-        public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
+        public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}";
     }
 
     /// <summary>

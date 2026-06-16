@@ -34,6 +34,14 @@ namespace Tsavorite.core
         AzureStorage = 4,
 
         /// <summary>
+        /// In-process RAM-backed device with async submit/complete on dedicated processor threads. Useful for
+        /// unit tests and benchmarks where the goal is to characterize the upper bound of Tsavorite throughput
+        /// without paying any real disk or kernel-syscall cost. The number of IO processor threads, simulated
+        /// per-IO latency, and segment size can be passed to <see cref="Devices.CreateLogDevice"/>.
+        /// </summary>
+        LocalMemory = 5,
+
+        /// <summary>
         /// Use null device.
         /// </summary>
         Null = byte.MaxValue,

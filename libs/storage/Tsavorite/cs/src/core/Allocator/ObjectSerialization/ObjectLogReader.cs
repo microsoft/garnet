@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -81,7 +81,7 @@ namespace Tsavorite.core
         /// <item>If we have an Overflow or Object value, read and store it in the transient <see cref="ObjectIdMap"/> in <paramref name="logRecord"/>.</item>
         /// </list>
         /// </summary>
-        /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
+        /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.DefaultInitialIORecordSize"/> or less.</param>
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
@@ -92,11 +92,13 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.HasReuseObjectIdForSize, "ReadRecordObjects requires the ReuseObjectIdForSize flag to be set on the ObjectLogPosition");
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
-            // This is only called when we expect data to be there so throw if we don't have any.
+            // R11 encoding: lengths returned by GetObjectLogRecordStartPositionAndLengths combine the RDH low bits with the next 32 bits
+            // from the int* slot at keyAddress/valueAddress. No length prefix is in the object stream.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             if (!readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits)))
                 throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
@@ -108,26 +110,30 @@ namespace Tsavorite.core
             var keyWasSet = false;
             try
             {
-                if (logRecord.Info.KeyIsOverflow)
+                if (logRecord.DataHeader.KeyIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
+                    // This assignment also allocates the slot in ObjectIdMap, overwriting the int* slot at keyAddress
+                    // (which held the high 32 bits of the on-disk key length per R11). The raw RDH KeyLength is restored
+                    // to ObjectIdSize by OnObjectReadComplete below.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
                         return false;
+                    keyWasSet = true;
                 }
 
-                if (logRecord.Info.ValueIsOverflow)
+                if (logRecord.DataHeader.ValueIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.ValueOverflow.Span);
                 }
-                else if (logRecord.Info.ValueIsObject)
+                else if (logRecord.DataHeader.ValueIsObject)
                 {
-                    // Info.ValueIsObject is true. DoDeserialize() also allocates the slot in ObjectIdMap and updates the value length to be ObjectIdSize.
                     DoDeserialize(ref logRecord);
                 }
+
+                // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
+                logRecord.OnObjectReadComplete();
                 return true;
             }
             catch

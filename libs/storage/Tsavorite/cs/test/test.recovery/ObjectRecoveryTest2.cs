@@ -81,8 +81,8 @@ namespace Tsavorite.test.recovery.objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 SegmentSize = 1L << 12,
-                LogMemorySize = 1L << 12,
-                PageSize = 1L << 9,
+                LogMemorySize = 1L << 14,
+                PageSize = MinKvLogPageSize,
                 CheckpointDir = Path.Combine(MethodTestDir, "checkpoints")
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

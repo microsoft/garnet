@@ -1054,6 +1054,7 @@ namespace Garnet.test.cluster
             context.PopulatePrimary(ref kvPairs, keyLength, kvpairCount, 0);
 
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(0, primaryLastSaveTime);
             context.clusterTestUtils.Checkpoint(0, context.logger);
             context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
 
@@ -1255,7 +1256,6 @@ namespace Garnet.test.cluster
                 metricsSamplingFrequency: 1,
                 loggingFrequencySecs: 10,
                 checkpointThrottleFlushDelayMs: 0,
-                FastCommit: true,
                 FastAofTruncate: true,
                 OnDemandCheckpoint: true,
                 useTLS: true,

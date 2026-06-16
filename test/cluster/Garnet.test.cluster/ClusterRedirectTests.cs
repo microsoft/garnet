@@ -3,7 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -697,6 +700,134 @@ ClusterRedirectTests.TestFlags testFlags)
 
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterSingleKeyRedirectionTests done");
+        }
+
+        [Test, Order(5)]
+        [Category("CLUSTER")]
+        public void ClusterScatterGatherGetCrossSlotRedirectTest()
+        {
+            // A pipeline of independent GETs engages the scatter-gather path. Keys past the first bypass the
+            // per-command slot check in ProcessMessages, so the SG loop must redirect non-local keys itself.
+            // lowMemory forces most local GETs onto disk, so the cross-slot early-exit must still drain and
+            // emit the pending reads (in order) before the redirect.
+            var Port = ClusterTestContext.Port;
+            var Shards = context.defaultShards;
+
+            context.CreateInstances(Shards, cleanClusterConfig: true, lowMemory: true);
+            context.CreateConnection();
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            const int requestNode = 0;
+
+            // A slot owned by the request node, and one owned by a different node.
+            int ownSlot = -1, otherSlot = -1;
+            for (var slot = 0; slot < 16384 && (ownSlot < 0 || otherSlot < 0); slot++)
+            {
+                var owner = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, (ushort)slot);
+                if (owner == requestNode && ownSlot < 0) ownSlot = slot;
+                else if (owner != requestNode && otherSlot < 0) otherSlot = slot;
+            }
+            ClassicAssert.GreaterOrEqual(ownSlot, 0);
+            ClassicAssert.GreaterOrEqual(otherSlot, 0);
+
+            // Hash tags pin many keys to the same slot without per-key brute force.
+            var ownTag = KeyForSlot(ownSlot);
+            var otherKey = "x{" + KeyForSlot(otherSlot) + "}";
+
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { ReceiveTimeout = 10_000 };
+            socket.Connect(new IPEndPoint(IPAddress.Loopback, Port + requestNode));
+
+            // Seed many local keys; with lowMemory the earlier ones spill to disk so their GETs go pending.
+            const int n = 128;
+            var ownKeys = new string[n];
+            var sets = new StringBuilder();
+            for (var i = 0; i < n; i++)
+            {
+                ownKeys[i] = "k" + i + "{" + ownTag + "}";
+                sets.Append(Resp("SET", ownKeys[i], "v" + i));
+            }
+            foreach (var ok in SendReadReplies(socket, sets.ToString(), n))
+                ClassicAssert.AreEqual("+OK", ok);
+
+            // Pipeline every local GET (mostly pending) then one cross-slot GET, in a single buffer.
+            var gets = new StringBuilder();
+            for (var i = 0; i < n; i++) gets.Append(Resp("GET", ownKeys[i]));
+            gets.Append(Resp("GET", otherKey));
+            var replies = SendReadReplies(socket, gets.ToString(), n + 1);
+
+            // Pending local reads must all complete with the right values, in order, before the redirect.
+            for (var i = 0; i < n; i++)
+                ClassicAssert.AreEqual("v" + i, replies[i], $"local key {i}");
+            StringAssert.StartsWith("-MOVED", replies[n]);
+
+            connections.ToList().ForEach(x => x.Dispose());
+        }
+
+        private string KeyForSlot(int slot)
+        {
+            var data = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref data, slot);
+            return Encoding.ASCII.GetString(data);
+        }
+
+        private static string Resp(params string[] args)
+        {
+            var sb = new StringBuilder();
+            sb.Append('*').Append(args.Length).Append("\r\n");
+            foreach (var a in args)
+                sb.Append('$').Append(a.Length).Append("\r\n").Append(a).Append("\r\n");
+            return sb.ToString();
+        }
+
+        // Send a raw RESP payload and return one entry per top-level reply: the bulk-string value, or the
+        // status/error line (e.g. "+OK", "-MOVED ...") for non-bulk replies.
+        private static List<string> SendReadReplies(Socket socket, string payload, int count)
+        {
+            var bytes = Encoding.ASCII.GetBytes(payload);
+            var sent = 0;
+            while (sent < bytes.Length)
+                sent += socket.Send(bytes, sent, bytes.Length - sent, SocketFlags.None);
+
+            var replies = new List<string>(count);
+            var b = new byte[1];
+            while (replies.Count < count)
+            {
+                var line = ReadLine(socket, b);
+                if (line[0] == '$' && int.Parse(line.AsSpan(1)) is var len && len >= 0)
+                {
+                    var value = ReadN(socket, len, b);
+                    _ = ReadN(socket, 2, b); // trailing CRLF
+                    replies.Add(value);
+                }
+                else
+                {
+                    replies.Add(line);
+                }
+            }
+            return replies;
+        }
+
+        private static string ReadLine(Socket socket, byte[] b)
+        {
+            var sb = new StringBuilder();
+            while (ReadByte(socket, b) != '\n')
+                if (b[0] != '\r') sb.Append((char)b[0]);
+            return sb.ToString();
+        }
+
+        private static string ReadN(Socket socket, int n, byte[] b)
+        {
+            var sb = new StringBuilder(n);
+            for (var i = 0; i < n; i++) sb.Append((char)ReadByte(socket, b));
+            return sb.ToString();
+        }
+
+        private static byte ReadByte(Socket socket, byte[] b)
+        {
+            if (socket.Receive(b, 0, 1, SocketFlags.None) == 0)
+                throw new IOException("socket closed");
+            return b[0];
         }
 
         [Test, Order(2)]

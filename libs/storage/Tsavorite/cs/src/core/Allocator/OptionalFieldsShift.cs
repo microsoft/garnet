@@ -21,14 +21,14 @@ namespace Tsavorite.core
         public OptionalFieldsShift() { }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Save(long address, RecordInfo recordInfo)
+        internal void Save(long address, RecordDataHeader dataHeader)
         {
-            if (recordInfo.HasETag)
+            if (dataHeader.HasETag)
             {
                 eTag = *(long*)address;
                 address += LogRecord.ETagSize;
             }
-            if (recordInfo.HasExpiration)
+            if (dataHeader.HasExpiration)
             {
                 expiration = *(long*)address;
                 address += LogRecord.ExpirationSize;
@@ -36,25 +36,25 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Restore(long address, in RecordSizeInfo sizeInfo, ref RecordInfo recordInfo)
+        internal void Restore(long address, in RecordSizeInfo sizeInfo, ref RecordDataHeader dataHeader)
         {
             if (sizeInfo.FieldInfo.HasETag)
             {
                 *(long*)address = eTag;
                 address += LogRecord.ETagSize;
-                recordInfo.SetHasETag();
+                dataHeader.SetHasETag();
             }
             else
-                recordInfo.ClearHasETag();
+                dataHeader.ClearHasETag();
 
             if (sizeInfo.FieldInfo.HasExpiration)
             {
                 *(long*)address = expiration;
                 address += LogRecord.ExpirationSize;
-                recordInfo.SetHasExpiration();
+                dataHeader.SetHasExpiration();
             }
             else
-                recordInfo.ClearHasExpiration();
+                dataHeader.ClearHasExpiration();
         }
     }
 }

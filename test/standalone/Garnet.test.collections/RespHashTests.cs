@@ -1126,8 +1126,8 @@ namespace Garnet.test
                 db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
             }
 
-            // Create LTM (larger than memory) DB by inserting 100 keys
-            for (int i = 4; i < 100; i++)
+            // Create LTM (larger than memory) DB by inserting 1000 keys
+            for (int i = 4; i < 1000; i++)
             {
                 var key = "user:user" + i;
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
@@ -1425,7 +1425,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":712\r\n";
+            expectedResponse = ":720\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // multiple get
@@ -1489,7 +1489,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":440\r\n";
+            expectedResponse = ":448\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HDEL myhash field1");
@@ -1497,7 +1497,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":304\r\n";
+            expectedResponse = ":312\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //HDEL with nonexisting key
@@ -1592,7 +1592,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":296\r\n";
+            expectedResponse = ":304\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // do hincrby
@@ -1601,7 +1601,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":296\r\n";
+            expectedResponse = ":304\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -1614,7 +1614,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":296\r\n";
+            expectedResponse = ":304\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HINCRBYFLOAT myhash field 0.1");
@@ -1622,7 +1622,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":296\r\n";
+            expectedResponse = ":304\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // exponential notation
@@ -1631,7 +1631,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":424\r\n";
+            expectedResponse = ":432\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("HINCRBYFLOAT myhash field2 2.0e2", "PING HELLO");
@@ -1639,7 +1639,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":424\r\n";
+            expectedResponse = ":432\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

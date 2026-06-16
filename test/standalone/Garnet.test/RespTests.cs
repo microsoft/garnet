@@ -3985,8 +3985,8 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                var keyCount = 5;
-                var valLen = 256;
+                var keyCount = 50;
+                var valLen = 1024;
                 var keyLen = 8;
 
                 List<Tuple<string, string>> data = [];
@@ -5233,6 +5233,87 @@ namespace Garnet.test
             var mainDB = mainConnection.GetDatabase(0);
 
             Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
+        }
+
+        [Test]
+        public void ExcessiveArgumentCountRejected()
+        {
+            // Send a RESP array header with an argument count exceeding the maximum allowed,
+            // followed by a command name so parsing proceeds far enough to hit the guard.
+            // The server should reject the command with a protocol error and close the connection.
+            using var socket = new System.Net.Sockets.Socket(
+                System.Net.Sockets.AddressFamily.InterNetwork,
+                System.Net.Sockets.SocketType.Stream,
+                System.Net.Sockets.ProtocolType.Tcp);
+            socket.ReceiveTimeout = 5000;
+            socket.Connect(System.Net.IPAddress.Loopback, TestUtils.TestPort);
+
+            // *2000000\r\n$3\r\nFOO\r\n — array with 2M elements, command name "FOO"
+            // The command will be identified as unknown but count (1999999) exceeds MaxParams (1,048,576)
+            var payload = Encoding.ASCII.GetBytes("*2000000\r\n$3\r\nFOO\r\n");
+            socket.Send(payload);
+
+            // Read the response - server should send an error and close the connection
+            var buffer = new byte[4096];
+            var totalRead = 0;
+            try
+            {
+                while (totalRead < buffer.Length)
+                {
+                    var bytesRead = socket.Receive(buffer, totalRead, buffer.Length - totalRead, System.Net.Sockets.SocketFlags.None);
+                    if (bytesRead == 0) break;
+                    totalRead += bytesRead;
+                }
+            }
+            catch (System.Net.Sockets.SocketException)
+            {
+                // Connection may be reset by server - this is expected
+            }
+
+            var response = Encoding.ASCII.GetString(buffer, 0, totalRead);
+            var expectedResponse =
+                "-ERR unknown command\r\n" +
+                "-ERR Protocol Error: RESP array argument count '1999999' exceeds maximum allowed count of '1048576'.\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response);
+
+            // Same test with a known command (PING) — should still be rejected due to excessive count
+            using var socket2 = new System.Net.Sockets.Socket(
+                System.Net.Sockets.AddressFamily.InterNetwork,
+                System.Net.Sockets.SocketType.Stream,
+                System.Net.Sockets.ProtocolType.Tcp);
+            socket2.ReceiveTimeout = 5000;
+            socket2.Connect(System.Net.IPAddress.Loopback, TestUtils.TestPort);
+
+            // *2000000\r\n$4\r\nPING\r\n — known command but excessive count
+            var payload2 = Encoding.ASCII.GetBytes("*2000000\r\n$4\r\nPING\r\n");
+            socket2.Send(payload2);
+
+            var buffer2 = new byte[4096];
+            var totalRead2 = 0;
+            try
+            {
+                while (totalRead2 < buffer2.Length)
+                {
+                    var bytesRead = socket2.Receive(buffer2, totalRead2, buffer2.Length - totalRead2, System.Net.Sockets.SocketFlags.None);
+                    if (bytesRead == 0) break;
+                    totalRead2 += bytesRead;
+                }
+            }
+            catch (System.Net.Sockets.SocketException)
+            {
+                // Connection may be reset by server - this is expected
+            }
+
+            var response2 = Encoding.ASCII.GetString(buffer2, 0, totalRead2);
+            var expectedResponse2 =
+                "-ERR Protocol Error: RESP array argument count '1999999' exceeds maximum allowed count of '1048576'.\r\n";
+            ClassicAssert.AreEqual(expectedResponse2, response2);
+
+            // Verify the server is still operational after rejecting the malicious connection
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("testkey", "testvalue");
+            ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Tsavorite.core;
@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
         {
-            if (srcLogRecord.Info.ValueIsObject)
+            if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 output = (IGarnetObject)srcLogRecord.ValueObject;
                 return true;

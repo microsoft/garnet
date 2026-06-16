@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN-Tsavorite.Benchmark/BDN-Tsavorite.benchmark.csproj" />
+    <Project Path="benchmark/Device.benchmark/Device.benchmark.csproj" />
+    <Project Path="benchmark/KV.benchmark/KV.benchmark.csproj" />
     <Project Path="benchmark/YCSB.benchmark/YCSB.benchmark.csproj" />
   </Folder>
   <Folder Name="/src/core/">

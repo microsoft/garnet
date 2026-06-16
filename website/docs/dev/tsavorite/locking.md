@@ -88,8 +88,8 @@ This is implemented as `RecordSource<TKey, TValue>` and carries the information 
   - its logical and physical addresses
   - whether it is in the readcache or main log
   - whether it is locked
-- The latest logical address of this key hash in the main log. If there are no readcache records, then this is the same as the `HashEntryInfo` Address; 
-- If there are readcache records in the chain, then `RecordSource` contains the lowest readcache logical and physical addresses. These are used for 'splicing' a new main-log record into the gap between the readcache records and the main log recoreds; see [ReadCache](#readcache) below.
+- The latest logical address of this key hash in the main log (`LatestLogicalAddress`); this is the first main-log address *below* any readcache prefix. If there are no readcache records, then this is the same as the `HashEntryInfo` Address.
+- A value-changing update writes its new main-log record's `PreviousAddress` to `LatestLogicalAddress` and CAS's the record into the hash entry, which atomically detaches (drops) the entire readcache prefix; see [ReadCache](#readcache) below. (`RecordSource` no longer tracks a "lowest readcache" splice address — the latch-free design has no splice.)
 - The log (readcache or hlog) in which the source record, if any, resides. This is hlog unless there is a source readcache record.
 - Whether a LockTable lock was acquired. This is exclusive with in-memory locks; only one should be set.
 
@@ -121,7 +121,7 @@ Some relevant `RecordInfo` bits:
     - Sealing is done via `RecordInfo.Seal`. This is only done when the `LockTable` entry is already exclusively locked, so `Seal()` does a simple bitwise operation.
   - **Invalid**: This indicates that the record is to be skipped, using its `.PreviousAddress` to move along the chain, rather than restarted. This "skipping" semantic is primarily relevant to the readcache; we should not have invalid records in the main log's hash chain. Indeed, any main-log record that is not in the hash chain *must* be marked Invalid.
     - In the `ReadCache` we do not Seal records; the semantics of Seal are that the operation is restarted when a Sealed record is found. For non-`readcache` records, this causes the execution to restart at the tail of the main-log records. However, `readcache` records are at the beginning of the hash chain, *before* the main-log records; thus, restarting would start again at the hash bucket, traverse the readcache records, and hit the Sealed record again, ad infinitum. 
-    - Thus, we instead set `readcache` records to Invalid when they are no longer current; this allows the traversal to continue until the readcache chain links to the first main-log record.
+    - Thus, `readcache` records use Invalid (skip) rather than Sealed (restart): an Invalid readcache record — e.g. an abandoned/failed best-effort read-cache insert — is skipped via its `.PreviousAddress` so traversal continues to the first main-log record. A value-changing update does *not* invalidate individual readcache records: it detaches the entire readcache prefix with one hash-entry CAS (see [ReadCache](#readcache) below), and the orphaned records stay Valid until eviction reclaims them at page close.
     
     Additionally, records may be elided (removed) from the tag chain for one of the following reasons:
       - The record was deleted
@@ -136,7 +136,7 @@ We obtain the key hash at the start of the operation, so we lock its bucket if w
 
 Following this, the requested operation is performed within a try/finally block whose 'finally' releases the lock.
 
-For RCU-like operations such as RMW or Upsert of an in-memory (including in-ReadCache) record, the source record is sealed (and may invalidate it to allow it to be freelisted for Revivification).
+For RCU-like operations such as RMW or Upsert of an in-memory main-log record, the source record is sealed (and, if elidable, may be invalidated to allow it to be freelisted for Revivification). For an in-ReadCache source the record is *not* sealed or elided; the update detaches the entire readcache prefix with one hash-entry CAS (see [ReadCache](#readcache)), leaving the orphaned records Valid for page-close reclamation.
 
 Similar locking logic applies to the pending IO completion routines: `ContinuePendingRead`, `ContinuePendingRMW`, and `ContinuePendingConditionalCopyToTail`.
 
@@ -149,12 +149,12 @@ When the `ReadCache` is enabled, records from the `ReadCache` are inserted into 
 
 As a terminology note, the sub-chain of r#### records is referred to as the `ReadCache` prefix chain of that hash chain.
 
-If the key is found in the readcache, then the `RecordSource<TKey, TValue>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the following steps happen:
-- The new version of the record is "spliced in" to the tag chain after the readcache prefix
-- The readcache "source" record is invalidated.
+If the key is found in the readcache, then the `RecordSource<TStoreFunctions, TAllocator>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the new record is published with a **single CAS on the `HashBucketEntry`** that detaches the readcache prefix:
+- The new main-log record is written with its `PreviousAddress` already pointing at the first main-log record below the readcache prefix.
+- CAS'ing it into the `HashBucketEntry` atomically commits the update and **detaches (drops) the entire readcache prefix** from the reachable chain. The dropped records are orphaned and reclaimed by `ReadCacheEvict` when their pages are closed; no interior record is mutated and no readcache record is individually invalidated.
 
-Using the above example and assuming an update of r8000, the resulting chain would be:
-- `HashTable` -> r8000 (invalid) -> r7000 -> mxxxx (new) -> m4000 -> m3000 -> m...
-- In this example, note that the record address spaces are totally different between the main log and readcache; "xxxx" is used as the "new address" to symbolize this.
+Using the above example and assuming an update of the key cached at r8000, the resulting chain would be:
+- `HashTable` -> mxxxx (new) -> m4000 -> m3000 -> m...
+- The **entire** readcache prefix (r8000, r7000) is detached, not just r8000. Note that the record address spaces are totally different between the main log and readcache; "xxxx" is used as the "new address" to symbolize this.
 
-This splicing operation requires that we deal with updates at the tail of the tag chain (in the `HashEntryInfo`) as well as at the splice point. This cannot be done as a single atomic operation. To handle this, we check if another session added a readcache entry from a pending read while we were inserting a record at the tail of the log. If so, the new readcache record must be invalidated (see `ReadCacheCheckTailAfterSplice`).
+Because the only structural mutation is the single `HashBucketEntry` CAS, this operation is latch-free with respect to readcache structure: a competing readcache promotion (or another update) for the same key contends on the same `HashBucketEntry` word, so the loser of the CAS retries and observes the winner. See the [read cache design doc](./readcache.md) for the full latch-free model.

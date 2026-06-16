@@ -33,7 +33,7 @@ namespace Garnet.server
             else
                 writer.WriteNull();
 
-            output.result1++;
+            output.result1 = 1;
         }
 
         private void HashMultipleGet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -53,9 +53,9 @@ namespace Garnet.server
                 {
                     writer.WriteNull();
                 }
-
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         private void HashGetAll(ref ObjectOutput output, byte respProtocolVersion)
@@ -80,12 +80,16 @@ namespace Garnet.server
 
         private void HashDelete(ref ObjectInput input, ref ObjectOutput output)
         {
+            var removed = 0;
+
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var key = GetByteSpanFromInput(ref input, i);
                 if (Remove(key, out _))
-                    output.result1++;
+                    removed++;
             }
+
+            output.result1 = removed;
         }
 
         private void HashLength(ref ObjectOutput output)
@@ -182,6 +186,8 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            var set = 0;
+
             var hashOp = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
@@ -202,7 +208,7 @@ namespace Garnet.server
                     hashValueRef = value.ToArray();
                     UpdateSize(key, value, add: true);
 
-                    output.result1++;
+                    set++;
                 }
                 else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
                 {
@@ -230,6 +236,8 @@ namespace Garnet.server
                     }
                 }
             }
+
+            output.result1 = set;
         }
 
         private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
@@ -249,6 +257,8 @@ namespace Garnet.server
 
             var isExpirable = HasExpirableItems;
 
+            var written = 0;
+
             foreach (var item in hash)
             {
                 if (isExpirable && IsExpired(item.Key))
@@ -265,8 +275,10 @@ namespace Garnet.server
                     writer.WriteBulkString(item.Value);
                 }
 
-                output.result1++;
+                written++;
             }
+
+            output.result1 = written;
         }
 
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
@@ -437,8 +449,9 @@ namespace Garnet.server
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
 #endif
                 writer.WriteInt32((int)result);
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -482,8 +495,9 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         private void HashPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -504,8 +518,9 @@ namespace Garnet.server
                 var result = Persist(item.ToArray());
 #endif
                 writer.WriteInt32(result);
-                output.result1++;
             }
+
+            output.result1 = input.parseState.Count;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

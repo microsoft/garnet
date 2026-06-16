@@ -5,11 +5,6 @@
 
 namespace Tsavorite.core
 {
-    internal struct AsyncGetFromDiskResult<TContext>
-    {
-        public TContext context;
-    }
-
     internal struct HashIndexPageAsyncFlushResult
     {
         public int chunkIndex;

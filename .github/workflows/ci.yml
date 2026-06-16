@@ -30,9 +30,9 @@ jobs:
       garnet: ${{ steps.filter.outputs.garnet }}
     steps:
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Apply filter
-      uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36   #v3  for security reasons have pinned tag (commit SHA) for 3rd party
+      uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d   #v4  for security reasons have pinned tag (commit SHA) for 3rd party
       id: filter
       with:
         filters: |
@@ -50,11 +50,11 @@ jobs:
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
@@ -71,11 +71,11 @@ jobs:
     if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
@@ -98,11 +98,11 @@ jobs:
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
@@ -127,11 +127,11 @@ jobs:
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
@@ -142,7 +142,7 @@ jobs:
         run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dotnet-standalone-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
@@ -159,15 +159,15 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
@@ -178,7 +178,7 @@ jobs:
         run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dotnet-cluster-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
@@ -197,11 +197,11 @@ jobs:
     if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-tsavorite-${{ runner.os }}-${{ hashFiles('libs/storage/Tsavorite/**/*.csproj', 'Directory.Packages.props') }}
@@ -226,7 +226,7 @@ jobs:
     if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
@@ -234,15 +234,15 @@ jobs:
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Setup Node.js for Azurite
         if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Cache Azurite
         if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.os == 'Windows' && '%APPDATA%\npm-cache' || '~/.npm' }}
           key: azurite-${{ runner.os }}
@@ -253,7 +253,7 @@ jobs:
           npm install -g azurite
           azurite --skipApiVersionCheck &
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-tsavorite-${{ runner.os }}-${{ hashFiles('libs/storage/Tsavorite/**/*.csproj', 'Directory.Packages.props') }}
@@ -279,7 +279,7 @@ jobs:
         run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
@@ -294,8 +294,8 @@ jobs:
         working-directory: website
     if: needs.changes.outputs.website == 'true'   
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: yarn
@@ -314,21 +314,21 @@ jobs:
     steps:
       - name: Download standalone test results
         if: needs.test-garnet-standalone.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: dotnet-standalone-results-*
           path: results/standalone
           merge-multiple: true
       - name: Download cluster test results
         if: needs.test-garnet-cluster.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: dotnet-cluster-results-*
           path: results/cluster
           merge-multiple: true
       - name: Download Tsavorite test results
         if: needs.test-tsavorite.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: dotnet-tsavorite-results-*
           path: results/tsavorite

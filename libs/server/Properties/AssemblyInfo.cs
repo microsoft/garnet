@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Garnet.test" + AssemblyRef.GarnetPublicKey)]
+[assembly: InternalsVisibleTo("Garnet.test.cluster" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Garnet.test.collections" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Garnet.test.acl" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Garnet.test.scripting" + AssemblyRef.GarnetPublicKey)]

@@ -10,8 +10,18 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        // Key spec for CustomRawStringCmd and CustomObjCmd: a single key at arg index 1.
+        private static readonly SimpleRespKeySpec[] CustomCommandSingleKeySpec =
+        [
+            new SimpleRespKeySpec
+            {
+                BeginSearch = new SimpleRespKeySpecBeginSearch(index: 1),
+                FindKeys = new SimpleRespKeySpecFindKeys(keyStep: 1, lastKeyOrLimit: 0, isLimit: false),
+            }
+        ];
+
         /// <summary>
-        /// Validate if this command can be served based on the current slot assignment
+        /// Validates whether a command can be served based on the current slot assignment
         /// </summary>
         /// <param name="cmd"></param>
         /// <returns></returns>
@@ -19,9 +29,14 @@ namespace Garnet.server
         {
             Debug.Assert(clusterSession != null);
 
-            // Verify slot for command if it falls into data command category
             if (!cmd.IsDataCommand())
+            {
+                // Custom commands sit outside IsDataCommand but still touch user keys.
+                if (cmd is RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd)
+                    return CanServeSlotForCustomCommand(cmd);
+
                 return true;
+            }
 
             cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))
@@ -41,6 +56,52 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+        }
+
+        /// <summary>
+        /// Validates whether a custom command can be served based on the current slot assignment
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <returns></returns>
+        bool CanServeSlotForCustomCommand(RespCommand cmd)
+        {
+            // cmd.IsReadOnly() can't be used here since both custom enum values sort past LastReadCommand.
+            var isReadOnly = cmd == RespCommand.CustomRawStringCmd
+                ? currentCustomRawStringCommand.type == CommandType.Read
+                : currentCustomObjectCommand.type == CommandType.Read;
+
+            csvi.keySpecs = CustomCommandSingleKeySpec;
+            csvi.isSubCommand = false;
+            csvi.readOnly = isReadOnly;
+            csvi.sessionAsking = SessionAsking;
+            csvi.waitForStableSlot = false;
+            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+        }
+
+        /// <summary>
+        /// Verifies, without writing a redirect, that the key(s) in the parse state for <paramref name="cmd"/>
+        /// are servable by this node. Returns true if servable. Used by the scatter-gather GET loop, where keys
+        /// past the first bypass the per-command <see cref="CanServeSlot"/> in ProcessMessages.
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <returns></returns>
+        bool CanServeSlotNoResponse(RespCommand cmd)
+        {
+            Debug.Assert(clusterSession != null);
+
+            cmd = cmd.NormalizeForACLs();
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))
+                return false;
+
+            if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
+                return true;
+
+            csvi.keySpecs = cmdInfo.KeySpecs;
+            csvi.isSubCommand = cmdInfo.IsSubCommand;
+            csvi.readOnly = cmd.IsReadOnly();
+            csvi.sessionAsking = SessionAsking;
+            csvi.waitForStableSlot = false;
+            return !clusterSession.NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
 }

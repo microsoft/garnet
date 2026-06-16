@@ -23,15 +23,15 @@ namespace Tsavorite.test.LowMemory
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: Path.Join(MethodTestDir, "test.log"));
+            log = new LocalMemoryDevice(capacity: 1L << 28, segmentSize: 1L << 25, 1, latencyUs: DefaultLocalMemoryDeviceLatencyUs, fileName: Path.Join(MethodTestDir, "test.log"));
             _ = Directory.CreateDirectory(MethodTestDir);
             store1 = new(new()
             {
                 IndexSize = 1L << 16,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
-                LogMemorySize = 1L << 12,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = 1L << 14,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)

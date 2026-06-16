@@ -13,7 +13,7 @@ namespace Tsavorite.core
         /// <summary>
         /// 
         /// </summary>
-        public NullDevice() : base("null", 512, Devices.CAPACITY_UNSPECIFIED)
+        public NullDevice() : base("null", IDevice.MinDeviceSectorSize, Devices.CAPACITY_UNSPECIFIED)
         {
         }
 
@@ -60,7 +60,10 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         /// <param name="callback"></param>
         /// <param name="result"></param>
-        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => callback(result);
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+        {
+            callback(result);
+        }
 
         /// <inheritdoc />
         public override void Dispose()

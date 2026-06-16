@@ -16,6 +16,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
@@ -39,6 +40,7 @@ namespace Garnet.test
         public long BeginAddress;
         public long HeadAddress;
         public long ReadOnlyAddress;
+        public long FlushedUntilAddress;
         public long TailAddress;
         public long MemorySize;
         public long ReadCacheHeadAddress;
@@ -92,6 +94,11 @@ namespace Garnet.test
 
     internal static class TestUtils
     {
+        // Use 4KB page size for tests, independent of device sector size
+        public const int MinKvLogPageSizeBits = 12; // TODO: Same as LogSettings.kMinPageSizeBits; need to centralize
+        public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
+        public const int MinKvLogPageSizeInKB = MinKvLogPageSize / 1024;
+
         public static int TestPort = (int)TestPortAssignment.GarnetTest;    // No OneTimeSetUp needed for "Garnet.test" to set this
 
         /// <summary>
@@ -246,6 +253,21 @@ namespace Garnet.test
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
 
+        public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
+        {
+            // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
+            // only second-resolution. Loop on getting the server time and sleeping until the
+            // server's time advances into the next Unix second.
+            while (true)
+            {
+                var actualValue = db.Execute("TIME");
+                var currentSeconds = (long)((RedisValue[])actualValue)[0];
+                if (currentSeconds > baseSeconds)
+                    break;
+                Thread.Sleep(100);
+            }
+        }
+
         /// <summary>
         /// Create GarnetServer
         /// </summary>
@@ -270,6 +292,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
+            bool aclStrictCustomCommands = true,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -306,7 +329,8 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m",
             string aofPageSize = null,
-            bool copyReadsToTail = false
+            bool copyReadsToTail = false,
+            int replayTaskCount = 1
             )
         {
             if (useAzureStorage)
@@ -358,6 +382,7 @@ namespace Garnet.test
                 AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
+                AclStrictCustomCommands = aclStrictCustomCommands,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
@@ -386,6 +411,7 @@ namespace Garnet.test
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                AofReplayTaskCount = replayTaskCount,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
@@ -422,8 +448,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
 
                 // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
                 // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
@@ -530,7 +556,6 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
-            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -565,7 +590,8 @@ namespace Garnet.test
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -599,7 +625,6 @@ namespace Garnet.test
                     commitFrequencyMs: CommitFrequencyMs,
                     useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
-                    fastCommit: FastCommit,
                     authUsername: authUsername,
                     authPassword: authPassword,
                     useAcl: useAcl,
@@ -633,7 +658,8 @@ namespace Garnet.test
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                    enableRangeIndexPreview: enableRangeIndexPreview);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -677,7 +703,6 @@ namespace Garnet.test
             int commitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool disableStorageTier = false,
-            bool fastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -783,7 +808,6 @@ namespace Garnet.test
                 EnableAOF = enableAOF,
                 LogMemorySize = "1g",
                 GossipDelay = gossipDelay,
-                EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
                 TlsOptions = useTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
@@ -849,8 +873,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
-                opts.PageSize = pageSize == default ? "512" : pageSize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
             }
 
             return opts;
@@ -1109,6 +1133,42 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Inserts filler string keys to advance the log past a captured address, then polls
+        /// <c>INFO STORE</c> with exponential backoff until <c>Log.FlushedUntilAddress</c>
+        /// reaches <paramref name="flushUntilAddress"/>. This guarantees that the record at
+        /// that address has been written to disk.
+        /// </summary>
+        /// <param name="db">The Redis database to insert filler keys into.</param>
+        /// <param name="server">The StackExchange.Redis server for issuing INFO commands.</param>
+        /// <param name="flushUntilAddress">The log address to wait for (typically the TailAddress
+        /// captured after inserting the record of interest).</param>
+        /// <param name="fillerCount">Number of filler keys to insert before polling (default 200).</param>
+        /// <param name="fillerPrefix">Prefix for filler key names (default "flushfiller").</param>
+        /// <param name="timeoutMs">Maximum time in ms to wait for flush (default 5000).</param>
+        public static async Task FlushAndWaitForStoreAsync(IDatabase db, IServer server,
+            long flushUntilAddress, int fillerCount = 2000, string fillerPrefix = "flushfiller",
+            int timeoutMs = 5000)
+        {
+            for (var i = 0; i < fillerCount; i++)
+                await db.StringSetAsync($"{fillerPrefix}{i:D4}", $"data{i:D4}").ConfigureAwait(false);
+
+            var deadline = Environment.TickCount64 + timeoutMs;
+            var backoffMs = 10;
+            while (Environment.TickCount64 < deadline)
+            {
+                var addressInfo = GetStoreAddressInfo(server);
+                if (addressInfo.FlushedUntilAddress >= flushUntilAddress)
+                    return;
+
+                await Task.Delay(backoffMs).ConfigureAwait(false);
+                backoffMs = Math.Min(backoffMs * 2, 500);
+            }
+
+            Assert.Fail($"Timed out waiting for FlushedUntilAddress to reach {flushUntilAddress} " +
+                        $"(current: {GetStoreAddressInfo(server).FlushedUntilAddress})");
+        }
+
+        /// <summary>
         /// Delegate to use in TLS certificate validation
         /// Test certificate should be issued by "CN=Garnet"
         /// </summary>
@@ -1211,6 +1271,8 @@ using System.Threading.Tasks;
                         result.HeadAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.FlushedUntilAddress"))
+                        result.FlushedUntilAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.MemorySizeBytes"))
@@ -1250,16 +1312,20 @@ using System.Threading.Tasks;
             return RandomNumberGenerator.GetString(chars, len);
         }
 
-        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null, bool suppressFailure = false)
         {
+            var failTestOnLeak = !suppressFailure && TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
+
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+            var failMsg = "";
+
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
                 Tsavorite.core.LightEpoch.ResetAllInstances();
                 logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+                failMsg += $"Tsavorite.core.LightEpoch instances still active: {count}";
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();
@@ -1268,7 +1334,23 @@ using System.Threading.Tasks;
                 // Reset all instances to avoid impacting other tests
                 client.LightEpoch.ResetAllInstances();
                 logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
-                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+
+                if (!string.IsNullOrEmpty(failMsg))
+                {
+                    failMsg += Environment.NewLine;
+                }
+
+                failMsg += $"Garnet.client.LightEpoch instances still active: {count2}";
+            }
+
+            if (failTestOnLeak && !string.IsNullOrEmpty(failMsg))
+            {
+                Assert.Fail(failMsg);
+            }
+            else if (logger is null && !string.IsNullOrEmpty(failMsg))
+            {
+                // Guarantee the leak message goes _somewhere_ if it doesn't fail the test
+                TestContext.Out.WriteLine(failMsg);
             }
         }
     }

@@ -321,14 +321,20 @@ namespace Garnet.common
         /// Write length header of bulk string
         /// </summary>
         public static bool TryWriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        => TryWriteBulkStringLength(item.Length, ref curr, end);
+
+        /// <summary>
+        /// Write length header of bulk string
+        /// </summary>
+        public static bool TryWriteBulkStringLength(int len, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.CountDigits(item.Length);
+            var itemDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + itemDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.WriteInt32(item.Length, itemDigits, ref curr);
+            NumUtils.WriteInt32(len, itemDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }

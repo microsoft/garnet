@@ -71,7 +71,7 @@ namespace Tsavorite.test
         {
             IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1L << 30);
             IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
-            var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
+            var device = new ShardedStorageDevice(new UniformPartitionScheme(IDevice.MinDeviceSectorSize, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
 
@@ -103,7 +103,7 @@ namespace Tsavorite.test
                     IndexSize = 1L << 26,
                     LogDevice = log,
                     LogMemorySize = 1L << 15,
-                    PageSize = 1L << 10,
+                    PageSize = MinKvLogPageSize,
                 }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

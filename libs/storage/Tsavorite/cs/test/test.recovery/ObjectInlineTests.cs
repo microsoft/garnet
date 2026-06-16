@@ -32,7 +32,7 @@ namespace Tsavorite.test.Objects
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -287,13 +287,13 @@ namespace Tsavorite.test.Objects
         public class TestInlineObjectFunctions : TestObjectFunctions
         {
             // Force test of overflow values
-            const int OverflowValueSize = 1 << (LogSettings.kDefaultMaxInlineValueSizeBits + 1);
+            const int OverflowValueSize = LogSettings.DefaultMaxInlineValueSize * 2;
             byte[] pinnedValueOverflowBytes = GC.AllocateArray<byte>(OverflowValueSize, pinned: true);
             Span<byte> GetOverflowValueSpanByte() => new(pinnedValueOverflowBytes);
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
-                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
+                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.DataHeader.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.DataHeader.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
                 return DoWriter(ref logRecord, in sizeInfo, ref input, srcValue: null, ref output);
             }
 
@@ -307,21 +307,21 @@ namespace Tsavorite.test.Objects
 
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
-                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(dstLogRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({dstLogRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
+                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(dstLogRecord.DataHeader.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({dstLogRecord.DataHeader.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
                 return DoUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, input, ref output);
             }
 
             private bool DoUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord logRecord, in RecordSizeInfo sizeInfo, TestObjectInput input, ref TestObjectOutput output)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Set(ref output.srcValueStyle, srcLogRecord.Info);
+                Set(ref output.srcValueStyle, srcLogRecord.DataHeader);
                 SetAndVerify(ref input, ref output.destValueStyle, sizeInfo.ValueIsInline, sizeInfo.ValueIsOverflow);
 
                 // If the value is inline it is a ValueStruct; if it is overflow it is a buffer with the first long set to the desired value.
                 long srcValue;
-                if (srcLogRecord.Info.ValueIsInline)
+                if (srcLogRecord.DataHeader.ValueIsInline)
                     srcValue = (int)srcLogRecord.ValueSpan.AsRef<ValueStruct>().vfield1;
-                else if (srcLogRecord.Info.ValueIsOverflow)
+                else if (srcLogRecord.DataHeader.ValueIsOverflow)
                 {
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(OverflowValueSize));
                     srcValue = (int)srcLogRecord.ValueSpan.AsRef<long>();
@@ -329,7 +329,7 @@ namespace Tsavorite.test.Objects
                 else
                     srcValue = ((TestObjectValue)srcLogRecord.ValueObject).value;
 
-                output.value = srcLogRecord.Info.ValueIsObject ? (TestObjectValue)srcLogRecord.ValueObject : new TestObjectValue { value = (int)srcValue };
+                output.value = srcLogRecord.DataHeader.ValueIsObject ? (TestObjectValue)srcLogRecord.ValueObject : new TestObjectValue { value = (int)srcValue };
 
                 var result = false;
                 switch (output.destValueStyle)
@@ -358,7 +358,7 @@ namespace Tsavorite.test.Objects
 
             public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
-                Set(ref output.srcValueStyle, logRecord.Info);
+                Set(ref output.srcValueStyle, logRecord.DataHeader);
                 var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
                 logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
@@ -366,12 +366,12 @@ namespace Tsavorite.test.Objects
 
             public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
             {
-                Set(ref output.srcValueStyle, srcLogRecord.Info);
+                Set(ref output.srcValueStyle, srcLogRecord.DataHeader);
 
                 // If the value is inline it is a ValueStruct; if it is overflow it is a buffer with the first long set to the desired value.
-                if (srcLogRecord.Info.ValueIsInline)
+                if (srcLogRecord.DataHeader.ValueIsInline)
                     output.value = new TestObjectValue() { value = (int)srcLogRecord.ValueSpan.AsRef<ValueStruct>().vfield1 };
-                else if (srcLogRecord.Info.ValueIsOverflow)
+                else if (srcLogRecord.DataHeader.ValueIsOverflow)
                 {
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(OverflowValueSize));
                     unsafe { output.value = new TestObjectValue() { value = (int)srcLogRecord.ValueSpan.AsRef<long>() }; }
@@ -383,7 +383,7 @@ namespace Tsavorite.test.Objects
 
             public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
-                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
+                Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.DataHeader.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.DataHeader.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
                 return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
             }
 
@@ -411,7 +411,7 @@ namespace Tsavorite.test.Objects
                 }
             }
 
-            static void Set(ref TestValueStyle style, RecordInfo recordInfo) => Set(ref style, recordInfo.ValueIsInline, recordInfo.ValueIsOverflow);
+            static void Set(ref TestValueStyle style, RecordDataHeader dataHeader) => Set(ref style, dataHeader.ValueIsInline, dataHeader.ValueIsOverflow);
 
             static void Set(ref TestValueStyle style, bool isInline, bool isOverflow)
             {

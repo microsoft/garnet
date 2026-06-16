@@ -320,7 +320,15 @@ namespace Tsavorite.core
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
                 _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
-                throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
+
+                // Callers may be looking for an OCE so throw that if it's what we got.
+                if (e is OperationCanceledException)
+                {
+                    logger?.LogWarning(e, "Wait for frame load was canceled, skipping page. CurrentAddress: {currentAddress}, currentFrame: {currentFrame}", AddressString(currentAddress), currentFrame);
+                    throw;
+                }
+                else
+                    throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
             finally
             {

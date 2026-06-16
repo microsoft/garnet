@@ -199,7 +199,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1832;
+            var expectedResponse = 1840;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var entries2 = new SortedSetEntry[entries.Length + 1];
@@ -212,7 +212,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1992;
+            expectedResponse = 2000;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // no new entries get added
@@ -903,7 +903,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "nokey");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 376;
+            expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -2171,8 +2171,8 @@ namespace Garnet.test
                 db.Execute("ZEXPIRE", key, "4", "MEMBERS", "1", "Field1");
             }
 
-            // Create LTM (larger than memory) DB by inserting 100 keys
-            for (int i = 4; i < 100; i++)
+            // Create LTM (larger than memory) DB by inserting 1000 keys
+            for (int i = 4; i < 1000; i++)
             {
                 var key = "user:user" + i;
                 db.SortedSetAdd(key,

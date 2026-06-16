@@ -115,14 +115,6 @@ namespace Garnet.cluster
                         clientName: nameof(TryReplicateDiskbasedSyncAsync));
                     await gcs.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token).ConfigureAwait(false);
 
-                    // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
-                    // If FastCommit is enabled, we commit during AOF stream processing
-                    if (!clusterProvider.serverOptions.EnableFastCommit && storeWrapper.appendOnlyFile != null)
-                    {
-                        await storeWrapper.appendOnlyFile.Log.CommitAsync().ConfigureAwait(false);
-                        await storeWrapper.appendOnlyFile.Log.WaitForCommitAsync().ConfigureAwait(false);
-                    }
-
                     // Reset background replay iterator if this node was a replica
                     clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
 

@@ -27,7 +27,9 @@ namespace Garnet.server
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
-            _logger.Log(logLevel, eventId, state, exception, (s, ex) => _sessionIdPrefix + formatter(state, exception));
+            if (!_logger.IsEnabled(logLevel))
+                return;
+            _logger.Log(logLevel, eventId, state, exception, (s, ex) => _sessionIdPrefix + formatter(s, ex));
         }
     }
 }

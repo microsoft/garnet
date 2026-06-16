@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -116,7 +115,8 @@ namespace Tsavorite.core
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.CPR_SHIFT_DETECTED, "OperationStatus.CPR_SHIFT_DETECTED should have been handled before HandleOperationStatus");
 
-            request = default;
+            // AsyncIOContext is now a class; default = null. Only allocate when we actually need an IO request.
+            request = null;
 
             if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status))
                 return status;
@@ -130,30 +130,35 @@ namespace Tsavorite.core
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
             {
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
-                // Add context to dictionary
                 pendingContext.id = sessionCtx.totalPending++;
-                sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
+                // The pending op carries the PendingContext directly (no ioPendingRequests dictionary). Rent the
+                // op and copy the context onto it; for non-conditional ops clear the new op's diskLogRecord so its
+                // completion's TransferFrom sees an unset slot (CONDITIONAL_* keep it as their copy/push source).
+                // On re-pend, `pendingContext` is the previous op's context, so copying it here moves the input /
+                // requestKey ownership to this fresh op — the drain then clears the old op without disposing them.
+                var op = sessionCtx.RentAsyncIOContext();
+                op.pendingContext = pendingContext;
                 if (!pendingContext.IsConditionalOp)
-                {
-                    // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
-                    // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
-                    // (We know this will not be a nullref because we just added it). Don't do this for CONDITIONAL_*; the diskLogRecord is what
-                    // we'll insert or push if an overriding record is not found.
-                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
-                }
+                    op.pendingContext.diskLogRecord = default;
 
-                // Issue asynchronous I/O request
-                request.id = pendingContext.id;
-
+                // Fill the device-facing fields directly (each set is a single store, no Buffer.BulkMoveWithWriteBarrier).
+                op.id = pendingContext.id;
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
-                request.requestKey = pendingContext.requestKey;
-                request.logicalAddress = pendingContext.logicalAddress;
-                request.minAddress = pendingContext.minAddress;
-                request.record = default;
-                request.callbackQueue = sessionCtx.readyResponses;
+                op.requestKey = pendingContext.requestKey;
+                op.logicalAddress = pendingContext.logicalAddress;
+                op.minAddress = pendingContext.minAddress;
+                op.record = null;
+                op.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, request);
+                // The IO record size is resolved on the first call to this method. Usually this is from InternalRead/InternalRMW before returning
+                // RECORD_ON_DISK but may be from elsewhere such as ReadCache or ConditionalCopyToTail, so do the setting of initial IO record size here.
+                if (pendingContext.initialIORecordSize <= 0)
+                    ResolveInitialIORecordSize(sessionCtx, ref pendingContext);
+                // Count the op as pending before issuing; the drain decrements when this op completes.
+                sessionCtx.pendingCount++;
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, pendingContext.initialIORecordSize, op);
+                request = op;
                 return new(StatusCode.Pending);
             }
             else
@@ -161,6 +166,31 @@ namespace Tsavorite.core
                 Debug.Fail($"Unexpected OperationStatus {operationStatus}");
                 return new(StatusCode.Error);
             }
+        }
+
+        /// <summary>
+        /// Resolves the initial IO record size for a pending disk read by checking the hierarchy:
+        /// per-operation (highest priority) → session → store → default (lowest priority).
+        /// Called from InternalRead and InternalRMW before returning <see cref="OperationStatus.RECORD_ON_DISK"/>.
+        /// </summary>
+        /// <param name="sessionCtx">The session execution context (session-level setting).</param>
+        /// <param name="pendingContext">The pending context; its <see cref="PendingContext{TInput,TOutput,TContext}.initialIORecordSize"/> holds
+        ///     the per-operation value and will be overwritten with the resolved value.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ResolveInitialIORecordSize<TInput, TOutput, TContext>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext)
+        {
+            // Priority: per-operation (highest) > session-level > store-level > IStreamBuffer.DefaultInitialIORecordSize.
+            // Both UseDefaultInitialIORecordSize (-1) and 0 (from default struct init) are treated as "not set".
+            var size = pendingContext.initialIORecordSize;
+            if (size <= 0)
+                size = sessionCtx.InitialIORecordSize;
+            if (size <= 0)
+                size = InitialIORecordSize;
+            if (size <= 0)
+                size = IStreamBuffer.DefaultInitialIORecordSize;
+            pendingContext.initialIORecordSize = size;
         }
     }
 }

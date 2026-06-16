@@ -100,7 +100,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -212,7 +212,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -315,7 +315,7 @@ namespace Tsavorite.test.recovery
         public async Task RecoveryCheck2Repeated([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             Guid token = default;
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
 
             // Local variables in an async function can be moved, so we must use an array for the key
             var keyArray = new byte[sizeof(long)];
@@ -381,15 +381,15 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoveryRollback([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = pageSize,
-                LogMemorySize = 1L << 11,
-                SegmentSize = 1L << 11,
+                LogMemorySize = 1L << 13,
+                SegmentSize = 1L << LogSettings.kMinMainLogSegmentSizeBits,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -501,7 +501,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -615,7 +615,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -731,7 +731,7 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            const long pageSize = 1L << 10;
+            const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -919,7 +919,7 @@ namespace Tsavorite.test.recovery
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = MinKvLogPageSize,
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
@@ -998,7 +998,7 @@ namespace Tsavorite.test.recovery
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = MinKvLogPageSize,
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir

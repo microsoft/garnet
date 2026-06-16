@@ -34,19 +34,11 @@ namespace Tsavorite.core
         internal long PhysicalAddress;
 
         /// <summary>
-        /// The highest logical address in the main log (i.e. below readcache) for this key; if we have a readcache prefix chain, this is the splice point.
+        /// The highest logical address in the main log (i.e. below readcache) for this key; if we have a readcache
+        /// prefix chain, this is the first main-log address below the prefix. New records set their PreviousAddress to
+        /// this, so CAS'ing them into the hash entry detaches any read-cache prefix.
         /// </summary>
         internal long LatestLogicalAddress;
-
-        /// <summary>
-        /// If valid, the lowest readcache logical address for this key; used to splice records between readcache and main log.
-        /// </summary>
-        internal long LowestReadCacheLogicalAddress;
-
-        /// <summary>
-        /// The physical address of <see cref="LowestReadCacheLogicalAddress"/>.
-        /// </summary>
-        internal long LowestReadCachePhysicalAddress;
 
         /// <summary>
         /// If <see cref="HasInMemorySrc"/>, this is the allocator (hlog or readcache) that <see cref="LogicalAddress"/> is in.
@@ -169,8 +161,6 @@ namespace Tsavorite.core
         internal void Set(long latestLogicalAddress, AllocatorBase<TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             PhysicalAddress = default;
-            LowestReadCacheLogicalAddress = default;
-            LowestReadCachePhysicalAddress = default;
             ClearHasInMemorySrc();
 
             // DO NOT clear locks; we call SetRecordSourceToHashEntry() after we've acquired the lock.
@@ -190,7 +180,7 @@ namespace Tsavorite.core
         internal readonly string LockStateString() => InternalStates.ToString(internalState & InternalStates.LockBits);
 
         public override readonly string ToString()
-            => $"lla {AddressString(LatestLogicalAddress)}, la {AddressString(LogicalAddress)}, lrcla {AddressString(LowestReadCacheLogicalAddress)},"
+            => $"lla {AddressString(LatestLogicalAddress)}, la {AddressString(LogicalAddress)},"
              + $" inMemSrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, locks {LockStateString()}";
     }
 }

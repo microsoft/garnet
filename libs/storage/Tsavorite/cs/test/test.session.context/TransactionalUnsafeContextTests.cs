@@ -923,7 +923,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             return keyVec[0];
         }
 
-        void VerifyAndUnlockSplicedInKey<TFunctions>(TransactionalUnsafeContext<TestSpanByteKey, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, TestSpanByteKey expectedKey)
+        void VerifyAndUnlockChainInsertedKey<TFunctions>(TransactionalUnsafeContext<TestSpanByteKey, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, TestSpanByteKey expectedKey)
             where TFunctions : ISessionFunctions<long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
@@ -962,7 +962,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 ClassicAssert.IsTrue(status.IsPending, status.ToString());
                 _ = luContext.CompletePending(wait: true);
 
-                VerifyAndUnlockSplicedInKey(luContext, key);
+                VerifyAndUnlockChainInsertedKey(luContext, key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1057,7 +1057,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 var status = luContext.Upsert(key, key.KeyBytes);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockChainInsertedKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1108,7 +1108,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 }
                 blt.Increment(ref keyStruct);
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockChainInsertedKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1159,7 +1159,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockChainInsertedKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }

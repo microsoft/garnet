@@ -43,6 +43,15 @@ namespace Device.benchmark
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
         readonly ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
 
+        // Per-worker (single-writer-from-processor-thread) counters. Avoid the cache-line
+        // ping-pong of incrementing Program.totalCompletedOk on every callback when many
+        // processor threads are active. Each worker's ops are routed to a stable single
+        // processor by the device (per-thread SPSC routing), so the processor that writes
+        // these counters is unique per worker.
+        internal long localCompletedOk;
+        internal long localErrors;
+        internal readonly long[] localErrorCounts = new long[256];
+
         public BenchWorker(int batchSize, int threadId, int sectorSize, long fileSize, byte[] expectedData, IDevice device, ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {
             this.batchSize = batchSize;
@@ -63,27 +72,38 @@ namespace Device.benchmark
         unsafe void Callback(uint errorCode, uint numBytes, object ctx)
         {
 #if DEBUG
-            var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
-            var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
-            bool valid = readSpan.SequenceEqual(expectedSpan);
-
-            if (!valid)
+            if (errorCode == 0)
             {
-                Console.WriteLine($"Data mismatch");
+                var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
+                var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
+                bool valid = readSpan.SequenceEqual(expectedSpan);
+
+                if (!valid)
+                {
+                    Console.WriteLine($"Data mismatch");
+                }
             }
-#else
-            // In Release builds, skip data validation for performance
 #endif
             if (errorCode != 0)
             {
-                Console.WriteLine($"I/O error: {errorCode}");
+                // Per-worker counters: single processor thread writes these, so no
+                // synchronization is needed during the run. Cross-thread visibility is
+                // established when the submitter sets doneEvent (full memory barrier) and
+                // the main thread reads after doneEvent.Wait().
+                localErrors++;
+                if (errorCode < (uint)localErrorCounts.Length)
+                    localErrorCounts[errorCode]++;
+            }
+            else
+            {
+                localCompletedOk++;
             }
             _benchmarkPool.Enqueue((BenchmarkOperation)ctx);
         }
 
         public unsafe void Run()
         {
-            long localTotalOperations = 0;
+            long localTotalSubmitted = 0;
             try
             {
                 // Wait for the start event to be signaled
@@ -101,7 +121,7 @@ namespace Device.benchmark
                     long sector = threadRnd.NextInt64(0, (long)sectorCount) * sectorSize;
                     long dest = (long)op.Buffer;
                     while (device.Throttle()) Thread.Yield();
-                    localTotalOperations++;
+                    localTotalSubmitted++;
                     device.ReadAsync((ulong)sector, (IntPtr)dest, (uint)sectorSize, Callback, op);
                     device.TryComplete();
                 }
@@ -109,7 +129,10 @@ namespace Device.benchmark
             finally
             {
                 while (_benchmarkPool.Count < batchSize) Thread.Yield();
-                _ = Interlocked.Add(ref Program.totalOperations, localTotalOperations);
+                // Authoritative throughput counter (successful ops only) is updated in the
+                // callback. We also publish the per-thread submission count for diagnostics
+                // (helps spot pathological submit/complete ratios under errors).
+                _ = Interlocked.Add(ref Program.totalSubmitted, localTotalSubmitted);
                 doneEvent.Set();
             }
         }

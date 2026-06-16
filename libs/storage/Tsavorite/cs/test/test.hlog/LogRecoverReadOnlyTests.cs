@@ -10,7 +10,7 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
@@ -53,7 +53,7 @@ namespace Tsavorite.test.recovery
         public async Task RecoverReadOnlyCheck1()
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, TryRecoverLatest = false };
+            var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = MinKvLogMemorySizeBits, PageSizeBits = MinKvLogPageSizeBits, MutableFraction = 0.5, SegmentSizeBits = MinKvLogPageSizeBits + 1, TryRecoverLatest = false };
             using var log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             await Task.WhenAll(ProducerAsync(log, cts),
@@ -91,7 +91,7 @@ namespace Tsavorite.test.recovery
         private async Task ReadOnlyConsumerAsync(string deviceName, CancellationToken cancellationToken)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 };
+            var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = MinKvLogPageSizeBits, SegmentSizeBits = MinKvLogPageSizeBits + 1 };
             using var log = await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false);
 
             var _ = BeginRecoverAsyncLoop();
