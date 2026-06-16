@@ -140,6 +140,7 @@ namespace Garnet.server
             {
                 if (replaceOption)
                 {
+                    // TODO(RI): Implement REPLACE for RI keys
                     logger?.LogWarning("PublishMigratedIndex: a key already exists at this name and MIGRATE REPLACE was requested, but replacement is not yet supported for RangeIndex migration; skipping");
                     return PublishMigratedIndexResult.SkippedReplaceNotSupported;
                 }
@@ -150,34 +151,24 @@ namespace Garnet.server
 
             try
             {
-                var workingPath = LogDataPathFor(keyBytes);
+                var bftreeDataPath = LogDataPathFor(keyBytes);
 
-                // Reaching here implies no key exists at this name in the store. A stale
-                // data.bftree file may still be on disk from a previous migration of the
-                // same key whose stub was later deleted (DEL triggers
-                // DisposeAndDeleteFilesDeferred, but a crash between unlink-of-file and
-                // tombstone-commit could leave a stale file). Remove it so File.Move below
-                // can take its place.
-                //
-                // TODO: When MIGRATE REPLACE support is added for RI keys, the destructive
-                // swap will need a staging-file + in-progress-marker design so that recovery
-                // can either complete or roll back the swap if we crash mid-replacement:
-                //   1. Move the migrated snapshot to a staging path (not workingPath).
-                //   2. Atomically mark the existing stub as "replacement in progress"
-                //      pointing at the staging path.
-                //   3. Promote staging → workingPath only after the in-store stub has
-                //      been updated; on recovery, replay the marker to either complete
-                //      or roll back the swap.
-                if (File.Exists(workingPath))
-                    File.Delete(workingPath);
+                // TODO(RI): Before publishing the migrated index, insert the chunked RI file into AOF to replicate to secondaries.
 
-                File.Move(tempPath, workingPath);
+                // TODO(RI): Even though we checked if key exists, in a very adversarial scenario, some client might write to this key
+                // concurrently with the migration - even though this node isn't in the hash slot yet for this key, it's in IMPORTING
+                // state, a client might still write to it using -ASK mode. This will be handled in follow up work.
+
+                if (File.Exists(bftreeDataPath))
+                    File.Delete(bftreeDataPath);
+
+                File.Move(tempPath, bftreeDataPath);
 
                 ref readonly var srcStub = ref ReadIndex(stubBytes);
 
                 var scratchPath = LogScratchPathFor(keyBytes);
                 var bfTree = BfTreeService.RecoverFromCprSnapshot(
-                    workingPath,
+                    bftreeDataPath,
                     scratchPath,
                     (StorageBackendType)srcStub.StorageBackend);
 
@@ -201,13 +192,21 @@ namespace Garnet.server
                     if (status.IsPending)
                         StorageSession.CompletePendingForSession(ref status, ref output, ref ctx);
 
-                    if (status.Record.Created || status.Record.InPlaceUpdated || status.Record.CopyUpdated)
+                    // Expect a fresh Created record: the KeyExists gate above confirmed nothing
+                    // existed at this key. An InPlaceUpdated / CopyUpdated result means a record
+                    // raced in between the gate and this RMW (e.g. an adversarial ASKING write while
+                    // the slot is still IMPORTING) and our RICREATE has now clobbered it.
+                    //
+                    // TODO(RI): Handle this race - claim the key atomically (RMW-first, move/recover
+                    // the data.bftree file only on Created) instead of gate-then-publish.
+                    if (status.Record.Created)
                     {
                         var keyHash = ctx.GetKeyHash((FixedSpanByteKey)pinnedKey);
                         RegisterIndex(bfTree, keyHash, keyBytes);
                     }
                     else
                     {
+                        logger?.LogWarning("PublishMigratedIndex: RICREATE RMW did not create a new record (status: {status}); a concurrent write likely raced the migration publish. Discarding the recovered BfTree without registering it", status.ToString());
                         bfTree.Dispose();
                     }
                 }
@@ -259,6 +258,8 @@ namespace Garnet.server
         /// </summary>
         internal bool SnapshotForMigration(StorageSession session, PinnedSpanByte key, out string path, out long totalBytes, out byte[] stubBytes)
         {
+            // TODO(RI): Is there a risk of a checkpoint happening that's outside the regular checkpoint CPR path?
+
             path = null;
             totalBytes = 0;
             stubBytes = null;
