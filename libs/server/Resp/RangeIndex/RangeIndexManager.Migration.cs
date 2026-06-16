@@ -155,9 +155,10 @@ namespace Garnet.server
 
                 // TODO(RI): Before publishing the migrated index, insert the chunked RI file into AOF to replicate to secondaries.
 
-                // TODO(RI): Even though we checked if key exists, in a very adversarial scenario, some client might write to this key
-                // concurrently with the migration - even though this node isn't in the hash slot yet for this key, it's in IMPORTING
-                // state, a client might still write to it using -ASK mode. This will be handled in follow up work.
+                // TODO(RI): The KeyExists check above is not race-free. The destination slot is in
+                // IMPORTING state, so a client can still write to this key via -ASK before we publish.
+                // Such a write can land between the check and the publish below, so we may clobber it.
+                // Handled in follow-up work (claim the key atomically before moving the file).
 
                 if (File.Exists(bftreeDataPath))
                     File.Delete(bftreeDataPath);
@@ -193,20 +194,24 @@ namespace Garnet.server
                         StorageSession.CompletePendingForSession(ref status, ref output, ref ctx);
 
                     // Expect a fresh Created record: the KeyExists gate above confirmed nothing
-                    // existed at this key. An InPlaceUpdated / CopyUpdated result means a record
-                    // raced in between the gate and this RMW (e.g. an adversarial ASKING write while
-                    // the slot is still IMPORTING) and our RICREATE has now clobbered it.
+                    // existed at this key.
                     //
-                    // TODO(RI): Handle this race - claim the key atomically (RMW-first, move/recover
-                    // the data.bftree file only on Created) instead of gate-then-publish.
+                    // TODO(RI): Handle the race below - claim the key using some transactional mechanism.
                     if (status.Record.Created)
                     {
                         var keyHash = ctx.GetKeyHash((FixedSpanByteKey)pinnedKey);
                         RegisterIndex(bfTree, keyHash, keyBytes);
                     }
+                    else if (status.Record.InPlaceUpdated || status.Record.CopyUpdated)
+                    {
+                        // A record raced in between the gate and this RMW (e.g. an adversarial ASKING
+                        // write while the slot is still IMPORTING) and our RICREATE has now clobbered
+                        // it. Don't dispose: the updated record may now reference this bfTree.
+                        logger?.LogWarning("PublishMigratedIndex: RICREATE RMW updated an existing record (status: {status}); a concurrent write raced the migration publish", status.ToString());
+                    }
                     else
                     {
-                        logger?.LogWarning("PublishMigratedIndex: RICREATE RMW did not create a new record (status: {status}); a concurrent write likely raced the migration publish. Discarding the recovered BfTree without registering it", status.ToString());
+                        logger?.LogWarning("PublishMigratedIndex: RICREATE RMW did not create a record (status: {status}); discarding the recovered BfTree without registering it", status.ToString());
                         bfTree.Dispose();
                     }
                 }
