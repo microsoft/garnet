@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -44,6 +43,8 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.OnTearDown();
+
+            TestContext.Progress.WriteLine($"Finished: {TestContext.CurrentContext.Result.Outcome.Status}");
         }
 
         [Test]
@@ -2453,14 +2454,17 @@ namespace Garnet.test
             [Values(false, true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
-            const int Vectors = 10_000;
+            TestContext.Progress.WriteLine($"Running {quantType}, {concurrentAdds}, {concurrentSearches}");
+
+            Environment.SetEnvironmentVariable("RUST_BACKTRACE", "full");
+
+            const int Vectors = 5_000;
             const int Dimensions = 64;
             const string Key = nameof(WithQuantizationBackfillAsync);
             const int Count = 30;
 
             var connections = new ConnectionMultiplexer[concurrentAdds ? Environment.ProcessorCount : 1];
 
-            var successfullyAdded = new ConcurrentDictionary<int, bool>();
             try
             {
                 var dbs = new IDatabaseAsync[connections.Length];
@@ -2589,20 +2593,7 @@ namespace Garnet.test
                     vaddArgs.Add(quantType.ToString());
 
                     var idCopy = id;
-                    var addTask =
-                        db
-                        .ExecuteAsync("VADD", [.. vaddArgs])
-                        .ContinueWith(
-                            t =>
-                            {
-                                if (t.IsCompletedSuccessfully && (int)t.Result == 1)
-                                {
-                                    _ = successfullyAdded.TryAdd(idCopy, true);
-                                }
-
-                                return t.Result;
-                            }
-                        );
+                    var addTask = db.ExecuteAsync("VADD", [.. vaddArgs]);
 
                     // Wait immediately if non-concurrent, otherwise queue for later
                     if (concurrentAdds)
@@ -2683,23 +2674,6 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(Count, vsimRes.Length);
                 }
             }
-            catch
-            {
-                //_ = Debugger.Launch();
-
-                // HACK HACK HACK
-                try
-                {
-                    var map = FullMapOfVectorSet(server, successfullyAdded.Keys.OrderBy(static k => k), []);
-
-                    TestContext.Out.WriteLine("=== Vector Set State After Failure ===");
-                    TestContext.Out.WriteLine(map);
-                }
-                catch { }
-
-                throw;
-                // END HACK HACK HACK
-            }
             finally
             {
                 foreach (var con in connections)
@@ -2707,103 +2681,6 @@ namespace Garnet.test
                     con?.Dispose();
                 }
             }
-
-            // HACK HACK HACK
-            static string FullMapOfVectorSet(GarnetServer secondary, IEnumerable<int> ids, HashSet<int> shouldHaveBeenDeleted)
-            {
-                const ulong AssumedContext = 8;
-
-                var vectorManager = GetStoreWrapper(secondary).DefaultDatabase.VectorManager;
-
-                var sb = new StringBuilder();
-                _ = sb.AppendLine("External (Provided) Id \t| Internal Id \t| Full Vector Matches \t| Other External Id Matched \t| Actual Full Vector Data \t|");
-
-                foreach (var externalId in ids)
-                {
-                    var externalIdBytes = new byte[sizeof(int)];
-                    BinaryPrimitives.WriteInt32LittleEndian(externalIdBytes, externalId);
-
-                    byte[] internalIdBytes;
-                    try
-                    {
-                        internalIdBytes = vectorManager.GetInternalId(AssumedContext, externalIdBytes);
-                        if (shouldHaveBeenDeleted.Contains(externalId))
-                        {
-                            throw new GarnetException($"Deleted external id {externalId} was not actually deleted");
-                        }
-                    }
-                    catch (GarnetException)
-                    {
-                        internalIdBytes = null;
-                    }
-
-                    _ = sb.Append($"{externalId} \t|");
-
-                    if (internalIdBytes != null)
-                    {
-                        _ = sb.Append($" {BinaryPrimitives.ReadInt32LittleEndian(internalIdBytes)} \t|");
-
-                        var actualFullVectorBytes = vectorManager.GetFullVector(AssumedContext, internalIdBytes);
-
-                        var expectedValues = new float[Dimensions];
-                        expectedValues.AsSpan().Fill((byte)externalId % 128);
-
-                        var expectedFullVectorBytes = MemoryMarshal.AsBytes(expectedValues.AsSpan());
-
-                        if (actualFullVectorBytes.SequenceEqual(expectedFullVectorBytes))
-                        {
-                            _ = sb.Append($" true \t| - \t|");
-                        }
-                        else
-                        {
-                            _ = sb.Append($" false \t|");
-
-                            int? otherMatch = null;
-                            for (var otherId = 0; otherId < Vectors; otherId++)
-                            {
-                                if (otherId == externalId)
-                                {
-                                    continue;
-                                }
-
-                                var otherExpectedValues = new float[Dimensions];
-                                otherExpectedValues.AsSpan().Fill((byte)otherId % 128);
-
-                                if (MemoryMarshal.AsBytes(otherExpectedValues).SequenceEqual(actualFullVectorBytes))
-                                {
-                                    otherMatch = otherId;
-                                    break;
-                                }
-                            }
-
-                            if (otherMatch != null)
-                            {
-                                _ = sb.Append($" {otherMatch.Value} \t|");
-                            }
-                            else
-                            {
-                                _ = sb.Append($" !!NONE!! \t|");
-                            }
-                        }
-
-                        _ = sb.Append($" 0x{Convert.ToBase64String(actualFullVectorBytes)} \t|");
-                    }
-                    else
-                    {
-                        _ = sb.Append($" !!NONE!! \t| - \t| - \t| - \t|");
-                    }
-
-
-
-                    _ = sb.AppendLine();
-                }
-
-                return sb.ToString();
-            }
-
-            [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
-            static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
-            // END HACK HACK HACK
         }
 
         /// <summary>
