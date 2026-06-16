@@ -67,7 +67,7 @@ namespace Garnet.server
                 {
                     using var session = (RespServerSession)self.getTempSession();
 
-                    Span<byte> indexSpan = new byte[IndexSizeBytes];
+                    Span<byte> indexSpan = GC.AllocateArray<byte>(IndexSizeBytes, pinned: true);
 
                     while (reader.TryRead(out var state))
                     {
