@@ -115,10 +115,14 @@ namespace Garnet.test.cluster
             {
                 worker.Start();
 
-                // Wait until the worker has created the deserializer and processed the chunk — it is now
-                // parked at the injection point, holding the dispose guard, with a temp file open.
+                // Wait until the worker has created the deserializer, processed the chunk (which
+                // opens the temp snapshot file), and parked at the injection point. We wait on the
+                // temp file rather than CurrentChunkCount: the chunk count is bumped (OnChunkReceived)
+                // just BEFORE ProcessChunk creates the file, so keying off the count races that gap.
+                // ProcessChunk runs immediately before the pause, so the file's appearance proves the
+                // worker is parked in-flight.
                 var deadline = DateTime.UtcNow.AddSeconds(10);
-                while (state.CurrentChunkCount == 0 && DateTime.UtcNow < deadline)
+                while (CountTempFiles() == 0 && DateTime.UtcNow < deadline)
                     Thread.Yield();
 
                 ClassicAssert.AreEqual(1, state.CurrentChunkCount, "worker did not reach the pause point");
