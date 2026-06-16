@@ -1391,6 +1391,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0302:Simplify collection initialization", Justification = "Collection initializers don't guarantee stackalloc, which is required in these tests")]
         public unsafe void VectorReadBatchVariants()
         {
             // Single key, 4 byte keys
@@ -1399,12 +1400,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 64 };
+
                 var data = new int[] { 4, 1234 };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1447,12 +1450,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 32 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1499,12 +1504,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 16 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1550,6 +1557,8 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
+
                 var key0 = "hello"u8.ToArray();
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
@@ -1560,7 +1569,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1617,6 +1626,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
@@ -1677,7 +1688,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1749,6 +1760,8 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
+
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
                 var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
@@ -1808,7 +1821,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -1851,7 +1864,7 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(4, keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.AreEqual(2, keyCopy.NamespaceBytes[0]);
                         var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));

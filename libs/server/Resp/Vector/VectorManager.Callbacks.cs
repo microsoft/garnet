@@ -16,14 +16,36 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
-        public unsafe struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
+        public unsafe
+#if NET9_0_OR_GREATER
+            ref 
+#endif
+            struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
             public int Count { get; }
 
             public readonly ReadOnlySpan<PinnedSpanByte> Parameters
                 => default;
 
-            private readonly ulong context;
+            private readonly ReadOnlySpan<byte> NamespaceBytes
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+#if NET9_0_OR_GREATER
+                    return namespaceBytes;
+#else
+                    return new ReadOnlySpan<byte>(namespaceBytesPtr, namespaceBytesLen);
+#endif
+                }
+            }
+
+#if NET9_0_OR_GREATER
+            private readonly ReadOnlySpan<byte> namespaceBytes;
+#else
+            private byte* namespaceBytesPtr;
+            private int namespaceBytesLen;
+#endif
             private readonly PinnedSpanByte lengthPrefixedKeys;
 
             public readonly delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
@@ -36,9 +58,14 @@ namespace Garnet.server
 
             private bool hasPending;
 
-            public VectorReadBatch(nint callback, nint callbackContext, ulong context, uint keyCount, PinnedSpanByte lengthPrefixedKeys)
+            public VectorReadBatch(nint callback, nint callbackContext, uint keyCount, PinnedSpanByte lengthPrefixedKeys, ReadOnlySpan<byte> namespaceBytes)
             {
-                this.context = context;
+#if NET9_0_OR_GREATER
+                this.namespaceBytes = namespaceBytes;
+#else
+                namespaceBytesPtr = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in namespaceBytes[0]));
+                namespaceBytesLen = namespaceBytes.Length;
+#endif
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
                 this.callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)callback;
@@ -60,9 +87,6 @@ namespace Garnet.server
                 {
                     return;
                 }
-
-                // Reset smashed length on advance
-                *(int*)currentPtr = currentLen;
 
                 // Most likely case, we're going one forward
                 if (i == (currentIndex + 1))
@@ -110,12 +134,9 @@ namespace Garnet.server
 
                 AdvanceTo(i);
 
-                Span<byte> nsBytes = new(currentPtr + 3, 1);
-                nsBytes[0] = (byte)context;
-
                 ReadOnlySpan<byte> keyBytes = new(currentPtr + 4, currentLen);
 
-                key = new(nsBytes, keyBytes);
+                key = new(NamespaceBytes, keyBytes);
             }
 
             /// <inheritdoc/>
@@ -158,9 +179,6 @@ namespace Garnet.server
                 {
                     _ = objectContext.CompletePending(wait: true);
                 }
-
-                // Reset smashed length now that we're done
-                *(int*)currentPtr = currentLen;
             }
         }
 
@@ -189,7 +207,10 @@ namespace Garnet.server
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
-            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, context, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
+#pragma warning restore IDE0302
+            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
@@ -255,7 +276,7 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-#pragma warning disable IDE0302 // [...]-style collection intialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
 #pragma warning restore IDE0302
 
