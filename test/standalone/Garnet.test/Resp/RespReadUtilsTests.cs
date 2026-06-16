@@ -478,7 +478,7 @@ namespace Garnet.test.Resp
 
                     // Fail too big
                     ptr = startPtr;
-                    
+
                     len = 0;
                     resultPtr = null;
                     bigToCopy.CopyTo(new Span<byte>(startPtr, bigBuffer.Length));
