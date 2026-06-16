@@ -12,27 +12,6 @@ namespace Garnet.server
 {
     sealed partial class StorageSession : IDisposable
     {
-        // Reusable instance fields for Tsavorite Upsert overloads that don't take input/output. The Tsavorite
-        // overload that does NOT take input/output internally constructs `TInput input = default; TOutput output = default;`
-        // per call (BasicContext.cs); using these fields lets us bypass that overload and call the full one directly,
-        // saving the per-call stack zero-init of both structs. Verified after each Upsert via the assertion below
-        // that the unused output remained at default (no heap memory allocated, no SpanByte assigned).
-        //
-        // NOTE: default(StringOutput).SpanByteAndMemory.IsSpanByte is false (it requires SpanByte.ptr != null), so we
-        // assert "Memory is null && !SpanByte.IsValid" — i.e. truly unchanged — instead of "IsSpanByte is still true".
-        private StringInput unusedInput = default;
-        private StringOutput unusedOutput = default;
-
-        [System.Diagnostics.Conditional("DEBUG")]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AssertUnusedOutputUntouched()
-        {
-            Debug.Assert(unusedOutput.SpanByteAndMemory.Memory is null && !unusedOutput.SpanByteAndMemory.SpanByte.IsValid,
-                "Upsert with unusedOutput must not write to the output (no heap allocation, no SpanByte assignment)");
-            Debug.Assert(unusedOutput.OutputFlags == StringOutputFlags.None,
-                "Upsert with unusedOutput must not set output flags");
-        }
-
         public GarnetStatus GET<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -235,18 +214,15 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // Use the input/output-taking Upsert overload directly with reusable instance fields, bypassing the
-            // no-input/output overload's per-call default-init of TInput/TOutput on its stack.
-            var status = context.Upsert((FixedSpanByteKey)key, ref unusedInput, value.ReadOnlySpan, ref unusedOutput);
-            AssertUnusedOutputUntouched();
+            var status = context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref unusedOutput);
-            AssertUnusedOutputUntouched();
+            var output = new StringOutput();
+            var status = context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
@@ -397,9 +373,8 @@ namespace Garnet.server
             unsafe
             {
                 fixed (byte* ptr = value.Span)
-                    _ = context.Upsert((FixedSpanByteKey)key, ref unusedInput, new ReadOnlySpan<byte>(ptr, value.Length), ref unusedOutput);
+                    context.Upsert((FixedSpanByteKey)key, new ReadOnlySpan<byte>(ptr, value.Length));
             }
-            AssertUnusedOutputUntouched();
             return GarnetStatus.OK;
         }
 
