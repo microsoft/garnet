@@ -620,6 +620,13 @@ namespace Tsavorite.core
                 epoch.BumpCurrentEpoch(() =>
                 {
                     _ = CommitInternal(out _, out _, false, [], long.MaxValue, null);
+
+                    // Wake any iterators parked in WaitUncommittedAsync (scanUncommitted) so they can
+                    // observe LogCompleted via the Ended property and terminate. Completing the log does
+                    // not advance SafeTailAddress, so NotifyParkedWaiters is not otherwise triggered and
+                    // such iterators would wait forever. Invoked after CommitInternal has set commitNum to
+                    // long.MaxValue so woken waiters see LogCompleted == true.
+                    NotifyParkedWaiters();
                 });
             }
             finally

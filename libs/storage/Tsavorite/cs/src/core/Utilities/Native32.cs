@@ -128,6 +128,20 @@ namespace Tsavorite.core
         internal const uint FILE_FLAG_OVERLAPPED = 0x40000000;
 
         internal const uint FILE_SHARE_DELETE = 0x00000004;
+
+        /// <summary>
+        /// The Win32 extended-length path prefix (<c>\\?\</c>). Paths using this prefix (including the
+        /// UNC form <c>\\?\UNC\</c>) bypass the <see cref="WIN32_MAX_PATH"/> limit and may be up to
+        /// ~32,767 characters when passed to the wide (W) file APIs such as <see cref="CreateFileW"/>.
+        /// </summary>
+        internal const string ExtendedLengthPathPrefix = @"\\?\";
+
+        /// <summary>
+        /// Returns true if <paramref name="path"/> is a Win32 extended-length path (prefixed with
+        /// <c>\\?\</c>), for which the <see cref="WIN32_MAX_PATH"/> (260-char) limit does not apply.
+        /// </summary>
+        internal static bool IsExtendedLengthPath(string path)
+            => path is not null && path.StartsWith(ExtendedLengthPathPrefix, StringComparison.Ordinal);
         #endregion
 
         #region io functions
