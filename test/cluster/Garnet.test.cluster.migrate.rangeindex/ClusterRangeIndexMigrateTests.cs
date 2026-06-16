@@ -1783,5 +1783,297 @@ namespace Garnet.test.cluster
             }
         }
 #endif
+
+        #region Post-migration lifecycle
+
+        /// <summary>
+        /// Restart a cluster node in place, recovering from its on-disk checkpoint and cluster
+        /// configuration. Mirrors the restart recipe used by the RangeIndex replication tests.
+        /// </summary>
+        private void RestartNode(int nodeIndex)
+        {
+            context.nodes[nodeIndex].Dispose(false);
+            context.nodes[nodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(nodeIndex),
+                tryRecover: true,
+                enableAOF: true,
+                cleanClusterConfig: false,
+                enableRangeIndexPreview: true);
+            context.nodes[nodeIndex].Start();
+            context.CreateConnection();
+        }
+
+        /// <summary>
+        /// Take a checkpoint on the given node and wait for it to complete.
+        /// </summary>
+        private void CheckpointNode(int nodeIndex)
+        {
+            var lastSave = context.clusterTestUtils.LastSave(nodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(nodeIndex, lastSave);
+            context.clusterTestUtils.Checkpoint(nodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(nodeIndex, lastSave, logger: context.logger);
+        }
+
+        /// <summary>
+        /// After migration, write additional fields on the target, take a checkpoint (which
+        /// snapshots the migrated tree to its own <c>data.bftree</c>), then read every field back.
+        /// Exercises checkpoint of a migrated-then-modified tree plus sustained post-migration use.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexThenFlushAndRead()
+        {
+            const int shards = 2;
+            const int targetIndex = 1;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenFlushAndRead), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 30).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // Migrate the slot to the target.
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary0, primary1, slot);
+
+            // Write more fields to the migrated tree on the target.
+            var moreFields = Enumerable.Range(30, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            foreach (var (field, value) in moreFields)
+            {
+                var setResult = (string)context.clusterTestUtils.Execute(
+                    primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual("OK", setResult, $"RI.SET should succeed on target for {riKey}/{field}");
+            }
+
+            // Checkpoint the target: OnFlush snapshots the migrated tree's BfTree to its data.bftree.
+            CheckpointNode(targetIndex);
+
+            // Read back every field (migrated + post-migration writes).
+            VerifyFieldsOnEndpoint(primary1, riKey, fields.Concat(moreFields));
+        }
+
+        /// <summary>
+        /// After migration, take a checkpoint on the target, restart the node, and verify the
+        /// migrated tree (plus a post-migration write) is recovered from the checkpoint snapshot.
+        /// </summary>
+        /// <remarks>
+        /// A checkpoint is required: migrated RangeIndex records are not yet carried in the AOF,
+        /// so an AOF-only restart would not recover the tree. The checkpoint snapshots all live
+        /// trees (including migrated ones) and records the AOF tail, so post-checkpoint writes
+        /// replay normally onto the recovered tree.
+        /// </remarks>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexThenCheckpointRestart()
+        {
+            const int shards = 2;
+            const int targetIndex = 1;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenCheckpointRestart), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // Migrate the slot to the target.
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary0, primary1, slot);
+
+            // Post-migration write on the target.
+            var extra = ("field_extra", "value_extra");
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
+                primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
+
+            // Checkpoint the target so the migrated tree is persisted, then restart and recover.
+            CheckpointNode(targetIndex);
+
+            RestartNode(targetIndex);
+
+            // All fields (migrated + post-migration) survive the restart.
+            VerifyFieldsOnEndpoint(primary1, riKey, fields.Append(extra));
+        }
+
+        /// <summary>
+        /// After migration, read the migrated tree on the target, then delete the whole key and
+        /// verify it is gone (RI.EXISTS = 0, RI.GET null) and a fresh index can be created at the
+        /// same key — proving the delete cleaned up the migrated tree's file state.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexThenDelete()
+        {
+            const int shards = 2;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenDelete), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // Migrate the slot to the target.
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary0, primary1, slot);
+
+            // Reads work on the target.
+            VerifyFieldsOnEndpoint(primary1, riKey, fields);
+
+            // Delete the whole key on the target.
+            var delResult = (int)context.clusterTestUtils.Execute(
+                primary1, "DEL", [riKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(1, delResult, "DEL should remove the migrated key");
+
+            // The key is gone.
+            var exists = (int)context.clusterTestUtils.Execute(
+                primary1, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(0, exists, "RI.EXISTS should be 0 after DEL");
+
+            var getResult = (string)context.clusterTestUtils.Execute(
+                primary1, "RI.GET", [riKey, "field_0"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(getResult.Contains("not found", StringComparison.OrdinalIgnoreCase),
+                $"RI.GET should report the index is gone after DEL, got: {getResult}");
+
+            // A fresh index can be created at the same key (delete cleaned up file state).
+            var recreated = new[] { ("field_a", "value_a"), ("field_b", "value_b") };
+            CreateRangeIndexWithFields(primary1, riKey, recreated);
+            VerifyFieldsOnEndpoint(primary1, riKey, recreated);
+        }
+
+        /// <summary>
+        /// Migrate a tree to the target, take a checkpoint, restart, then keep using it: after
+        /// recovery write new fields and read everything back, and take a second checkpoint +
+        /// restart to confirm the recovered tree is itself durable.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexThenCheckpointRestartAndContinue()
+        {
+            const int shards = 2;
+            const int targetIndex = 1;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenCheckpointRestartAndContinue), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // Migrate the slot to the target.
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary0, primary1, slot);
+
+            // Checkpoint + restart (recover the migrated tree from the snapshot).
+            CheckpointNode(targetIndex);
+            RestartNode(targetIndex);
+            VerifyFieldsOnEndpoint(primary1, riKey, fields);
+
+            // Continue using the recovered tree: new writes + reads.
+            var afterRecovery = Enumerable.Range(15, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            foreach (var (field, value) in afterRecovery)
+            {
+                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
+                    primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect));
+            }
+            VerifyFieldsOnEndpoint(primary1, riKey, fields.Concat(afterRecovery));
+
+            // Second checkpoint + restart: the recovered-then-extended tree is itself durable.
+            CheckpointNode(targetIndex);
+            RestartNode(targetIndex);
+            VerifyFieldsOnEndpoint(primary1, riKey, fields.Concat(afterRecovery));
+        }
+
+        /// <summary>
+        /// Round-trip a tree P0 → P1 → P0, then checkpoint and restart the original owner (P0) and
+        /// verify the data is intact — guards against stale-file / liveIndexes issues left behind
+        /// after a back-migration interacting with persistence.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexRoundTripThenRestart()
+        {
+            const int shards = 2;
+            const int sourceIndex = 0;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexRoundTripThenRestart), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // P0 → P1.
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary0, primary1, slot);
+
+            // Add a field on P1, then migrate back P1 → P0.
+            var extra = ("field_extra", "value_extra");
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
+                primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
+
+            context.clusterTestUtils.MigrateSlots(primary1, primary0, [slot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            WaitForSlotOwnership(primary1, primary0, slot);
+
+            VerifyFieldsOnEndpoint(primary0, riKey, fields.Append(extra));
+
+            // Checkpoint + restart the original owner and confirm the round-tripped data survives.
+            CheckpointNode(sourceIndex);
+            RestartNode(sourceIndex);
+            VerifyFieldsOnEndpoint(primary0, riKey, fields.Append(extra));
+        }
+
+        #endregion
     }
 }
