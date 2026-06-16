@@ -122,7 +122,9 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
 
-            if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+            // The 260-char MAX_PATH limit does not apply to extended-length paths (those prefixed with
+            // "\\?\"), which CreateFileW accepts up to ~32,767 chars; only enforce it for normal paths.
+            if (!Native32.IsExtendedLengthPath(filename) && filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new TsavoriteException($"Path {filename} is too long");
 
             ThrottleLimit = 120;
