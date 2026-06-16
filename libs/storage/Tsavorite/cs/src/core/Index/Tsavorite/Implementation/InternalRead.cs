@@ -123,10 +123,6 @@ namespace Tsavorite.core
                         : CheckFalseActionStatus(ref readInfo);
                 }
 
-                // Pending (and CopyFromImmutable may go pending) must track the latest searched-below addresses. They are the same if there are no readcache records.
-                pendingContext.initialEntryAddress = stackCtx.hei.Address;
-                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {
                     // Immutable region
@@ -151,7 +147,8 @@ namespace Tsavorite.core
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
-                    CreatePendingReadContext(key, keyHash, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(key, keyHash, ref input, ref output, userContext, ref pendingContext, sessionFunctions,
+                        stackCtx.recSrc.LogicalAddress, stackCtx.hei.Address, stackCtx.recSrc.LatestLogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
                 }
 
@@ -260,8 +257,11 @@ namespace Tsavorite.core
 
                 // keyHash=0 is intentional: ContinuePendingRead derives the hash from pendingContext.DiskLogRecord
                 // for IsReadAtAddress/IsNoKey, and the in-memory re-issue path (which reads pendingContext.keyHash)
-                // is gated on !IsReadAtAddress so it cannot fire here.
-                CreatePendingReadContext(key, keyHash: 0L, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
+                // is gated on !IsReadAtAddress so it cannot fire here. initialEntryAddress / initialLatestLogicalAddress
+                // are also gated behind !IsReadAtAddress in ContinuePendingRead (TryFindRecordInMemory is skipped),
+                // so they are passed as kInvalidAddress.
+                CreatePendingReadContext(key, keyHash: 0L, ref input, ref output, userContext, ref pendingContext, sessionFunctions,
+                    readAtAddress, initialEntryAddress: kInvalidAddress, initialLatestLogicalAddress: kInvalidAddress);
                 return OperationStatus.RECORD_ON_DISK;
             }
 
@@ -327,7 +327,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                long logicalAddress, long initialEntryAddress, long initialLatestLogicalAddress)
              where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -345,6 +346,8 @@ namespace Tsavorite.core
 
             pendingContext.pendingOp = op;
             pendingContext.logicalAddress = logicalAddress;
+            pendingContext.initialEntryAddress = initialEntryAddress;
+            pendingContext.initialLatestLogicalAddress = initialLatestLogicalAddress;
         }
     }
 }

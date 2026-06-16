@@ -87,11 +87,6 @@ namespace Tsavorite.core
                 if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
-                // pendingContext.initialEntryAddress / initialLatestLogicalAddress are NOT written here on the in-memory hot path:
-                //   they are read only by ContinuePendingRMW / TryFindRecordInMemory after the disk IO completes, so they are
-                //   written lazily in CreatePendingRMWContext just before we return RECORD_ON_DISK. The in-memory IPU/CU paths
-                //   (the dominant INCR/DECR/SET NX/SET XX path in BDN RawStringOperations) never consume them.
-
                 // If there is a readcache record, use it as the CopyUpdater source.
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
@@ -275,9 +270,6 @@ namespace Tsavorite.core
             pendingContext.pendingOp = op;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
-            // Latest main-log / hash-chain addresses observed during the in-memory search. Written here (the unique disk-going
-            // helper) instead of unconditionally at InternalRMW entry so the IPU/CU in-memory path pays no cost for them.
-            // ContinuePendingRMW reads these via TryFindRecordInMemory / FindRecord to detect new inserts that landed during IO.
             pendingContext.initialEntryAddress = stackCtx.hei.Address;
             pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
         }
