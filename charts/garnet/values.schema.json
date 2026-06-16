@@ -1,0 +1,222 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "affinity": {
+            "description": "Affinity",
+            "type": "object"
+        },
+        "config": {
+            "type": "object",
+            "properties": {
+                "existingSecret": {
+                    "description": "Garnet secret (if you want to use an existing secret). This secret must contains a key called 'garnet.conf'.",
+                    "type": "string"
+                },
+                "garnetConf": {
+                    "description": "The garnet.conf data content.",
+                    "type": "string"
+                }
+            }
+        },
+        "containers": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "description": "Containers args",
+                    "type": "array"
+                },
+                "port": {
+                    "description": "Containers port",
+                    "type": "integer"
+                }
+            }
+        },
+        "dnsConfig": {
+            "description": "DNS config",
+            "type": "object"
+        },
+        "dnsPolicy": {
+            "description": "DNS policy",
+            "type": "string"
+        },
+        "extraVolumeMounts": {
+            "description": "Extra Volume Mounts",
+            "type": "array"
+        },
+        "extraVolumes": {
+            "description": "Extra Volumes",
+            "type": "array"
+        },
+        "fullnameOverride": {
+            "description": "Chart full name override",
+            "type": "string"
+        },
+        "image": {
+            "type": "object",
+            "properties": {
+                "pullPolicy": {
+                    "description": "Image pull policy",
+                    "type": "string"
+                },
+                "registry": {
+                    "description": "Image registry",
+                    "type": "string"
+                },
+                "repository": {
+                    "description": "Image repository",
+                    "type": "string"
+                },
+                "tag": {
+                    "description": "Overrides the image tag whose default is the chart appVersion.",
+                    "type": "string"
+                }
+            }
+        },
+        "imagePullSecrets": {
+            "description": "Image pull secrets",
+            "type": "array"
+        },
+        "initContainers": {
+            "description": "Init containers",
+            "type": "array"
+        },
+        "livenessProbe": {
+            "description": "Containers livenessProbe",
+            "type": "object"
+        },
+        "nameOverride": {
+            "description": "Chart name override",
+            "type": "string"
+        },
+        "nodeSelector": {
+            "description": "Node Selector labels",
+            "type": "object"
+        },
+        "persistence": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "persistence enabled",
+                    "type": "boolean"
+                },
+                "storageDir": {
+                    "description": "The Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Default: \"/data\"",
+                    "type": "string"
+                }
+            }
+        },
+        "podAnnotations": {
+            "description": "Pod annotations",
+            "type": "object"
+        },
+        "podSecurityContext": {
+            "description": "Pod Security Context",
+            "type": "object"
+        },
+        "readinessProbe": {
+            "description": "Containers livenessProbe",
+            "type": "object"
+        },
+        "resources": {
+            "description": "Resources",
+            "type": "object"
+        },
+        "securityContext": {
+            "description": "Security Context",
+            "type": "object"
+        },
+        "service": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "description": "Service annotations",
+                    "type": "object"
+                },
+                "ipFamilies": {
+                    "description": "Service ipFamilies",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ipFamilyPolicy": {
+                    "description": "Service ipFamilyPolicy SingleStack|PreferDualStack|RequireDualStack",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "Service port",
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "Service type",
+                    "type": "string"
+                }
+            }
+        },
+        "serviceAccount": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "description": "Annotations to add to the service account",
+                    "type": "object"
+                },
+                "automount": {
+                    "description": "Automatically mount the service account token",
+                    "type": "boolean"
+                },
+                "create": {
+                    "description": "Specifies whether a service account should be created",
+                    "type": "boolean"
+                },
+                "name": {
+                    "description": "The name of the service account to use. If not set and create is true, a name is generated using the fullname template",
+                    "type": "string"
+                }
+            }
+        },
+        "statefulSet": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "description": "StatefulSet annotations",
+                    "type": "object"
+                },
+                "replicas": {
+                    "description": "StatefulSet replicas",
+                    "type": "integer"
+                },
+                "revisionHistoryLimit": {
+                    "description": "StatefulSet revisionHistoryLimit",
+                    "type": "integer"
+                },
+                "updateStrategy": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "description": "StatefulSet updateStrategy type",
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "tolerations": {
+            "description": "Tolerations",
+            "type": "array"
+        },
+        "volumeClaimTemplates": {
+            "type": "object",
+            "properties": {
+                "requestsStorage": {
+                    "description": "Volume Claim Templates Requests Storage",
+                    "type": "string"
+                },
+                "storageClassName": {
+                    "description": "Volume Claim Templates Storage Class Name",
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

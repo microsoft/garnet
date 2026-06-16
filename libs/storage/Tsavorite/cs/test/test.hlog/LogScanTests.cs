@@ -3,6 +3,7 @@
 
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -412,6 +413,56 @@ namespace Tsavorite.test
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             ClassicAssert.AreEqual(entryLength, currentEntry);
+        }
+
+        // Regression test: a scanUncommitted iterator that is parked at the tail must terminate (observe
+        // Ended) once the log is completed via CompleteLog, rather than waiting forever.
+        [Test]
+        [Category("TsavoriteLog")]
+        [Category("Smoke")]
+        public async Task ScanUncommittedEndsOnCompleteLogTest([Values] TestUtils.TestDeviceType deviceType)
+        {
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanComplete" + deviceType.ToString() + ".log");
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+
+            const int producedEntries = 5;
+            byte[] buffer = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                buffer[i] = (byte)i;
+
+            // Producer: enqueue a few entries with delays so the consumer drains to the tail and parks in
+            // WaitAsync before the log is completed, then complete the log.
+            var producer = Task.Run(async () =>
+            {
+                for (int i = 0; i < producedEntries; i++)
+                {
+                    _ = await log.EnqueueAsync(buffer).ConfigureAwait(false);
+                    await Task.Delay(50).ConfigureAwait(false);
+                }
+                log.CompleteLog();
+            });
+
+            // Consumer: mirror the documented scanUncommitted usage that checks Ended for completion.
+            var consumer = Task.Run(async () =>
+            {
+                int count = 0;
+                using var iter = log.Scan(log.BeginAddress, LogAddress.MaxValidAddress, scanUncommitted: true);
+                while (true)
+                {
+                    while (!iter.GetNext(out _, out _, out _))
+                    {
+                        if (iter.Ended)
+                            return count;
+                        _ = await iter.WaitAsync().ConfigureAwait(false);
+                    }
+                    count++;
+                }
+            });
+
+            _ = await Task.WhenAny(Task.WhenAll(producer, consumer), Task.Delay(30000)).ConfigureAwait(false);
+            ClassicAssert.AreEqual(TaskStatus.RanToCompletion, consumer.Status, "scanUncommitted iterator did not terminate after CompleteLog");
+            ClassicAssert.AreEqual(producedEntries, await consumer.ConfigureAwait(false));
         }
     }
 }
