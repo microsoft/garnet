@@ -331,6 +331,27 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
+        /// <summary>
+        /// As <see cref="CompletePending(ref Status, ref VectorOutput, ref VectorBasicContext)"/>, but also propagates the
+        /// completed <paramref name="input"/> back to the caller.
+        ///
+        /// This is required for the unknown-size read path (<see cref="ReadSizeUnknown"/>): the Reader records the actual
+        /// value size on <see cref="VectorInput.ReadDesiredSize"/>, and on the pending (disk) path that update lives on the
+        /// pending context's copy of the input. Without propagating it back the caller keeps its stale value and skips the
+        /// grow-and-retry, returning a truncated/uninitialized buffer.
+        /// </summary>
+        private static void CompletePending(ref Status status, ref VectorInput input, ref VectorOutput output, ref VectorBasicContext ctx)
+        {
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            output = completedOutputs.Current.Output;
+            input = completedOutputs.Current.Input;
+            Debug.Assert(!completedOutputs.Next());
+            completedOutputs.Dispose();
+        }
+
         private static void CompletePending(ref Status status, ref StringBasicContext ctx)
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);

@@ -299,7 +299,7 @@ namespace Garnet.server
                     var status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
                     if (status.IsPending)
                     {
-                        CompletePending(ref status, ref asSpanByte, ref ctx);
+                        CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
                     }
 
                     if (!status.Found)
