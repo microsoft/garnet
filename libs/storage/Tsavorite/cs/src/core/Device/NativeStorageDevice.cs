@@ -619,9 +619,9 @@ namespace Tsavorite.core
         /// budget, so applying the full throttle to every context could exhaust it with many completion threads. The
         /// <see cref="DefaultNativeRingDepth"/> floor adds headroom against uneven distribution (a brief ring-full is a
         /// non-fatal unwind-and-retry, not a hang); the cap is the kernel-safe maximum (see <see cref="MaxThrottle"/>).
-        /// For the default single context this is simply <c>NextPowerOf2(ThrottleLimit)</c>. Read at native-device
-        /// creation time (first IO), by which point the factory has applied the configured throttle. Ignored by the
-        /// Windows (IOCP) backend.
+        /// For the default single context this is <c>max(DefaultNativeRingDepth, NextPowerOf2(ThrottleLimit))</c>, clamped to
+        /// <see cref="MaxThrottle"/>. Read at native-device creation time (first IO), by which point the factory has applied
+        /// the configured throttle. Ignored by the Windows (IOCP) backend.
         /// </summary>
         int ComputeNativeRingDepth()
         {
