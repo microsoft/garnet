@@ -136,6 +136,20 @@ namespace Garnet.server
 
                     if (needsRecreate)
                     {
+                        // If we need to recreate the index, BUT we haven't finished drop from the last time
+                        // we need to spin (without holding a lock) until that happens
+                        //
+                        // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
+                        // will break inserts quite badly - so it's not optional.
+                        if (DropRequested(key))
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            takeExclusiveLock = false;
+
+                            WaitForDiskANNIndexDrop(key);
+                            continue;
+                        }
+
                         if (!lockToken.IsExclusive)
                         {
                             // Try to promote
@@ -331,6 +345,20 @@ namespace Garnet.server
                         bool requestQuantization;
                         if (needsRecreate)
                         {
+                            // If we need to recreate the index, BUT we haven't finished drop from the last time
+                            // we need to spin (without holding a lock) until that happens
+                            //
+                            // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
+                            // will break inserts quite badly - so it's not optional.
+                            if (DropRequested(key))
+                            {
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                takeExclusiveLock = false;
+
+                                WaitForDiskANNIndexDrop(key);
+                                continue;
+                            }
+
                             ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                             input.arg1 = RecreateIndexArg;

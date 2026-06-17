@@ -51,7 +51,7 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            VectorElementKey key = new((byte)namespaceBytes[0], keyWithoutNamespace);
+            VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
@@ -190,8 +190,26 @@ namespace Garnet.server
 
                 // Exclusive lock to prevent other modification of this key
 
+                var needsWaitForDrop = false;
+            waitForDrop:
+                if (needsWaitForDrop)
+                {
+                    WaitForDiskANNIndexDrop(key);
+                    needsWaitForDrop = false;
+                }
+
                 using (AcquireExclusiveLocks(ActiveThreadSession, key))
                 {
+                    // If we're racing with a drop to the same key, we need to drop the lock and wait for index drop.
+                    //
+                    // This should be extremely rare (it basically requires a delete followed by an immediate migrate into the same key)
+                    // but if we don't handle it future inserts will corrupt the DiskANN index.
+                    if (DropRequested(key))
+                    {
+                        needsWaitForDrop = true;
+                        goto waitForDrop;
+                    }
+
                     // Perform the write
                     var writeRes = ActiveThreadSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref ActiveThreadSession.stringBasicContext);
                     if (writeRes != GarnetStatus.OK)

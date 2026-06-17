@@ -120,7 +120,7 @@ namespace Garnet.client
         static bool TryReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
             {
                 return false;
             }
