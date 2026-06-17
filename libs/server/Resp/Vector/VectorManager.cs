@@ -647,7 +647,7 @@ namespace Garnet.server
                 if (dimensions != vectorData.ElementCount)
                 {
                     outputIdFormat = VectorIdFormat.Invalid;
-                    errorMsg = "Dimensions provided do not match Vector Set dimensions"u8;
+                    errorMsg = "ERR Dimensions provided do not match Vector Set dimensions"u8;
                     return VectorManagerResult.BadParams;
                 }
 
