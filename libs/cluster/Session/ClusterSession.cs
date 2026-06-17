@@ -53,6 +53,17 @@ namespace Garnet.cluster
         private StringBasicContext stringBasicContext;
         private VectorBasicContext vectorBasicContext;
 
+        /// <summary>
+        /// Streaming state for receiving inbound RangeIndex migration data.
+        /// Unlike regular keys or VectorSet keys (which are each sent as a single record),
+        /// a RangeIndex BfTree snapshot can be large and is transmitted as a sequence of
+        /// chunked <c>SerializedRangeIndexStream</c> records
+        /// spread across multiple <c>CLUSTER MIGRATE</c> commands on this connection.
+        /// The sender serializes all chunks for one key sequentially before moving to the next,
+        /// so per-connection state is sufficient to reassemble them.
+        /// </summary>
+        private readonly RangeIndexMigrationReceiveState rangeIndexMigrationState;
+
         public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
@@ -65,6 +76,9 @@ namespace Garnet.cluster
             this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
+
+            if (clusterProvider.serverOptions.EnableRangeIndexPreview)
+                rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager, logger);
         }
 
         public unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
@@ -197,6 +211,8 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
+            rangeIndexMigrationState?.Dispose();
+
             // Call dispose on ref of this session if this session is a replication task
             if (IsReplicating)
                 replicaReplayDriverStore?.Dispose();
