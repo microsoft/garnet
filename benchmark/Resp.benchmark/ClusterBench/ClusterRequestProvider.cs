@@ -33,7 +33,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Discover cluster topology and initialize providers.
-        /// Creates NumThreads providers per shard.
+        /// Creates NumThreads providers per shard, with round-robin replica assignment if replicas exist.
         /// </summary>
         public void DiscoverTopology()
         {
@@ -49,9 +49,20 @@ namespace Resp.benchmark
             var idx = 0;
             for (var s = 0; s < shards.Length; s++)
             {
+                var shard = shards[s];
+                var replicaCount = shard.Replicas.Count;
+
                 for (var t = 0; t < threadsPerShard; t++)
                 {
-                    providers[idx] = new ClientRequestProvider(shards[s], opts, idx, t);
+                    // Round-robin replica assignment: worker t gets replica (t % replicaCount)
+                    // If no replicas exist, assignedReplica will be null
+                    ReplicaInfo assignedReplica = null;
+                    if (replicaCount > 0 && opts.AllowReplicaReads > 0)
+                    {
+                        assignedReplica = shard.Replicas[t % replicaCount];
+                    }
+
+                    providers[idx] = new ClientRequestProvider(shard, assignedReplica, opts, idx, t);
                     idx++;
                 }
             }
@@ -78,8 +89,9 @@ namespace Resp.benchmark
             var itp = opts.IntraThreadParallelism;
             var batch = opts.BatchSize.First();
 
-            // Count total replicas
+            // Count total replicas and workers with replica assignments
             var totalReplicas = shards.Sum(s => s.Replicas.Count);
+            var workersWithReplicas = providers.Count(p => p.HasReplica);
             var replicaReads = opts.AllowReplicaReads >= 0 ? $"{opts.AllowReplicaReads}%" : "Disabled";
 
             Console.WriteLine();
@@ -92,6 +104,8 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders,-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
+            if (workersWithReplicas > 0)
+                Console.WriteLine($"{"Workers w/ Replicas: " + workersWithReplicas,-28}{"Assignment: Round-robin",-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -123,6 +137,14 @@ namespace Resp.benchmark
             {
                 Console.WriteLine("  [WARNING] --allow-replica-reads is enabled but no replicas discovered.");
                 Console.WriteLine("            All operations will execute on primaries.");
+                Console.WriteLine();
+            }
+
+            // Info message about replica assignment
+            if (opts.AllowReplicaReads > 0 && totalReplicas > 0)
+            {
+                Console.WriteLine($"  [INFO] Replica read routing: {opts.AllowReplicaReads}% of read operations will target replicas.");
+                Console.WriteLine($"         Workers assigned replicas: {workersWithReplicas}/{totalProviders} (round-robin)");
                 Console.WriteLine();
             }
         }

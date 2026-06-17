@@ -7,9 +7,10 @@ using HdrHistogram;
 namespace Resp.benchmark
 {
     /// <summary>
-    /// A single-threaded worker that owns a connection to one shard,
+    /// A single-threaded worker that owns connections to a primary shard (and optionally a replica),
     /// generates keys restricted to that shard's assigned slots,
     /// and measures its own throughput and latency.
+    /// Supports probabilistic routing of read operations to replicas when --allow-replica-reads is enabled.
     /// </summary>
     public unsafe partial class ClientRequestProvider : IDisposable
     {
@@ -22,27 +23,42 @@ namespace Resp.benchmark
         readonly SlotKeyGenerator keyGen;
         readonly Random rng;
 
+        // Dual-connection endpoints (replica can be null)
+        readonly string primaryAddress;
+        readonly int primaryPort;
+        readonly string replicaAddress;
+        readonly int replicaPort;
+        readonly bool hasReplica;
+
         // Metrics
         readonly LongHistogram histogram;
         long opsCompleted;
         long bytesSent;
         long keysLoaded;
+#pragma warning disable CS0649 // Field assigned in Phase 4/5 Online/Offline implementations
+        long primaryOps;  // Operations executed on primary
+        long replicaOps;  // Operations executed on replica
+#pragma warning restore CS0649
 
         volatile bool done;
 
         public long OpsCompleted => Interlocked.Read(ref opsCompleted);
         public long BytesSent => Interlocked.Read(ref bytesSent);
         public long KeysLoaded => Interlocked.Read(ref keysLoaded);
+        public long PrimaryOps => Interlocked.Read(ref primaryOps);
+        public long ReplicaOps => Interlocked.Read(ref replicaOps);
         public LongHistogram Histogram => histogram;
         public PrimaryInfo Shard => shard;
         public string KeyPrefix => keyGen.KeyPrefix;
+        public bool HasReplica => hasReplica;
+        public string ReplicaEndpoint => hasReplica ? $"{replicaAddress}:{replicaPort}" : null;
 
         /// <summary>
         /// Index of this thread within its shard (0-based). Used to partition key space during loading.
         /// </summary>
         private readonly int shardThreadIndex;
 
-        public ClientRequestProvider(PrimaryInfo shard, Options opts, int threadIndex, int shardThreadIndex)
+        public ClientRequestProvider(PrimaryInfo shard, ReplicaInfo assignedReplica, Options opts, int threadIndex, int shardThreadIndex)
         {
             this.shard = shard;
             this.opts = opts;
@@ -51,6 +67,58 @@ namespace Resp.benchmark
             this.rng = new Random(31337 + (threadIndex * 1000) + shard.Port);
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
+
+            // Primary endpoint (always set)
+            this.primaryAddress = shard.Address;
+            this.primaryPort = shard.Port;
+
+            // Replica endpoint (optional)
+            if (assignedReplica != null)
+            {
+                this.replicaAddress = assignedReplica.Address;
+                this.replicaPort = assignedReplica.Port;
+                this.hasReplica = true;
+            }
+            else
+            {
+                this.hasReplica = false;
+            }
+        }
+
+        /// <summary>
+        /// Determines which endpoint to use for a given operation based on operation type and --allow-replica-reads setting.
+        /// Returns true if replica should be used, false if primary should be used.
+        /// </summary>
+        /// <param name="op">The operation type to execute</param>
+        /// <returns>True if replica endpoint should be used, false if primary endpoint should be used</returns>
+        private bool ShouldUseReplica(OpType op)
+        {
+            // If no replica is assigned to this worker, always use primary
+            if (!hasReplica)
+                return false;
+
+            // If replica reads are disabled (-1) or set to 0%, always use primary
+            if (opts.AllowReplicaReads <= 0)
+                return false;
+
+            // Write operations always go to primary (replicas are read-only)
+            if (OperationClassifier.IsWriteOperation(op))
+                return false;
+
+            // Read operations: probabilistic routing based on percentage
+            if (OperationClassifier.IsReadOperation(op))
+            {
+                // If percentage is 100, always use replica
+                if (opts.AllowReplicaReads >= 100)
+                    return true;
+
+                // Probabilistic: generate random number 0-99, compare with percentage
+                int randomValue = rng.Next(100);
+                return randomValue < opts.AllowReplicaReads;
+            }
+
+            // Unknown operation type: default to primary (safe default)
+            return false;
         }
 
         /// <summary>
