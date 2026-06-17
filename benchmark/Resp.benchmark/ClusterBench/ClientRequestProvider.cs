@@ -84,8 +84,18 @@ namespace Resp.benchmark
         }
 
         /// <summary>
-        /// Determines which endpoint to use for a given operation based on operation type and --allow-replica-reads setting.
-        /// Returns true if replica should be used, false if primary should be used.
+        /// Determines which endpoint to use for a given operation based on operation type and --replica-read-percent setting.
+        /// 
+        /// Routing logic:
+        ///   - Write operations → always primary (replicas are read-only)
+        ///   - Read operations → probabilistic based on --replica-read-percent
+        ///   - If replicas exist, they always serve reads (percentage controls distribution)
+        ///   
+        /// Statistical distribution:
+        ///   - Each client makes independent probabilistic routing decisions per read operation
+        ///   - Across all clients for a shard, approximately X% of reads go to replicas
+        ///   - Example: --replica-read-percent=50 with 6 clients doing 1000 reads each
+        ///     → ~3000 reads to replicas, ~3000 reads to primary (50% distribution per shard)
         /// </summary>
         /// <param name="op">The operation type to execute</param>
         /// <returns>True if replica endpoint should be used, false if primary endpoint should be used</returns>
@@ -95,8 +105,8 @@ namespace Resp.benchmark
             if (!hasReplica)
                 return false;
 
-            // If replica reads are disabled (-1) or set to 0%, always use primary
-            if (opts.AllowReplicaReads <= 0)
+            // If replica reads are set to 0%, always use primary
+            if (opts.ReplicaReadPercent == 0)
                 return false;
 
             // Write operations always go to primary (replicas are read-only)
@@ -107,12 +117,13 @@ namespace Resp.benchmark
             if (OperationClassifier.IsReadOperation(op))
             {
                 // If percentage is 100, always use replica
-                if (opts.AllowReplicaReads >= 100)
+                if (opts.ReplicaReadPercent >= 100)
                     return true;
 
                 // Probabilistic: generate random number 0-99, compare with percentage
+                // This ensures approximately X% of reads go to replicas across all clients
                 int randomValue = rng.Next(100);
-                return randomValue < opts.AllowReplicaReads;
+                return randomValue < opts.ReplicaReadPercent;
             }
 
             // Unknown operation type: default to primary (safe default)

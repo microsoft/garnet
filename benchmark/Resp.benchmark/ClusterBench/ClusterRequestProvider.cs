@@ -34,6 +34,15 @@ namespace Resp.benchmark
         /// <summary>
         /// Discover cluster topology and initialize providers.
         /// Creates NumThreads providers per shard, with round-robin replica assignment if replicas exist.
+        /// 
+        /// Round-robin assignment example:
+        ///   - Shard with 2 replicas and 6 clients:
+        ///     Client 0 → Replica 0, Client 1 → Replica 1, Client 2 → Replica 0,
+        ///     Client 3 → Replica 1, Client 4 → Replica 0, Client 5 → Replica 1
+        ///   
+        ///   - Each client knows which replica endpoint to use for routing read operations
+        ///   - The --allow-replica-reads percentage determines how often reads go to replicas
+        ///   - Across all clients for a shard, approximately X% of read operations go to replicas
         /// </summary>
         public void DiscoverTopology()
         {
@@ -56,8 +65,9 @@ namespace Resp.benchmark
                 {
                     // Round-robin replica assignment: worker t gets replica (t % replicaCount)
                     // If no replicas exist, assignedReplica will be null
+                    // If replicas exist, always assign them (they will serve reads based on --replica-read-percent)
                     ReplicaInfo assignedReplica = null;
-                    if (replicaCount > 0 && opts.AllowReplicaReads > 0)
+                    if (replicaCount > 0)
                     {
                         assignedReplica = shard.Replicas[t % replicaCount];
                     }
@@ -71,13 +81,15 @@ namespace Resp.benchmark
         }
 
         /// <summary>
-        /// Validate --allow-replica-reads flag value.
+        /// Validates replica read percentage option.
+        /// Valid range: 0-100 (percentage of reads sent to replicas).
+        /// If replicas exist, they always serve reads - this just controls the percentage.
         /// </summary>
         private void ValidateReplicaReadOptions()
         {
-            if (opts.AllowReplicaReads < -1 || opts.AllowReplicaReads > 100)
+            if (opts.ReplicaReadPercent < 0 || opts.ReplicaReadPercent > 100)
             {
-                throw new Exception($"Invalid --allow-replica-reads value: {opts.AllowReplicaReads}. Valid range is -1 (disabled) or 0-100 (percentage).");
+                throw new Exception($"Invalid --replica-read-percent value: {opts.ReplicaReadPercent}. Valid range is 0-100 (percentage).");
             }
         }
 
@@ -92,7 +104,8 @@ namespace Resp.benchmark
             // Count total replicas and workers with replica assignments
             var totalReplicas = shards.Sum(s => s.Replicas.Count);
             var workersWithReplicas = providers.Count(p => p.HasReplica);
-            var replicaReads = opts.AllowReplicaReads >= 0 ? $"{opts.AllowReplicaReads}%" : "Disabled";
+            var replicaReads = $"{opts.ReplicaReadPercent}%";
+            var totalConnections = totalProviders + workersWithReplicas; // primary + replica connections
 
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
@@ -101,11 +114,11 @@ namespace Resp.benchmark
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"Key/Val: " + opts.KeyLength + "/" + opts.ValueLength + " B",-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
-            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Clients: " + totalProviders,-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders + " (shards x threads)",-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             if (workersWithReplicas > 0)
-                Console.WriteLine($"{"Clients w/ Replicas: " + workersWithReplicas,-28}{"Assignment: Round-robin",-28}");
+                Console.WriteLine($"{"",-28}{"Connections: " + totalConnections + " (" + totalProviders + " primary + " + workersWithReplicas + " replica)",-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -134,19 +147,12 @@ namespace Resp.benchmark
 
             Console.WriteLine();
 
-            // Warning if replica reads enabled but no replicas found
-            if (opts.AllowReplicaReads > 0 && totalReplicas == 0)
+            // Info message about replica assignment (only if replicas exist)
+            if (totalReplicas > 0)
             {
-                Console.WriteLine("  [WARNING] --allow-replica-reads is enabled but no replicas discovered.");
-                Console.WriteLine("            All operations will execute on primaries.");
-                Console.WriteLine();
-            }
-
-            // Info message about replica assignment
-            if (opts.AllowReplicaReads > 0 && totalReplicas > 0)
-            {
-                Console.WriteLine($"  [INFO] Replica read routing: {opts.AllowReplicaReads}% of read operations will target replicas.");
-                Console.WriteLine($"         Clients assigned replicas: {workersWithReplicas}/{totalProviders} (round-robin)");
+                Console.WriteLine($"  [INFO] Replica read routing: ~{opts.ReplicaReadPercent}% of read operations per shard will target replicas.");
+                Console.WriteLine($"         Round-robin assignment: Each client assigned to one of {totalReplicas / shards.Length} replica(s) per shard.");
+                Console.WriteLine($"         Clients with replicas: {workersWithReplicas}/{totalProviders}");
                 Console.WriteLine();
             }
         }

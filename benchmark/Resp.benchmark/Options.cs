@@ -116,8 +116,8 @@ namespace Resp.benchmark
         [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
         public bool ClusterBench { get; set; }
 
-        [Option("allow-replica-reads", Required = false, Default = -1, HelpText = "Enable probabilistic read routing to replicas. Value 0-100 represents percentage of reads sent to replicas. -1 disables (all ops to primary). Writes always go to primary.")]
-        public int AllowReplicaReads { get; set; }
+        [Option("replica-read-percent", Required = false, Default = 50, HelpText = "Percentage of read operations sent to replicas (0-100). If replicas are discovered, they automatically serve the corresponding read operations based on write-to-read mapping. Writes always go to primary.")]
+        public int ReplicaReadPercent { get; set; }
 
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
         public bool AofBench { get; set; }
