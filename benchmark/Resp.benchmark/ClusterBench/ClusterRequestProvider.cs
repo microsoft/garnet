@@ -411,17 +411,17 @@ namespace Resp.benchmark
                     var endpoint = $"{shards[s].Address}:{shards[s].Port}";
                     if (actualKeys == expectedKeys)
                     {
-                        Console.WriteLine($"   ✓ {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys})");
+                        Console.WriteLine($"   [OK] {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys})");
                     }
                     else
                     {
-                        Console.WriteLine($"   ✗ {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys}) [MISMATCH]");
+                        Console.WriteLine($"   [FAIL] {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys}) [MISMATCH]");
                         allValid = false;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"   ✗ {shards[s].Address}:{shards[s].Port} - DBSIZE failed: {ex.Message}");
+                    Console.WriteLine($"   [ERROR] {shards[s].Address}:{shards[s].Port} - DBSIZE failed: {ex.Message}");
                     allValid = false;
                 }
             }
