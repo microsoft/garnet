@@ -162,10 +162,37 @@ The `InProgressDeletes` key is necessary to recover from interrupted deletes.  A
 
 ## FlushDB
 
+<<<<<<< HEAD
 `FLUSHDB` (and it's relative `FLUSHALL`) require special handling.
 
 > [!IMPORTANT]
 > This is not currently implemented.
+=======
+The following quantizers are supported:
+ - `NOQUANT` - disables quantization, dimensions are `float`s
+ - `BIN` - binary quantization, each dimension is a single bit
+ - `Q8` - signed 8-bit quantization, each dimension is an `sbyte`
+ - `XNOQUANT_U8` - disables quantization, but requires dimensions are [0, 255]
+ - `XNOQUANT_I8` - disables quantization, but requires dimensions are [-128, 127]
+ - `XBIN_U8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [0, 255]
+ - `XBIN_I8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [-128, 127]
+
+Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
+
+Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to backgrounds tasks.
+
+Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
+ - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
+ - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
+ - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
+ 
+ It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
+
+ > [!NOTE]
+ > Today DiskANN does not recover quantization state.
+ >
+ > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
+>>>>>>> 2f2c09ea50 (address feedback)
 
 # Locking
 
