@@ -621,8 +621,6 @@ namespace Garnet.server
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
 
-        public bool AlignmentExpected { get; set; }
-
         [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
         public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
 

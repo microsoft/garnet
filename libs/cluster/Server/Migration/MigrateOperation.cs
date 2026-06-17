@@ -95,7 +95,6 @@ namespace Garnet.cluster
                     input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
 
                     VectorInput vectorInput = new();
-                    vectorInput.AlignmentExpected = true; // We're moving DiskANN sourced data, so alignment is expected
                     vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
 
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)
