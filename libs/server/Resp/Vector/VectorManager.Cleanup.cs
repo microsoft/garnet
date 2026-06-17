@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -61,9 +62,12 @@ namespace Garnet.server
                     return true;
                 }
 
-                // Delete it
-                VectorElementKey toDeleteKey = new((byte)ns, logRecord.KeyBytes);
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+                ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)ns };
+#pragma warning restore IDE0302
+                VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
 
+                // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
                 if (status.IsPending)
                 {
@@ -78,8 +82,14 @@ namespace Garnet.server
 
         private readonly Channel<object> cleanupTaskChannel;
         private readonly Channel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
+        private readonly Channel<object> requestDropTaskChannel;
+        private ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)> requestedDrops;
+#if NET9_0_OR_GREATER
+        private ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)>.AlternateLookup<ReadOnlySpan<byte>> requestedDropsLookup;
+#endif
         private readonly Task cleanupTask;
         private readonly Task requestCleanupTask;
+        private readonly Task requestDropTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
         // Pause / resume coordination for the cleanup task vs concurrent Reset.
@@ -107,7 +117,70 @@ namespace Garnet.server
         private readonly SemaphoreSlim cleanupGate = new(initialCount: 1, maxCount: 1);
 
         /// <summary>
-        /// Seaparate task thas allows for marking Vector Sets contexts as needing cleanup.
+        /// Separate task that handles requests to drop the DiskANN side of indexes.
+        /// 
+        /// This needs to be in the background because we can't drop DiskANN indexes while
+        /// they are in use, which means we can't drop them in response to <see cref="GarnetRecordTriggers"/>.
+        /// 
+        /// An additional subtlety is that indexes which are requested to be dropped cannot be recreated
+        /// until that drop is processed.
+        /// </summary>
+        private async Task RunRequestDropTaskAsync()
+        {
+            while (await requestDropTaskChannel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                // Drain all wake up signals
+                while (requestDropTaskChannel.Reader.TryRead(out _))
+                {
+                }
+
+                // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                using var dropSession = (RespServerSession)getCleanupSession();
+                if (dropSession.activeDbId != dbId && !dropSession.TrySwitchActiveDatabaseSession(dbId))
+                {
+                    throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                }
+
+                ActiveThreadSession = dropSession.storageSession;
+                try
+                {
+                    // Process all pending drops
+                    foreach (var (k, (context, indexPtr)) in requestedDrops)
+                    {
+                        long keyHash;
+                        unsafe
+                        {
+                            fixed (byte* keyPtr = k)
+                            {
+                                keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedPointer(keyPtr, k.Length));
+                            }
+                        }
+
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+
+                        try
+                        {
+                            Service.DropIndex(context, indexPtr);
+                        }
+                        finally
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            if (!requestedDrops.TryRemove(k, out _))
+                            {
+                                logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Separate task that allows for marking Vector Sets contexts as needing cleanup.
         /// 
         /// Cleanup is actually done by the <see cref="RunCleanupTaskAsync"/>.
         /// 
@@ -296,5 +369,35 @@ namespace Garnet.server
         /// successful PauseCleanupAsync — typically from a finally block.
         /// </summary>
         public void ResumeCleanup() => cleanupGate.Release();
+
+        /// <summary>
+        /// True if a pending request to drop the DiskANN index behind this _specific_ key exists.
+        /// </summary>
+        public bool DropRequested(ReadOnlySpan<byte> key)
+        {
+#if NET9_0_OR_GREATER
+            return requestedDropsLookup.ContainsKey(key);
+#else
+            return requestedDrops.ContainsKey(key.ToArray());
+#endif
+        }
+
+        /// <summary>
+        /// Block until <see cref="DropRequested(ReadOnlySpan{byte})"/> would return false.
+        /// 
+        /// Do not call this while holding any Vector Set related locks, we will deadlock.
+        /// </summary>
+        public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key)
+        {
+#if NET9_0_OR_GREATER
+            while (requestedDropsLookup.ContainsKey(key))
+#else
+            var keyBytes = key.ToArray();
+            while (requestedDrops.ContainsKey(keyBytes))
+#endif
+            {
+                _ = Thread.Yield();
+            }
+        }
     }
 }

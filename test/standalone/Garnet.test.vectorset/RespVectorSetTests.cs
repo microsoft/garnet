@@ -988,6 +988,10 @@ namespace Garnet.test
             s.FlushDatabase(0);
 
 #if DEBUG
+            // Drops are requested and processed in the background, wait for them to drop
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            vectorManager.WaitForDiskANNIndexDrop("foo"u8);
+
             var finalCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
             var finalDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
 
@@ -1387,6 +1391,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0302:Simplify collection initialization", Justification = "Collection initializers don't guarantee stackalloc, which is required in these tests")]
         public unsafe void VectorReadBatchVariants()
         {
             // Single key, 4 byte keys
@@ -1395,12 +1400,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 64 };
+
                 var data = new int[] { 4, 1234 };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1423,6 +1430,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1433,12 +1450,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 32 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1465,6 +1484,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(7, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1475,12 +1504,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 16 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1506,6 +1537,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1515,6 +1556,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
                 var key0 = "hello"u8.ToArray();
                 var data =
@@ -1526,7 +1569,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1564,6 +1607,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1573,6 +1626,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
@@ -1633,7 +1688,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1685,6 +1740,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(8, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1694,6 +1759,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
@@ -1754,7 +1821,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -1797,7 +1864,7 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(4, keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.AreEqual(2, keyCopy.NamespaceBytes[0]);
                         var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
@@ -1805,6 +1872,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1814,7 +1891,6 @@ namespace Garnet.test
         public unsafe void MakeVectorElementKey()
         {
             var data = new int[] { 4, 1234 };
-            var dataCopy = data.ToArray();
             fixed (int* intPtr = data)
             {
                 var bytePtr = (byte*)intPtr;
@@ -1822,7 +1898,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(8, span.NamespaceBytes[0]);
                 ClassicAssert.AreEqual(1234, MemoryMarshal.Cast<byte, int>(span.KeyBytes)[0]);
             }
-            ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
         }
 
         [Test]
@@ -2529,6 +2604,56 @@ namespace Garnet.test
                     ClassicAssert.IsEmpty(embRes);
                 }
             }
+        }
+
+        /// <summary>
+        /// Regression test for namespace corruption on the storage-tiered (disk-backed) Vector Set path.
+        ///
+        /// With a tiny main-log (lowMemory) and storage tiering enabled, vector records spill to disk and
+        /// are read back via pending (async-IO) RMW during DiskANN graph construction. The namespaced key
+        /// carried across that pending boundary must round-trip its namespace byte intact. A regression here
+        /// surfaces server-side as "Extended namespace not yet supported" (the namespace byte is read back
+        /// with bit 7 set), which kills the connection mid-load.
+        /// </summary>
+        [Test]
+        public void VADDLowMemoryStorageTierForcesDiskSpill()
+        {
+            // Recreate the server with a tiny main log + storage tiering so inserts spill to disk.
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = "lowmem-vs";
+            const int Dim = 16;
+            const int Count = 4000;     // far exceeds the low-memory main log, forcing records to disk
+            var rng = new Random(0);
+
+            var id = new byte[4];
+            for (var i = 0; i < Count; i++)
+            {
+                var vec = new float[Dim];
+                for (var d = 0; d < Dim; d++)
+                    vec[d] = (float)rng.NextDouble();
+
+                BinaryPrimitives.WriteInt32LittleEndian(id, i);
+
+                // VADD of a namespaced record; once data spills to disk, building the graph reads
+                // earlier records back via pending RMW (the path that corrupts the namespace).
+                var res = db.Execute("VADD", [Key, "FP32", MemoryMarshal.Cast<float, byte>(vec).ToArray(), id, "NOQUANT", "EF", "16", "M", "16"]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD #{i} should succeed (server must not crash on the disk-backed path)");
+            }
+
+            // The disk-backed set must still be searchable.
+            var query = new float[Dim];
+            for (var d = 0; d < Dim; d++)
+                query[d] = (float)rng.NextDouble();
+
+            var sim = (RedisResult[])db.Execute("VSIM", [Key, "FP32", MemoryMarshal.Cast<float, byte>(query).ToArray(), "COUNT", "10", "EF", "64"]);
+            ClassicAssert.IsNotEmpty(sim);
         }
 
         /// <summary>
