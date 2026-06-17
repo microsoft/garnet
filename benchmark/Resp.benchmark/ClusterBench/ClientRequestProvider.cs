@@ -16,7 +16,7 @@ namespace Resp.benchmark
         static readonly long HISTOGRAM_LOWER_BOUND = 1;
         static readonly long HISTOGRAM_UPPER_BOUND = TimeStamp.Seconds(100);
 
-        readonly ShardInfo shard;
+        readonly PrimaryInfo shard;
         readonly Options opts;
         readonly int threadIndex;
         readonly SlotKeyGenerator keyGen;
@@ -34,7 +34,7 @@ namespace Resp.benchmark
         public long BytesSent => Interlocked.Read(ref bytesSent);
         public long KeysLoaded => Interlocked.Read(ref keysLoaded);
         public LongHistogram Histogram => histogram;
-        public ShardInfo Shard => shard;
+        public PrimaryInfo Shard => shard;
         public string KeyPrefix => keyGen.KeyPrefix;
 
         /// <summary>
@@ -42,7 +42,7 @@ namespace Resp.benchmark
         /// </summary>
         private readonly int shardThreadIndex;
 
-        public ClientRequestProvider(ShardInfo shard, Options opts, int threadIndex, int shardThreadIndex)
+        public ClientRequestProvider(PrimaryInfo shard, Options opts, int threadIndex, int shardThreadIndex)
         {
             this.shard = shard;
             this.opts = opts;

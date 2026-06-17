@@ -40,7 +40,7 @@ namespace Resp.benchmark
         /// </summary>
         public string KeyPrefix => keyPrefix;
 
-        public SlotKeyGenerator(ShardInfo shard, int keyLen)
+        public SlotKeyGenerator(PrimaryInfo shard, int keyLen)
         {
             this.keyLen = Math.Max(keyLen, 8);
             this.tag = FindTagForShard(shard);
@@ -80,7 +80,7 @@ namespace Resp.benchmark
         /// Uses all printable ASCII (33-126) excluding '{' and '}'. 8,464 combos covers any
         /// realistic shard. Falls back to 3-char if needed.
         /// </summary>
-        private static unsafe string FindTagForShard(ShardInfo shard)
+        private static unsafe string FindTagForShard(PrimaryInfo shard)
         {
             byte* buf = stackalloc byte[3];
 

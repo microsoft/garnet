@@ -6,7 +6,7 @@ namespace Resp.benchmark
     /// <summary>
     /// Represents a primary shard in the cluster with its endpoint and assigned slot ranges.
     /// </summary>
-    public class ShardInfo
+    public class PrimaryInfo
     {
         /// <summary>
         /// Node ID from CLUSTER NODES output.
@@ -27,6 +27,11 @@ namespace Resp.benchmark
         /// Slot ranges assigned to this shard. Each tuple is (startSlot, endSlot) inclusive.
         /// </summary>
         public List<(int Start, int End)> SlotRanges { get; set; } = new();
+
+        /// <summary>
+        /// Replicas of this primary shard. Empty list if no replicas exist.
+        /// </summary>
+        public List<ReplicaInfo> Replicas { get; set; } = new();
 
         /// <summary>
         /// Total number of slots assigned to this shard.
@@ -57,5 +62,34 @@ namespace Resp.benchmark
 
         public override string ToString()
             => $"{Address}:{Port} ({TotalSlots} slots)";
+    }
+
+    /// <summary>
+    /// Represents a replica node in the cluster.
+    /// </summary>
+    public class ReplicaInfo
+    {
+        /// <summary>
+        /// Node ID from CLUSTER NODES output.
+        /// </summary>
+        public string NodeId { get; set; }
+
+        /// <summary>
+        /// Host address of the replica.
+        /// </summary>
+        public string Address { get; set; }
+
+        /// <summary>
+        /// Port of the replica.
+        /// </summary>
+        public int Port { get; set; }
+
+        /// <summary>
+        /// Parent primary node ID (extracted from ParentId field in CLUSTER NODES).
+        /// </summary>
+        public string ParentId { get; set; }
+
+        public override string ToString()
+            => $"{Address}:{Port}";
     }
 }

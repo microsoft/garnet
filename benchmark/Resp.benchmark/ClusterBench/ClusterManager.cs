@@ -23,7 +23,7 @@ namespace Resp.benchmark
         /// Connect to the configured node (--host/--port) and parse CLUSTER NODES to get primary shard info.
         /// Validates that all 16384 slots are assigned.
         /// </summary>
-        public ShardInfo[] DiscoverPrimaryShards()
+        public PrimaryInfo[] DiscoverPrimaryShards()
         {
             using var redis = ConnectionMultiplexer.Connect(
                 BenchUtils.GetConfig(opts.Address, opts.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost, allowAdmin: true));
@@ -38,41 +38,69 @@ namespace Resp.benchmark
         }
 
         /// <summary>
-        /// Convert SERedis ClusterConfiguration into ShardInfo array (primaries only).
+        /// Convert SERedis ClusterConfiguration into PrimaryInfo array with replica mapping.
         /// </summary>
-        private static ShardInfo[] ParseClusterConfig(ClusterConfiguration clusterConfig)
+        private static PrimaryInfo[] ParseClusterConfig(ClusterConfiguration clusterConfig)
         {
-            var shards = new List<ShardInfo>();
+            var shards = new List<PrimaryInfo>();
+            var replicas = new List<ReplicaInfo>();
 
+            // First pass: collect all primaries and replicas
             foreach (var node in clusterConfig.Nodes)
             {
-                // Only include primary (master) nodes that are connected
-                if (node.IsReplica)
-                    continue;
-
                 if (!node.IsConnected)
                 {
-                    Console.WriteLine($"Warning: Primary node {node.NodeId} is not connected, skipping.");
+                    Console.WriteLine($"Warning: Node {node.NodeId} ({(node.IsReplica ? "replica" : "primary")}) is not connected, skipping.");
                     continue;
                 }
 
-                var shard = new ShardInfo
+                if (node.IsReplica)
                 {
-                    NodeId = node.NodeId,
-                    Address = node.EndPoint is IPEndPoint ipEp ? ipEp.Address.ToString() : node.EndPoint.ToString(),
-                    Port = node.EndPoint is IPEndPoint ipEp2 ? ipEp2.Port : 0,
-                };
+                    // Collect replica information
+                    var replica = new ReplicaInfo
+                    {
+                        NodeId = node.NodeId,
+                        Address = node.EndPoint is IPEndPoint ipEp ? ipEp.Address.ToString() : node.EndPoint.ToString(),
+                        Port = node.EndPoint is IPEndPoint ipEp2 ? ipEp2.Port : 0,
+                        ParentId = node.ParentNodeId
+                    };
+                    replicas.Add(replica);
+                }
+                else
+                {
+                    // Collect primary shard
+                    var shard = new PrimaryInfo
+                    {
+                        NodeId = node.NodeId,
+                        Address = node.EndPoint is IPEndPoint ipEp ? ipEp.Address.ToString() : node.EndPoint.ToString(),
+                        Port = node.EndPoint is IPEndPoint ipEp2 ? ipEp2.Port : 0,
+                    };
 
-                // Collect slot ranges from this node's slots
-                foreach (var slot in node.Slots)
-                    shard.SlotRanges.Add((slot.From, slot.To));
+                    // Collect slot ranges from this node's slots
+                    foreach (var slot in node.Slots)
+                        shard.SlotRanges.Add((slot.From, slot.To));
 
-                if (shard.SlotRanges.Count > 0)
-                    shards.Add(shard);
+                    if (shard.SlotRanges.Count > 0)
+                        shards.Add(shard);
+                }
             }
 
             if (shards.Count == 0)
                 throw new Exception("No primary shards with assigned slots found in CLUSTER NODES response.");
+
+            // Second pass: map replicas to their primaries
+            foreach (var replica in replicas)
+            {
+                var primary = shards.FirstOrDefault(s => s.NodeId == replica.ParentId);
+                if (primary != null)
+                {
+                    primary.Replicas.Add(replica);
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Replica {replica.NodeId} references unknown primary {replica.ParentId}, skipping.");
+                }
+            }
 
             return shards.ToArray();
         }
@@ -80,7 +108,7 @@ namespace Resp.benchmark
         /// <summary>
         /// Validate that all 16384 slots (0-16383) are assigned across the discovered shards.
         /// </summary>
-        private static void ValidateFullSlotCoverage(ShardInfo[] shards)
+        private static void ValidateFullSlotCoverage(PrimaryInfo[] shards)
         {
             var covered = new bool[16384];
 

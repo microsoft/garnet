@@ -21,7 +21,7 @@ namespace Resp.benchmark
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
 
-        ShardInfo[] shards;
+        PrimaryInfo[] shards;
         ClientRequestProvider[] providers;
 
         public ClusterBench(Options opts, ILoggerFactory loggerFactory = null)
@@ -37,6 +37,8 @@ namespace Resp.benchmark
         /// </summary>
         public void DiscoverTopology()
         {
+            ValidateReplicaReadOptions();
+
             var clusterManager = new ClusterManager(opts);
             shards = clusterManager.DiscoverPrimaryShards();
 
@@ -57,6 +59,17 @@ namespace Resp.benchmark
             PrintConfiguration(threadsPerShard, totalProviders);
         }
 
+        /// <summary>
+        /// Validate --allow-replica-reads flag value.
+        /// </summary>
+        private void ValidateReplicaReadOptions()
+        {
+            if (opts.AllowReplicaReads < -1 || opts.AllowReplicaReads > 100)
+            {
+                throw new Exception($"Invalid --allow-replica-reads value: {opts.AllowReplicaReads}. Valid range is -1 (disabled) or 0-100 (percentage).");
+            }
+        }
+
         private void PrintConfiguration(int threadsPerShard, int totalProviders)
         {
             var mode = opts.Online ? "Online" : "Offline";
@@ -64,6 +77,10 @@ namespace Resp.benchmark
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
             var batch = opts.BatchSize.First();
+
+            // Count total replicas
+            var totalReplicas = shards.Sum(s => s.Replicas.Count);
+            var replicaReads = opts.AllowReplicaReads >= 0 ? $"{opts.AllowReplicaReads}%" : "Disabled";
 
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
@@ -74,12 +91,13 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders,-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
+            Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
             // Topology table
-            Console.WriteLine($"  {"Shard",-7}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Prefix",-10}");
-            Console.WriteLine($"  {new string('-', 7)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}");
+            Console.WriteLine($"  {"Shard",-7}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Replicas",-10}| {"Prefix",-10}");
+            Console.WriteLine($"  {new string('-', 7)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}+{new string('-', 11)}");
 
             for (int s = 0; s < shards.Length; s++)
             {
@@ -87,10 +105,26 @@ namespace Resp.benchmark
                 var endpoint = $"{shard.Address}:{shard.Port}";
                 var range = FormatSlotRanges(shard.SlotRanges);
                 var prefix = providers[s * threadsPerShard].KeyPrefix;
-                Console.WriteLine($"  {s,-7}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {prefix,-10}");
+                var replicaCount = shard.Replicas.Count;
+                Console.WriteLine($"  {s,-7}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {replicaCount,-10}| {prefix,-10}");
+                
+                // Print replica endpoints underneath if they exist
+                foreach (var replica in shard.Replicas)
+                {
+                    var replicaEndpoint = $"  {replica.Address}:{replica.Port}";
+                    Console.WriteLine($"  {"replica",-7}| {replicaEndpoint,-23}|");
+                }
             }
 
             Console.WriteLine();
+
+            // Warning if replica reads enabled but no replicas found
+            if (opts.AllowReplicaReads > 0 && totalReplicas == 0)
+            {
+                Console.WriteLine("  [WARNING] --allow-replica-reads is enabled but no replicas discovered.");
+                Console.WriteLine("            All operations will execute on primaries.");
+                Console.WriteLine();
+            }
         }
 
         private static string FormatSlotRanges(List<(int Start, int End)> ranges)
