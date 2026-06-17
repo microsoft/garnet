@@ -134,6 +134,18 @@ cmake -G "Visual Studio 17 2022" -A x64 ..    # VS 2022 (any edition) / Build To
 cmake --build . --config Release
 ```
 
+If configure/link fails to find the toolset or the Spectre-mitigated CRT (e.g.
+the generator defaults to a newer toolset than the one whose Spectre libs you
+installed — common with VS 2026 Insiders), select the MSVC toolset explicitly
+with `-T`. For example, to use the v143 (VS 2022) toolset:
+
+```powershell
+cmake -G "Visual Studio 18 2026" -A x64 -T v143 ..   # force the v143 toolset
+```
+
+Use the toolset that matches your installed Spectre-mitigated libs (`v143` for
+VS 2022, `v144`/`v145` for VS 2026 Insiders).
+
 That produces `build\src\Release\native_device.dll` (and a matching
 `native_device.pdb`). The CMake configuration also creates a `Tsavorite.sln`
 that you can open in Visual Studio for interactive development; both `Debug`
