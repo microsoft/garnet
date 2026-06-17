@@ -93,10 +93,30 @@ namespace BDN.benchmark.Operations
                 LuaOptions = new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Enable, []),
             };
 
+            // Allow derived benchmarks to customize the server configuration (e.g. a larger-than-memory store
+            // backed by a device). Called before the AOF/auth options below so those still take effect.
+            ConfigureServerOptions(opts);
+
+            if (opts.DeviceType != Tsavorite.core.DeviceType.Default)
+            {
+                // Nothing to create here: the device is built downstream by GarnetServerOptions.GetSettings()
+                // (called from GarnetServer.CreateStore). Its EnableStorageTier branch calls GetInitializedDeviceFactory()
+                // -> LocalStorageNamedDeviceFactory.Get() -> Devices.CreateLogDevice(deviceType: LocalMemory), which builds a
+                // LocalMemoryDevice with latencyUs:0 (a pure in-memory device, so we measure the Tsavorite pending codepaths
+                // rather than real device IO), and assigns it to kvSettings.LogDevice before TsavoriteKV is constructed.
+                //
+                // The only requirement on our side is that the precondition for that branch holds, so fail loudly on a
+                // misconfiguration that would otherwise be silently downgraded to a NullDevice (the non-tiered fallback).
+                if (opts.DeviceType != Tsavorite.core.DeviceType.LocalMemory)
+                    throw new InvalidOperationException($"Operations benchmarks only support the fast in-memory LocalMemoryDevice for the IO path, not {opts.DeviceType}.");
+                if (!opts.EnableStorageTier)
+                    throw new InvalidOperationException("A non-default DeviceType requires EnableStorageTier=true; otherwise GetSettings() falls back to a NullDevice and the device is never used.");
+            }
+
             if (Params.useAof)
             {
                 opts.EnableAOF = true;
-                opts.UseAofNullDevice = true;
+                opts.UseAofNullDevice = true;   // TODO: Should this change to a LocalMemoryDevice as well (perhaps optionally) to test the write impact against that?
                 opts.FastAofTruncate = true;
                 opts.CommitFrequencyMs = -1;
                 opts.AofPageSize = "128m";
@@ -142,6 +162,12 @@ namespace BDN.benchmark.Operations
             subscribeSession?.Dispose();
             server.Dispose();
         }
+
+        /// <summary>
+        /// Hook for derived benchmarks to customize the <see cref="GarnetServerOptions"/> before the embedded server is
+        /// created (e.g. to configure a larger-than-memory store backed by a device). Default is a no-op.
+        /// </summary>
+        protected virtual void ConfigureServerOptions(GarnetServerOptions opts) { }
 
         // Builds an AAD auth settings + an AUTH RESP command carrying a freshly-minted,
         // in-process-signed JWT valid for 12 hours. Self-contained: no external IdP / no
