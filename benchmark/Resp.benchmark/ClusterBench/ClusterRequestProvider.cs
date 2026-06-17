@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using HdrHistogram;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace Resp.benchmark
 {
@@ -143,6 +144,9 @@ namespace Resp.benchmark
 
             Console.WriteLine($" Total: {totalKeys} keys ({shards.Length} shards, {providers.Length} threads) in {sw.ElapsedMilliseconds}ms");
             Console.WriteLine();
+
+            // Validate DBSIZE if under 1MB threshold
+            ValidateDBSize(totalKeys);
         }
 
         /// <summary>
@@ -371,6 +375,65 @@ namespace Resp.benchmark
                 logger?.LogInformation("{msg}", msg);
         }
 
+        /// <summary>
+        /// Validate that DBSIZE matches expected key count per shard.
+        /// Only runs if key-count * key-length * val-length is under 1MB threshold.
+        /// </summary>
+        private void ValidateDBSize(long totalKeysLoaded)
+        {
+            // Check 1MB threshold
+            long estimatedDataSize = (long)opts.DbSize * opts.KeyLength * opts.ValueLength;
+            if (estimatedDataSize > 1024 * 1024)
+            {
+                Console.WriteLine($" Skipping DBSIZE validation (estimated data size {estimatedDataSize / (1024.0 * 1024):F2} MB > 1 MB threshold)");
+                Console.WriteLine();
+                return;
+            }
+
+            Console.WriteLine(" Validating DBSIZE per shard...");
+            int threadsPerShard = opts.NumThreads.First();
+            bool allValid = true;
+
+            for (int s = 0; s < shards.Length; s++)
+            {
+                long expectedKeys = 0;
+                for (int t = 0; t < threadsPerShard; t++)
+                    expectedKeys += providers[s * threadsPerShard + t].KeysLoaded;
+
+                try
+                {
+                    using var redis = ConnectionMultiplexer.Connect(
+                        BenchUtils.GetConfig(shards[s].Address, shards[s].Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost, allowAdmin: true));
+
+                    var db = redis.GetDatabase(0);
+                    var actualKeys = (long)db.Execute("DBSIZE");
+
+                    var endpoint = $"{shards[s].Address}:{shards[s].Port}";
+                    if (actualKeys == expectedKeys)
+                    {
+                        Console.WriteLine($"   ✓ {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys})");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"   ✗ {endpoint.PadRight(25)} DBSIZE={actualKeys} (expected={expectedKeys}) [MISMATCH]");
+                        allValid = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"   ✗ {shards[s].Address}:{shards[s].Port} - DBSIZE failed: {ex.Message}");
+                    allValid = false;
+                }
+            }
+
+            if (allValid)
+                Console.WriteLine(" All shards validated successfully!");
+            else
+                Console.WriteLine(" WARNING: Some shards have key count mismatches!");
+
+            Console.WriteLine();
+        }
+
         private void PrintFinalReport(TimeSpan totalElapsed)
         {
             Console.WriteLine();
@@ -431,7 +494,65 @@ namespace Resp.benchmark
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
             Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
             Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP bytes sent)");
+
+            // Report hit rates from INFO STATS
+            ReportHitRates();
+
             Console.WriteLine("================================================");
+        }
+
+        /// <summary>
+        /// Query INFO STATS from each shard and report garnet_hit_rate.
+        /// </summary>
+        private void ReportHitRates()
+        {
+            Console.WriteLine();
+            Console.WriteLine("Hit Rates (from INFO STATS):");
+
+            double totalHitRate = 0;
+            int validShards = 0;
+
+            for (int s = 0; s < shards.Length; s++)
+            {
+                try
+                {
+                    using var redis = ConnectionMultiplexer.Connect(
+                        BenchUtils.GetConfig(shards[s].Address, shards[s].Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost, allowAdmin: true));
+
+                    var server = redis.GetServer(new System.Net.IPEndPoint(System.Net.IPAddress.Parse(shards[s].Address), shards[s].Port));
+                    var info = server.Info("STATS");
+
+                    // Parse garnet_hit_rate from info
+                    double hitRate = 0.0;
+                    foreach (var section in info)
+                    {
+                        foreach (var kvp in section)
+                        {
+                            if (kvp.Key == "garnet_hit_rate")
+                            {
+                                double.TryParse(kvp.Value, out hitRate);
+                                break;
+                            }
+                        }
+                    }
+
+                    var endpoint = $"{shards[s].Address}:{shards[s].Port}";
+                    Console.WriteLine($"  {endpoint.PadRight(25)} garnet_hit_rate: {hitRate:F2}");
+
+                    totalHitRate += hitRate;
+                    validShards++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  {shards[s].Address}:{shards[s].Port} - INFO STATS failed: {ex.Message}");
+                }
+            }
+
+            if (validShards > 0)
+            {
+                double avgHitRate = totalHitRate / validShards;
+                Console.WriteLine($"  {"Average:",-25} {avgHitRate:F2}");
+            }
         }
 
         public void Dispose()
