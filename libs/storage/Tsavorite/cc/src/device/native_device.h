@@ -6,9 +6,11 @@
 #include "native_device_error.h"
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <experimental/filesystem>
 #include <system_error>
+#include <thread>
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <sys/stat.h>
@@ -226,6 +228,82 @@ private:
         FASTER::core::AsyncIOCallback callback;
     };
 
+    /// RAII guard pairing Thread::acquire_id() + epoch_.ProtectAndDrain() (on entry) with
+    /// epoch_.Unprotect() + Thread::release_id() (on scope exit), so BOTH the LightEpoch
+    /// protection and the thread-id slot are returned even if the guarded body throws.
+    ///
+    /// Why this matters: the device entry points below run `log_.ReadAsync/WriteAsync/Close`,
+    /// which can allocate (OpenSegment -> std::malloc / new bundle_t) and therefore throw
+    /// std::bad_alloc; ProtectAndDrain can also run drain-list callbacks. Previously these
+    /// methods released the epoch/id with two trailing statements, so any throw between
+    /// acquire and release leaked the thread's epoch entry. A leaked entry permanently pins
+    /// safe_to_reclaim_epoch (ComputeNewSafeToReclaimEpoch takes the min local epoch across
+    /// the table), which stalls reclamation and eventually wedges BumpCurrentEpoch once the
+    /// drain list fills — a silent, unrecoverable hang. The guard makes the pairing
+    /// exception-safe; if ProtectAndDrain itself throws, the id is still released before the
+    /// exception propagates.
+    struct EpochGuard {
+        FASTER::core::LightEpoch& epoch;
+        explicit EpochGuard(FASTER::core::LightEpoch& e) : epoch(e) {
+            FASTER::core::Thread::acquire_id();
+            try {
+                epoch.ProtectAndDrain();
+            } catch (...) {
+                FASTER::core::Thread::release_id();
+                throw;
+            }
+        }
+        ~EpochGuard() {
+            epoch.Unprotect();
+            FASTER::core::Thread::release_id();
+        }
+        EpochGuard(const EpochGuard&) = delete;
+        EpochGuard& operator=(const EpochGuard&) = delete;
+    };
+
+    /// Runs an IO submission (`submit` returns the FileSystemSegmentedFile status) under epoch
+    /// protection, retrying OUTSIDE the epoch whenever the submission reports a sustained
+    /// full kernel submission ring.
+    ///
+    /// The file layer (QueueFile/UringFile::ScheduleOperation) signals a sustained-full ring by
+    /// returning Status::Pending after a short in-epoch yield budget, having submitted nothing
+    /// (its RAII guards free the per-op io_context). We must NOT spin on the full ring while
+    /// holding the epoch: the epoch protects the segment file-handle bundle, and a thread
+    /// parked there pins the thread-id slot AND safe_to_reclaim_epoch, which under enough
+    /// concurrent submitters starves other submitters of slots and can wedge reclamation. So
+    /// on Pending we drop the EpochGuard (releasing the slot + protection), back off, then
+    /// re-acquire and retry the whole op — which safely re-resolves the bundle under fresh
+    /// protection. Status::Pending is fully contained here and never surfaces to the managed
+    /// caller. With the ring depth sized to the throttle limit this retry path is effectively
+    /// never taken; it remains a correctness safety net for genuine kernel-side EAGAIN.
+    template <typename SubmitFn>
+    FASTER::core::Status SubmitWithEpoch(SubmitFn&& submit) {
+        // Outside-epoch retry backoff: yield this many times (cheap) before falling back to a
+        // short sleep, so a sustained-full ring doesn't burn a core. This budget is NOT held under
+        // the epoch (the EpochGuard scope has already ended), so it only governs the retry cadence.
+        constexpr int kRetryYieldBudget = 16;
+        int retries = 0;
+        while (true) {
+            FASTER::core::Status result;
+            {
+                EpochGuard guard{ epoch_ };
+                result = submit();
+            }
+            if (result != FASTER::core::Status::Pending) {
+                return result;
+            }
+            // Sustained full ring; the epoch (and its thread-id slot) is now released. Back off
+            // before retrying so other submitters can make progress and the drainer can free
+            // ring space.
+            if (retries < kRetryYieldBudget) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            ++retries;
+        }
+    }
+
 public:
     NativeDeviceImpl(const std::string& file,
         uint64_t segment_size,
@@ -233,9 +311,15 @@ public:
         int num_io_contexts = 1,
         bool enablePrivileges = false,
         bool unbuffered = true,
-        bool delete_on_close = false)
+        bool delete_on_close = false,
+        int max_events = 0)
         : epoch_ { }
-        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts }
+        // max_events is the per-context kernel submission-ring depth (libaio io_setup /
+        // io_uring SQ entries). The managed wrapper sizes it up from the device throttle limit
+        // (NextPowerOf2) so the ring can hold the full in-flight burst the throttle permits;
+        // this keeps io_submit / io_uring_get_sqe off their EAGAIN/ring-full backoff spins,
+        // which would otherwise pin epoch slots. <= 0 means "use the handler's default depth".
+        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts, max_events }
         , default_file_options_{ unbuffered, delete_on_close }
         // FileSystemSegmentedFile validates segment_size internally (must be a positive power
         // of two) and throws std::invalid_argument otherwise. The C ABI wrapper wraps `new
@@ -259,11 +343,11 @@ public:
             init_status_ = FASTER::core::Status::IOError;
             return;
         }
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
-        FASTER::core::Status result = log_.Open(&handler_);
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
+        FASTER::core::Status result;
+        {
+            EpochGuard guard{ epoch_ };
+            result = log_.Open(&handler_);
+        }
         if (result != FASTER::core::Status::Ok) {
             // log_.Open's most common failures: directory missing, permission denied,
             // O_DIRECT unsupported on filesystem, sector-size mismatch (set by
@@ -360,21 +444,18 @@ public:
         if (init_status_ != FASTER::core::Status::Ok) {
             return;
         }
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
-        FASTER::core::Status result = log_.Close();
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
+        FASTER::core::Status result;
+        {
+            EpochGuard guard{ epoch_ };
+            result = log_.Close();
+        }
         assert(result == FASTER::core::Status::Ok);
     }
 
     /// Methods required by the (implicit) disk interface.
     void Reset() override {
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
-        FASTER::core::Status result = log_.Close();
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
+        EpochGuard guard{ epoch_ };
+        (void)log_.Close();
     }
 
     /// Methods required by the (implicit) disk interface.
@@ -399,12 +480,9 @@ public:
             FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
             context->callback((FASTER::core::IAsyncContext*)context->context, result, bytes_transferred);
             };
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
-        FASTER::core::Status status = log_.ReadAsync(source, dest, length, callback_, io_context);
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
-        return status;
+        return SubmitWithEpoch([&]() {
+            return log_.ReadAsync(source, dest, length, callback_, io_context);
+        });
     }
 
     FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
@@ -414,12 +492,9 @@ public:
             FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
             context->callback((FASTER::core::IAsyncContext*)context->context, result, bytes_transferred);
             };
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
-        FASTER::core::Status status = log_.WriteAsync(source, dest, length, callback_, io_context);
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
-        return status;
+        return SubmitWithEpoch([&]() {
+            return log_.WriteAsync(source, dest, length, callback_, io_context);
+        });
     }
 
     const log_file_t& log() const {
@@ -467,15 +542,20 @@ public:
     }
 
     uint64_t GetFileSize(uint64_t segment) override {
+        // log_.size() can lazily OpenSegment(), whose bundle-expand path calls
+        // epoch_->BumpCurrentEpoch() (it must publish the new file bundle and defer freeing the
+        // old one to the drain list). BumpCurrentEpoch requires the calling thread to hold epoch
+        // protection — without it ProtectAndDrain dereferences an unreserved epoch-table slot and
+        // crashes. So acquire the epoch here exactly as RemoveSegment/Read/WriteAsync do. (The
+        // first-ever OpenSegment on a cold device takes a no-bump path, which is why a single
+        // GetFileSize on a fresh device did not previously fault.)
+        EpochGuard guard{ epoch_ };
         return log_.size(segment);
     }
 
     void RemoveSegment(uint64_t segment) override {
-        FASTER::core::Thread::acquire_id();
-        epoch_.ProtectAndDrain();
+        EpochGuard guard{ epoch_ };
         log_.RemoveSegment(segment);
-        epoch_.Unprotect();
-        FASTER::core::Thread::release_id();
     }
 
     int QueueRun(int timeout_secs) override {
