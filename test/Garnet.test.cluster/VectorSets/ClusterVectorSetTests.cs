@@ -830,11 +830,6 @@ namespace Garnet.test.cluster
 
             // Validate all nodes have same vector embeddings
             {
-                //var primaryMap = FullMapOfVectorSet(context.nodes[PrimaryIndex], vectors, toDeleteVectors);
-                //Console.WriteLine($"For primary");
-                //Console.WriteLine("====");
-                //Console.WriteLine(primaryMap);
-
                 var idBytes = new byte[4];
                 for (var id = 0; id < vectors.Length; id++)
                 {
@@ -861,11 +856,6 @@ namespace Garnet.test.cluster
 
                     for (var secondaryIx = 0; secondaryIx < secondaries.Length; secondaryIx++)
                     {
-                        //var secondaryMap = FullMapOfVectorSet(context.nodes[SecondaryStartIndex + secondaryIx], vectors, toDeleteVectors);
-                        //Console.WriteLine($"For secondary {secondaryIx}");
-                        //Console.WriteLine("====");
-                        //Console.WriteLine(secondaryMap);
-
                         var secondary = secondaries[secondaryIx];
                         var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
 

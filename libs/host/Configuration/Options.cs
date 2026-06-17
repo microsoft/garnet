@@ -684,7 +684,7 @@ namespace Garnet
         public int VectorSetReplayTaskCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]
-        [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count)")]
+        [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count)")]
         public int VectorSetQuantizationTaskCount { get; set; }
 
         /// <summary>

@@ -125,7 +125,7 @@ namespace Garnet.server
                         curIx++;
                     }
                 }
-                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatibility, prefer XU8
                 {
                     curIx++;
                     if (curIx >= parseState.Count)
@@ -593,7 +593,7 @@ namespace Garnet.server
                         values = asBytes;
                         curIx++;
                     }
-                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatability, prefer XU8
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XU8"u8) || kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8)) // XB8 preserved for backwards compatibility, prefer XU8
                     {
                         if (curIx >= parseState.Count)
                         {
@@ -607,6 +607,11 @@ namespace Garnet.server
                         }
 
                         curIx++;
+
+                        if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
 
                         valueType = VectorValueType.XU8;
                         values = asBytes;
@@ -625,6 +630,11 @@ namespace Garnet.server
                         }
 
                         curIx++;
+
+                        if (asBytes.Length > VectorManager.MaxVectorDimensions)
+                        {
+                            return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                        }
 
                         valueType = VectorValueType.XI8;
                         values = asBytes;
