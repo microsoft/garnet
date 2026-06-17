@@ -45,8 +45,6 @@ namespace Garnet.server
         /// <summary>
         /// Vectors stored as bytes (8 bits signed). XNoQuant_I8 is a non-Redis extension, stands for: 
         /// eXtension No Quantization Integer 8 bits
-        /// 
-        /// XPREQ8 aliases to this.
         /// </summary>
         XNoQuant_I8 = 5,
 
@@ -158,7 +156,7 @@ namespace Garnet.server
                     VectorValueType.FP32 => (uint)(values.ReadOnlySpan.Length / sizeof(float)),
                     VectorValueType.XI8 or VectorValueType.XU8 => (uint)values.ReadOnlySpan.Length,
                     _ => throw new InvalidOperationException($"Unexpected VectorValueType: {valueType}"),
-                }; ;
+                };
 
             var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
             var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));

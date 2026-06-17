@@ -584,7 +584,7 @@ namespace Garnet.server
                     {
                         if (curIx >= parseState.Count)
                         {
-                            return AbortWithWrongNumberOfArguments("VADD");
+                            return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
                         var asBytes = parseState.GetArgSliceByRef(curIx).Span;
@@ -597,7 +597,7 @@ namespace Garnet.server
                     {
                         if (curIx >= parseState.Count)
                         {
-                            return AbortWithWrongNumberOfArguments("VADD");
+                            return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
                         var asBytes = parseState.GetArgSliceByRef(curIx).Span;

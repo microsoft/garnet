@@ -154,11 +154,11 @@ The following quantizers are supported:
  - `BIN` - binary quantization, each dimension is a single bit
  - `Q8` - signed 8-bit quantization, each dimension is an `sbyte`
  - `XNOQUANT_U8` - disables quantization, but requires dimensions are [0, 255]
- - `NOQUANT_I8` - disables quantization, but requires dimensions are [-128, 127]
+ - `XNOQUANT_I8` - disables quantization, but requires dimensions are [-128, 127]
  - `XBIN_U8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [0, 255]
  - `XBIN_I8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [-128, 127]
 
-Quantizes that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
+Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
 
 Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to backgrounds tasks.
 
