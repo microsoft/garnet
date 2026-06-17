@@ -542,6 +542,14 @@ public:
     }
 
     uint64_t GetFileSize(uint64_t segment) override {
+        // log_.size() can lazily OpenSegment(), whose bundle-expand path calls
+        // epoch_->BumpCurrentEpoch() (it must publish the new file bundle and defer freeing the
+        // old one to the drain list). BumpCurrentEpoch requires the calling thread to hold epoch
+        // protection — without it ProtectAndDrain dereferences an unreserved epoch-table slot and
+        // crashes. So acquire the epoch here exactly as RemoveSegment/Read/WriteAsync do. (The
+        // first-ever OpenSegment on a cold device takes a no-bump path, which is why a single
+        // GetFileSize on a fresh device did not previously fault.)
+        EpochGuard guard{ epoch_ };
         return log_.size(segment);
     }
 
