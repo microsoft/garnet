@@ -41,8 +41,6 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.OnTearDown();
-
-            TestContext.Progress.WriteLine($"Finished: {TestContext.CurrentContext.Result.Outcome.Status}");
         }
 
         [Test]
