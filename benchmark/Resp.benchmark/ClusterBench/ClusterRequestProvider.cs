@@ -48,7 +48,7 @@ namespace Resp.benchmark
             {
                 for (var t = 0; t < threadsPerShard; t++)
                 {
-                    providers[idx] = new ClientRequestProvider(shards[s], opts, idx);
+                    providers[idx] = new ClientRequestProvider(shards[s], opts, idx, t);
                     idx++;
                 }
             }

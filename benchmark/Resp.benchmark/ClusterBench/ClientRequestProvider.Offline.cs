@@ -43,8 +43,13 @@ namespace Resp.benchmark
         /// </summary>
         public void LoadData()
         {
-            var dbSizePerThread = opts.DbSize / opts.NumThreads.First();
+            var threadsPerShard = opts.NumThreads.First();
+            var dbSizePerThread = opts.DbSize / threadsPerShard;
             var batchSize = Math.Min(256, dbSizePerThread);
+
+            // Each thread loads a distinct slice of the key space:
+            // thread 0 loads [0, dbSizePerThread), thread 1 loads [dbSizePerThread, 2*dbSizePerThread), etc.
+            var keyOffset = shardThreadIndex * dbSizePerThread;
 
             var endpoint = new IPEndPoint(IPAddress.Parse(shard.Address), shard.Port);
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
@@ -63,7 +68,7 @@ namespace Resp.benchmark
             while (loaded < dbSizePerThread)
             {
                 var thisBatch = Math.Min(batchSize, dbSizePerThread - loaded);
-                var buffer = GenerateLoadBatch(thisBatch, loaded);
+                var buffer = GenerateLoadBatch(thisBatch, keyOffset + loaded);
 
                 fixed (byte* bufPtr = buffer)
                 {

@@ -37,11 +37,17 @@ namespace Resp.benchmark
         public ShardInfo Shard => shard;
         public string KeyPrefix => keyGen.KeyPrefix;
 
-        public ClientRequestProvider(ShardInfo shard, Options opts, int threadIndex)
+        /// <summary>
+        /// Index of this thread within its shard (0-based). Used to partition key space during loading.
+        /// </summary>
+        private readonly int shardThreadIndex;
+
+        public ClientRequestProvider(ShardInfo shard, Options opts, int threadIndex, int shardThreadIndex)
         {
             this.shard = shard;
             this.opts = opts;
             this.threadIndex = threadIndex;
+            this.shardThreadIndex = shardThreadIndex;
             this.rng = new Random(31337 + (threadIndex * 1000) + shard.Port);
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
