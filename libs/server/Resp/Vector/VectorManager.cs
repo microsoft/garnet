@@ -419,11 +419,13 @@ namespace Garnet.server
 
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
+                errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
                 return VectorManagerResult.BadParams;
             }
 
             if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
             {
+                errorMsg = "ERR Provided quantizer does not match Vector Set definition"u8;
                 return VectorManagerResult.BadParams;
             }
 

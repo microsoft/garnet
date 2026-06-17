@@ -41,10 +41,10 @@ The index key (represented by the `Index` struct) contains the following data:
      > Today this ignored except for validation purposes, eventually DiskANN will use it.
  - `uint NumLinks` - the `M` used to create the Vector Set, or the default value of 16 if not specified
  - `uint BuildExplorationFactor` - the `EF` used to create the Vector Set, or the default value of 200 if not specified
- - `VectorQuantType QuantType` - the quantizier specified at creation time, or the default value of `Q8` if not specified
+ - `VectorQuantType QuantType` - the quantizer specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
-     > We have an extension here, `XPREQ8` which is not from Redis.
-     > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
+     > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
+     > This is a quantizer for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
      > It forbids the `REDUCE` option and requires 4-byte element ids.
    * > [!IMPORTANT]
      > Today only `XPREQ` is actually implemented, eventually DiskANN will provide reasonable versions of all the Redis builtin quantizers.
@@ -164,8 +164,26 @@ The `InProgressDeletes` key is necessary to recover from interrupted deletes.  A
 
 `FLUSHDB` (and it's relative `FLUSHALL`) require special handling.
 
+<<<<<<< HEAD
 > [!IMPORTANT]
 > This is not currently implemented.
+=======
+Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
+
+Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to background tasks.
+
+Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
+ - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
+ - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
+ - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
+ 
+ It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
+
+ > [!NOTE]
+ > Today DiskANN does not recover quantization state.
+ >
+ > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
+>>>>>>> fc496e9fcb (another round of review feedback)
 
 # Locking
 
