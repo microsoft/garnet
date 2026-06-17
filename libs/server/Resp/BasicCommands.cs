@@ -1364,6 +1364,11 @@ namespace Garnet.server
                 return true;
             }
 
+            if (!storeWrapper.serverOptions.IsRespProtocolVersionAllowed(tmpRespProtocolVersion ?? respProtocolVersion))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED);
+            }
+
             ProcessHelloCommand(tmpRespProtocolVersion, authUsername, authPassword, tmpClientName);
             return true;
         }
