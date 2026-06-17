@@ -544,14 +544,23 @@ class UringIoHandler {
   /// Same-thread submits never contend on sq_lock with each other; different threads
   /// only contend if they got assigned the same ring (only happens when num threads >
   /// num rings). Match libaio's no-user-lock behavior when num_rings >= num_submitters.
+  /// <para>
+  /// The TLS affinity is bound to <c>this</c>: a thread that called pick_ring on handler
+  /// A (caching an index) and later calls it on handler B (potentially with fewer rings)
+  /// must be re-assigned for B. The owner pointer + bounds check guards against any
+  /// cross-instance index reuse, which would otherwise be an out-of-bounds read on B's
+  /// rings_/sq_locks_ when A had more rings than B. (Mirrors QueueIoHandler::pick_context.)
+  /// </para>
   void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
     if (rings_.size() == 1) {
       ring_out = rings_[0];
       lock_out = sq_locks_[0];
       return;
     }
+    thread_local const UringIoHandler* tls_owner = nullptr;
     thread_local int my_ring_idx = -1;
-    if (my_ring_idx < 0) {
+    if (tls_owner != this || my_ring_idx < 0 || my_ring_idx >= static_cast<int>(rings_.size())) {
+      tls_owner = this;
       my_ring_idx = static_cast<int>(
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size());
     }

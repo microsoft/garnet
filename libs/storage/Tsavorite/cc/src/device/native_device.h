@@ -278,7 +278,10 @@ private:
     /// never taken; it remains a correctness safety net for genuine kernel-side EAGAIN.
     template <typename SubmitFn>
     FASTER::core::Status SubmitWithEpoch(SubmitFn&& submit) {
-        constexpr int kYieldBudget = 64;
+        // Outside-epoch retry backoff: yield this many times (cheap) before falling back to a
+        // short sleep, so a sustained-full ring doesn't burn a core. This budget is NOT held under
+        // the epoch (the EpochGuard scope has already ended), so it only governs the retry cadence.
+        constexpr int kRetryYieldBudget = 16;
         int retries = 0;
         while (true) {
             FASTER::core::Status result;
@@ -292,7 +295,7 @@ private:
             // Sustained full ring; the epoch (and its thread-id slot) is now released. Back off
             // before retrying so other submitters can make progress and the drainer can free
             // ring space.
-            if (retries < kYieldBudget) {
+            if (retries < kRetryYieldBudget) {
                 std::this_thread::yield();
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

@@ -21,10 +21,15 @@ namespace FASTER {
 namespace environment {
 
 namespace {
-/// Maximum sched_yield() retries on transient kernel back-pressure during submission
-/// (libaio io_submit == 0, uring io_uring_get_sqe == nullptr or io_uring_submit -EAGAIN/-EBUSY).
-/// Permanent submission errors are not retried.
-constexpr int kMaxSubmitRetries = 8;
+/// In-epoch submission yield budget. ScheduleOperation runs inside NativeDeviceImpl's epoch
+/// protection; on transient kernel back-pressure during submission (libaio io_submit == 0,
+/// uring io_uring_get_sqe == nullptr or io_uring_submit -EAGAIN/-EBUSY) we yield this many times
+/// to absorb the common microsecond-scale drain latency, then UNWIND (return Status::Pending) so
+/// SubmitWithEpoch can wait WITHOUT holding the epoch/thread-id slot. Kept small: with the ring
+/// sized to the throttle limit a sustained-full ring is exceptional, so we favor releasing the
+/// epoch quickly over avoiding the per-retry io_context rebuild. Permanent submission errors are
+/// surfaced immediately and not retried.
+constexpr int kSubmitYieldBudget = 16;
 } // anonymous namespace
 
 using namespace FASTER::core;
@@ -360,7 +365,7 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // numBytes=0 as a short read, recursively retries via AsyncGetFromDiskCallback, and we
   // spiral into a positive feedback loop that backs up the ThreadPool and never drains.
   //
-  // Two-stage backoff: first a short in-epoch yield budget (kYieldBudget sched_yield's) that
+  // Two-stage backoff: first a short in-epoch yield budget (kSubmitYieldBudget sched_yield's) that
   // absorbs the common case where the kernel drainer frees a slot within microseconds — cheap,
   // and avoids tearing down/rebuilding the per-op io_context. If the ring is STILL full after
   // that budget (sustained saturation — only reachable when in-flight exceeds the ring depth,
@@ -371,7 +376,6 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // op — re-resolving the segment bundle under fresh epoch protection. This preserves the
   // "submit either succeeds or returns a permanent error" contract toward the managed layer
   // (Pending never escapes NativeDeviceImpl) while never holding the epoch across a long wait.
-  constexpr int kYieldBudget = 64;
   int retries = 0;
   int result;
   while (true) {
@@ -379,7 +383,7 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     if (result == 1) break;
     if (result < 0 && result != -EAGAIN) return Status::IOError;
     // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")
-    if (retries >= kYieldBudget) {
+    if (retries >= kSubmitYieldBudget) {
       // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
       return Status::Pending;
     }
@@ -555,7 +559,9 @@ int UringIoHandler::Wake(int idx) {
     io_uring_sqe_set_data(sqe, nullptr);
     int res = io_uring_submit(ring);
     sq_lock->Release();
-    return res == 1 ? 0 : -1;
+    // io_uring_submit flushes all pending SQEs and returns the count; any res >= 1 means our
+    // wake no-op reached the kernel (it may also have flushed stale no-ops in front of it).
+    return res >= 1 ? 0 : -1;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
@@ -602,7 +608,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   IAsyncContext* caller_context_copy;
   RETURN_NOT_OK(context.DeepCopy(caller_context_copy));
-  // Guard owns caller_context_copy until io_uring_submit returns 1.
+  // Guard owns caller_context_copy until io_uring_submit confirms our SQE was flushed (res >= 1).
   auto caller_copy_guard = core::make_context_unique_ptr<IAsyncContext>(caller_context_copy);
 
   bool is_read = operationType == FileOperationType::Read;
@@ -620,7 +626,6 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // and retry WITHOUT holding the epoch. Nothing has been committed to the ring at this point
   // (no SQE obtained), so the RAII guards free io_context/caller_context_copy on the Pending
   // return. sq_lock is released before yielding/unwinding so other submitters are not blocked.
-  constexpr int kYieldBudget = 64;
   struct io_uring_sqe* sqe = nullptr;
   int retries = 0;
   while (true) {
@@ -628,7 +633,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
     sq_lock->Release();
-    if (retries >= kYieldBudget) {
+    if (retries >= kSubmitYieldBudget) {
       // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
       return Status::Pending;
     }
@@ -644,50 +649,52 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  // Submit. Exactly one SQE was prepared and is committed to the user-side SQ ring; we MUST
-  // keep re-submitting on transient negatives (-EAGAIN/-EBUSY) or the slot leaks permanently.
-  // Indefinite retry with bounded backoff — same rationale as libaio above. Other negatives
-  // are surfaced as IOError.
+  // Submit. io_uring_submit() flushes ALL SQEs pending in this ring's SQ ring (everything between
+  // the kernel-consumed head and our just-prepared SQE at the tail) and returns the COUNT flushed
+  // — not "1 for this op". So any res >= 1 means OUR SQE (the last prepared) reached the kernel;
+  // there may also be a stale no-op SQE in front of it (left by a prior failed-submit/unwind or by
+  // Wake()), which the kernel completes harmlessly (null user_data, skipped by the drainer).
+  // Treating res >= 1 as success is REQUIRED for correctness: a res == 2 (stale nop + our op) taken
+  // as failure would rewrite/free an io_context whose op is already in flight -> use-after-free on
+  // completion.
+  //
+  // On transient -EAGAIN/-EBUSY (CQ ring full / kernel busy) we yield a bounded in-epoch budget,
+  // then UNWIND (Status::Pending) exactly like the get_sqe / libaio paths so we never spin on
+  // submit while holding the epoch and thread-id slot. Both the unwind path and a permanent submit
+  // error rewrite our prepared-but-unsubmitted SQE to a no-op with null user_data (so a later
+  // submit cannot dispatch a completion against the io_context we are about to free); the next
+  // successful submit flushes that no-op harmlessly. No-ops are bounded by the SQ ring depth and
+  // self-heal as soon as any submit succeeds.
   int res;
   int submit_retries = 0;
+  bool unwind = false;
   while (true) {
     res = io_uring_submit(ring);
-    if (res == 1) break;
-    if (res != -EAGAIN && res != -EBUSY) break;
+    if (res >= 1) break;                            // our SQE (the last prepared) was flushed
+    if (res != -EAGAIN && res != -EBUSY) break;     // permanent error
+    if (submit_retries >= kSubmitYieldBudget) { unwind = true; break; }
     sq_lock->Release();
-    if (submit_retries < kYieldBudget) {
-      ::sched_yield();
-    } else {
-      struct timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 1000000; // 1 ms
-      ::nanosleep(&ts, nullptr);
-    }
+    ::sched_yield();
     ++submit_retries;
     sq_lock->Acquire();
   }
-  if (res != 1) {
-    // Submit failed but io_uring_get_sqe() already advanced the user-side sqe_tail, so the
-    // prepared SQE is still sitting in the SQ ring pointing at io_context. The next successful
-    // submit on this ring would consume it and dispatch a callback against the io_context we
-    // are about to free here, which is a use-after-free.
-    //
-    // Rewrite the slot in place as a no-op with the wake-up sentinel (user_data = nullptr).
-    // The QueueRunFor drain loop (file_linux.cc:429-432) explicitly skips nullptr user_data
-    // without dispatching a callback, so when a later submit flushes this nop the CQE is
-    // drained harmlessly.
-    //
-    // Safe to mutate `sqe` here: we still hold sq_lock and no concurrent submitter can have
-    // observed this SQE yet (the kernel only learns about it on the next io_uring_submit).
+  if (res < 1) {
+    // Permanent submit error, or we are unwinding after a sustained transient. The SQE is prepared
+    // in the SQ ring pointing at io_context; rewrite it to a no-op (the QueueRunFor drain loop
+    // skips nullptr user_data without dispatching) so a later submit cannot reference the io_context
+    // we free here. Safe to mutate `sqe`: we still hold sq_lock and the kernel only observes it on
+    // the next io_uring_submit.
     io_uring_prep_nop(sqe);
     io_uring_sqe_set_data(sqe, nullptr);
   }
   sq_lock->Release();
-  if (res != 1) {
-    return Status::IOError;
+  if (res < 1) {
+    // RAII frees io_context/caller_context_copy on return. Unwind -> SubmitWithEpoch retries the
+    // whole op outside the epoch; a permanent error surfaces to the caller.
+    return unwind ? Status::Pending : Status::IOError;
   }
 
-  // Ownership transferred to the kernel.
+  // res >= 1: ownership transferred to the kernel.
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;

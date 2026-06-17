@@ -49,7 +49,12 @@ class Thread {
    public:
     static constexpr uint32_t kInvalidId = UINT32_MAX;
 
-    inline ThreadId();
+    /// The default ctor used to reserve a slot eagerly (Thread::ReserveEntry), but the only
+    /// instance — the thread_local Thread::id_ (thread_manual.cc) — is constructed with the
+    /// explicit ThreadId(kInvalidId) ctor and reserves lazily via acquire_id(). The reserving
+    /// default ctor is therefore dead; delete it so it can never be used (it would now yield-spin
+    /// instead of throwing on a full table, and double-reserve relative to acquire_id()).
+    ThreadId() = delete;
     inline ThreadId(uint32_t id);
     inline ~ThreadId();
 
@@ -146,11 +151,6 @@ class Thread {
 
 inline Thread::ThreadId::ThreadId(uint32_t id)
     : id_{ id } {
-}
-
-inline Thread::ThreadId::ThreadId()
-  : id_{ kInvalidId } {
-  id_ = Thread::ReserveEntry(next_index_++);
 }
 
 inline Thread::ThreadId::~ThreadId() {

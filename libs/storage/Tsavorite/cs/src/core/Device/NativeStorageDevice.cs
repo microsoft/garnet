@@ -595,8 +595,17 @@ namespace Tsavorite.core
         /// so gating on the raw value would let the engine drive more in-flight reads than the ring can hold and push
         /// them into the submit-ring spin. The clamp is precomputed (not recomputed per call) because this runs in the
         /// engine's throttle-spin loop.
+        /// <para>
+        /// Before the native device is lazily created (cold start), <see cref="effectiveThrottleLimit"/> still holds
+        /// its <see cref="MaxThrottle"/> seed, which would let a startup burst of concurrent submitters bypass the
+        /// configured throttle and flood the just-sized ring. So until the handle exists we gate on the live clamped
+        /// limit; the predictable branch is paid only on the cold path.
+        /// </para>
         /// </remarks>
-        public override bool Throttle() => numPending > effectiveThrottleLimit;
+        public override bool Throttle()
+            => numPending > (Volatile.Read(ref nativeDevice) == IntPtr.Zero
+                ? Math.Min(ThrottleLimit, MaxThrottle)
+                : effectiveThrottleLimit);
 
         /// <summary>
         /// Computes the per-context native kernel submission-ring depth from <see cref="StorageDeviceBase.ThrottleLimit"/>.
@@ -894,22 +903,26 @@ namespace Tsavorite.core
         public override void Reset()
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
-            // No-op if the native device has not been created yet (no handles to reset).
-            var dev = nativeDevice;
-            if (dev == IntPtr.Zero) return;
-            NativeDevice_Reset(dev);
-        }
-
-        /// <summary>
-        /// Returns false (silent no-op) if the device has been disposed. Otherwise drives
-        /// <see cref="EnsureNativeDeviceCreated"/> to materialise the native handle on first
-        /// use; subsequent calls are a single read once the handle exists.
-        /// </summary>
-        bool EnsureReadyOrSilent()
-        {
-            if (Volatile.Read(ref disposedFlag) != 0) return false;
-            EnsureNativeDeviceCreated();
-            return true;
+            // Lease the native handle (same protocol as ReadAsync/WriteAsync) so a concurrent
+            // Dispose() cannot drain numPending to its int.MinValue poison and free the handle
+            // while we are inside the native call. A <= 0 result means Dispose already poisoned;
+            // restore it and no-op.
+            if (Interlocked.Increment(ref numPending) <= 0)
+            {
+                Interlocked.Decrement(ref numPending);
+                return;
+            }
+            try
+            {
+                // No-op if the native device has not been created yet (no handles to reset).
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev != IntPtr.Zero)
+                    NativeDevice_Reset(dev);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref numPending);
+            }
         }
 
         /// <summary>
@@ -1104,12 +1117,25 @@ namespace Tsavorite.core
         public override void RemoveSegment(int segment)
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
-            var dev = nativeDevice;
-            if (dev != IntPtr.Zero)
+            // Lease the native handle so a concurrent Dispose() can't free it mid-call.
+            if (Interlocked.Increment(ref numPending) <= 0)
             {
-                // Native owns the open handle; let it close+unlink.
-                NativeDevice_RemoveSegment(dev, (ulong)segment);
+                Interlocked.Decrement(ref numPending);
                 return;
+            }
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev != IntPtr.Zero)
+                {
+                    // Native owns the open handle; let it close+unlink.
+                    NativeDevice_RemoveSegment(dev, (ulong)segment);
+                    return;
+                }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref numPending);
             }
             // No native handle yet — delete the on-disk segment file directly so callers
             // observe the same semantics as LocalStorageDevice / RandomAccessLocalStorageDevice
@@ -1172,9 +1198,10 @@ namespace Tsavorite.core
                 }
             }
 
-            // Idempotent: second and subsequent calls short-circuit. Setting the flag here also
-            // gates late P/Invoke entry points (TryComplete, GetFileSize, Reset, RemoveSegment)
-            // via EnsureReadyOrSilent.
+            // Idempotent: second and subsequent calls short-circuit. Setting the flag here gates
+            // the late P/Invoke entry points (TryComplete, GetFileSize, Reset, RemoveSegment) on
+            // their first line; the numPending lease they then take closes the race where this
+            // drain poisons and frees the handle between that check and the native call.
             if (Interlocked.Exchange(ref disposedFlag, 1) != 0)
                 return;
 
@@ -1227,18 +1254,49 @@ namespace Tsavorite.core
         public override bool TryComplete()
         {
             if (Volatile.Read(ref disposedFlag) != 0) return false;
-            var dev = nativeDevice;
-            return dev == IntPtr.Zero ? false : NativeDevice_TryComplete(dev);
+            // Lease the native handle so a concurrent Dispose() can't free it mid-call. The
+            // disposedFlag check above rejects the common post-dispose case without the interlocked
+            // cost; the lease closes the remaining race where Dispose poisons numPending between
+            // that check and the native call.
+            if (Interlocked.Increment(ref numPending) <= 0)
+            {
+                Interlocked.Decrement(ref numPending);
+                return false;
+            }
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                return dev != IntPtr.Zero && NativeDevice_TryComplete(dev);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref numPending);
+            }
         }
 
         /// <inheritdoc/>
         public override long GetFileSize(int segment)
         {
             if (Volatile.Read(ref disposedFlag) != 0) return 0;
-            var dev = nativeDevice;
-            if (dev != IntPtr.Zero)
-                return (long)NativeDevice_GetFileSize(dev, (ulong)segment);
-            // No native handle yet — stat the on-disk segment file directly. Matches
+            // Lease the native handle so a concurrent Dispose() can't free it mid-call.
+            if (Interlocked.Increment(ref numPending) > 0)
+            {
+                try
+                {
+                    var dev = Volatile.Read(ref nativeDevice);
+                    if (dev != IntPtr.Zero)
+                        return (long)NativeDevice_GetFileSize(dev, (ulong)segment);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numPending);
+                }
+            }
+            else
+            {
+                Interlocked.Decrement(ref numPending);
+            }
+            // No native handle yet (or disposed) — stat the on-disk segment file directly. Matches
             // LocalStorageDevice / RandomAccessLocalStorageDevice semantics where size is
             // observable before any IO has flowed through the device. Returns 0 for missing
             // files (the cluster manager and checkpoint-recovery code rely on this to decide
