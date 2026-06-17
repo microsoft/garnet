@@ -2151,7 +2151,7 @@ namespace Garnet.test.cluster
 
                 // These kinds of errors happen from stressing migration independent of Vector Sets
                 // 
-                // TODO: These aught to be fixed outside of Vector Set work
+                // TODO: These ought to be fixed outside of Vector Set work
                 var faultRound = capturedLog.Split("^GOSSIP round faulted^").Length - 1;
                 var faultResponse = capturedLog.Split("^GOSSIP faulted processing response^").Length - 1;
                 var faultMergeMap = capturedLog.Split("ClusterConfig.MergeSlotMap(").Length - 1;
