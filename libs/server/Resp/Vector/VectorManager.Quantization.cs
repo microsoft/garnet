@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -66,6 +67,10 @@ namespace Garnet.server
                 while (await reader.WaitToReadAsync().ConfigureAwait(false))
                 {
                     using var session = (RespServerSession)self.getTempSession();
+                    if (session.activeDbId != self.dbId && !session.TrySwitchActiveDatabaseSession(self.dbId))
+                    {
+                        throw new GarnetException($"Could not switch VectorManager cleanup session to {self.dbId}, initialization failed");
+                    }
 
                     Span<byte> indexSpan = GC.AllocateArray<byte>(IndexSizeBytes, pinned: true);
 
