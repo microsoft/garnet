@@ -249,6 +249,12 @@ class ThreadPoolIoHandler {
     : threadpool_{ max_threads } {
   }
 
+  /// 3-arg overload accepted for cross-platform symmetry. Windows IOCP has no fixed-depth
+  /// submission ring, so `max_events` (the libaio/io_uring ring depth) is silently ignored.
+  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/, int /*max_events*/)
+    : threadpool_{ max_threads } {
+  }
+
   /// Move constructor.
   ThreadPoolIoHandler(ThreadPoolIoHandler&& other)
     : threadpool_{ std::move(other.threadpool_) } {

@@ -23,7 +23,50 @@ namespace Tsavorite.core
     /// </summary>
     public unsafe class NativeStorageDevice : StorageDeviceBase
     {
-        const int MaxResults = 1 << 12;
+        /// <summary>
+        /// Hard ceiling on the effective in-flight throttle (max concurrent I/Os the device will drive),
+        /// and the upper bound the native submission ring is sized to. A configured
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> above this is clamped (and logged).
+        ///
+        /// This is a kernel-aware ceiling, not an arbitrary number:
+        /// <list type="bullet">
+        /// <item><b>libaio</b>: each io_context's <c>io_setup(maxevents)</c> draws from the system-wide
+        /// <c>fs.aio-max-nr</c> budget (default 65536, shared across every io_context in every process); one
+        /// device at this depth already takes ~1/16 of it, and deeper rings risk <c>io_setup</c> EAGAIN failures
+        /// elsewhere.</item>
+        /// <item><b>io_uring</b>: <c>IORING_MAX_ENTRIES</c> caps a ring at 32768 entries.</item>
+        /// </list>
+        /// 4096 is already 8-32x a single NVMe's useful queue depth, so it is not a practical limit. If an exotic
+        /// configuration ever needs more, raise this constant deliberately and re-validate against the kernel
+        /// limits above — do not allow an unbounded throttle that would silently degrade into the submit-ring spin.
+        /// </summary>
+        const int MaxThrottle = 1 << 12;
+
+        /// <summary>
+        /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array). Deliberately larger
+        /// than <see cref="MaxThrottle"/> so the pool is never the binding backpressure: with the effective
+        /// throttle capped at <see cref="MaxThrottle"/>, in-flight settles around that value, and the extra
+        /// headroom absorbs the brief race where several engine threads clear the <see cref="Throttle"/> gate at
+        /// once — so those overshoot reads never hit the userspace slot spin-wait in <see cref="ReadAsync"/>.
+        /// The pool is pure managed memory (no kernel cost), so the headroom is cheap.
+        /// </summary>
+        const int MaxResults = MaxThrottle * 2;
+
+        /// <summary>
+        /// Default per-context native submission-ring depth (libaio io_setup maxevents / io_uring
+        /// SQ entries) when the throttle limit does not call for a deeper ring. Matches the native
+        /// backend floor (file_linux.h QueueIoHandler/UringIoHandler kMaxEvents).
+        /// </summary>
+        const int DefaultNativeRingDepth = 128;
+
+        /// <summary>
+        /// Sentinel returned by an int-valued native entry point (currently NativeDevice_QueueRunFor)
+        /// when its body threw a C++ exception that the C ABI firewall caught. Distinct from the
+        /// normal failure code (-1) so the completion worker can surface NativeDevice_GetLastError
+        /// rather than silently treating it as a benign drain result. Kept in sync with the native
+        /// kCABIExceptionSentinel (native_device_wrapper.cc).
+        /// </summary>
+        const int NativeCABIExceptionSentinel = int.MinValue;
 
         /// <summary>
         /// Floor sector size used when the alignment probe fails (parent directory missing,
@@ -39,6 +82,14 @@ namespace Tsavorite.core
         /// Number of pending reads on device
         /// </summary>
         int numPending = 0;
+
+        /// <summary>
+        /// Effective in-flight throttle used by <see cref="Throttle"/>, i.e. <c>min(ThrottleLimit, MaxThrottle)</c>
+        /// captured once when the native device is created (the same point the ring depth is fixed), so the hot
+        /// throttle-spin loop does not re-clamp on every call. Defaults to <see cref="MaxThrottle"/>; only consulted
+        /// once reads are in flight, by which point the native device — and this value — have been established.
+        /// </summary>
+        int effectiveThrottleLimit = MaxThrottle;
 
         int resultOffset;
 
@@ -383,7 +434,7 @@ namespace Tsavorite.core
         }
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -458,6 +509,18 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Returns the native thread-local last-error formatted for appending to an exception
+        /// message (": &lt;message&gt;"), or an empty string when the native side reported none.
+        /// Must be called on the same managed thread that made the failing P/Invoke call, since the
+        /// native last-error storage is thread-local.
+        /// </summary>
+        static string FormatNativeError()
+        {
+            var msg = GetNativeLastError();
+            return string.IsNullOrEmpty(msg) ? string.Empty : $": {msg}";
+        }
+
         readonly AsyncIOCallback _callbackDelegate;
         CancellationTokenSource completionThreadToken;
         Thread[] completionThreads;
@@ -525,7 +588,57 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPending > ThrottleLimit;
+        /// <remarks>
+        /// Gates on <see cref="effectiveThrottleLimit"/>, the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
+        /// clamped to <see cref="MaxThrottle"/> and captured once at device creation. A configured throttle above
+        /// that ceiling cannot be honored (the kernel submission ring is capped there — see <see cref="MaxThrottle"/>),
+        /// so gating on the raw value would let the engine drive more in-flight reads than the ring can hold and push
+        /// them into the submit-ring spin. The clamp is precomputed (not recomputed per call) because this runs in the
+        /// engine's throttle-spin loop.
+        /// </remarks>
+        public override bool Throttle() => numPending > effectiveThrottleLimit;
+
+        /// <summary>
+        /// Computes the per-context native kernel submission-ring depth from <see cref="StorageDeviceBase.ThrottleLimit"/>.
+        /// The rings (one per io_context) must, in aggregate, hold the in-flight burst <see cref="Throttle"/> permits:
+        /// if a ring is smaller than the load it sees, io_submit / io_uring_get_sqe spin in their ring-full backoff while
+        /// holding a native epoch slot, and under enough concurrent submitters that starves the native epoch-slot table
+        /// (the libaio hang this addresses). Submitters spread across the contexts by thread affinity, so each context
+        /// handles ~<c>ThrottleLimit / numIoContexts</c> in steady state; the per-context depth is sized to that share
+        /// (rounded up to a power of two) rather than the full throttle, so the total kernel capacity
+        /// (<c>numIoContexts × depth</c>) stays bounded — libaio's io_setup draws from the shared <c>fs.aio-max-nr</c>
+        /// budget, so applying the full throttle to every context could exhaust it with many completion threads. The
+        /// <see cref="DefaultNativeRingDepth"/> floor adds headroom against uneven distribution (a brief ring-full is a
+        /// non-fatal unwind-and-retry, not a hang); the cap is the kernel-safe maximum (see <see cref="MaxThrottle"/>).
+        /// For the default single context this is simply <c>NextPowerOf2(ThrottleLimit)</c>. Read at native-device
+        /// creation time (first IO), by which point the factory has applied the configured throttle. Ignored by the
+        /// Windows (IOCP) backend.
+        /// </summary>
+        int ComputeNativeRingDepth()
+        {
+            int throttle = ThrottleLimit;
+            if (throttle <= 0)
+                return DefaultNativeRingDepth;
+            if (throttle > MaxThrottle)
+            {
+                // Don't silently ignore the configured throttle: surface that it exceeds the device's
+                // maximum supported in-flight depth and is being clamped. The ceiling is the kernel-safe
+                // submission-ring depth (io_uring max SQ entries / shared libaio fs.aio-max-nr budget), and
+                // already exceeds practical NVMe queue depths, so raising it is rarely useful.
+                logger?.LogWarning(
+                    "NativeStorageDevice: ThrottleLimit ({throttle}) exceeds the device's maximum in-flight I/O depth ({max}); effective in-flight is capped at that maximum.",
+                    throttle, MaxThrottle);
+                throttle = MaxThrottle;
+            }
+            int contexts = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
+            int perContext = (throttle + contexts - 1) / contexts;   // ceil(throttle / contexts)
+            int depth = (int)Utility.NextPowerOf2(perContext);
+            if (depth < DefaultNativeRingDepth)
+                depth = DefaultNativeRingDepth;
+            if (depth > MaxThrottle)
+                depth = MaxThrottle;
+            return depth;
+        }
 
         /// <summary>
         /// Returns the set of IO backends that the currently-loaded native library was built
@@ -673,7 +786,12 @@ namespace Tsavorite.core
 
                 nativeSegmentSizeBytes = sizeForNative;
 
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig);
+                // Capture the effective in-flight throttle once, here, where the ring depth is also fixed —
+                // ThrottleLimit has been applied by the factory before the first IO. Throttle() then reads this
+                // field directly instead of re-clamping on every spin-loop iteration.
+                effectiveThrottleLimit = Math.Min(ThrottleLimit, MaxThrottle);
+
+                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ComputeNativeRingDepth());
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -860,7 +978,7 @@ namespace Tsavorite.core
                 int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
 
                 if (_result != 0)
-                    throw new IOException("Error reading from log file", _result);
+                    throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
             }
             catch (IOException e)
             {
@@ -948,7 +1066,7 @@ namespace Tsavorite.core
 
                 if (_result != 0)
                 {
-                    throw new IOException("Error writing to log file", _result);
+                    throw new IOException($"Error writing to log file (status {_result}){FormatNativeError()}", _result);
                 }
             }
             catch (IOException e)
@@ -1093,7 +1211,15 @@ namespace Tsavorite.core
 
                 var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
                 if (dev != IntPtr.Zero)
+                {
                     NativeDevice_Destroy(dev);
+                    // NativeDevice_Destroy runs log_.Close() under the C ABI firewall; if that threw
+                    // it was caught and recorded rather than crashing teardown. Surface it so a
+                    // teardown failure is reported instead of looking like "the server hung".
+                    var err = GetNativeLastError();
+                    if (!string.IsNullOrEmpty(err))
+                        logger?.LogError("NativeStorageDevice native teardown reported an error: {error}", err);
+                }
             }
         }
 
@@ -1231,7 +1357,16 @@ namespace Tsavorite.core
                 while (true)
                 {
                     if (completionThreadToken.IsCancellationRequested) break;
-                    NativeDevice_QueueRunFor(nativeDevice, ctxIdx, CompletionWorkerTimeoutSecs);
+                    int rc = NativeDevice_QueueRunFor(nativeDevice, ctxIdx, CompletionWorkerTimeoutSecs);
+                    if (rc == NativeCABIExceptionSentinel)
+                    {
+                        // The native drain threw and was firewalled by the C ABI guard (instead of
+                        // unwinding across P/Invoke and terminating the process). Surface the message
+                        // so it can be reported, then pause briefly to avoid a hot error loop if the
+                        // fault is persistent. The drainer keeps running so Dispose can still proceed.
+                        logger?.LogError("NativeStorageDevice completion drainer (ctxIdx={ctxIdx}) hit a native exception: {error}", ctxIdx, GetNativeLastError());
+                        Thread.Sleep(10);
+                    }
                     Thread.Yield();
                 }
             }

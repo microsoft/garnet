@@ -352,22 +352,25 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
 
   // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
   //   1            : kernel accepted; one completion will fire.
-  //   0 or -EAGAIN : transient kernel ring full; retry indefinitely with bounded backoff.
+  //   0 or -EAGAIN : transient kernel ring full; brief in-epoch yield, then unwind.
   //                  The iocb is not queued; we still own it.
   //   other <0     : permanent error (EINVAL/EBADF/EIO); surface immediately.
   //
-  // We MUST NOT surface transient EAGAIN to the caller. The per-context libaio ring is
-  // 128 slots wide; the upper-layer device throttle caps total in-flight; the engine's
-  // pending-IO queue bursts up to 1024 reads per chunk through device.ReadAsync(). When
-  // the burst races the kernel drainer we transiently hit -EAGAIN. If we returned
-  // IOError, the engine interprets numBytes=0 as a short read, recursively retries via
-  // AsyncGetFromDiskCallback, and we spiral into a positive feedback loop that backs up
-  // the ThreadPool and never drains. So instead: yield/sleep until the kernel has space,
-  // regardless of how long that takes. This matches Tsavorite's longstanding contract
-  // that device submit either succeeds or returns a permanent error.
+  // We MUST NOT surface transient EAGAIN to the caller as an error: the engine interprets
+  // numBytes=0 as a short read, recursively retries via AsyncGetFromDiskCallback, and we
+  // spiral into a positive feedback loop that backs up the ThreadPool and never drains.
   //
-  // Backoff curve: 64 sched_yield's, then 1ms nanosleep loops. Permanent errors still
-  // surface immediately.
+  // Two-stage backoff: first a short in-epoch yield budget (kYieldBudget sched_yield's) that
+  // absorbs the common case where the kernel drainer frees a slot within microseconds — cheap,
+  // and avoids tearing down/rebuilding the per-op io_context. If the ring is STILL full after
+  // that budget (sustained saturation — only reachable when in-flight exceeds the ring depth,
+  // which the throttle-sized ring normally prevents), we return Status::Pending. Nothing was
+  // submitted, so the RAII guards below free io_context/caller_context_copy cleanly.
+  // NativeDeviceImpl::SubmitWithEpoch catches Pending, RELEASES the epoch (and its thread-id
+  // slot) so other submitters and the drainer make progress, backs off, and retries the whole
+  // op — re-resolving the segment bundle under fresh epoch protection. This preserves the
+  // "submit either succeeds or returns a permanent error" contract toward the managed layer
+  // (Pending never escapes NativeDeviceImpl) while never holding the epoch across a long wait.
   constexpr int kYieldBudget = 64;
   int retries = 0;
   int result;
@@ -376,14 +379,11 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     if (result == 1) break;
     if (result < 0 && result != -EAGAIN) return Status::IOError;
     // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")
-    if (retries < kYieldBudget) {
-      ::sched_yield();
-    } else {
-      struct timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 1000000; // 1 ms
-      ::nanosleep(&ts, nullptr);
+    if (retries >= kYieldBudget) {
+      // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
+      return Status::Pending;
     }
+    ::sched_yield();
     ++retries;
   }
 
@@ -613,11 +613,13 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   SpinLock* sq_lock = nullptr;
   handler_->pick_ring(ring, sq_lock);
 
-  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; bounded-yield
-  // then sleep — same rationale as the libaio path. We MUST NOT surface a "ring full" as an
-  // error to the caller; the engine retries-on-error and we'd spiral into a positive-feedback
-  // loop. sq_lock is released around sched_yield/nanosleep so other submitters on this ring
-  // are not blocked across the wait.
+  // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; brief in-lock-free
+  // yield budget, then unwind — same rationale and contract as the libaio path
+  // (QueueFile::ScheduleOperation): a short yield burst absorbs the common transient, and a
+  // sustained-full ring returns Status::Pending so NativeDeviceImpl::SubmitWithEpoch can wait
+  // and retry WITHOUT holding the epoch. Nothing has been committed to the ring at this point
+  // (no SQE obtained), so the RAII guards free io_context/caller_context_copy on the Pending
+  // return. sq_lock is released before yielding/unwinding so other submitters are not blocked.
   constexpr int kYieldBudget = 64;
   struct io_uring_sqe* sqe = nullptr;
   int retries = 0;
@@ -626,14 +628,11 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
     sq_lock->Release();
-    if (retries < kYieldBudget) {
-      ::sched_yield();
-    } else {
-      struct timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 1000000; // 1 ms
-      ::nanosleep(&ts, nullptr);
+    if (retries >= kYieldBudget) {
+      // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
+      return Status::Pending;
     }
+    ::sched_yield();
     ++retries;
   }
   // sq_lock is held; sqe is non-null.

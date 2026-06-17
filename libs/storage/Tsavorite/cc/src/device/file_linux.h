@@ -174,6 +174,10 @@ class QueueIoHandler {
   typedef QueueFile async_file_t;
 
  private:
+  /// Default per-context libaio ring depth. Used when the caller does not specify one.
+  /// The effective depth is sized up from the device throttle limit (see the 3-arg ctor and
+  /// NativeStorageDevice.ComputeNativeRingDepth) so that io_submit never sees a perpetually
+  /// full ring under a throttle > kMaxEvents; never sized below this floor.
   constexpr static int kMaxEvents = 128;
 
  public:
@@ -193,11 +197,21 @@ class QueueIoHandler {
     : init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
+  /// As above, plus an explicit per-context ring depth. `max_events` is clamped up to the
+  /// kMaxEvents floor; callers pass NextPowerOf2(throttle_limit) so the kernel ring can hold
+  /// the full in-flight burst the device throttle permits, eliminating the io_submit
+  /// EAGAIN/ring-full backoff spin (which would otherwise pin epoch slots).
+  QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events)
+    : max_events_{ max_events < kMaxEvents ? kMaxEvents : max_events }
+    , init_errno_{ 0 } {
+    Init(num_contexts < 1 ? 1 : num_contexts);
+  }
 
   /// Move constructor
   QueueIoHandler(QueueIoHandler&& other)
     : io_objects_{ std::move(other.io_objects_) }
     , wake_fds_{ std::move(other.wake_fds_) }
+    , max_events_{ other.max_events_ }
     , init_errno_{ other.init_errno_ } {
     other.io_objects_.clear();
     other.wake_fds_.clear();
@@ -313,7 +327,7 @@ class QueueIoHandler {
     std::vector<io_context_t> tmp_objects(num_contexts, 0);
     std::vector<int> tmp_fds(num_contexts, -1);
     for (int i = 0; i < num_contexts; ++i) {
-      int result = ::io_setup(kMaxEvents, &tmp_objects[i]);
+      int result = ::io_setup(max_events_, &tmp_objects[i]);
       if (result < 0) {
         init_errno_ = -result;
         for (int j = 0; j < i; ++j) {
@@ -348,6 +362,9 @@ class QueueIoHandler {
   std::vector<int> wake_fds_;
   /// Round-robin submit counter; only consulted when io_objects_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
+  /// Per-context libaio ring depth passed to io_setup(). Defaults to (and is floored at)
+  /// kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
+  int max_events_ = kMaxEvents;
   /// If non-zero, the positive errno from a failed io_setup() in the constructor. Checked by
   /// NativeDeviceImpl::Init() to surface an actionable error to the managed caller.
   int init_errno_;
@@ -443,7 +460,18 @@ class UringIoHandler {
   typedef UringFile async_file_t;
 
  private:
+  /// Default per-ring io_uring SQ depth. See QueueIoHandler::kMaxEvents for the sizing rationale;
+  /// io_uring_queue_init additionally requires a power of two, so a caller-supplied depth is
+  /// rounded up (RoundUpPow2) before use.
   constexpr static int kMaxEvents = 128;
+
+  /// Smallest power of two >= v (v already assumed > 0). Used to satisfy io_uring_queue_init's
+  /// power-of-two entries requirement when a throttle-derived depth is passed in.
+  static int RoundUpPow2(int v) {
+    int p = 1;
+    while (p < v) p <<= 1;
+    return p;
+  }
 
  public:
   UringIoHandler()
@@ -463,11 +491,21 @@ class UringIoHandler {
     Init(num_rings < 1 ? 1 : num_rings);
   }
 
+  /// As above, plus an explicit per-ring SQ depth (rounded up to a power of two and floored at
+  /// kMaxEvents). Callers pass NextPowerOf2(throttle_limit) so the SQ ring can absorb the full
+  /// in-flight burst without io_uring_get_sqe returning null (which forces the backoff spin).
+  UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events)
+    : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
+    , init_errno_{ 0 } {
+    Init(num_rings < 1 ? 1 : num_rings);
+  }
+
   /// Move constructor
   UringIoHandler(UringIoHandler&& other)
     : rings_{ std::move(other.rings_) }
     , sq_locks_{ std::move(other.sq_locks_) }
     , cq_locks_{ std::move(other.cq_locks_) }
+    , max_events_{ other.max_events_ }
     , init_errno_{ other.init_errno_ } {
     other.rings_.clear();
     other.sq_locks_.clear();
@@ -578,7 +616,7 @@ private:
 
     for (int i = 0; i < num_rings; ++i) {
       auto raw_ring = new struct io_uring();
-      int ret = io_uring_queue_init(kMaxEvents, raw_ring, 0);
+      int ret = io_uring_queue_init(max_events_, raw_ring, 0);
       if (ret != 0) {
         init_errno_ = -ret;
         delete raw_ring;
@@ -609,6 +647,9 @@ private:
   std::vector<SpinLock*> cq_locks_;
   /// Round-robin submit counter; only consulted when rings_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
+  /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two, defaulted to
+  /// (and floored at) kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
+  int max_events_ = kMaxEvents;
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };
