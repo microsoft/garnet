@@ -39,8 +39,7 @@ The index key (represented by the `Index` struct) contains the following data:
  - `VectorQuantType QuantType` - the quantizer specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
      > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
-     > This is a quantizer for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
-     > It forbids the `REDUCE` option and requires 4-byte element ids.
+     > They forbid the `REDUCE` option, a restriction we may lift in the future.
 
 The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 

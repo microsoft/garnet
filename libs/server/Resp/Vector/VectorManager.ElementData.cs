@@ -229,7 +229,7 @@ namespace Garnet.server
                 // Validate vector can convert from f32 -> u8 without issue
                 if (asFloats.ContainsAnyExceptInRange(byte.MinValue, byte.MaxValue))
                 {
-                    error = "Vector contains element that is < 0 or > 255, operation will lose precision"u8;
+                    error = "ERR Vector contains element that is < 0 or > 255, operation will lose precision"u8;
                     return default;
                 }
 
@@ -257,7 +257,7 @@ namespace Garnet.server
                 // Validate vector can convert from f32 -> u8 without issue
                 if (asI8.ContainsAnyInRange(sbyte.MinValue, (sbyte)-1))
                 {
-                    error = "Vector contains element that is < 0, operation will lose precision"u8;
+                    error = "ERR Vector contains element that is < 0, operation will lose precision"u8;
                     return default;
                 }
 
@@ -285,7 +285,7 @@ namespace Garnet.server
                 // Validate vector can convert from f32 -> u8 without issue
                 if (asFloats.ContainsAnyExceptInRange(sbyte.MinValue, sbyte.MaxValue))
                 {
-                    error = "Vector contains element that is < -128 or > 127, operation will lose precision"u8;
+                    error = "ERR Vector contains element that is < -128 or > 127, operation will lose precision"u8;
                     return default;
                 }
 
@@ -314,7 +314,7 @@ namespace Garnet.server
                 // Validate vector can convert from u8 -> i8 without issue
                 if (providedData.ContainsAnyInRange((byte)128, byte.MaxValue))
                 {
-                    error = "Vector contains element that is > 127, operation will lose precision"u8;
+                    error = "ERR Vector contains element that is > 127, operation will lose precision"u8;
                     return default;
                 }
 
