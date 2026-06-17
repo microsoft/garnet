@@ -162,9 +162,12 @@ XDEL key id [id ...]
 XTRIM key MAXLEN|MINID [=|~] threshold
 ```
 
-1. **BTree trim**: `TrimByLength` or `TrimByID` — walks leaves from head, tombstoning entries until the threshold is met. Returns the new head address.
-2. **Log truncation**: `log.TruncateUntil(newHeadAddress)` — discards all pages before the new head. This is the persistence of the trim — recovery simply won't see the truncated records.
-3. **Durability**: As with XADD, the trim is captured by the main AOF and persisted to the per-stream log at the next object-store checkpoint.
+1. **BTree trim (tombstone pass)**: `TrimByLength` or `TrimByID` — walks leaves from head, tombstoning entries until the threshold is met. Returns the new head address.
+2. **BTree trim (left-edge reclaim pass)**: whole leaves at the head that became fully tombstoned (`validCount == 0`) are physically freed and removed from the index via a left-spine cascade (`ReclaimDeadHeadLeaves`), collapsing the root when it is left with a single child. Because trim only ever removes a contiguous left prefix, this touches just the leftmost root→head spine and frees whole subtrees, bounding index memory under repeated `XTRIM`. The boundary leaf that still holds live entries is kept (its dead prefix stays tombstoned in place), and the tail leaf is never freed.
+3. **Log truncation**: `log.TruncateUntil(newHeadAddress)` — discards all pages before the new head. This is the persistence of the trim — recovery simply won't see the truncated records.
+4. **Durability**: As with XADD, the trim is captured by the main AOF and persisted to the per-stream log at the next object-store checkpoint.
+
+> `XDEL` (mid-stream deletes) stays tombstone-only — only the contiguous head prefix removed by `XTRIM` is reclaimed; arbitrary mid-stream tombstones are never compacted.
 
 ### XLEN — Stream length
 
@@ -195,8 +198,8 @@ The BTree (`libs/server/BTreeIndex/`) is a B+Tree implemented over fixed-size 4K
 | `Insert(key, value)` | O(log n) | Append-optimized fast path when key > all existing keys (common case for streams) |
 | `Delete(key)` | O(log n) | In-place tombstone (sets `valid = 0`), no structural removal |
 | `Get(start, end, ...)` | O(log n + k) | Range scan returning addresses + tombstone set; supports forward/reverse and count limit |
-| `TrimByLength(maxLen)` | O(t) | Walk leaves from head, tombstone entries exceeding the length limit |
-| `TrimByID(minId)` | O(t) | Walk leaves from head, tombstone entries with ID < minId |
+| `TrimByLength(maxLen)` | O(t) | Walk leaves from head tombstoning entries beyond the length limit, then free whole fully-dead head leaves (left-spine cascade + root collapse) |
+| `TrimByID(minId)` | O(t) | Walk leaves from head tombstoning entries with ID < minId, then free whole fully-dead head leaves (left-spine cascade + root collapse) |
 | `FirstAlive()` | O(k) | Scan from head to find the first non-tombstoned entry |
 
 ---

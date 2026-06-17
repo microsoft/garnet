@@ -142,11 +142,24 @@ namespace Garnet.test
                 tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
-            var trimLength = 5000; // trim the tree to half its size
-            tree.TrimByLength((ulong)trimLength, out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
-            var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
-            ClassicAssert.GreaterOrEqual(validKeysRemaining, trimLength);
+            var trimLength = 5000UL; // keep only the newest 5000 entries
+            var leavesBefore = tree.LeafCount;
+            tree.TrimByLength(trimLength, out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
 
+            // Exact post-trim live count is the source of truth (stats.numValidKeys).
+            ClassicAssert.AreEqual(N - trimLength, validKeysRemoved);
+            ClassicAssert.AreEqual(trimLength, tree.ValidCount);
+
+            // Whole dead head leaves must have been physically reclaimed.
+            ClassicAssert.Greater(numLeavesDeleted, 0u);
+            ClassicAssert.Less(tree.LeafCount, leavesBefore);
+
+            // New head is the smallest surviving entry: streamIDs[N - trimLength].
+            ClassicAssert.IsTrue(headValue.Valid);
+            ClassicAssert.AreEqual((long)streamIDs[N - trimLength].getMS(), headValue.address);
+
+            // The index must remain structurally consistent and safe to free.
+            tree.ValidateStructure();
             tree.Deallocate();
         }
 
@@ -160,13 +173,187 @@ namespace Garnet.test
                 tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
             }
 
-            var streamIDToTrim = streamIDs[N - 1000];
+            var cutoffIdx = N - 1000;
+            var streamIDToTrim = streamIDs[cutoffIdx]; // tombstone everything strictly below this id
+            var leavesBefore = tree.LeafCount;
             tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDToTrim.idBytes[0]), out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
-            var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
-            ClassicAssert.GreaterOrEqual((ulong)validKeysRemaining, N - validKeysRemoved);
+
+            ClassicAssert.AreEqual(cutoffIdx, validKeysRemoved);
+            ClassicAssert.AreEqual(N - cutoffIdx, tree.ValidCount);
+
+            ClassicAssert.Greater(numLeavesDeleted, 0u);
+            ClassicAssert.Less(tree.LeafCount, leavesBefore);
+
+            // New head is the cutoff id itself (smallest id >= cutoff).
+            ClassicAssert.IsTrue(headValue.Valid);
+            ClassicAssert.AreEqual((long)streamIDToTrim.getMS(), headValue.address);
+
+            tree.ValidateStructure();
+            tree.Deallocate();
+        }
+
+        /// <summary>
+        /// Trimming only part of the first leaf must not free any whole leaf (the boundary
+        /// leaf keeps live entries and stays as head with its dead prefix tombstoned).
+        /// </summary>
+        [Test]
+        [Category("Trim")]
+        public void TrimWithinLeafReclaimsNoLeaves()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            int small = BTreeNode.LEAF_CAPACITY / 2; // single leaf, half full
+            for (int i = 0; i < small; i++)
+            {
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
+            }
+
+            ClassicAssert.AreEqual(1UL, tree.LeafCount);
+            tree.TrimByLength((ulong)(small - 3), out var removed, out var headValue, out _, out var numLeavesDeleted);
+
+            ClassicAssert.AreEqual(3UL, removed);
+            ClassicAssert.AreEqual((ulong)(small - 3), tree.ValidCount);
+            ClassicAssert.AreEqual(0u, numLeavesDeleted);  // nothing whole died
+            ClassicAssert.AreEqual(1UL, tree.LeafCount);
+            ClassicAssert.AreEqual((long)streamIDs[3].getMS(), headValue.address);
+
+            tree.ValidateStructure();
+            tree.Deallocate();
+        }
+
+        /// <summary>
+        /// Trimming a multi-level tree down to a few tail entries must reclaim the whole left
+        /// side, collapse the root, shrink depth, and leave a structurally-valid tree that is
+        /// safe to Deallocate (the prior structural-trim crash class).
+        /// </summary>
+        [Test]
+        [Category("Trim")]
+        public void TrimReclaimCollapsesRootAndShrinksDepth()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            for (ulong i = 0; i < N; i++)
+            {
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
+            }
+            var internalsBefore = tree.InternalCount;
+            ClassicAssert.Greater(internalsBefore, 0UL, "test requires a multi-level tree");
+
+            // Keep only the newest 2 entries — forces deep reclamation + root collapse.
+            tree.TrimByLength(2UL, out _, out var headValue, out _, out var numLeavesDeleted);
+
+            ClassicAssert.AreEqual(2UL, tree.ValidCount);
+            ClassicAssert.Greater(numLeavesDeleted, 0u);
+            ClassicAssert.Less(tree.InternalCount, internalsBefore);
+            ClassicAssert.AreEqual((long)streamIDs[N - 2].getMS(), headValue.address);
+
+            tree.ValidateStructure();
+            tree.Deallocate();
+        }
+
+        /// <summary>
+        /// Trimming everything collapses the tree back to a single tail leaf at depth 1 with no
+        /// internal nodes, and is safe to Deallocate.
+        /// </summary>
+        [Test]
+        [Category("Trim")]
+        public void TrimEverythingCollapsesToTail()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            for (ulong i = 0; i < N; i++)
+            {
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
+            }
+
+            tree.TrimByLength(0UL, out var removed, out var headValue, out _, out var numLeavesDeleted);
+
+            ClassicAssert.AreEqual(N, removed);
+            ClassicAssert.AreEqual(0UL, tree.ValidCount);
+            ClassicAssert.IsFalse(headValue.Valid);        // no live head entry remains
+            ClassicAssert.AreEqual(1UL, tree.LeafCount);    // only the tail leaf survives
+            ClassicAssert.AreEqual(0UL, tree.InternalCount);
+            ClassicAssert.Greater(numLeavesDeleted, 0u);
+
+            tree.ValidateStructure();
+
+            // Stream must still accept new inserts after collapsing to the tail.
+            tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[0].idBytes[0]), new Value(123));
+            ClassicAssert.AreEqual(1UL, tree.ValidCount);
+            tree.ValidateStructure();
 
             tree.Deallocate();
         }
+
+        /// <summary>
+        /// Approximate (whole-leaf) trimming must also reclaim the dead leaves it tombstones.
+        /// </summary>
+        [Test]
+        [Category("Trim")]
+        public void ApproximateTrimReclaimsWholeLeaves()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            for (ulong i = 0; i < N; i++)
+            {
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value((long)streamIDs[i].getMS()));
+            }
+            var leavesBefore = tree.LeafCount;
+
+            tree.TrimByLength(5000UL, out _, out _, out _, out var numLeavesDeleted, approximateTrimming: true);
+
+            // Approximate trim keeps at least the requested number of entries.
+            ClassicAssert.GreaterOrEqual(tree.ValidCount, 5000UL);
+            ClassicAssert.Greater(numLeavesDeleted, 0u);
+            ClassicAssert.Less(tree.LeafCount, leavesBefore);
+
+            tree.ValidateStructure();
+            tree.Deallocate();
+        }
+
+        /// <summary>
+        /// Under repeated head-trims interleaved with inserts, index memory must stay bounded
+        /// (reclamation keeps freeing the left edge) and the tree must stay valid throughout.
+        /// </summary>
+        [Test]
+        [Category("Trim")]
+        public void RepeatedTrimKeepsIndexBounded()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            ulong nextId = 1;
+            ulong window = 2000;
+
+            // Prime the window.
+            for (ulong i = 0; i < window; i++)
+            {
+                var id = new StreamID(nextId, 0);
+                tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value((long)nextId));
+                nextId++;
+            }
+
+            ulong leafHighWater = tree.LeafCount;
+            for (int round = 0; round < 20; round++)
+            {
+                // Append another window's worth of entries...
+                for (ulong i = 0; i < window; i++)
+                {
+                    var id = new StreamID(nextId, 0);
+                    tree.InsertIntoTail((byte*)Unsafe.AsPointer(ref id.idBytes[0]), new Value((long)nextId));
+                    nextId++;
+                }
+                // ...then trim back down to the window size.
+                tree.TrimByLength(window, out _, out _, out _, out _);
+                ClassicAssert.AreEqual(window, tree.ValidCount);
+                tree.ValidateStructure();
+                leafHighWater = Math.Max(leafHighWater, tree.LeafCount);
+            }
+
+            // Leaf count must not grow without bound across 20 rounds (each adds `window`
+            // entries that are then trimmed). A small constant multiple of the window's leaves
+            // is the steady state; assert we are far below the un-reclaimed growth.
+            ulong leavesForOneWindow = (window / (ulong)BTreeNode.LEAF_CAPACITY) + 2;
+            ClassicAssert.LessOrEqual(tree.LeafCount, leavesForOneWindow * 3);
+            ClassicAssert.LessOrEqual(leafHighWater, leavesForOneWindow * 3);
+
+            tree.Deallocate();
+        }
+
 
         /// <summary>
         /// Validates that Range Get returns the same addresses as point Get for 100K entries.

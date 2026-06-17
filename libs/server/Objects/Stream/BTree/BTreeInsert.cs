@@ -54,6 +54,7 @@ namespace Garnet.server.BTreeIndex
             newLeaf->info->previous = leaf;
             newLeaf->info->next = null;
             newLeaf->info->count = 1; // the item being inserted will land in this new leaf so set count to 1 pro-actively
+            newLeaf->info->validCount = 1; // ...and that item is a live entry, so its validCount starts at 1
             leaf->info->next = newLeaf;
             stats.numLeafNodes++;
 

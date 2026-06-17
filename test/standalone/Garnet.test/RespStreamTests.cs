@@ -52,6 +52,8 @@ namespace Garnet.test
               .Select(s => s[random.Next(s.Length)]).ToArray());
         }
 
+
+
         #region STREAMIDTests
         [Test]
         public void StreamAddAutoGenIdTest()
@@ -819,6 +821,84 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(expectedId, range[i].Id.ToString(),
                         $"Entry {i} id mismatch after recovery");
                 }
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+
+        [Test]
+        [Category("Persistence")]
+        public void StreamLargeTrimReclaimsAndRecovers()
+        {
+            // Add enough entries to span several BTree leaves and internal levels, XTRIM down to
+            // a tiny tail (forcing whole-leaf reclamation + root collapse), then SAVE/recover and
+            // confirm the surviving window is exactly correct. This exercises the left-edge
+            // reclamation path end-to-end with log truncation + recovery. The count is kept below
+            // the per-entry log page-boundary scan limit exercised by StreamTrimFullTest.
+            var saveDir = System.IO.Path.Combine(TestUtils.MethodTestDir, "streams");
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+
+            const string streamKey = "bigtrim";
+            const int initialCount = 600;
+            const int trimTo = 25;
+
+            using (var firstServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                streamLogDir: saveDir))
+            {
+                firstServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                var s = redis.GetServers()[0];
+
+                for (int i = 0; i < initialCount; i++)
+                {
+                    db.StreamAdd(streamKey, $"f{i}", $"v{i}", $"{i + 1}-0");
+                }
+                ClassicAssert.AreEqual(initialCount, db.StreamLength(streamKey));
+
+                long trimmed = db.StreamTrim(streamKey, trimTo);
+                ClassicAssert.AreEqual(initialCount - trimTo, trimmed);
+                ClassicAssert.AreEqual(trimTo, db.StreamLength(streamKey));
+
+                // Surviving window must be exactly the newest `trimTo` ids, in order.
+                var range = db.StreamRange(streamKey, "-", "+");
+                ClassicAssert.AreEqual(trimTo, range.Length);
+                for (int i = 0; i < trimTo; i++)
+                {
+                    var expectedId = $"{initialCount - trimTo + i + 1}-0";
+                    ClassicAssert.AreEqual(expectedId, range[i].Id.ToString(), $"pre-recovery entry {i} id mismatch");
+                }
+
+                // The stream must keep working after deep reclamation: append + trim again.
+                db.StreamAdd(streamKey, "fNew", "vNew", $"{initialCount + 1}-0");
+                ClassicAssert.AreEqual(trimTo + 1, db.StreamLength(streamKey));
+
+                s.Execute("SAVE");
+                System.Threading.Thread.Sleep(500);
+            }
+
+            using (var secondServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                streamLogDir: saveDir, tryRecover: true))
+            {
+                secondServer.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                ClassicAssert.AreEqual(trimTo + 1, db.StreamLength(streamKey),
+                    "Recovered length must match the trimmed window plus the post-trim append");
+
+                var range = db.StreamRange(streamKey, "-", "+");
+                ClassicAssert.AreEqual(trimTo + 1, range.Length);
+                for (int i = 0; i < trimTo; i++)
+                {
+                    var expectedId = $"{initialCount - trimTo + i + 1}-0";
+                    ClassicAssert.AreEqual(expectedId, range[i].Id.ToString(), $"recovered entry {i} id mismatch");
+                }
+                ClassicAssert.AreEqual($"{initialCount + 1}-0", range[trimTo].Id.ToString(),
+                    "post-trim appended entry must survive recovery");
             }
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
