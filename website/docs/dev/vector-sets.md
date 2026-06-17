@@ -149,10 +149,11 @@ During recovery partially deleted Vector Sets are found by checking [`ContextMet
 
 Vector Sets workloads require extreme parallelism, and so intricate locking protocols are required for both performance and correctness.
 
-Concretely, there are 3 sorts of locks involved:
+Concretely, there are 4 sorts of locks involved:
  - Tsavorite hashbucket locks
  - A `ReadOptimizedLock` instance
  - `VectorManager` lock around `ContextMetadata`
+ - Spin wait around `drop_index` calls
 
 ## Tsavorite Locks
 
@@ -183,6 +184,19 @@ The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a 
 > [!NOTE]
 > Rapid creation or deletion of Vector Sets is expected to perform poorly due to this lock.
 > This isn't a case we're very interested in right now, but if that changes this will need to be reworked.
+
+## Spin wait around `drop_index` calls
+
+When a DiskANN index needs to be dropped due to memory pressure (as indicated by a `GarnetRecordTriggers.OnEvict` call) we move that drop on a background task and guard it with exclusive `ReadOptimizedLock` acquisitions.  This is necessary to prevent an index from being dropped while it is in use.
+
+This introduces a rare race where we might try to recreate an index that was evicted to disk and then reloaded from disk _before_ the drop actually executes.  If we allowed that, the two DiskANN index instances could disagree about internal state and corrupt future inserts.
+
+To prevent that, when we recreate an index we first check if that key has a scheduled drop and if so we spin waiting for it to be processed before recreating the index.
+
+> [!NOTE]
+> The code in `VectorManager.WaitForDiskANNIndexDrop` is a naive `while(...) { Thread.Yield(); }`-loop, which is decidedly suboptimal.
+> 
+> Since this case should be rare, that should be fine.  If it turns out this is less rare than hoped, we'll need to do something smarter.
 
 # Replication
 

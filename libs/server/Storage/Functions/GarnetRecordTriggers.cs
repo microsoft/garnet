@@ -107,7 +107,7 @@ namespace Garnet.server
                 // Drop DiskANN side of index
                 if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
-                    vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
+                    vectorManager?.RequestDropInMemoryIndex(logRecord.KeyBytes, logRecord.ValueSpan);
                 }
             }
         }

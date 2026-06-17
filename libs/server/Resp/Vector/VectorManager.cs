@@ -167,8 +167,16 @@ namespace Garnet.server
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            requestDropTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
+            requestDropTask = RunRequestDropTaskAsync();
+
+            requestedDrops = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+            requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
             recoveredIndexes = new();
 
@@ -188,7 +196,10 @@ namespace Garnet.server
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-            VectorElementKey key = new(MetadataNamespace, []);
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
+#pragma warning restore IDE0302 
+            VectorElementKey key = new(nsBytes, []);
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
@@ -286,6 +297,11 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
+            // Wait for any _drops_ in progress to finish
+            requestDropTaskChannel.Writer.Complete();
+            AsyncUtils.BlockingWait(requestDropTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(requestDropTask);
+
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
@@ -311,6 +327,27 @@ namespace Garnet.server
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
+            Debug.Assert(!completedOutputs.Next());
+            completedOutputs.Dispose();
+        }
+
+        /// <summary>
+        /// As <see cref="CompletePending(ref Status, ref VectorOutput, ref VectorBasicContext)"/>, but also propagates the
+        /// completed <paramref name="input"/> back to the caller.
+        ///
+        /// This is required for the unknown-size read path (<see cref="ReadSizeUnknown"/>): the Reader records the actual
+        /// value size on <see cref="VectorInput.ReadDesiredSize"/>, and on the pending (disk) path that update lives on the
+        /// pending context's copy of the input. Without propagating it back the caller keeps its stale value and skips the
+        /// grow-and-retry, returning a truncated/uninitialized buffer.
+        /// </summary>
+        private static void CompletePending(ref Status status, ref VectorInput input, ref VectorOutput output, ref VectorBasicContext ctx)
+        {
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            output = completedOutputs.Current.Output;
+            input = completedOutputs.Current.Input;
             Debug.Assert(!completedOutputs.Next());
             completedOutputs.Dispose();
         }
@@ -451,9 +488,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Request that the DiskANN side of an index be dropped.
+        /// 
+        /// This happens when a record is evicted to disk.
+        /// 
+        /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
+        /// and we can't allow the index to be recreated until any requested drops are processed.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
+        {
+            if (value.Length != IndexSize)
+            {
+                logger?.LogWarning($"Ignored Vector Set drop index due to size mismatch");
+                return;
+            }
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            // It's possible for an index to be recovered from disk but never initialized, which means we need no drop
+            if (indexPtr != 0)
+            {
+                if (!requestedDrops.TryAdd(key.ToArray(), (context, indexPtr)))
+                {
+                    throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
+                }
+
+                _ = requestDropTaskChannel.Writer.TryWrite(null);
+            }
+        }
+
+        /// <summary>
         /// Ask DiskANN to drop its index.
         /// </summary>
-        internal void DropInMemoryIndex(ReadOnlySpan<byte> value)
+        private void DropInMemoryIndex(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
