@@ -1171,17 +1171,21 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // parse the timestamp
-                    // slice the id to remove everything after '-'
+                    // Split the id into the timestamp (before '-') and sequence (after '-')
+                    // parts. RespReadUtils.ReadUlong advances the `ref` pointer it is given, so
+                    // parse each part through its own local pointer to avoid mutating idSlice.ptr
+                    // (which would shift the sequence parse off the end of the id and into the
+                    // following command argument).
                     var slicedId = PinnedSpanByte.FromPinnedPointer(idSlice.ptr, index);
                     var slicedSeq = PinnedSpanByte.FromPinnedPointer(idSlice.ptr + index + 1, idSlice.length - index - 1);
-                    if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
+
+                    var tsPtr = slicedId.ptr;
+                    if (!RespReadUtils.ReadUlong(out ulong timestamp, ref tsPtr, slicedId.ptr + slicedId.length))
                     {
                         return ParsedStreamEntryID.INVALID;
                     }
-                    var seqBegin = idSlice.ptr + index + 1;
-                    var seqEnd = idSlice.ptr + idSlice.length;
-                    if (!RespReadUtils.ReadUlong(out ulong seq, ref seqBegin, seqEnd))
+                    var seqPtr = slicedSeq.ptr;
+                    if (!RespReadUtils.ReadUlong(out ulong seq, ref seqPtr, slicedSeq.ptr + slicedSeq.length))
                     {
                         return ParsedStreamEntryID.INVALID;
                     }
@@ -1192,7 +1196,9 @@ namespace Garnet.server
                     }
                     else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                     {
-                        if (seq <= lastId.seq)
+                        // Compare against the decoded sequence — lastId.seq holds the
+                        // big-endian-encoded bytes, not the logical value.
+                        if (seq <= lastId.getSeq())
                         {
                             return ParsedStreamEntryID.INVALID;
                         }
@@ -1258,16 +1264,18 @@ namespace Garnet.server
                     break;
                 }
             }
-            // parse the timestamp
-            if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
+            // parse the timestamp and sequence through their own local pointers: RespReadUtils
+            // .ReadUlong advances the ref pointer it is given, so reusing idSlice.ptr would shift
+            // the sequence parse past the id slice into adjacent memory.
+            var tsPtr = idSlice.ptr;
+            if (!RespReadUtils.ReadUlong(out ulong timestamp, ref tsPtr, idSlice.ptr + index))
             {
                 return false;
             }
 
-            // after reading the timestamp, the pointer will be at the '-' character
-            var seqBegin = idSlice.ptr + 1;
+            var seqPtr = idSlice.ptr + index + 1;
             // parse the sequence number
-            if (!RespReadUtils.ReadUlong(out ulong seq, ref seqBegin, idSlice.ptr + idSlice.length - 1))
+            if (!RespReadUtils.ReadUlong(out ulong seq, ref seqPtr, idSlice.ptr + idSlice.length))
             {
                 return false;
             }

@@ -52,6 +52,71 @@ namespace Garnet.test
               .Select(s => s[random.Next(s.Length)]).ToArray());
         }
 
+        [Test]
+        [Category("StreamID")]
+        public void StreamExplicitIdsAcrossDigitWidthsRoundTrip()
+        {
+            // Regression for a parseIDString pointer bug: the timestamp parse advanced
+            // idSlice.ptr, after which the sequence parse double-counted the '-' offset and read
+            // the sequence from the *next* command argument's RESP length prefix. It surfaced
+            // once the ms part reached 4 digits (id slice length >= 6). Add ids whose ms spans
+            // 1..4 digit widths with explicit "-0" sequences and confirm every id round-trips.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string key = "digitWidths";
+            const int n = 1100; // crosses the 3->4 digit ms boundary at id 1000-0
+
+            for (int i = 0; i < n; i++)
+                db.StreamAdd(key, $"f{i}", $"v{i}", $"{i + 1}-0");
+
+            ClassicAssert.AreEqual(n, db.StreamLength(key));
+
+            var range = db.StreamRange(key, "-", "+");
+            ClassicAssert.AreEqual(n, range.Length);
+            for (int i = 0; i < n; i++)
+            {
+                ClassicAssert.AreEqual($"{i + 1}-0", range[i].Id.ToString(), $"id at index {i} did not round-trip");
+                var values = range[i].Values;
+                ClassicAssert.AreEqual(1, values.Length);
+                ClassicAssert.AreEqual($"f{i}", values[0].Name.ToString());
+                ClassicAssert.AreEqual($"v{i}", values[0].Value.ToString());
+            }
+
+            // Explicit non-zero sequence numbers on a 4-digit ms must also parse correctly.
+            db.StreamAdd(key, "fa", "va", "2000-7");
+            db.StreamAdd(key, "fb", "vb", "2000-9");
+            var tail = db.StreamRange(key, "2000-0", "2000-9");
+            ClassicAssert.AreEqual(2, tail.Length);
+            ClassicAssert.AreEqual("2000-7", tail[0].Id.ToString());
+            ClassicAssert.AreEqual("2000-9", tail[1].Id.ToString());
+        }
+
+        [Test]
+        [Category("StreamID")]
+        public void StreamTrimByMinId4DigitId()
+        {
+            // XTRIM MINID parses the threshold via parseCompleteID, which had the same
+            // advance-the-pointer hazard as XADD's parseIDString. Use a 4-digit ms id with an
+            // explicit sequence to exercise it.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string key = "minIdTrim";
+            const int n = 1100;
+            for (int i = 0; i < n; i++)
+                db.StreamAdd(key, $"f{i}", $"v{i}", $"{i + 1}-0");
+
+            // Drop everything with id < 1000-0; the newest 101 entries (1000-0..1100-0) survive.
+            var trimmed = (long)db.Execute("XTRIM", key, "MINID", "1000-0");
+            ClassicAssert.AreEqual(n - 101, trimmed);
+            ClassicAssert.AreEqual(101, db.StreamLength(key));
+
+            var range = db.StreamRange(key, "-", "+");
+            ClassicAssert.AreEqual(101, range.Length);
+            ClassicAssert.AreEqual("1000-0", range[0].Id.ToString());
+            ClassicAssert.AreEqual("1100-0", range[range.Length - 1].Id.ToString());
+        }
+
+
 
 
         #region STREAMIDTests
@@ -834,15 +899,14 @@ namespace Garnet.test
             // Add enough entries to span several BTree leaves and internal levels, XTRIM down to
             // a tiny tail (forcing whole-leaf reclamation + root collapse), then SAVE/recover and
             // confirm the surviving window is exactly correct. This exercises the left-edge
-            // reclamation path end-to-end with log truncation + recovery. The count is kept below
-            // the per-entry log page-boundary scan limit exercised by StreamTrimFullTest.
+            // reclamation path end-to-end with log truncation + recovery.
             var saveDir = System.IO.Path.Combine(TestUtils.MethodTestDir, "streams");
 
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
 
             const string streamKey = "bigtrim";
-            const int initialCount = 600;
+            const int initialCount = 4000;
             const int trimTo = 25;
 
             using (var firstServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
