@@ -294,7 +294,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<byte[]> keys, Dictionary<byte[], byte[]> vectorSetKeys)
+        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], byte[]> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -305,31 +305,26 @@ namespace Garnet.server
 
             foreach (var key in keys)
             {
-                fixed (byte* keyPtr = key)
+                // Dummy command, we just need something Vector Set-y
+                StringInput input = default;
+                input.header.cmd = RespCommand.VSIM;
+
+                using (ReadVectorIndex(storageSession, key.ReadOnlySpan, ref input, indexSpan, out var status))
                 {
-                    var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-
-                    // Dummy command, we just need something Vector Set-y
-                    StringInput input = default;
-                    input.header.cmd = RespCommand.VSIM;
-
-                    using (ReadVectorIndex(storageSession, keySpan, ref input, indexSpan, out var status))
+                    if (status != GarnetStatus.OK)
                     {
-                        if (status != GarnetStatus.OK)
-                        {
-                            continue;
-                        }
-
-                        namespaces ??= [];
-
-                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
-                        for (var i = 0UL; i < ContextStep; i++)
-                        {
-                            _ = namespaces.Add(context + i);
-                        }
-
-                        vectorSetKeys[key] = indexSpan.ToArray();
+                        continue;
                     }
+
+                    namespaces ??= [];
+
+                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                    for (var i = 0UL; i < ContextStep; i++)
+                    {
+                        _ = namespaces.Add(context + i);
+                    }
+
+                    vectorSetKeys[key.ToArray()] = indexSpan.ToArray();
                 }
             }
 

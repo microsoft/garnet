@@ -135,6 +135,22 @@ namespace Garnet.cluster
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
                                     return;
 
+                                // An error has occurred
+                                if (migrateState > 0)
+                                {
+                                    i++;
+                                    continue;
+                                }
+
+                                // Protocol enforcement: while receiving a RangeIndex stream, only SerializedRangeIndexStream records are valid
+                                if (clusterProvider.serverOptions.EnableRangeIndexPreview && rangeIndexMigrationState.IsReceiving && kind != MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    logger?.LogError("Protocol violation: expected SerializedRangeIndexStream continuation after {ChunkCount} chunks, got {Kind}", rangeIndexMigrationState.CurrentChunkCount, kind);
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
                                 if (kind == MigrationRecordSpanType.VectorSetElement)
                                 {
                                     // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
@@ -159,6 +175,24 @@ namespace Garnet.cluster
                                     }
 
                                     clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref stringBasicContext, ref vectorBasicContext, namespaceBytes, keyBytes, valueBytes);
+                                }
+                                else if (kind == MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
+                                    {
+                                        logger?.LogError("Received RangeIndex migration data but RangeIndex feature is not enabled");
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
+
+                                    if (!rangeIndexMigrationState.ProcessRecord(payloadRaw.ReadOnlySpan, currentConfig, ref stringBasicContext, replaceOption))
+                                    {
+                                        logger?.LogError("Failed to process RangeIndex migration record");
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
                                 }
                                 else if (kind == MigrationRecordSpanType.LogRecord)
                                 {
