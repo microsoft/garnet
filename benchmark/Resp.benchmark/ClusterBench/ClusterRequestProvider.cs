@@ -101,17 +101,17 @@ namespace Resp.benchmark
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"Key/Val: " + opts.KeyLength + "/" + opts.ValueLength + " B",-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
-            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders,-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Clients: " + totalProviders,-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             if (workersWithReplicas > 0)
-                Console.WriteLine($"{"Workers w/ Replicas: " + workersWithReplicas,-28}{"Assignment: Round-robin",-28}");
+                Console.WriteLine($"{"Clients w/ Replicas: " + workersWithReplicas,-28}{"Assignment: Round-robin",-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
             // Topology table
-            Console.WriteLine($"  {"Shard",-7}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Replicas",-10}| {"Prefix",-10}");
-            Console.WriteLine($"  {new string('-', 7)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}+{new string('-', 11)}");
+            Console.WriteLine($"  {"Role",-10}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Replicas",-10}| {"Prefix",-10}");
+            Console.WriteLine($"  {new string('-', 10)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}+{new string('-', 11)}");
 
             for (int s = 0; s < shards.Length; s++)
             {
@@ -120,13 +120,15 @@ namespace Resp.benchmark
                 var range = FormatSlotRanges(shard.SlotRanges);
                 var prefix = providers[s * threadsPerShard].KeyPrefix;
                 var replicaCount = shard.Replicas.Count;
-                Console.WriteLine($"  {s,-7}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {replicaCount,-10}| {prefix,-10}");
                 
-                // Print replica endpoints underneath if they exist
+                // Print primary with "primary" label
+                Console.WriteLine($"  {"primary",-10}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {replicaCount,-10}| {prefix,-10}");
+                
+                // Print replicas with proper alignment
                 foreach (var replica in shard.Replicas)
                 {
-                    var replicaEndpoint = $"  {replica.Address}:{replica.Port}";
-                    Console.WriteLine($"  {"replica",-7}| {replicaEndpoint,-23}|");
+                    var replicaEndpoint = $"{replica.Address}:{replica.Port}";
+                    Console.WriteLine($"  {"replica",-10}| {replicaEndpoint,-23}| {"",-7}| {"",-17}| {"",-10}| {"",-10}");
                 }
             }
 
@@ -144,7 +146,7 @@ namespace Resp.benchmark
             if (opts.AllowReplicaReads > 0 && totalReplicas > 0)
             {
                 Console.WriteLine($"  [INFO] Replica read routing: {opts.AllowReplicaReads}% of read operations will target replicas.");
-                Console.WriteLine($"         Workers assigned replicas: {workersWithReplicas}/{totalProviders} (round-robin)");
+                Console.WriteLine($"         Clients assigned replicas: {workersWithReplicas}/{totalProviders} (round-robin)");
                 Console.WriteLine();
             }
         }

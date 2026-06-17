@@ -40,6 +40,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Load data into the shard for this provider's key space.
+        /// Always uses primary connection only - replicas are read-only and cannot accept writes.
         /// </summary>
         public void LoadData()
         {
@@ -51,7 +52,8 @@ namespace Resp.benchmark
             // thread 0 loads [0, dbSizePerThread), thread 1 loads [dbSizePerThread, 2*dbSizePerThread), etc.
             var keyOffset = shardThreadIndex * dbSizePerThread;
 
-            var endpoint = new IPEndPoint(IPAddress.Parse(shard.Address), shard.Port);
+            // IMPORTANT: Always use primary endpoint for loading (replicas are read-only)
+            var endpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
             using var client = new LightClient(
@@ -83,13 +85,15 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Run offline benchmark: send pre-generated batches and measure throughput/latency.
+        /// Supports dual-connection routing for replica reads.
         /// </summary>
         public void RunOffline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
             if (requestBuffers == null)
                 throw new InvalidOperationException("Must call PrepareOfflineBuffers() before RunOffline()");
 
-            var endpoint = new IPEndPoint(IPAddress.Parse(shard.Address), shard.Port);
+            var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
+            IPEndPoint replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
             // Buffer size must be large enough to hold the largest pre-generated request buffer
@@ -101,44 +105,77 @@ namespace Resp.benchmark
                     bufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
             }
 
-            using var client = new LightClient(
-                endpoint,
+            using var primaryClient = new LightClient(
+                primaryEndpoint,
                 (int)opts.Op,
                 onResponse,
                 bufferSize,
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
-            client.Connect();
-            client.Authenticate(opts.Auth);
+            primaryClient.Connect();
+            primaryClient.Authenticate(opts.Auth);
 
-            // Wait for start signal
-            startSignal.Wait();
-
-            var sw = Stopwatch.StartNew();
-            var batchIdx = 0;
-            var batchSize = opts.BatchSize.First();
-
-            while (!done && sw.Elapsed < runTime)
+            // Create replica client if assigned
+            LightClient replicaClient = null;
+            if (replicaEndpoint != null)
             {
-                var buffer = requestBuffers[batchIdx % batchCount];
-                var len = requestLengths[batchIdx % batchCount];
+                replicaClient = new LightClient(
+                    replicaEndpoint,
+                    (int)opts.Op,
+                    onResponse,
+                    bufferSize,
+                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
-                var opStart = Stopwatch.GetTimestamp();
+                replicaClient.Connect();
+                replicaClient.Authenticate(opts.Auth);
+            }
 
-                fixed (byte* bufPtr = buffer)
+            try
+            {
+                // Wait for start signal
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var batchIdx = 0;
+                var batchSize = opts.BatchSize.First();
+
+                while (!done && sw.Elapsed < runTime)
                 {
-                    client.Send(bufPtr, len, batchSize);
-                    client.CompletePendingRequests();
+                    var buffer = requestBuffers[batchIdx % batchCount];
+                    var len = requestLengths[batchIdx % batchCount];
+                    var opStart = Stopwatch.GetTimestamp();
+
+                    // Route entire batch based on operation type
+                    // For offline mode, we route per-batch (all ops in batch are same type)
+                    var useReplica = ShouldUseReplica(opts.Op);
+                    var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                    fixed (byte* bufPtr = buffer)
+                    {
+                        client.Send(bufPtr, len, batchSize);
+                        client.CompletePendingRequests();
+                    }
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    Interlocked.Add(ref opsCompleted, batchSize);
+                    Interlocked.Add(ref bytesSent, len);
+
+                    // Track per-endpoint metrics
+                    if (useReplica && replicaClient != null)
+                        Interlocked.Add(ref replicaOps, batchSize);
+                    else
+                        Interlocked.Add(ref primaryOps, batchSize);
+
+                    batchIdx++;
                 }
-
-                var elapsed = Stopwatch.GetTimestamp() - opStart;
-
-                if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
-                    histogram.RecordValue(elapsed);
-
-                Interlocked.Add(ref opsCompleted, batchSize);
-                Interlocked.Add(ref bytesSent, len);
-                batchIdx++;
+            }
+            finally
+            {
+                replicaClient?.Dispose();
             }
         }
 

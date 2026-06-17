@@ -35,10 +35,8 @@ namespace Resp.benchmark
         long opsCompleted;
         long bytesSent;
         long keysLoaded;
-#pragma warning disable CS0649 // Field assigned in Phase 4/5 Online/Offline implementations
         long primaryOps;  // Operations executed on primary
         long replicaOps;  // Operations executed on replica
-#pragma warning restore CS0649
 
         volatile bool done;
 
