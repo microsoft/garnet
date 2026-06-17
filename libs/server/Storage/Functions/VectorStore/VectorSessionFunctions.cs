@@ -97,7 +97,7 @@ namespace Garnet.server
             }
             else
             {
-                input.ReadDesiredSize = value.Length;
+                output.UpdatedReadDesiredSize = value.Length;
                 if (output.SpanByteAndMemory.Length >= value.Length)
                 {
                     value.CopyTo(output.SpanByteAndMemory.Span);

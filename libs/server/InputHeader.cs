@@ -609,22 +609,22 @@ namespace Garnet.server
     /// <summary>
     /// Header for Garnet Main Store inputs but for Vector element r/w/d ops
     /// </summary>
-    public struct VectorInput : IStoreInput
+    public readonly struct VectorInput : IStoreInput
     {
         public int SerializedLength => throw new NotImplementedException();
 
-        public int ReadDesiredSize { get; set; }
+        public int ReadDesiredSize { get; init; }
 
-        public int WriteDesiredSize { get; set; }
+        public int WriteDesiredSize { get; init; }
 
-        public int Index { get; set; }
-        public nint CallbackContext { get; set; }
-        public nint Callback { get; set; }
+        public int Index { get;  init; }
+        public nint CallbackContext { get; init; }
+        public nint Callback { get; init; }
 
         [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
         public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
 
-        public int? MaxMigrationHeapAllocationSize { get; set; }
+        public int? MaxMigrationHeapAllocationSize { get; init; }
 
         public VectorInput()
         {

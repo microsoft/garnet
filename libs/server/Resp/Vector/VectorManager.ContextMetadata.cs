@@ -508,12 +508,15 @@ namespace Garnet.server
             // empty key is context metadata
             VectorElementKey key = new(nsBytes, []);
 
-            VectorInput input = default;
-            input.Callback = 0;
-            input.WriteDesiredSize = ContextMetadata.Size;
+            VectorInput input;
             unsafe
             {
-                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+                input = new()
+                {
+                    Callback = 0,
+                    WriteDesiredSize = ContextMetadata.Size,
+                    CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan)),
+                };
             }
 
             var status = ctx.RMW(key, ref input);

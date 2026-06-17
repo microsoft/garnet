@@ -94,8 +94,10 @@ namespace Garnet.cluster
                     var input = new UnifiedInput(RespCommand.MIGRATE);
                     input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
 
-                    VectorInput vectorInput = new();
-                    vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
+                    VectorInput vectorInput = new()
+                    {
+                        MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve
+                    };
 
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {

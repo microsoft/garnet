@@ -144,10 +144,12 @@ namespace Garnet.server
             {
                 Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
-                input = default;
-                input.CallbackContext = callbackContext;
-                input.Callback = (nint)callback;
-                input.Index = i;
+                input = new()
+                {
+                    CallbackContext = callbackContext,
+                    Callback = (nint)callback,
+                    Index = i,
+                };
             }
 
             /// <inheritdoc/>
@@ -257,10 +259,12 @@ namespace Garnet.server
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-            VectorInput input = default;
-            input.Callback = dataCallback;
-            input.CallbackContext = dataCallbackContext;
-            input.WriteDesiredSize = (int)writeLength;
+            VectorInput input = new()
+            {
+                Callback = dataCallback,
+                CallbackContext = dataCallbackContext,
+                WriteDesiredSize = (int)writeLength,
+            };
 
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
@@ -285,17 +289,19 @@ namespace Garnet.server
 
             while (true)
             {
-                VectorInput input = new();
-                input.ReadDesiredSize = -1;
+                VectorInput input = new()
+                {
+                    ReadDesiredSize = -1
+                };
 
                 fixed (byte* ptr = value.Span)
                 {
-                    VectorOutput asSpanByte = new(ptr, value.Length);
+                    VectorOutput output = new(ptr, value.Length);
 
-                    var status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
+                    var status = ctx.Read(keyWithNamespace, ref input, ref output);
                     if (status.IsPending)
                     {
-                        CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
+                        CompletePending(ref status, ref output, ref ctx);
                     }
 
                     if (!status.Found)
@@ -304,15 +310,15 @@ namespace Garnet.server
                         return false;
                     }
 
-                    if (input.ReadDesiredSize > asSpanByte.SpanByteAndMemory.Length)
+                    if (output.UpdatedReadDesiredSize != null && output.UpdatedReadDesiredSize.Value > output.SpanByteAndMemory.Length)
                     {
                         value.Memory?.Dispose();
-                        var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
+                        var newAlloc = MemoryPool<byte>.Shared.Rent(output.UpdatedReadDesiredSize.Value);
                         value = new(newAlloc, newAlloc.Memory.Length);
                         continue;
                     }
 
-                    value.Length = asSpanByte.SpanByteAndMemory.Length;
+                    value.Length = output.SpanByteAndMemory.Length;
                     return true;
                 }
             }
