@@ -2452,10 +2452,6 @@ namespace Garnet.test
             [Values(false, true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
-            TestContext.Progress.WriteLine($"Running {quantType}, {concurrentAdds}, {concurrentSearches}");
-
-            Environment.SetEnvironmentVariable("RUST_BACKTRACE", "full");
-
             const int Vectors = 5_000;
             const int Dimensions = 64;
             const string Key = nameof(WithQuantizationBackfillAsync);
