@@ -114,6 +114,17 @@ namespace Garnet.cluster
                         return false;
                     }
 
+                    // Handle migration of discovered RangeIndex keys with sketch protection.
+                    // All RI keys are added to the sketch in one batch, then a single epoch
+                    // barrier per phase gates concurrent operations.
+                    var rangeIndexKeys = new HashSet<byte[]>(migrateOperation.SelectMany(static mo => mo.RangeIndexKeys), ByteArrayComparer.Instance);
+
+                    if (rangeIndexKeys.Count > 0)
+                    {
+                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], rangeIndexKeys, _cts.Token).ConfigureAwait(false))
+                            return false;
+                    }
+
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
 
