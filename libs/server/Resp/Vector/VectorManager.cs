@@ -425,7 +425,7 @@ namespace Garnet.server
 
             if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
             {
-                errorMsg = "ERR Provided quantizer does not match Vector Set definition"u8;
+                errorMsg = "ERR asked quantization mismatch with existing vector set"u8;
                 return VectorManagerResult.BadParams;
             }
 
