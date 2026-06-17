@@ -35,8 +35,14 @@ namespace Garnet.cluster
                 await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                 // Discover Vector Sets linked namespaces
+                var allKeys = migrateTask.sketch.Keys.Select(t => t.Item1);
                 var indexesToMigrate = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
-                _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, migrateTask.sketch.Keys.Select(t => t.Item1.ToArray()), indexesToMigrate);
+                _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, allKeys, indexesToMigrate);
+
+                // Discover RangeIndex keys upfront
+                var rangeIndexKeysToMigrate = clusterProvider.serverOptions.EnableRangeIndexPreview
+                    ? clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager.GetRangeIndexKeysForMigration(clusterProvider.storeWrapper, allKeys)
+                    : new HashSet<byte[]>(ByteArrayComparer.Instance);
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side
@@ -46,8 +52,19 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Transmit keys from store
-                if (!await migrateTask.TransmitKeysAsync(indexesToMigrate).ConfigureAwait(false))
+                // Transmit keys from store (skipping VectorSet and RangeIndex keys, which are handled out-of-band)
+#if NET9_0_OR_GREATER
+                var vectorSetLookup = indexesToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+                var rangeIndexLookup = rangeIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+                bool ShouldSkipKey(PinnedSpanByte key) =>
+                    (indexesToMigrate.Count > 0 && vectorSetLookup.ContainsKey(key.ReadOnlySpan)) ||
+                    (rangeIndexKeysToMigrate.Count > 0 && rangeIndexLookup.Contains(key.ReadOnlySpan));
+#else
+                bool ShouldSkipKey(PinnedSpanByte key) =>
+                    (indexesToMigrate.Count > 0 && indexesToMigrate.ContainsKey(key.ToArray())) ||
+                    (rangeIndexKeysToMigrate.Count > 0 && rangeIndexKeysToMigrate.Contains(key.ToArray()));
+#endif
+                if (!await migrateTask.TransmitKeysAsync(ShouldSkipKey).ConfigureAwait(false))
                 {
                     logger?.LogError("Failed transmitting keys from store");
                     return false;
@@ -122,6 +139,33 @@ namespace Garnet.cluster
                         return false;
                     }
                 }
+
+                // Migrate RangeIndex keys (snapshot + chunk stream).
+                // Keys are already in the sketch (added by caller during key enumeration),
+                // so they're protected by the TRANSMITTING status. Mark for deletion so
+                // DeleteKeysAsync() handles them in the DELETING sketch status sequence.
+                if (rangeIndexKeysToMigrate.Count > 0)
+                {
+                    logger?.LogWarning("Migrating {count} RangeIndex keys via KEYS path", rangeIndexKeysToMigrate.Count);
+
+                    foreach (var key in rangeIndexKeysToMigrate)
+                    {
+                        if (!await TransmitRangeIndexAsync(migrateTask, key, RangeIndexManager.DefaultMigrationChunkSize, _cts.Token).ConfigureAwait(false))
+                        {
+                            logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
+                            return false;
+                        }
+                    }
+
+                    // Mark all transmitted RI keys in the sketch for deletion by DeleteKeysAsync()
+                    var keys = migrateTask.sketch.Keys;
+                    for (var i = 0; i < keys.Count; i++)
+                    {
+                        if (rangeIndexKeysToMigrate.Contains(keys[i].Item1.ToArray()))
+                            keys[i] = (keys[i].Item1, true);
+                    }
+                }
+
                 // Final cleanup, which will also delete Vector Sets
                 await DeleteKeysAsync().ConfigureAwait(false);
             }

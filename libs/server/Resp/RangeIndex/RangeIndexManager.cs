@@ -51,7 +51,7 @@ namespace Garnet.server
         /// Stored in <c>RecordDataHeader.RecordType</c> to distinguish RI stubs
         /// from normal strings (0) and VectorSet stubs.
         /// </summary>
-        internal const byte RangeIndexRecordType = 2;
+        public const byte RangeIndexRecordType = 2;
 
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
         internal const int IndexSizeBytes = RangeIndexStub.Size;
@@ -94,6 +94,12 @@ namespace Garnet.server
         /// and immutable per-flush snapshots (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
         private readonly string riLogRoot;
+
+        /// <summary>
+        /// Temporary directory for in-progress migration files.
+        /// Created once in the constructor; cleaned up on startup to remove partial artifacts from prior crashes.
+        /// </summary>
+        private readonly string migrationTempDir;
 
         /// <summary>
         /// Checkpoint-tied parent directory (the Tsavorite <c>cpr-checkpoints/</c> directory).
@@ -223,6 +229,31 @@ namespace Garnet.server
                     $"RangeIndexManager: failed to create riLogRoot '{riLogRoot}'. " +
                     "Check that the parent directory exists and the process has write permissions.",
                     ex);
+            }
+
+            // Clean up partial migration artifacts from prior crashes, then ensure directory exists
+            migrationTempDir = Path.Combine(riLogRoot, "migration-tmp");
+            if (Directory.Exists(migrationTempDir))
+            {
+                try
+                {
+                    Directory.Delete(migrationTempDir, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "RangeIndexManager: failed to clean up migration temp directory {Path}", migrationTempDir);
+                    throw new Exception($"RangeIndexManager: failed to clean up migration temp directory '{migrationTempDir}'. Check for locked files or insufficient permissions.", ex);
+                }
+            }
+
+            try
+            {
+                Directory.CreateDirectory(migrationTempDir);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "RangeIndexManager: failed to create migration temp directory {Path}", migrationTempDir);
+                throw new Exception($"RangeIndexManager: failed to create migration temp directory '{migrationTempDir}'.", ex);
             }
         }
 
