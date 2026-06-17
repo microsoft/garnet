@@ -49,6 +49,7 @@ The index key (represented by the `Index` struct) contains the following data:
    * > [!IMPORTANT]
      > Today only `XPREQ` is actually implemented, eventually DiskANN will provide reasonable versions of all the Redis builtin quantizers.
  - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after [recovery](#recovery) or [replication](#replication) to detect if `IndexPtr` is dangling
+     > They forbid the `REDUCE` option, a restriction we may lift in the future.
 
 The index key is in the main store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with the `VectorSet` bit on `RecordInfo`.
 
@@ -164,26 +165,8 @@ The `InProgressDeletes` key is necessary to recover from interrupted deletes.  A
 
 `FLUSHDB` (and it's relative `FLUSHALL`) require special handling.
 
-<<<<<<< HEAD
 > [!IMPORTANT]
 > This is not currently implemented.
-=======
-Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
-
-Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to background tasks.
-
-Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
- - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
- - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
- - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
- 
- It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
-
- > [!NOTE]
- > Today DiskANN does not recover quantization state.
- >
- > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
->>>>>>> fc496e9fcb (another round of review feedback)
 
 # Locking
 
