@@ -90,5 +90,27 @@ namespace Garnet.common
         /// This means no SAEA receive loop is running, so the only cleanup path is public Dispose().
         /// </summary>
         Dispose_After_Handler_Registered_Before_Start,
+        /// <summary>
+        /// RangeIndex migration: pause after populating sketch, before setting TRANSMITTING.
+        /// </summary>
+        RangeIndex_Migration_Before_Transmitting,
+        /// <summary>
+        /// RangeIndex migration: pause after entering TRANSMITTING state, before starting snapshot/transmit loop.
+        /// </summary>
+        RangeIndex_Migration_After_Transmitting,
+        /// <summary>
+        /// RangeIndex migration: pause after all keys transmitted, before setting DELETING.
+        /// </summary>
+        RangeIndex_Migration_Before_Deleting,
+        /// <summary>
+        /// RangeIndex migration: pause after entering DELETING state, before deleting keys.
+        /// </summary>
+        RangeIndex_Migration_After_Deleting,
+        /// <summary>
+        /// RangeIndex migration (receive side): pause inside ProcessRecord after a chunk has been
+        /// processed, while the dispose guard is held. Lets a test race Dispose() against an
+        /// in-flight ProcessRecord.
+        /// </summary>
+        RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
     }
 }
