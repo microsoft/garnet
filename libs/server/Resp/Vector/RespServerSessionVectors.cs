@@ -136,6 +136,13 @@ namespace Garnet.server
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
                     curIx++;
 
+                    vectorDims = asBytes.Length;
+
+                    if (vectorDims > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
+
                     valueType = VectorValueType.XU8;
                     values = asBytes;
                 }
@@ -149,6 +156,13 @@ namespace Garnet.server
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
                     curIx++;
+
+                    vectorDims = asBytes.Length;
+
+                    if (vectorDims > VectorManager.MaxVectorDimensions)
+                    {
+                        return AbortWithErrorMessage($"ERR vector exceeds maximum of {VectorManager.MaxVectorDimensions} dimensions");
+                    }
 
                     valueType = VectorValueType.XI8;
                     values = asBytes;
@@ -239,7 +253,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
                     {
                         if (quantType != null)
                         {
@@ -251,7 +265,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {
@@ -263,7 +277,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {
@@ -275,7 +289,7 @@ namespace Garnet.server
 
                         continue;
                     }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8))
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
                         {
@@ -361,7 +375,7 @@ namespace Garnet.server
                     }
 
                     // Look for distance metric - this is an extension, though hopefully one Redis can be convinced to adopt
-                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XDISTANCE_METRIC"u8))
+                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XDISTANCE_METRIC"u8, allowNonAlphabeticChars: true))
                     {
                         if (distanceMetric != null)
                         {
@@ -387,7 +401,7 @@ namespace Garnet.server
                         {
                             distanceMetric = VectorDistanceMetricType.InnerProduct;
                         }
-                        else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XCOSINE_NORMALIZED"u8))
+                        else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XCOSINE_NORMALIZED"u8, allowNonAlphabeticChars: true))
                         {
                             // This is an extension to the Redis protocol, thus the X prefix
                             distanceMetric = VectorDistanceMetricType.XCosine_Normalized;
