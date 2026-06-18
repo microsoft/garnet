@@ -149,7 +149,7 @@ namespace Resp.benchmark
         private void PrintConfiguration(int threadsPerShard, int totalProviders)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var architecture = opts.Pool ? "Worker Pool" : "Sharded";
+            var pool = opts.Pool ? "Yes" : "No";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -164,14 +164,14 @@ namespace Resp.benchmark
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
-            Console.WriteLine($"{"Architecture: " + architecture,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + threadsPerShard + " (per shard)",-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"",-28}");
+            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Pipeline: " + (opts.Pipeline ? "Yes" : "No"),-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -213,7 +213,7 @@ namespace Resp.benchmark
         private void PrintWorkerPoolConfiguration(int workerCount, int totalProviders, int totalConnections, int workersWithReplicas)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var architecture = "Worker Pool";
+            var pool = "Yes";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -226,7 +226,7 @@ namespace Resp.benchmark
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
-            Console.WriteLine($"{"Architecture: " + architecture,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + workerCount,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
