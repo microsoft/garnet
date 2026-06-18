@@ -277,7 +277,7 @@ namespace Garnet.server
             return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
-        private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
 #pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
