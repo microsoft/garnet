@@ -78,6 +78,10 @@ namespace BDN.benchmark.Operations.LTM
 
         public override void GlobalSetup()
         {
+            // Pin the process to a single NUMA socket BEFORE base.GlobalSetup() creates the server (and the
+            // device's completion thread), so the run-thread and that completion thread stay co-located.
+            PinProcessToSingleSocket();
+
             base.GlobalSetup();
 
             // Fixed-width keys must be sized before populating (Populate uses Key(id)). Use an upper bound on the key
@@ -104,6 +108,54 @@ namespace BDN.benchmark.Operations.LTM
             SetupBatch(ref decr, KeyPrefix, id => Resp("DECR", Key(id)));
             SetupBatch(ref incrby, KeyPrefix, id => Resp("INCRBY", Key(id), "1234567890"));
             SetupBatch(ref decrby, KeyPrefix, id => Resp("DECRBY", Key(id), "1234567890"));
+        }
+
+        /// <summary>
+        /// Pin the whole benchmark process to a single NUMA socket so the run-thread and the
+        /// <see cref="DeviceType.LocalMemory"/> device's completion ("processor") thread stay co-located on
+        /// cores that share an L3 cache.
+        /// <para>
+        /// Why: each pending IO is handed off run-thread -&gt; SPSC ring -&gt; device completion thread -&gt;
+        /// readyResponses drain (back on the run-thread). If the OS places those two threads on different
+        /// sockets, every op's handoff bounces cache lines across the socket interconnect (~1.4-1.9x slower),
+        /// which shows up as bimodal, sticky-per-launch run-to-run variance in these LTM benchmarks.
+        /// </para>
+        /// <para>
+        /// Setting <em>process</em> affinity (rather than just the run-thread) is required: the device creates
+        /// its completion thread separately, and a new thread inherits the process affinity mask, not the
+        /// creating thread's. Setting the process mask here (before the server/device is created) constrains
+        /// the current run-thread and every thread created afterwards (the completion thread, GC threads) to
+        /// the one socket. Windows-only (the affinity API is unsupported elsewhere); a no-op on other OSes.
+        /// </para>
+        /// <para>
+        /// TODO: Investigate Option B — pin individual threads to specific cores instead of the whole process,
+        /// via <see cref="Native32.AffinitizeThreadShardedNuma"/>: call it on the run-thread here, and add a
+        /// LocalMemoryDevice option to affinitize its ProcessorLoop thread to a different core on the same
+        /// socket. That avoids constraining unrelated threads (e.g. GC), but needs a device change to expose
+        /// completion-thread affinity.
+        /// </para>
+        /// <para>
+        /// TODO: Because this pin is Windows-only, the LTM benchmark has been removed from the BDN CI perf gate
+        /// (ci-bdnbenchmark.yml test matrix + BDN_Benchmark_Config.json) — on the Linux CI it would run unpinned
+        /// and the bimodal cross-socket variance would flake the gate. Restore it to CI once cross-platform
+        /// pinning (Option B and/or Linux affinity support) keeps the LTM numbers stable on the CI runners.
+        /// </para>
+        /// </summary>
+        private static void PinProcessToSingleSocket()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            // Assume two NUMA sockets with contiguous logical-processor enumeration (procs [0, N/2) = socket 0),
+            // matching Tsavorite's Native32.AffinitizeThreadShardedNuma(_, 2) convention. Assumes a single
+            // processor group (<= 64 logical processors), so a single IntPtr mask suffices.
+            var socketProcs = Environment.ProcessorCount / 2;
+            if (socketProcs is < 1 or > 63)
+                return;
+
+            var mask = (1L << socketProcs) - 1;
+            using var process = Process.GetCurrentProcess();
+            process.ProcessorAffinity = (nint)mask;
         }
 
         /// <summary>
