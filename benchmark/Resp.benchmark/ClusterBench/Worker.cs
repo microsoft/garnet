@@ -69,6 +69,8 @@ namespace Resp.benchmark
         /// <summary>
         /// Online mode: continuously generate and execute operations until time expires.
         /// Operations are distributed randomly across all shards.
+        /// In pipeline mode, requests are sent without waiting for responses;
+        /// pending responses are completed when the provider is revisited.
         ///
         /// Key difference from sharded mode:
         /// - Worker drives the workload loop (not individual providers)
@@ -84,33 +86,66 @@ namespace Resp.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            // Continuously execute operations until time expires
-            while (sw.Elapsed < runTime)
+            if (opts.Pipeline)
             {
-                // Select random provider (random shard)
-                var provider = SelectRandomProvider();
-
-                // Provider executes one operation on its shard
-                // Internally routes to primary or replica based on operation type
-                provider.ExecuteSingleOnlineOperation();
+                while (sw.Elapsed < runTime)
+                {
+                    var provider = SelectRandomProvider();
+                    provider.ExecuteSingleOnlineOperationPipelined();
+                }
             }
+            else
+            {
+                while (sw.Elapsed < runTime)
+                {
+                    var provider = SelectRandomProvider();
+                    provider.ExecuteSingleOnlineOperation();
+                }
+            }
+
+            // Drain any outstanding pipelined requests
+            DrainAllProviders();
         }
 
         /// <summary>
         /// Offline mode: execute pre-generated batches until completion.
         /// Batches are distributed randomly across all shards.
+        /// In pipeline mode, requests are sent without waiting for responses;
+        /// pending responses are completed when the provider is revisited.
         /// </summary>
         /// <param name="token">Cancellation token</param>
         public void RunOffline(CancellationToken token)
         {
-            while (!token.IsCancellationRequested)
+            if (opts.Pipeline)
             {
-                // Select random provider for this batch
-                var provider = SelectRandomProvider();
-
-                // Execute one batch of operations
-                provider.ExecuteSingleOfflineBatch();
+                while (!token.IsCancellationRequested)
+                {
+                    var provider = SelectRandomProvider();
+                    provider.ExecuteSingleOfflineBatchPipelined();
+                }
             }
+            else
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    var provider = SelectRandomProvider();
+                    provider.ExecuteSingleOfflineBatch();
+                }
+            }
+
+            // Drain any outstanding pipelined requests
+            DrainAllProviders();
+        }
+
+        /// <summary>
+        /// Drain any outstanding pipelined requests from all providers.
+        /// Called at the end of a benchmark run to ensure all in-flight
+        /// operations are completed and their metrics are recorded.
+        /// </summary>
+        private void DrainAllProviders()
+        {
+            foreach (var provider in providers)
+                provider.DrainPending();
         }
 
         /// <summary>

@@ -23,6 +23,13 @@ namespace Resp.benchmark
         // Batch counter for offline mode (cycles through pre-generated batches)
         private long batchCounter = -1;
 
+        // Pipeline state: tracks one outstanding request per provider
+        private bool hasPendingRequest;
+        private long pendingStartTimestamp;
+        private int pendingBatchSize;
+        private long pendingBytesSent;
+        private bool pendingUsedReplica;
+
         /// <summary>
         /// Initialize connections for worker pool mode.
         /// Called once before first operation execution.
@@ -175,6 +182,18 @@ namespace Resp.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendSingleLightClient(string key, bool useReplica)
+        {
+            var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+            var request = FormatRequest(opts.Op, key);
+
+            fixed (byte* bufPtr = request)
+            {
+                client.Send(bufPtr, request.Length, 1);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ExecuteSingleGarnetSession(string key, bool useReplica)
         {
             var session = (useReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
@@ -187,6 +206,19 @@ namespace Resp.benchmark
                 session.Execute("GET", key);
 
             session.CompletePending();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendSingleGarnetSession(string key, bool useReplica)
+        {
+            var session = (useReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
+
+            if (opts.Op == OpType.GET)
+                session.Execute("GET", key);
+            else if (opts.Op == OpType.SET)
+                session.Execute("SET", key, GenerateValue());
+            else
+                session.Execute("GET", key);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -255,6 +287,160 @@ namespace Resp.benchmark
                 Interlocked.Add(ref replicaOps, batchSize);
             else
                 Interlocked.Add(ref primaryOps, batchSize);
+        }
+
+        /// <summary>
+        /// Complete the outstanding pending request and record its metrics.
+        /// Latency is measured from the original Send timestamp to completion.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CompletePendingAndRecordMetrics()
+        {
+            if (!hasPendingRequest)
+                return;
+
+            // Complete pending on the client that was used and capture completion timestamp immediately
+            long completedTimestamp;
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    var lc = (pendingUsedReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+                    lc.CompletePendingRequests();
+                    completedTimestamp = Stopwatch.GetTimestamp();
+                    break;
+                case ClientType.GarnetClientSession:
+                    var gs = (pendingUsedReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
+                    gs.CompletePending();
+                    completedTimestamp = Stopwatch.GetTimestamp();
+                    break;
+                default:
+                    completedTimestamp = Stopwatch.GetTimestamp();
+                    break;
+            }
+
+            // Record latency: send timestamp → completion timestamp
+            var elapsed = completedTimestamp - pendingStartTimestamp;
+            if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                histogram.RecordValue(elapsed);
+
+            // Update counters
+            Interlocked.Add(ref opsCompleted, pendingBatchSize);
+            Interlocked.Add(ref bytesSent, pendingBytesSent);
+
+            if (pendingUsedReplica && hasReplica)
+                Interlocked.Add(ref replicaOps, pendingBatchSize);
+            else
+                Interlocked.Add(ref primaryOps, pendingBatchSize);
+
+            hasPendingRequest = false;
+        }
+
+        /// <summary>
+        /// Execute a single offline batch in pipelined mode.
+        /// If this provider has an outstanding request, complete it first.
+        /// Then send the next batch without waiting for the response.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ExecuteSingleOfflineBatchPipelined()
+        {
+            if (requestBuffers == null)
+                throw new InvalidOperationException("Must call PrepareBuffers() before ExecuteSingleOfflineBatchPipelined()");
+
+            if (primaryLightClient == null)
+                InitializeConnections();
+
+            // Complete any outstanding request from a previous visit
+            CompletePendingAndRecordMetrics();
+
+            // Select batch
+            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
+            var buffer = requestBuffers[batchIdx];
+            var len = requestLengths[batchIdx];
+            var batchSize = opts.BatchSize.First();
+
+            // Route batch
+            var useReplica = ShouldUseReplica(opts.Op);
+            var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+
+            // Send without waiting for response
+            unsafe
+            {
+                fixed (byte* bufPtr = buffer)
+                {
+                    client.Send(bufPtr, len, batchSize);
+                }
+            }
+
+            // Record pending state for completion on next visit
+            pendingStartTimestamp = Stopwatch.GetTimestamp();
+            pendingBatchSize = batchSize;
+            pendingBytesSent = len;
+            pendingUsedReplica = useReplica;
+            hasPendingRequest = true;
+        }
+
+        /// <summary>
+        /// Drain any outstanding pending request. Called at the end of the benchmark
+        /// to ensure all in-flight operations are completed and metrics are recorded.
+        /// </summary>
+        public void DrainPending()
+        {
+            CompletePendingAndRecordMetrics();
+        }
+
+        /// <summary>
+        /// Execute a single online operation in pipelined mode.
+        /// If this provider has an outstanding request, complete it first.
+        /// Then send the next request without waiting for the response.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ExecuteSingleOnlineOperationPipelined()
+        {
+            if (!connectionsInitialized)
+                InitializeConnections();
+
+            // Complete any outstanding request from a previous visit
+            CompletePendingAndRecordMetrics();
+
+            // Generate and send new request
+            var dbSizePerShard = opts.DbSize;
+            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+            var useReplica = ShouldUseReplica(opts.Op);
+
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    SendSingleLightClient(key, useReplica);
+                    break;
+                case ClientType.GarnetClientSession:
+                    SendSingleGarnetSession(key, useReplica);
+                    break;
+                case ClientType.GarnetClient:
+                    // GarnetClient is async-based; fire-and-forget not practical here,
+                    // fall back to synchronous execution
+                    ExecuteSingleGarnetClient(key, useReplica);
+                    pendingStartTimestamp = Stopwatch.GetTimestamp();
+                    pendingBatchSize = 1;
+                    pendingBytesSent = 0;
+                    pendingUsedReplica = useReplica;
+                    // Already completed, record metrics immediately
+                    var elapsed = Stopwatch.GetTimestamp() - pendingStartTimestamp;
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+                    _ = Interlocked.Increment(ref opsCompleted);
+                    if (useReplica && hasReplica)
+                        _ = Interlocked.Increment(ref replicaOps);
+                    else
+                        _ = Interlocked.Increment(ref primaryOps);
+                    return;
+            }
+
+            // Record pending state for completion on next visit
+            pendingStartTimestamp = Stopwatch.GetTimestamp();
+            pendingBatchSize = 1;
+            pendingBytesSent = 0;
+            pendingUsedReplica = useReplica;
+            hasPendingRequest = true;
         }
 
         /// <summary>
