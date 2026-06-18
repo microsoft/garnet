@@ -13,7 +13,7 @@ namespace Garnet.server
     /// 
     /// This controls the mapping of vector elements to how they're actually stored.
     /// </summary>
-    public enum VectorQuantType
+    public enum VectorQuantType : int
     {
         Invalid = 0,
 
@@ -22,23 +22,43 @@ namespace Garnet.server
         /// <summary>
         /// Vectors stored as is with no quantization.
         /// </summary>
-        NoQuant,
+        NoQuant = 1,
         /// <summary>
         /// Vectors stored as binary (1 bit).
         /// </summary>
-        Bin,
+        Bin = 2,
         /// <summary>
         /// Vectors stored as bytes (8 bits).
         /// </summary>
-        Q8,
+        Q8 = 3,
 
         // Extended quantizations
 
         /// <summary>
-        /// Vectors stored as bytes (8 bits). XPREQ8 is a non-Redis extension, stands for: 
-        /// eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
+        /// Vectors stored as bytes (8 bits unsigned). XNoQuant_U8 is a non-Redis extension, stands for: 
+        /// eXtension No Quantization Unsigned integer 8 bits
+        /// 
+        /// XPREQ8 aliases to this.
         /// </summary>
-        XPreQ8,
+        XNoQuant_U8 = 4,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits signed). XNoQuant_I8 is a non-Redis extension, stands for: 
+        /// eXtension No Quantization Integer 8 bits
+        /// </summary>
+        XNoQuant_I8 = 5,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits signed). XBin_I8 is a non-Redis extension, stands for: 
+        /// eXtension Binary quantized Integer 8 bits
+        /// </summary>
+        XBin_I8 = 6,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits unsigned). XBin_U8 is a non-Redis extension, stands for: 
+        /// eXtension Binary quantized Unsigned integer 8 bits
+        /// </summary>
+        XBin_U8 = 7,
     }
 
     /// <summary>
@@ -53,14 +73,22 @@ namespace Garnet.server
         /// <summary>
         /// Floats (FP32).
         /// </summary>
-        FP32,
+        FP32 = 1,
 
         // Extended formats
 
         /// <summary>
-        /// Bytes (8 bit).
+        /// Bytes (8 bit), unsigned.  XU8 is a non-Redis extensions, stands for:
+        /// eXtension Unsigned-integer 8 bits
+        /// 
+        /// XB8 aliases to this.
         /// </summary>
-        XB8,
+        XU8 = 2,
+
+        /// <summary>
+        /// Bytes (8 bit), signed.
+        /// </summary>
+        XI8 = 3,
     }
 
     /// <summary>
@@ -97,17 +125,17 @@ namespace Garnet.server
         /// <summary>
         /// Inner product
         /// </summary>
-        InnerProduct,
+        InnerProduct = 1,
 
         /// <summary>
         /// Squared Euclidean (L2-Squared)
         /// </summary>
-        L2,
+        L2 = 2,
 
         /// <summary>
-        /// Normalized Cosine Similarity
+        /// Normalized Cosine Similarity.  XCosine_Normalized
         /// </summary>
-        XCosine_Normalized,
+        XCosine_Normalized = 3,
     }
 
 
@@ -122,7 +150,13 @@ namespace Garnet.server
         [SkipLocalsInit]
         public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
-            var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
+            var dims =
+                valueType switch
+                {
+                    VectorValueType.FP32 => (uint)(values.ReadOnlySpan.Length / sizeof(float)),
+                    VectorValueType.XI8 or VectorValueType.XU8 => (uint)values.ReadOnlySpan.Length,
+                    _ => throw new InvalidOperationException($"Unexpected VectorValueType: {valueType}"),
+                };
 
             var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
             var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
@@ -152,7 +186,7 @@ namespace Garnet.server
 
                 // After a successful read we add the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
+                result = vectorManager.TryAdd(key, indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
                 if (result == VectorManagerResult.OK)
                 {
@@ -201,7 +235,7 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMsg, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             parseState.InitializeWithArgument(key);
 
@@ -216,10 +250,11 @@ namespace Garnet.server
                 {
                     result = VectorManagerResult.Invalid;
                     outputIdFormat = VectorIdFormat.Invalid;
+                    errorMsg = default;
                     return status;
                 }
 
-                result = vectorManager.ValueSimilarity(indexSpan, valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, ref filterBitmap);
+                result = vectorManager.ValueSimilarity(indexSpan, valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, out errorMsg, ref outputDistances, ref outputAttributes, ref filterBitmap);
 
                 return GarnetStatus.OK;
             }

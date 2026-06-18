@@ -742,6 +742,7 @@ namespace Garnet.test
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
             bool enableRangeIndexPreview = false,
+            int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -867,6 +868,7 @@ namespace Garnet.test
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
+                VectorSetQuantizationTaskCount = vectorSetQuantizationTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
