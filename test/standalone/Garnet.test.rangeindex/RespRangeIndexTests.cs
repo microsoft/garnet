@@ -4,9 +4,11 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Garnet.server.BfTreeInterop;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -1098,6 +1100,137 @@ namespace Garnet.test
                 val = db.Execute("RI.GET", "cpindex", "delta");
                 ClassicAssert.AreEqual("value-delta", (string)val, "new insert should work after recovery");
             }
+        }
+
+        /// <summary>
+        /// [Explicit] Repro: a DISK-backed range index with enough records to make the underlying
+        /// BfTree MULTI-LEVEL (1000 tiny 4-byte fields/values) is checkpointed (SAVE), recovered on
+        /// restart (RecoverFromCprSnapshot), then dropped when the server is disposed. Dropping the
+        /// recovered multi-level tree aborts the process in bf-tree's <c>bftree_drop</c>
+        /// (assertion failed: next_level.is_null() at mini_page_op.rs:429). The panic fires on a
+        /// bf-tree internal background thread (a native abort), so it cannot be caught by
+        /// <c>--blame-crash</c>/createdump. The crash is driven by total data volume vs the small
+        /// 64 KiB cache (multi-level split), not by record size — small trees recover and drop
+        /// cleanly (see <see cref="RICheckpointAndRecoverTest"/>). The pure-native form of this crash
+        /// is <see cref="BfTreeRecoverFromCprSnapshotThenDrop_Crashes"/>. Crashes the test
+        /// host by design.
+        /// </summary>
+        [Test]
+        [Explicit("Crashes by design: drops a CprSnapshot-recovered multi-level BfTree (bf-tree 0.5.0 bug).")]
+        public void RICheckpointRecoverThenDrop_Crashes()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true);
+            server.Start();
+
+            const string index = "cpindex";
+            const int records = 1000; // well above the multi-level threshold for these tiny records
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.Execute("RI.CREATE", index, "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                for (var i = 0; i < records; i++)
+                    db.Execute("RI.SET", index, i.ToString("D4"), i.ToString("D4")); // 4-byte field + value
+
+                // Sanity: data is present before checkpoint.
+                ClassicAssert.AreEqual("0000", (string)db.Execute("RI.GET", index, "0000"));
+
+                // Checkpoint: CprSnapshot of the (now multi-level) tree.
+                db.Execute("SAVE");
+            }
+
+            // Restart with recovery: the tree is reloaded via RecoverFromCprSnapshot.
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("0000", (string)db.Execute("RI.GET", index, "0000"),
+                    "data should survive checkpoint + recovery");
+            }
+
+            // The recovered multi-level tree is now live. Disposing the server (here in TearDown via
+            // RangeIndexManager.Dispose) drops it and trips the bf-tree assert, aborting the process.
+        }
+
+        // Create a disk-backed BfTree, insert `records` tiny 4-byte key/value records, CprSnapshot it,
+        // then recover from that snapshot and drop the recovered tree. With these params (CACHESIZE
+        // 65536, MINRECORD 8, key=value=i.ToString("D4")) the tree becomes MULTI-LEVEL at exactly 378
+        // records: dropping a recovered multi-level tree aborts the process in bftree_drop
+        // (assertion failed: next_level.is_null() at mini_page_op.rs:429, on a bf-tree background
+        // thread), while 377 records stays single-level and drops cleanly. The crash is driven by
+        // total data volume vs the small cache (the multi-level split), not by record size. Every
+        // Insert is asserted to succeed so a silent InvalidKV (limit) failure cannot masquerade as a
+        // valid repro. The 377/378 boundary is deterministic and identical on net8/net10 and
+        // Windows/Linux (the structure is fixed by the native bf-tree binary + the inserted data).
+        private static void SeedRecoverDrop(int records)
+        {
+            // The crashing variant aborts the process mid-test, so its temp dir is never cleaned up
+            // afterward. Sweep any leftovers from prior (crashed) runs up front so they don't pile up.
+            foreach (var stale in Directory.EnumerateDirectories(Path.GetTempPath(), "bftree_cprrepro_*"))
+            {
+                try { Directory.Delete(stale, recursive: true); } catch { }
+            }
+
+            var dir = Path.Combine(Path.GetTempPath(), $"bftree_cprrepro_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(dir);
+
+            var seed = new BfTreeService(StorageBackendType.Disk,
+                Path.Combine(dir, "seed.data.bftree"), Path.Combine(dir, "seed.scratch.cpr"),
+                cbSizeByte: 65536, cbMinRecordSize: 8);
+            for (var i = 0; i < records; i++)
+            {
+                var bytes = Encoding.ASCII.GetBytes(i.ToString("D4"));
+                ClassicAssert.AreEqual(BfTreeInsertResult.Success, seed.Insert(bytes, bytes), $"insert {i} should succeed");
+            }
+            seed.CprSnapshot();
+            var snapshot = Path.Combine(dir, "snap.bftree");
+            File.Copy(Path.Combine(dir, "seed.scratch.cpr"), snapshot, overwrite: false);
+            seed.Dispose();
+
+            // Recover from the snapshot and drop: aborts in bftree_drop iff the tree is multi-level.
+            var tree = BfTreeService.RecoverFromCprSnapshot(snapshot, Path.Combine(dir, "rec.scratch.cpr"), StorageBackendType.Disk);
+            tree.Dispose();
+
+            // Best-effort cleanup for the non-crashing (below-threshold) path; the crashing path
+            // aborts before reaching here and is swept by the next run's up-front cleanup above.
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+
+        /// <summary>
+        /// [Explicit] Pure-native form of <see cref="RICheckpointRecoverThenDrop_Crashes"/> calling
+        /// <see cref="BfTreeService"/> directly (no Garnet server). Inserting 378 tiny records makes
+        /// the tree MULTI-LEVEL; recovering it from a CprSnapshot and dropping it aborts the process
+        /// in <c>bftree_drop</c> (assertion failed: next_level.is_null() at mini_page_op.rs:429) on a
+        /// bf-tree background thread. 378 is exactly one above the threshold — see
+        /// <see cref="BfTreeRecoverFromCprSnapshotThenDrop_BelowThreshold_NoCrash"/>. Crashes the host
+        /// by design.
+        /// </summary>
+        [Test]
+        [Explicit("Crashes by design: 378 records (multi-level) recovered then dropped (bf-tree 0.5.0 bug).")]
+        public void BfTreeRecoverFromCprSnapshotThenDrop_Crashes()
+        {
+            SeedRecoverDrop(records: 378);
+        }
+
+        /// <summary>
+        /// Control for <see cref="BfTreeRecoverFromCprSnapshotThenDrop_Crashes"/>: the exact same
+        /// create → snapshot → recover → drop sequence with 377 records — one below the multi-level
+        /// split threshold — keeps the tree SINGLE-LEVEL, so the recovered tree drops cleanly and the
+        /// test passes. The only difference from the crashing test is the record count (378 vs 377),
+        /// demonstrating the sharp structural threshold.
+        /// </summary>
+        [Test]
+        [Explicit("Control: 377 records (one below the threshold, single-level) drops cleanly (no crash).")]
+        public void BfTreeRecoverFromCprSnapshotThenDrop_BelowThreshold_NoCrash()
+        {
+            SeedRecoverDrop(records: 377);
+            Assert.Pass("Below-threshold (single-level) recovered tree dropped without crashing.");
         }
 
         /// <summary>
