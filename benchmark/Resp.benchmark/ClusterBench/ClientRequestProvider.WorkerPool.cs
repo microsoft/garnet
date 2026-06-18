@@ -33,7 +33,7 @@ namespace Resp.benchmark
                 return;
 
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
-            IPEndPoint replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
+            var replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
 
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
@@ -149,17 +149,16 @@ namespace Resp.benchmark
             }
 
             var elapsed = Stopwatch.GetTimestamp() - opStart;
-
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                 histogram.RecordValue(elapsed);
 
-            Interlocked.Increment(ref opsCompleted);
+            _ = Interlocked.Increment(ref opsCompleted);
 
             // Track per-endpoint metrics
             if (useReplica && hasReplica)
-                Interlocked.Increment(ref replicaOps);
+                _ = Interlocked.Increment(ref replicaOps);
             else
-                Interlocked.Increment(ref primaryOps);
+                _ = Interlocked.Increment(ref primaryOps);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

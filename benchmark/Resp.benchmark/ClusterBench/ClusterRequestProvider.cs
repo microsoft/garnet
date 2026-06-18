@@ -311,7 +311,7 @@ namespace Resp.benchmark
                 var firstWorker = workers[0];
                 var loadThreads = new Thread[shards.Length];
 
-                for (int s = 0; s < shards.Length; s++)
+                for (var s = 0; s < shards.Length; s++)
                 {
                     var provider = firstWorker.GetProvider(s);
                     loadThreads[s] = new Thread(() => provider.LoadData());
@@ -323,12 +323,12 @@ namespace Resp.benchmark
 
                 // Aggregate loaded keys from first worker's providers
                 long totalKeys = 0;
-                int maxEndpointLen = shards.Max(sh => $"{sh.Address}:{sh.Port}".Length);
+                var maxEndpointLen = shards.Max(sh => $"{sh.Address}:{sh.Port}".Length);
 
-                for (int s = 0; s < shards.Length; s++)
+                for (var s = 0; s < shards.Length; s++)
                 {
                     var provider = firstWorker.GetProvider(s);
-                    long shardKeys = provider.KeysLoaded;
+                    var shardKeys = provider.KeysLoaded;
                     totalKeys += shardKeys;
 
                     var endpoint = $"{shards[s].Address}:{shards[s].Port}";
@@ -358,9 +358,9 @@ namespace Resp.benchmark
                 sw.Stop();
 
                 // Per-shard summary
-                int threadsPerShard = opts.NumThreads.First();
+                var threadsPerShard = opts.NumThreads.First();
                 long totalKeys = 0;
-                int maxEndpointLen = shards.Max(s => $"{s.Address}:{s.Port}".Length);
+                var maxEndpointLen = shards.Max(s => $"{s.Address}:{s.Port}".Length);
 
                 for (int s = 0; s < shards.Length; s++)
                 {
@@ -463,7 +463,7 @@ namespace Resp.benchmark
             foreach (var worker in workers)
             {
                 // Each worker prepares buffers for all its providers
-                for (int shardIdx = 0; shardIdx < shards.Length; shardIdx++)
+                for (var shardIdx = 0; shardIdx < shards.Length; shardIdx++)
                 {
                     var provider = worker.GetProvider(shardIdx);
                     provider.PrepareBuffers();
@@ -482,12 +482,13 @@ namespace Resp.benchmark
             var threads = new Thread[workers.Length];
             for (var i = 0; i < workers.Length; i++)
             {
-                var worker = workers[i];
-                threads[i] = new Thread(() => worker.RunOffline(cts.Token))
+                var idx = i;
+                var worker = workers[idx];
+                threads[idx] = new Thread(() => worker.RunOffline(cts.Token))
                 {
-                    Name = $"Worker-{i}"
+                    Name = $"Worker-{idx}"
                 };
-                threads[i].Start();
+                threads[idx].Start();
             }
 
             // Start timing and monitor
