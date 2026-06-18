@@ -15,19 +15,19 @@ namespace Tsavorite.core
         /// <summary>
         /// The pending-only payload of an in-flight pending IO operation. Carried inline on the rented
         /// <see cref="PendingIoContext{TInput, TOutput, TContext}"/> (never on the in-memory caller's stack),
-        /// so the hot path's <see cref="PendingContext{TInput, TOutput, TContext}"/> can stay small.
+        /// so the hot path's <see cref="OperationState{TInput, TOutput, TContext}"/> can stay small.
         /// </summary>
         /// <remarks>
         /// Fields here are touched only after the in-memory call has decided to go pending
         /// (RECORD_ON_DISK / CONDITIONAL_INSERT / CONDITIONAL_SCAN_PUSH). The pending-going
         /// helpers (CreatePendingReadContext / CreatePendingRMWContext / PrepareIOForConditionalOperation
         /// / PrepareIOForConditionalScan) rent a <see cref="PendingIoContext{TInput, TOutput, TContext}"/>
-        /// from the per-session pool and populate <c>op.slot</c> in place. On re-pend (a ContinuePending*
-        /// call returning RECORD_ON_DISK), the slot's heap-owning fields (<see cref="requestKey"/>,
+        /// from the per-session pool and populate <c>op.pendingState</c> in place. On re-pend (a ContinuePending*
+        /// call returning RECORD_ON_DISK), the pendingState's heap-owning fields (<see cref="requestKey"/>,
         /// <see cref="input"/>, <see cref="diskLogRecord"/>) are moved by struct copy to the fresh op
-        /// and the old op's slot is cleared so disposal happens exactly once.
+        /// and the old op's pendingState is cleared so disposal happens exactly once.
         /// </remarks>
-        internal struct PendingIoSlot<TInput, TOutput, TContext>
+        internal struct PendingState<TInput, TOutput, TContext>
         {
             /// <summary>The operation type (READ / RMW / CONDITIONAL_INSERT / CONDITIONAL_SCAN_PUSH). Used
             /// to dispatch the appropriate ContinuePending* in <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.InternalCompletePendingRequestFromContext"/>.</summary>
@@ -150,11 +150,11 @@ namespace Tsavorite.core
                 if (requestKey.IsEmpty)
                     requestKey = ConditionallyHoistedKey.Create(key, bufferPool);
                 else
-                    Debug.Assert(sessionFunctions.Store.StoreFunctions.KeysEqual(requestKey, key), "slot.requestKey should not change keys");
+                    Debug.Assert(sessionFunctions.Store.StoreFunctions.KeysEqual(requestKey, key), "pendingState.requestKey should not change keys");
             }
 
             /// <summary>
-            /// Does an in-memory transfer of a record into the pending slot. The transfer operates based on the implementation of the <typeparamref name="TSourceLogRecord"/>:
+            /// Does an in-memory transfer of a record into the pending pendingState. The transfer operates based on the implementation of the <typeparamref name="TSourceLogRecord"/>:
             /// <list type="bullet">
             ///     <item>If it is a <see cref="LogRecord"/>, it comes from the log or possibly an iterator; we copy the inline record data into a <see cref="SectorAlignedMemory"/>
             ///         and then reassign its ObjectIds to the <paramref name="transientObjectIdMap"/>.</item>
@@ -166,7 +166,7 @@ namespace Tsavorite.core
             internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset slot.diskLogRecord");
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset pendingState.diskLogRecord");
                 if (srcLogRecord.IsMemoryLogRecord)
                 {
                     ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
@@ -182,7 +182,7 @@ namespace Tsavorite.core
 
             internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
             {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset slot.diskLogRecord");
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset pendingState.diskLogRecord");
                 diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
             }
 
@@ -193,7 +193,7 @@ namespace Tsavorite.core
             {
                 get
                 {
-                    Debug.Assert(diskLogRecord.IsSet, "slot.diskLogRecord must be set for 'DiskLogRecord'");
+                    Debug.Assert(diskLogRecord.IsSet, "pendingState.diskLogRecord must be set for 'DiskLogRecord'");
                     return diskLogRecord;
                 }
             }
@@ -203,7 +203,7 @@ namespace Tsavorite.core
             {
                 get
                 {
-                    Debug.Assert(diskLogRecord.IsSet, "slot.diskLogRecord must be set for 'Info'");
+                    Debug.Assert(diskLogRecord.IsSet, "pendingState.diskLogRecord must be set for 'Info'");
                     return diskLogRecord.Info;
                 }
             }
@@ -213,7 +213,7 @@ namespace Tsavorite.core
             {
                 get
                 {
-                    Debug.Assert(diskLogRecord.IsSet, "slot.diskLogRecord must be set for 'Key'");
+                    Debug.Assert(diskLogRecord.IsSet, "pendingState.diskLogRecord must be set for 'Key'");
                     return diskLogRecord.Key;
                 }
             }

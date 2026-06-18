@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <param name="input">Input required to compute output from value.</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
-        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="operationState">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
@@ -53,7 +53,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output,
-                                    TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, bool isFromPending = false)
+                                    TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions, bool isFromPending = false)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -62,9 +62,9 @@ namespace Tsavorite.core
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
 
-            // pendingContext.keyHash and pendingContext.logicalAddress are NOT written here on the in-memory hot path:
-            //   - keyHash now lives on the pending slot (op.slot.keyHash) — set lazily in CreatePendingReadContext if we go pending.
-            //   - logicalAddress defaults to 0 (== kInvalidAddress) for a fresh pendingContext; the in-memory match paths
+            // operationState.keyHash and operationState.logicalAddress are NOT written here on the in-memory hot path:
+            //   - keyHash now lives on the pending pendingState (op.pendingState.keyHash) — set lazily in CreatePendingReadContext if we go pending.
+            //   - logicalAddress defaults to 0 (== kInvalidAddress) for a fresh operationState; the in-memory match paths
             //     below overwrite it on success, and HandleRetryStatus resets it on retry, so the in-memory path needs no write here.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -110,7 +110,7 @@ namespace Tsavorite.core
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                     return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
-                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here)
@@ -132,9 +132,9 @@ namespace Tsavorite.core
 
                     if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
                     {
-                        return pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
+                        return operationState.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
                             ? OperationStatus.SUCCESS
-                            : CopyFromImmutable(ref srcLogRecord, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx, ref status);
+                            : CopyFromImmutable(ref srcLogRecord, ref input, ref output, userContext, ref operationState, sessionFunctions, ref stackCtx, ref status);
                     }
                     return CheckFalseActionStatus(ref readInfo);
                 }
@@ -147,7 +147,7 @@ namespace Tsavorite.core
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
-                    CreatePendingReadContext(key, keyHash, ref input, ref output, userContext, ref pendingContext, sessionFunctions,
+                    CreatePendingReadContext(key, keyHash, ref input, ref output, userContext, ref operationState, sessionFunctions,
                         stackCtx.recSrc.LogicalAddress, stackCtx.hei.Address, stackCtx.recSrc.LatestLogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
                 }
@@ -165,18 +165,18 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+            if (operationState.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
                 // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
-                pendingContext.originalAddress = stackCtx.recSrc.LogicalAddress;
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, stackCtx.hei.hash, in srcLogRecord, ref stackCtx, wantIO: false);
+                operationState.originalAddress = stackCtx.recSrc.LogicalAddress;
+                status = ConditionalCopyToTail(sessionFunctions, ref operationState, stackCtx.hei.hash, in srcLogRecord, ref stackCtx, wantIO: false);
                 return status;
             }
-            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && TryCopyToReadCache(in srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
+            if (operationState.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && TryCopyToReadCache(in srcLogRecord, sessionFunctions, ref operationState, ref stackCtx))
             {
                 // Copy to read cache is "best effort"; we don't return an error if it fails.
                 return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -206,7 +206,7 @@ namespace Tsavorite.core
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
-        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="operationState">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
@@ -237,7 +237,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         internal OperationStatus InternalReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, TKey key, ref TInput input, ref TOutput output,
-                                    ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                    ref ReadOptions readOptions, TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -247,20 +247,20 @@ namespace Tsavorite.core
             if (readAtAddress < hlogBase.BeginAddress)
                 return OperationStatus.NOTFOUND;
 
-            pendingContext.SetIsReadAtAddress();
+            operationState.SetIsReadAtAddress();
 
             // We do things in a different order here than in InternalRead, in part to handle NoKey (especially with Revivification).
             if (readAtAddress < hlogBase.HeadAddress)
             {
                 // Do not trace back in the pending callback if it is a key mismatch.
-                pendingContext.SetIsNoKey();
+                operationState.SetIsNoKey();
 
-                // keyHash=0 is intentional: ContinuePendingRead derives the hash from pendingContext.DiskLogRecord
-                // for IsReadAtAddress/IsNoKey, and the in-memory re-issue path (which reads pendingContext.keyHash)
+                // keyHash=0 is intentional: ContinuePendingRead derives the hash from operationState.DiskLogRecord
+                // for IsReadAtAddress/IsNoKey, and the in-memory re-issue path (which reads operationState.keyHash)
                 // is gated on !IsReadAtAddress so it cannot fire here. initialEntryAddress / initialLatestLogicalAddress
                 // are also gated behind !IsReadAtAddress in ContinuePendingRead (TryFindRecordInMemory is skipped),
                 // so they are passed as kInvalidAddress.
-                CreatePendingReadContext(key, keyHash: 0L, ref input, ref output, userContext, ref pendingContext, sessionFunctions,
+                CreatePendingReadContext(key, keyHash: 0L, ref input, ref output, userContext, ref operationState, sessionFunctions,
                     readAtAddress, initialEntryAddress: kInvalidAddress, initialLatestLogicalAddress: kInvalidAddress);
                 return OperationStatus.RECORD_ON_DISK;
             }
@@ -268,12 +268,12 @@ namespace Tsavorite.core
             // We're in-memory, so it is safe to get the address now.
             var srcLogRecord = hlog.CreateLogRecord(readAtAddress);
 
-            // Get the key hash; we don't write it to pendingContext (a hot-path struct on the caller's stack) — keyHash
-            // is a pending-only field that lives on the rented op's slot, and this in-memory branch never goes pending.
+            // Get the key hash; we don't write it to operationState (a hot-path struct on the caller's stack) — keyHash
+            // is a pending-only field that lives on the rented op's pendingState, and this in-memory branch never goes pending.
             long localKeyHash;
             if (readOptions.KeyHash.HasValue)
                 localKeyHash = readOptions.KeyHash.Value;
-            else if (!pendingContext.IsNoKey)
+            else if (!operationState.IsNoKey)
                 localKeyHash = storeFunctions.GetKeyHashCode64(key);
             else
             {
@@ -304,7 +304,7 @@ namespace Tsavorite.core
                 // We do not check for Tombstone here; we return the record to the caller.
 
                 stackCtx.recSrc.SetHasMainLogSrc();
-                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 ReadInfo readInfo = new()
                 {
@@ -327,7 +327,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                 long logicalAddress, long initialEntryAddress, long initialLatestLogicalAddress)
              where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -335,19 +335,19 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // If a re-pend has already moved a populated slot onto pendingContext.pendingOp, reuse it; otherwise rent a
-            // fresh op and populate its slot. HandleOperationStatus will pick up pendingContext.pendingOp on RECORD_ON_DISK
+            // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
+            // fresh op and populate its pendingState. HandleOperationStatus will pick up operationState.pendingOp on RECORD_ON_DISK
             // to finalize the IO issue.
-            var op = pendingContext.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
-            ref var slot = ref op.slot;
-            slot.type = OperationType.READ;
-            slot.keyHash = keyHash;
-            slot.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            ref var pendingState = ref op.pendingState;
+            pendingState.type = OperationType.READ;
+            pendingState.keyHash = keyHash;
+            pendingState.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
 
-            pendingContext.pendingOp = op;
-            pendingContext.logicalAddress = logicalAddress;
-            pendingContext.initialEntryAddress = initialEntryAddress;
-            pendingContext.initialLatestLogicalAddress = initialLatestLogicalAddress;
+            operationState.pendingOp = op;
+            operationState.logicalAddress = logicalAddress;
+            operationState.initialEntryAddress = initialEntryAddress;
+            operationState.initialLatestLogicalAddress = initialLatestLogicalAddress;
         }
     }
 }

@@ -287,7 +287,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            var pendingContext = default(TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(TsavoriteKV<TStoreFunctions, TAllocator>.OperationState<TInput, TOutput, TContext>);
             var keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord);
 
             OperationStatus internalStatus;
@@ -305,7 +305,7 @@ namespace Tsavorite.core
             if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, keyHash, in srcLogRecord, ref stackCtx, originalAddress, minAddress, maxAddress, scanCursorState);
+                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref operationState, keyHash, in srcLogRecord, ref stackCtx, originalAddress, minAddress, maxAddress, scanCursorState);
             }
             else
             {
@@ -334,13 +334,13 @@ namespace Tsavorite.core
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
-            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out _);
+            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSourceLogRecord, TSessionFunctionsWrapper>(
                                         TSessionFunctionsWrapper sessionFunctions,
-                                        ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
+                                        ref TsavoriteKV<TStoreFunctions, TAllocator>.OperationState<TInput, TOutput, TContext> operationState,
                                         long keyHash, in TSourceLogRecord srcLogRecord,
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long originalAddress, long minAddress, long maxAddress, ScanCursorState scanCursorState)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -348,11 +348,11 @@ namespace Tsavorite.core
         {
             var store = sessionFunctions.Store;
 
-            // PrepareIOForConditionalOperation rents the op and populates op.slot (type, keyHash, minAddress, maxAddress, requestKey, diskLogRecord).
-            // After it returns, the op is on pendingContext.pendingOp; fill in the scan-only payload (scanCursorState) here.
-            var status = store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, keyHash, in srcLogRecord, ref stackCtx, minAddress, maxAddress, OperationType.CONDITIONAL_SCAN_PUSH);
-            pendingContext.pendingOp.slot.scanCursorState = scanCursorState;
-            pendingContext.originalAddress = originalAddress;
+            // PrepareIOForConditionalOperation rents the op and populates op.pendingState (type, keyHash, minAddress, maxAddress, requestKey, diskLogRecord).
+            // After it returns, the op is on operationState.pendingOp; fill in the scan-only payload (scanCursorState) here.
+            var status = store.PrepareIOForConditionalOperation(sessionFunctions, ref operationState, keyHash, in srcLogRecord, ref stackCtx, minAddress, maxAddress, OperationType.CONDITIONAL_SCAN_PUSH);
+            operationState.pendingOp.pendingState.scanCursorState = scanCursorState;
+            operationState.originalAddress = originalAddress;
             return status;
         }
 

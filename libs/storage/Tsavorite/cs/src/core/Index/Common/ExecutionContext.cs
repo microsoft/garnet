@@ -49,7 +49,7 @@ namespace Tsavorite.core
             /// <summary>
             /// Per-session pool of <see cref="PendingIoContext{TInput, TOutput, TContext}"/> instances — the
             /// pending op carrying both the device-facing <see cref="AsyncIOContext"/> fields and the
-            /// <see cref="PendingContext{TInput, TOutput, TContext}"/>. Each pending IO rents one upfront, fills
+            /// <see cref="OperationState{TInput, TOutput, TContext}"/>. Each pending IO rents one upfront, fills
             /// its fields in place, then returns it after completion processing. The reference-typed op is itself
             /// carried across threads through the <see cref="readyResponses"/> queue, so pooling it avoids the
             /// per-IO struct copy (Buffer.BulkMoveWithWriteBarrier) the previous value-typed AsyncIOContext incurred.
@@ -60,7 +60,7 @@ namespace Tsavorite.core
             /// Per-session pool of <see cref="IHeapContainer{TInput}"/> wrappers
             /// (either <see cref="SpanByteHeapContainer"/> or <see cref="StandardHeapContainer{T}"/>,
             /// determined by <typeparamref name="TInput"/>). Each pending operation rents one when
-            /// copying its input into the <see cref="PendingContext{TInput, TOutput, TContext}"/>;
+            /// copying its input into the <see cref="OperationState{TInput, TOutput, TContext}"/>;
             /// the wrapper returns itself to this stack on <see cref="System.IDisposable.Dispose"/>.
             /// Sessions are single-threaded, so a non-concurrent <see cref="Stack{T}"/> suffices and
             /// the pool naturally settles around the in-flight pending IO count.
@@ -102,8 +102,8 @@ namespace Tsavorite.core
                 // moved by the drain) so a pooled op retains no stale references, then reset the base fields.
                 // Uncapped, matching the sibling per-session heapContainerPool with the same rent-on-IO-issue /
                 // return-on-drain lifecycle; the pool self-bounds at this session's peak concurrent pending depth.
-                ctx.basePendingContext = default;
-                ctx.slot = default;
+                ctx.baseOperationState = default;
+                ctx.pendingState = default;
                 ctx.Reset();
                 asyncIOContextPool.Push(ctx);
             }

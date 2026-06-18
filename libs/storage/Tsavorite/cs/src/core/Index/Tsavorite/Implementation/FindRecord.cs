@@ -14,22 +14,22 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryFindRecordInMemory<TKey, TInput, TOutput, TContext>(TKey key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
-                                                                   ref PendingContext<TInput, TOutput, TContext> pendingContext)
+                                                                   ref OperationState<TInput, TOutput, TContext> operationState)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
         {
-            // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
+            // Add 1 to the operationState minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
             // Gate on hei.IsReadCache (not UseReadCache): it implies UseReadCache and is false when the tag chain has no readcache
             // prefix, so we skip the (NoInlining) FindInReadCache call entirely in that common case.
             if (stackCtx.hei.IsReadCache)
             {
-                var minRC = IsReadCache(pendingContext.initialEntryAddress) ? pendingContext.initialEntryAddress + 1 : kInvalidAddress;
+                var minRC = IsReadCache(operationState.initialEntryAddress) ? operationState.initialEntryAddress + 1 : kInvalidAddress;
                 if (FindInReadCache(key, ref stackCtx, minAddress: minRC))
                     return true;
             }
-            var minLog = pendingContext.initialLatestLogicalAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : pendingContext.initialLatestLogicalAddress + 1;
+            var minLog = operationState.initialLatestLogicalAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : operationState.initialLatestLogicalAddress + 1;
             return TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress: minLog);
         }
 
@@ -84,7 +84,7 @@ namespace Tsavorite.core
                 if (stackCtx.hei.IsReadCache)
                     SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
 
-                // We don't have a pendingContext here, so pass the minAddress directly.
+                // We don't have a operationState here, so pass the minAddress directly.
                 needIO = false;
                 if (TryFindRecordInMainLogForPendingOperation(key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, maxAddress, out internalStatus))
                     return true;
@@ -233,7 +233,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryFindRecordForPendingOperation<TKey, TInput, TOutput, TContext>(TKey key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus,
-                                                      ref PendingContext<TInput, TOutput, TContext> pendingContext)
+                                                      ref OperationState<TInput, TOutput, TContext> operationState)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -242,7 +242,7 @@ namespace Tsavorite.core
             // This routine returns true if we find the key, else false.
             internalStatus = OperationStatus.SUCCESS;
 
-            if (!TryFindRecordInMemory(key, ref stackCtx, ref pendingContext))
+            if (!TryFindRecordInMemory(key, ref stackCtx, ref operationState))
                 return false;
             if (stackCtx.recSrc.GetInfo().IsClosed)
                 internalStatus = OperationStatus.RETRY_LATER;
@@ -258,7 +258,7 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            // This overload is called when we do not have a PendingContext to get minAddress from, and we've skipped the readcache if present.
+            // This overload is called when we do not have a OperationState to get minAddress from, and we've skipped the readcache if present.
 
             // This routine returns true if we find the key, else false.
             internalStatus = OperationStatus.SUCCESS;

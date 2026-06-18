@@ -15,7 +15,7 @@ namespace Tsavorite.core
         /// The in-memory hot-path state for a Read/RMW/Upsert/Delete operation. Carried by value on the
         /// caller's stack for the duration of the in-memory call, and never embedded directly on a pending
         /// IO op object — the pending-only fields (key/input/output/userContext/diskLogRecord/etc.) live on
-        /// <see cref="PendingIoSlot{TInput, TOutput, TContext}"/> inside the rented
+        /// <see cref="PendingState{TInput, TOutput, TContext}"/> inside the rented
         /// <see cref="PendingIoContext{TInput, TOutput, TContext}"/>.
         /// </summary>
         /// <remarks>
@@ -24,11 +24,11 @@ namespace Tsavorite.core
         /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.CreatePendingRMWContext"/>,
         /// or <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.PrepareIOForConditionalOperation"/>)
         /// rents a <see cref="PendingIoContext{TInput, TOutput, TContext}"/> from the per-session pool,
-        /// populates <c>op.slot</c> in place, and stashes the op reference on <see cref="pendingOp"/>.
+        /// populates <c>op.pendingState</c> in place, and stashes the op reference on <see cref="pendingOp"/>.
         /// <c>HandleOperationStatus</c> then finalizes
         /// the IO issue on <see cref="OperationStatus.RECORD_ON_DISK"/>.
         /// </remarks>
-        internal struct PendingContext<TInput, TOutput, TContext>
+        internal struct OperationState<TInput, TOutput, TContext>
         {
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
@@ -58,7 +58,7 @@ namespace Tsavorite.core
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
             /// <summary>Initial IO record size for disk reads; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from session or store level.
-            /// Note: default(PendingContext) leaves this as 0, which is also treated as "use default" by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.ResolveInitialIORecordSize"/>.</summary>
+            /// Note: default(OperationState) leaves this as 0, which is also treated as "use default" by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.ResolveInitialIORecordSize"/>.</summary>
             internal int initialIORecordSize;
 
             // For flushing head pages on tail allocation.
@@ -74,7 +74,7 @@ namespace Tsavorite.core
             /// The pending IO op rented + populated by the pending-going helper. Non-null only when we are
             /// going pending; <c>HandleOperationStatus</c>
             /// reads this on <see cref="OperationStatus.RECORD_ON_DISK"/> to finalize the IO issue. The
-            /// op's slot (<see cref="PendingIoContext{TInput, TOutput, TContext}.slot"/>) carries the
+            /// op's pendingState (<see cref="PendingIoContext{TInput, TOutput, TContext}.pendingState"/>) carries the
             /// pending-only payload (key/input/output/diskLogRecord/etc.).
             /// </summary>
             internal PendingIoContext<TInput, TOutput, TContext> pendingOp;
@@ -86,7 +86,7 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
+            internal OperationState(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
                 // operationFlags defaults to 0 (== kNoOpFlags); skip the redundant write.
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
@@ -94,7 +94,7 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions readCopyOptions)
+            internal OperationState(ReadCopyOptions readCopyOptions)
             {
                 // operationFlags defaults to 0 (== kNoOpFlags) and initialIORecordSize defaults to 0 (treated as
                 // "use default" by ResolveInitialIORecordSize); skip the redundant writes.
