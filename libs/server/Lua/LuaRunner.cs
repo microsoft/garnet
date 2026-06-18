@@ -2638,10 +2638,19 @@ namespace Garnet.server
                 throw new InvalidOperationException("Could not build NoScript bitmap");
             }
 
-            var noScript =
+            var noScriptTopLevelCommands =
                 allCommands
                     .Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript))
-                    .Select(static kv => kv.Value.Command)
+                    .Select(static kv => kv.Value.Command);
+
+            var noScriptSubCommands =
+                allCommands
+                    .Where(static kv => (kv.Value.SubCommands?.Length ?? 0) > 0)
+                    .SelectMany(static kv => kv.Value.SubCommands.Where(static s => s.Flags.HasFlag(RespCommandFlags.NoScript)).Select(static x => x.Command));
+
+            var noScript =
+                 noScriptTopLevelCommands
+                    .Concat(noScriptSubCommands)
                     .OrderBy(static x => x)
                     .ToList();
 
