@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.client;
 using Garnet.common;
@@ -44,6 +45,15 @@ namespace Resp.benchmark
 
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
+            // Size buffer to fit the largest pre-generated request batch
+            var bufferSize = 1 << 17; // 128KB default
+            if (requestLengths != null)
+            {
+                var maxLen = requestLengths.Max();
+                if (maxLen > bufferSize)
+                    bufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
+            }
+
             switch (opts.Client)
             {
                 case ClientType.LightClient:
@@ -51,7 +61,7 @@ namespace Resp.benchmark
                         primaryEndpoint,
                         (int)opts.Op,
                         onResponse,
-                        1 << 17,
+                        bufferSize,
                         opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     primaryLightClient.Connect();
                     primaryLightClient.Authenticate(opts.Auth);
@@ -62,7 +72,7 @@ namespace Resp.benchmark
                             replicaEndpoint,
                             (int)opts.Op,
                             onResponse,
-                            1 << 17,
+                            bufferSize,
                             opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                         replicaLightClient.Connect();
                         replicaLightClient.Authenticate(opts.Auth);
