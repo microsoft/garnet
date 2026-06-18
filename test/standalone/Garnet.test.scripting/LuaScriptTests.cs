@@ -118,7 +118,7 @@ namespace Garnet.test
                 aclFile,
                 [
                     "user default on nopass +@all",
-                    "user deny on nopass +@all -get -acl"
+                    "user deny on nopass +@all -get -acl -cluster|myid"
                 ]
             );
 
@@ -1840,8 +1840,15 @@ return retArray";
             ClassicAssert.AreEqual(1, allowRes.Length);
             ClassicAssert.AreEqual("bar", allowRes[0]);
 
+            // Not a lot of sub commands a non-admin can run, so use CLUSTER|MYID and check the exception
+            var allowSubExc = ClassicAssert.Throws<RedisServerException>(() => allowDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            ClassicAssert.False(allowSubExc.Message.Contains("NOAUTH"));
+
             var exc = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
             ClassicAssert.IsTrue(exc.Message.Contains("NOAUTH"));
+
+            var excSub = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            ClassicAssert.IsTrue(excSub.Message.Contains("NOAUTH"));
         }
 
         [Test]
