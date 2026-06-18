@@ -560,6 +560,11 @@ namespace Garnet.server
         public bool EnableRangeIndexPreview = false;
 
         /// <summary>
+        /// Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count).
+        /// </summary>
+        public int VectorSetQuantizationTaskCount = 0;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
