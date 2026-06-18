@@ -79,10 +79,21 @@ namespace Garnet.server
                 {
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
 
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)value.Length;
 
-                    callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+                    if (srcLogRecord.IsPinnedValue)
+                    {
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                        callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+                    }
+                    else
+                    {
+                        fixed (byte* dataPtr = value)
+                        {
+                            callback(input.Index, input.CallbackContext, (nint)dataPtr, dataLen);
+                        }
+                    }
+
                     return true;
                 }
             }
@@ -269,9 +280,20 @@ namespace Garnet.server
                     // Callback takes: dataCallbackContext, dataPtr, dataLength
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)input.WriteDesiredSize;
-                    callback(input.CallbackContext, dataPtr, dataLen);
+
+                    if (logRecord.IsPinnedValue)
+                    {
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                        callback(input.CallbackContext, dataPtr, dataLen);
+                    }
+                    else
+                    {
+                        fixed (byte* dataPtr = value)
+                        {
+                            callback(input.Callback, (nint)dataPtr, dataLen);
+                        }
+                    }
 
                     return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                 }
@@ -340,10 +362,22 @@ namespace Garnet.server
                     // Callback takes: dataCallbackContext, dataPtr, dataLength
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValue));
                     var dataLen = (nuint)input.WriteDesiredSize;
 
-                    callback(input.CallbackContext, dataPtr, dataLen);
+                    if (dstLogRecord.IsPinnedValue)
+                    {
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValue));
+                        callback(input.CallbackContext, dataPtr, dataLen);
+                    }
+                    else
+                    {
+                        fixed (byte* dataPtr = newValue)
+                        {
+                            callback(input.CallbackContext, (nint)dataPtr, dataLen);
+                        }
+                    }
+
+
                 }
 
                 return true;
@@ -361,7 +395,7 @@ namespace Garnet.server
 
             var key = logRecord.Key;
 
-            var alignedValue = logRecord.ValueSpan;
+            var value = logRecord.ValueSpan;
             if (input.Callback == 0)
             {
                 // We're doing a Metadata or InProgressDelete update
@@ -371,10 +405,10 @@ namespace Garnet.server
                 if (key.Length == 0)
                 {
                     // Doing a Metadata update
-                    Debug.Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                    Debug.Assert(value.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
                     Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
 
-                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(alignedValue)[0];
+                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(value)[0];
 
                     PinnedSpanByte newMetadataValue;
                     unsafe
@@ -390,7 +424,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    newMetadataValue.CopyTo(alignedValue);
+                    newMetadataValue.CopyTo(value);
                     return true;
                 }
                 else
@@ -419,17 +453,26 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
+                Debug.Assert(input.WriteDesiredSize <= value.Length, "Insufficient space for inplace update, this should never happen");
 
                 unsafe
                 {
                     // Callback takes: dataCallbackContext, dataPtr, dataLength
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                     var dataLen = (nuint)input.WriteDesiredSize;
-
-                    callback(input.CallbackContext, dataPtr, dataLen);
+                    if (logRecord.IsPinnedValue)
+                    {
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                        callback(input.CallbackContext, dataPtr, dataLen);
+                    }
+                    else
+                    {
+                        fixed (byte* dataPtr = value)
+                        {
+                            callback(input.CallbackContext, (nint)dataPtr, dataLen);
+                        }
+                    }
                 }
 
                 return true;
