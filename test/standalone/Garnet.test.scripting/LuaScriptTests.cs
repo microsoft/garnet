@@ -1826,6 +1826,25 @@ return retArray";
         }
 
         [Test]
+        public void PermissionsEnforced()
+        {
+            using var allowRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var allowDb = allowRedis.GetDatabase();
+
+            using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
+            var denyDb = denyRedis.GetDatabase();
+
+            ClassicAssert.True(allowDb.StringSet("foo", "bar"));
+
+            var allowRes = (string[])allowDb.ScriptEvaluate("return redis.call('GET', 'foo')");
+            ClassicAssert.AreEqual(1, allowRes.Length);
+            ClassicAssert.AreEqual("bar", allowRes[0]);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
+            ClassicAssert.IsTrue(exc.Message.Contains("NOAUTH"));
+        }
+
+        [Test]
         public void IntentionalTimeout()
         {
             const string TimeoutScript = @"
