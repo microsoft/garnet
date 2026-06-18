@@ -44,8 +44,7 @@ namespace Garnet.server
             {
                 Debug.Assert(input.Callback == 0, "No callback expected");
 
-                // We can't ship the log record over because of alignment shenanigans
-                // TODO: When alignment is handled at the Tsavorite level, we CAN start shipping the log over like everything else
+                // Format for migration, including space for namespace
 
                 var neededSpace =
                     sizeof(int) + srcLogRecord.NamespaceBytes.Length +

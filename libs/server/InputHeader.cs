@@ -617,7 +617,7 @@ namespace Garnet.server
 
         public int WriteDesiredSize { get; init; }
 
-        public int Index { get;  init; }
+        public int Index { get; init; }
         public nint CallbackContext { get; init; }
         public nint Callback { get; init; }
 
