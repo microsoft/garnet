@@ -22,7 +22,8 @@ namespace Resp.benchmark
         readonly ILogger logger;
 
         PrimaryInfo[] shards;
-        ClientRequestProvider[] providers;
+        ClientRequestProvider[] providers;  // Used in sharded mode
+        Worker[] workers;                   // Used in worker pool mode
 
         public ClusterBench(Options opts, ILoggerFactory loggerFactory = null)
         {
@@ -77,7 +78,22 @@ namespace Resp.benchmark
         /// </summary>
         private void CreateWorkerPool()
         {
-            throw new NotImplementedException("Worker pool architecture implementation in progress (Phases 1-8)");
+            int workerCount = opts.NumThreads.First();
+            workers = new Worker[workerCount];
+
+            for (int w = 0; w < workerCount; w++)
+            {
+                workers[w] = new Worker(w, shards, opts);
+            }
+
+            // Calculate totals for display
+            int totalProviders = workerCount * shards.Length;
+            int totalReplicas = shards.Sum(s => s.Replicas.Count);
+            int avgReplicasPerShard = shards.Length > 0 ? totalReplicas / shards.Length : 0;
+            int workersWithReplicas = workers.Sum(w => w.Providers.Count(p => p.HasReplica));
+            int totalConnections = totalProviders + workersWithReplicas;
+
+            PrintWorkerPoolConfiguration(workerCount, totalProviders, totalConnections, workersWithReplicas);
         }
 
         /// <summary>
@@ -195,6 +211,76 @@ namespace Resp.benchmark
             }
         }
 
+        private void PrintWorkerPoolConfiguration(int workerCount, int totalProviders, int totalConnections, int workersWithReplicas)
+        {
+            var mode = opts.Online ? "Online" : "Offline";
+            var architecture = "Worker Pool (preview)";
+            var tls = opts.EnableTLS ? "Yes" : "No";
+            var skipLoad = opts.SkipLoad ? "Yes" : "No";
+            var itp = opts.IntraThreadParallelism;
+            var batch = opts.BatchSize.First();
+
+            // Count total replicas
+            var totalReplicas = shards.Sum(s => s.Replicas.Count);
+            var replicaReads = $"{opts.ReplicaReadPercent}%";
+
+            Console.WriteLine();
+            Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
+            Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
+            Console.WriteLine($"{"Architecture: " + architecture,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Workers: " + workerCount + " (fixed pool)",-28}{"ITP: " + itp,-28}");
+            Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
+            Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Providers: " + totalProviders + " (workers x shards)",-28}");
+            Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
+            Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
+            Console.WriteLine($"{"",-28}{"Connections: " + totalConnections + " (" + totalProviders + " primary + " + workersWithReplicas + " replica)",-28}");
+
+            // Connection count warning for large configurations
+            if (totalConnections > 10000)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"  [WARNING] High connection count ({totalConnections:N0} connections)");
+                Console.WriteLine($"            Ensure ulimit is sufficient: ulimit -n {totalConnections * 2}");
+            }
+
+            Console.WriteLine("=======================================================");
+            Console.WriteLine();
+
+            // Topology table (same as sharded mode)
+            Console.WriteLine($"  {"Role",-10}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Replicas",-10}");
+            Console.WriteLine($"  {new string('-', 10)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}");
+
+            for (int s = 0; s < shards.Length; s++)
+            {
+                var shard = shards[s];
+                var endpoint = $"{shard.Address}:{shard.Port}";
+                var range = FormatSlotRanges(shard.SlotRanges);
+                var replicaCount = shard.Replicas.Count;
+
+                // Print primary with "primary" label
+                Console.WriteLine($"  {"primary",-10}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {replicaCount,-10}");
+
+                // Print replicas with proper alignment
+                foreach (var replica in shard.Replicas)
+                {
+                    var replicaEndpoint = $"{replica.Address}:{replica.Port}";
+                    Console.WriteLine($"  {"replica",-10}| {replicaEndpoint,-23}| {"",-7}| {"",-17}| {"",-10}");
+                }
+            }
+
+            Console.WriteLine();
+
+            // Info message about worker pool mode
+            if (totalReplicas > 0)
+            {
+                Console.WriteLine($"  [INFO] Worker pool mode: {workerCount} workers, each handling all {shards.Length} shards.");
+                Console.WriteLine($"         Operations randomly distributed across shards.");
+                Console.WriteLine($"         Replica read routing: ~{opts.ReplicaReadPercent}% of reads per shard target replicas.");
+                Console.WriteLine();
+            }
+        }
+
         private static string FormatSlotRanges(List<(int Start, int End)> ranges)
         {
             if (ranges.Count == 1)
@@ -256,10 +342,22 @@ namespace Resp.benchmark
         /// </summary>
         public void Run()
         {
-            if (opts.Online)
-                RunOnline();
+            if (opts.Pool)
+            {
+                // Worker pool architecture
+                if (opts.Online)
+                    RunWorkerPoolOnline();
+                else
+                    RunWorkerPoolOffline();
+            }
             else
-                RunOffline();
+            {
+                // Sharded architecture
+                if (opts.Online)
+                    RunOnline();
+                else
+                    RunOffline();
+            }
         }
 
         private void RunOffline()
@@ -288,6 +386,116 @@ namespace Resp.benchmark
 
             // Monitor and report metrics periodically
             MonitorAndReportOffline(sw, runTime, threads);
+        }
+
+        private void RunWorkerPoolOnline()
+        {
+            var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
+            var startSignal = new ManualResetEventSlim(false);
+
+            Console.WriteLine($"Starting worker pool online benchmark ({opts.RunTime}s, {workers.Length} workers × {shards.Length} shards = {workers.Length * shards.Length} providers, itp={opts.IntraThreadParallelism})...");
+            PrintOnlineHeader();
+
+            var threads = new Thread[workers.Length];
+            for (var i = 0; i < workers.Length; i++)
+            {
+                var worker = workers[i];
+                threads[i] = new Thread(() => worker.RunOnline(startSignal, runTime));
+                threads[i].Start();
+            }
+
+            // Start all workers simultaneously
+            var sw = Stopwatch.StartNew();
+            startSignal.Set();
+
+            // Monitor and report metrics periodically
+            MonitorAndReportWorkerPoolOnline(sw, runTime, threads);
+        }
+
+        private void RunWorkerPoolOffline()
+        {
+            // Prepare offline buffers for all providers
+            Console.WriteLine("Preparing offline buffers...");
+            foreach (var worker in workers)
+            {
+                // Each worker prepares buffers for all its providers
+                for (int shardIdx = 0; shardIdx < shards.Length; shardIdx++)
+                {
+                    var provider = worker.GetProvider(shardIdx);
+                    provider.PrepareBuffers();
+                }
+            }
+
+            var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
+
+            Console.WriteLine($"Starting offline benchmark (workers={workers.Length}, batch={opts.BatchSize.First()})...");
+            PrintOfflineHeader();
+
+            // Create cancellation token for workers
+            using var cts = new CancellationTokenSource();
+
+            // Start worker threads
+            var threads = new Thread[workers.Length];
+            for (var i = 0; i < workers.Length; i++)
+            {
+                var worker = workers[i];
+                threads[i] = new Thread(() => worker.RunOffline(cts.Token))
+                {
+                    Name = $"Worker-{i}"
+                };
+                threads[i].Start();
+            }
+
+            // Start timing and monitor
+            var sw = Stopwatch.StartNew();
+
+            // Monitor and report metrics periodically
+            MonitorAndReportWorkerPoolOffline(sw, runTime, cts);
+
+            // Signal all workers to stop
+            cts.Cancel();
+
+            // Wait for all threads to complete
+            foreach (var t in threads)
+                t.Join();
+
+            // Final report
+            PrintWorkerPoolFinalReport(sw.Elapsed);
+        }
+
+        private void MonitorAndReportWorkerPoolOffline(Stopwatch sw, TimeSpan runTime, CancellationTokenSource cts)
+        {
+            long lastTotalOps = 0;
+            long lastTotalBytes = 0;
+            var reportInterval = TimeSpan.FromSeconds(2);
+            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+
+            while (sw.Elapsed < runTime)
+            {
+                Thread.Sleep(reportInterval);
+
+                // Aggregate operations and bytes from all workers' providers
+                long currentTotalOps = 0;
+                long currentTotalBytes = 0;
+                foreach (var worker in workers)
+                {
+                    foreach (var provider in worker.Providers)
+                    {
+                        currentTotalOps += provider.OpsCompleted;
+                        currentTotalBytes += provider.BytesSent;
+                    }
+                }
+
+                var iterOps = currentTotalOps - lastTotalOps;
+                var iterBytes = currentTotalBytes - lastTotalBytes;
+                var tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
+                var dataGBps = (iterOps * logicalBytesPerOp) / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
+                var wireGBps = iterBytes / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
+
+                ReportOfflineIteration(currentTotalOps, iterOps, tptKops, dataGBps, wireGBps);
+                lastTotalOps = currentTotalOps;
+                lastTotalBytes = currentTotalBytes;
+            }
         }
 
         private void RunOnline()
@@ -350,6 +558,48 @@ namespace Resp.benchmark
 
             // Final report
             PrintFinalReport(sw.Elapsed);
+        }
+
+        private void MonitorAndReportWorkerPoolOnline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
+        {
+            long lastTotalOps = 0;
+            var reportInterval = TimeSpan.FromSeconds(2);
+            var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
+
+            while (sw.Elapsed < runTime)
+            {
+                Thread.Sleep(reportInterval);
+
+                // Aggregate histograms and operations from all workers' providers
+                summary.Reset();
+                long currentTotalOps = 0;
+                foreach (var worker in workers)
+                {
+                    foreach (var provider in worker.Providers)
+                    {
+                        summary.Add(provider.Histogram);
+                        currentTotalOps += provider.OpsCompleted;
+                    }
+                }
+
+                var iterOps = currentTotalOps - lastTotalOps;
+                var tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
+
+                ReportOnlineIteration(summary, currentTotalOps, iterOps, tptKops);
+                lastTotalOps = currentTotalOps;
+            }
+
+            // Signal all providers to stop
+            foreach (var worker in workers)
+                foreach (var provider in worker.Providers)
+                    provider.Stop();
+
+            // Wait for all threads to complete
+            foreach (var t in threads)
+                t.Join();
+
+            // Final report
+            PrintWorkerPoolFinalReport(sw.Elapsed);
         }
 
         private void MonitorAndReportOffline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
@@ -601,6 +851,70 @@ namespace Resp.benchmark
             ReportHitRates();
 
             Console.WriteLine("================================================");
+        }
+
+        private void PrintWorkerPoolFinalReport(TimeSpan totalElapsed)
+        {
+            Console.WriteLine();
+            Console.WriteLine("========== WORKER POOL BENCHMARK RESULTS ==========");
+            Console.WriteLine();
+
+            var summary = new LongHistogram(1, TimeStamp.Seconds(100), 2);
+            long totalOps = 0;
+            long totalPrimaryOps = 0;
+            long totalReplicaOps = 0;
+
+            // Per-worker summary
+            Console.WriteLine($"{"Worker",-10}{"Providers",-12}{"Total Ops",-15}{"Primary Ops",-15}{"Replica Ops",-15}");
+            Console.WriteLine(new string('-', 67));
+
+            foreach (var worker in workers)
+            {
+                var metrics = worker.GetMetrics();
+                totalOps += metrics.TotalOperations;
+                totalPrimaryOps += metrics.PrimaryOperations;
+                totalReplicaOps += metrics.ReplicaOperations;
+
+                // Aggregate histograms
+                foreach (var provider in worker.Providers)
+                    summary.Add(provider.Histogram);
+
+                Console.WriteLine($"{metrics.WorkerId,-10}{worker.ProviderCount,-12}{metrics.TotalOperations,-15}{metrics.PrimaryOperations,-15}{metrics.ReplicaOperations,-15}");
+            }
+
+            Console.WriteLine(new string('-', 67));
+            Console.WriteLine($"{"Total",-10}{workers.Length * shards.Length,-12}{totalOps,-15}{totalPrimaryOps,-15}{totalReplicaOps,-15}");
+
+            // Latency summary
+            if (summary.TotalCount > 0)
+            {
+                Console.WriteLine();
+                var p50 = summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p95 = summary.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p99 = summary.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds;
+                var p999 = summary.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds;
+                var avg = summary.GetMean() / OutputScalingFactor.TimeStampToMicroseconds;
+                Console.WriteLine($"Latency (us): p50={p50:F1}  p95={p95:F1}  p99={p99:F1}  p99.9={p999:F1}  avg={avg:F1}");
+            }
+
+            // Throughput summary
+            var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
+
+            Console.WriteLine();
+            Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
+            Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
+            Console.WriteLine($"Workers: {workers.Length}, Shards: {shards.Length}, Providers: {workers.Length * shards.Length}");
+
+            if (totalOps > 0 && totalReplicaOps > 0)
+            {
+                double actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
+            }
+
+            // Report hit rates from INFO STATS
+            ReportHitRates();
+
+            Console.WriteLine("====================================================");
         }
 
         /// <summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using System.Text;
 using HdrHistogram;
 
@@ -85,12 +86,12 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Determines which endpoint to use for a given operation based on operation type and --replica-read-percent setting.
-        /// 
+        ///
         /// Routing logic:
         ///   - Write operations → always primary (replicas are read-only)
         ///   - Read operations → probabilistic based on --replica-read-percent
         ///   - If replicas exist, they always serve reads (percentage controls distribution)
-        ///   
+        ///
         /// Statistical distribution:
         ///   - Each client makes independent probabilistic routing decisions per read operation
         ///   - Across all clients for a shard, approximately X% of reads go to replicas
@@ -99,6 +100,7 @@ namespace Resp.benchmark
         /// </summary>
         /// <param name="op">The operation type to execute</param>
         /// <returns>True if replica endpoint should be used, false if primary endpoint should be used</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ShouldUseReplica(OpType op)
         {
             // If no replica is assigned to this worker, always use primary
@@ -122,7 +124,7 @@ namespace Resp.benchmark
 
                 // Probabilistic: generate random number 0-99, compare with percentage
                 // This ensures approximately X% of reads go to replicas across all clients
-                int randomValue = rng.Next(100);
+                var randomValue = rng.Next(100);
                 return randomValue < opts.ReplicaReadPercent;
             }
 
@@ -139,6 +141,7 @@ namespace Resp.benchmark
         {
             requestBuffers = null;
             requestLengths = null;
+            DisposeWorkerPoolConnections();
         }
 
         private byte[] FormatRequest(OpType op, string key)
@@ -183,7 +186,7 @@ namespace Resp.benchmark
 
         private static (int, int) OnResponse(byte* buf, int bytesRead, int opType)
         {
-            int count = 0;
+            var count = 0;
             switch ((OpType)opType)
             {
                 case OpType.GET:

@@ -16,7 +16,7 @@ namespace Resp.benchmark
         public void RunOnline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
-            IPEndPoint replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
+            var replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
 
             switch (opts.Client)
             {
@@ -83,7 +83,7 @@ namespace Resp.benchmark
                     fixed (byte* bufPtr = request)
                     {
                         client.Send(bufPtr, request.Length, 1);
-                        client.CompletePendingRequests();
+                        _ = client.CompletePendingRequests();
                     }
 
                     var elapsed = Stopwatch.GetTimestamp() - opStart;
@@ -91,13 +91,13 @@ namespace Resp.benchmark
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                         histogram.RecordValue(elapsed);
 
-                    Interlocked.Increment(ref opsCompleted);
+                    _ = Interlocked.Increment(ref opsCompleted);
 
                     // Track per-endpoint metrics
                     if (useReplica && replicaClient != null)
-                        Interlocked.Increment(ref replicaOps);
+                        _ = Interlocked.Increment(ref replicaOps);
                     else
-                        Interlocked.Increment(ref primaryOps);
+                        _ = Interlocked.Increment(ref primaryOps);
                 }
             }
             finally
@@ -145,15 +145,15 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
-                int itp = opts.IntraThreadParallelism;
+                var itp = opts.IntraThreadParallelism;
 
                 while (!done && sw.Elapsed < runTime)
                 {
                     var opStart = Stopwatch.GetTimestamp();
-                    int primaryCount = 0;
-                    int replicaCount = 0;
+                    var primaryCount = 0;
+                    var replicaCount = 0;
 
-                    for (int p = 0; p < itp; p++)
+                    for (var p = 0; p < itp; p++)
                     {
                         var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
@@ -183,9 +183,9 @@ namespace Resp.benchmark
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                         histogram.RecordValue(elapsed);
 
-                    Interlocked.Add(ref opsCompleted, itp);
-                    Interlocked.Add(ref primaryOps, primaryCount);
-                    Interlocked.Add(ref replicaOps, replicaCount);
+                    _ = Interlocked.Add(ref opsCompleted, itp);
+                    _ = Interlocked.Add(ref primaryOps, primaryCount);
+                    _ = Interlocked.Add(ref replicaOps, replicaCount);
                 }
             }
             finally
@@ -204,7 +204,7 @@ namespace Resp.benchmark
             primaryClient.Connect();
 
             if (opts.Auth != null)
-                primaryClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+                _ = primaryClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
 
             // Create replica client if assigned
             GarnetClient replicaClient = null;
@@ -218,7 +218,7 @@ namespace Resp.benchmark
                 replicaClient.Connect();
 
                 if (opts.Auth != null)
-                    replicaClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+                    _ = replicaClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
             }
 
             try
@@ -227,16 +227,16 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
-                int itp = opts.IntraThreadParallelism;
+                var itp = opts.IntraThreadParallelism;
 
                 while (!done && sw.Elapsed < runTime)
                 {
                     var opStart = Stopwatch.GetTimestamp();
                     var tasks = new Task[itp];
-                    int primaryCount = 0;
-                    int replicaCount = 0;
+                    var primaryCount = 0;
+                    var replicaCount = 0;
 
-                    for (int p = 0; p < itp; p++)
+                    for (var p = 0; p < itp; p++)
                     {
                         var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
@@ -265,9 +265,9 @@ namespace Resp.benchmark
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                         histogram.RecordValue(elapsed);
 
-                    Interlocked.Add(ref opsCompleted, itp);
-                    Interlocked.Add(ref primaryOps, primaryCount);
-                    Interlocked.Add(ref replicaOps, replicaCount);
+                    _ = Interlocked.Add(ref opsCompleted, itp);
+                    _ = Interlocked.Add(ref primaryOps, primaryCount);
+                    _ = Interlocked.Add(ref replicaOps, replicaCount);
                 }
             }
             finally

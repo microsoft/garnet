@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+
 namespace Resp.benchmark
 {
     /// <summary>
@@ -31,7 +34,7 @@ namespace Resp.benchmark
 
             // Create one provider per shard
             providers = new ClientRequestProvider[shards.Length];
-            for (int s = 0; s < shards.Length; s++)
+            for (var s = 0; s < shards.Length; s++)
             {
                 var shard = shards[s];
 
@@ -45,7 +48,7 @@ namespace Resp.benchmark
                 }
 
                 // Provider index is (workerId * shardCount + shardIndex) for global uniqueness
-                int providerIndex = id * shards.Length + s;
+                var providerIndex = (id * shards.Length) + s;
 
                 providers[s] = new ClientRequestProvider(shard, assignedReplica, opts, providerIndex, id);
             }
@@ -56,20 +59,41 @@ namespace Resp.benchmark
         /// Each call is independent - distribution is probabilistic over time.
         /// </summary>
         /// <returns>A randomly selected provider</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ClientRequestProvider SelectRandomProvider()
         {
-            int index = rng.Next(providers.Length);
+            var index = rng.Next(providers.Length);
             return providers[index];
         }
 
         /// <summary>
-        /// Online mode: continuously generate and execute operations until cancellation.
+        /// Online mode: continuously generate and execute operations until time expires.
         /// Operations are distributed randomly across all shards.
+        ///
+        /// Key difference from sharded mode:
+        /// - Worker drives the workload loop (not individual providers)
+        /// - Each iteration selects a random provider
+        /// - Provider handles single-operation execution with primary/replica routing
         /// </summary>
-        /// <param name="token">Cancellation token</param>
-        public void RunOnline(CancellationToken token)
+        /// <param name="startSignal">Signal to synchronize start across all workers</param>
+        /// <param name="runTime">How long to run</param>
+        public void RunOnline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
-            throw new NotImplementedException("Phase 2: Online mode implementation");
+            // Wait for all workers to be ready
+            startSignal.Wait();
+
+            var sw = Stopwatch.StartNew();
+
+            // Continuously execute operations until time expires
+            while (sw.Elapsed < runTime)
+            {
+                // Select random provider (random shard)
+                var provider = SelectRandomProvider();
+
+                // Provider executes one operation on its shard
+                // Internally routes to primary or replica based on operation type
+                provider.ExecuteSingleOnlineOperation();
+            }
         }
 
         /// <summary>
@@ -79,7 +103,14 @@ namespace Resp.benchmark
         /// <param name="token">Cancellation token</param>
         public void RunOffline(CancellationToken token)
         {
-            throw new NotImplementedException("Phase 3: Offline mode implementation");
+            while (!token.IsCancellationRequested)
+            {
+                // Select random provider for this batch
+                var provider = SelectRandomProvider();
+
+                // Execute one batch of operations
+                provider.ExecuteSingleOfflineBatch();
+            }
         }
 
         /// <summary>
