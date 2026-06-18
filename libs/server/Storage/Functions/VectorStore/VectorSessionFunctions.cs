@@ -291,7 +291,7 @@ namespace Garnet.server
                     {
                         fixed (byte* dataPtr = value)
                         {
-                            callback(input.Callback, (nint)dataPtr, dataLen);
+                            callback(input.CallbackContext, (nint)dataPtr, dataLen);
                         }
                     }
 
