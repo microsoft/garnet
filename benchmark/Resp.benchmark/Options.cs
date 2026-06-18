@@ -59,7 +59,7 @@ namespace Resp.benchmark
         [Option("client", Required = false, Default = ClientType.LightClient, HelpText = "Choose ClientType to run benchmark (LightClient, SERedis, GarnetClientSession)")]
         public ClientType Client { get; set; }
 
-        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. Supports SERedis, GarnetClient and GarnetClientSession (online bench only).")]
+        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
         public bool Pool { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]

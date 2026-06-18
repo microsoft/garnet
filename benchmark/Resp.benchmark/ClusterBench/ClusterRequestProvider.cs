@@ -32,8 +32,16 @@ namespace Resp.benchmark
         }
 
         /// <summary>
-        /// Discover cluster topology and initialize providers.
-        /// Creates NumThreads providers per shard, with round-robin replica assignment if replicas exist.
+        /// Discover cluster topology and initialize providers based on architecture mode.
+        /// 
+        /// Sharded architecture (default):
+        ///   - Creates (threads-per-shard × shard-count) providers
+        ///   - Each provider serves one shard with primary + replica connections
+        ///   
+        /// Worker pool architecture (--worker-pool):
+        ///   - Creates (thread-count) workers
+        ///   - Each worker maintains providers for ALL shards
+        ///   - Workers randomly distribute operations across shards
         /// 
         /// Round-robin assignment example:
         ///   - Shard with 2 replicas and 6 clients:
@@ -41,7 +49,7 @@ namespace Resp.benchmark
         ///     Client 3 → Replica 1, Client 4 → Replica 0, Client 5 → Replica 1
         ///   
         ///   - Each client knows which replica endpoint to use for routing read operations
-        ///   - The --allow-replica-reads percentage determines how often reads go to replicas
+        ///   - The --replica-read-percent percentage determines how often reads go to replicas
         ///   - Across all clients for a shard, approximately X% of read operations go to replicas
         /// </summary>
         public void DiscoverTopology()
@@ -51,6 +59,35 @@ namespace Resp.benchmark
             var clusterManager = new ClusterManager(opts);
             shards = clusterManager.DiscoverPrimaryShards();
 
+            if (opts.Pool)
+            {
+                CreateWorkerPool();
+            }
+            else
+            {
+                CreateShardedProviders();
+            }
+        }
+
+        /// <summary>
+        /// Creates worker pool architecture: fixed number of workers, each maintaining providers for all shards.
+        /// Workers randomly select shards for each operation.
+        /// Total providers = worker-count × shard-count
+        /// Total connections = providers × (1 + replicas-per-shard)
+        /// </summary>
+        private void CreateWorkerPool()
+        {
+            throw new NotImplementedException("Worker pool architecture implementation in progress (Phases 1-8)");
+        }
+
+        /// <summary>
+        /// Creates sharded architecture: threads-per-shard providers.
+        /// Each provider serves one shard exclusively.
+        /// Total providers = threads-per-shard × shard-count
+        /// Total connections = providers × (1 + replicas-per-shard)
+        /// </summary>
+        private void CreateShardedProviders()
+        {
             var threadsPerShard = opts.NumThreads.First();
             var totalProviders = threadsPerShard * shards.Length;
             providers = new ClientRequestProvider[totalProviders];
@@ -96,6 +133,7 @@ namespace Resp.benchmark
         private void PrintConfiguration(int threadsPerShard, int totalProviders)
         {
             var mode = opts.Online ? "Online" : "Offline";
+            var architecture = opts.Pool ? "Worker Pool (preview)" : "Sharded";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -110,9 +148,9 @@ namespace Resp.benchmark
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
-            Console.WriteLine($"{"Op: " + opts.Op,-28}{"Threads: " + threadsPerShard + " (per shard)",-28}");
-            Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"ITP: " + itp,-28}");
-            Console.WriteLine($"{"Key/Val: " + opts.KeyLength + "/" + opts.ValueLength + " B",-28}{"Batch: " + batch,-28}");
+            Console.WriteLine($"{"Architecture: " + architecture,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Threads: " + threadsPerShard + " (per shard)",-28}{"ITP: " + itp,-28}");
+            Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders + " (shards x threads)",-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
@@ -133,10 +171,10 @@ namespace Resp.benchmark
                 var range = FormatSlotRanges(shard.SlotRanges);
                 var prefix = providers[s * threadsPerShard].KeyPrefix;
                 var replicaCount = shard.Replicas.Count;
-                
+
                 // Print primary with "primary" label
                 Console.WriteLine($"  {"primary",-10}| {endpoint,-23}| {shard.TotalSlots,-7}| {range,-17}| {replicaCount,-10}| {prefix,-10}");
-                
+
                 // Print replicas with proper alignment
                 foreach (var replica in shard.Replicas)
                 {
