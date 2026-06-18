@@ -1818,7 +1818,7 @@ return retArray";
             }
 
             var subCommands = allCommands.Where(static kv => (kv.Value.SubCommands?.Length ?? 0) > 0).SelectMany(static kv => kv.Value.SubCommands.Where(static t => t.Flags.HasFlag(RespCommandFlags.NoScript)).Select(t => (kv.Key, t.Name.Split('|')[1])));
-            foreach(var (cmd, subCmd) in subCommands)
+            foreach (var (cmd, subCmd) in subCommands)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}|{subCmd}");
