@@ -88,10 +88,17 @@ namespace Resp.benchmark
 
             if (opts.Pipeline)
             {
+                // Pipeline mode: broadcast a request to every provider (shard),
+                // then complete pending on all of them.
                 while (sw.Elapsed < runTime)
                 {
-                    var provider = SelectRandomProvider();
-                    provider.ExecuteSingleOnlineOperationPipelined();
+                    // Send phase: issue one request to each shard
+                    for (var i = 0; i < providers.Length; i++)
+                        providers[i].SendSingleOnlineOperation();
+
+                    // Complete phase: wait for all responses
+                    for (var i = 0; i < providers.Length; i++)
+                        providers[i].CompletePendingAndRecordOnlineMetrics();
                 }
             }
             else
@@ -102,26 +109,29 @@ namespace Resp.benchmark
                     provider.ExecuteSingleOnlineOperation();
                 }
             }
-
-            // Drain any outstanding pipelined requests
-            DrainAllProviders();
         }
 
         /// <summary>
         /// Offline mode: execute pre-generated batches until completion.
         /// Batches are distributed randomly across all shards.
-        /// In pipeline mode, requests are sent without waiting for responses;
-        /// pending responses are completed when the provider is revisited.
+        /// In pipeline mode, broadcasts a batch to every provider then completes all.
         /// </summary>
         /// <param name="token">Cancellation token</param>
         public void RunOffline(CancellationToken token)
         {
             if (opts.Pipeline)
             {
+                // Pipeline mode: broadcast a batch to every provider (shard),
+                // then complete pending on all of them.
                 while (!token.IsCancellationRequested)
                 {
-                    var provider = SelectRandomProvider();
-                    provider.ExecuteSingleOfflineBatchPipelined();
+                    // Send phase: issue one batch to each shard
+                    for (var i = 0; i < providers.Length; i++)
+                        providers[i].SendSingleOfflineBatch();
+
+                    // Complete phase: wait for all responses
+                    for (var i = 0; i < providers.Length; i++)
+                        providers[i].CompletePendingAndRecordOfflineMetrics();
                 }
             }
             else
@@ -132,20 +142,6 @@ namespace Resp.benchmark
                     provider.ExecuteSingleOfflineBatch();
                 }
             }
-
-            // Drain any outstanding pipelined requests
-            DrainAllProviders();
-        }
-
-        /// <summary>
-        /// Drain any outstanding pipelined requests from all providers.
-        /// Called at the end of a benchmark run to ensure all in-flight
-        /// operations are completed and their metrics are recorded.
-        /// </summary>
-        private void DrainAllProviders()
-        {
-            foreach (var provider in providers)
-                provider.DrainPending();
         }
 
         /// <summary>
