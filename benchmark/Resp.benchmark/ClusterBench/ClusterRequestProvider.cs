@@ -78,20 +78,20 @@ namespace Resp.benchmark
         /// </summary>
         private void CreateWorkerPool()
         {
-            int workerCount = opts.NumThreads.First();
+            var workerCount = opts.NumThreads.First();
             workers = new Worker[workerCount];
 
-            for (int w = 0; w < workerCount; w++)
+            for (var w = 0; w < workerCount; w++)
             {
                 workers[w] = new Worker(w, shards, opts);
             }
 
             // Calculate totals for display
-            int totalProviders = workerCount * shards.Length;
-            int totalReplicas = shards.Sum(s => s.Replicas.Count);
-            int avgReplicasPerShard = shards.Length > 0 ? totalReplicas / shards.Length : 0;
-            int workersWithReplicas = workers.Sum(w => w.Providers.Count(p => p.HasReplica));
-            int totalConnections = totalProviders + workersWithReplicas;
+            var totalProviders = workerCount * shards.Length;
+            var totalReplicas = shards.Sum(s => s.Replicas.Count);
+            var avgReplicasPerShard = shards.Length > 0 ? totalReplicas / shards.Length : 0;
+            var workersWithReplicas = workers.Sum(w => w.Providers.Count(p => p.HasReplica));
+            var totalConnections = totalProviders + workersWithReplicas;
 
             PrintWorkerPoolConfiguration(workerCount, totalProviders, totalConnections, workersWithReplicas);
         }
@@ -149,7 +149,7 @@ namespace Resp.benchmark
         private void PrintConfiguration(int threadsPerShard, int totalProviders)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var architecture = opts.Pool ? "Worker Pool (preview)" : "Sharded";
+            var architecture = opts.Pool ? "Worker Pool" : "Sharded";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -168,11 +168,10 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Threads: " + threadsPerShard + " (per shard)",-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
-            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Workers: " + totalProviders + " (shards x threads)",-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            if (workersWithReplicas > 0)
-                Console.WriteLine($"{"",-28}{"Connections: " + totalConnections + " (" + totalProviders + " primary + " + workersWithReplicas + " replica)",-28}");
+            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"",-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -214,7 +213,7 @@ namespace Resp.benchmark
         private void PrintWorkerPoolConfiguration(int workerCount, int totalProviders, int totalConnections, int workersWithReplicas)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var architecture = "Worker Pool (preview)";
+            var architecture = "Worker Pool";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -228,30 +227,29 @@ namespace Resp.benchmark
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
             Console.WriteLine($"{"Architecture: " + architecture,-28}{"Op: " + opts.Op,-28}");
-            Console.WriteLine($"{"Workers: " + workerCount + " (fixed pool)",-28}{"ITP: " + itp,-28}");
+            Console.WriteLine($"{"Threads: " + workerCount,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
-            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Providers: " + totalProviders + " (workers x shards)",-28}");
+            Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"",-28}{"Connections: " + totalConnections + " (" + totalProviders + " primary + " + workersWithReplicas + " replica)",-28}");
+            Console.WriteLine($"{"Workers: " + workerCount,-28}{"",-28}");
+            Console.WriteLine("=======================================================");
+            Console.WriteLine();
 
             // Connection count warning for large configurations
             if (totalConnections > 10000)
             {
-                Console.WriteLine();
                 Console.WriteLine($"  [WARNING] High connection count ({totalConnections:N0} connections)");
                 Console.WriteLine($"            Ensure ulimit is sufficient: ulimit -n {totalConnections * 2}");
+                Console.WriteLine();
             }
-
-            Console.WriteLine("=======================================================");
-            Console.WriteLine();
 
             // Topology table (same as sharded mode)
             Console.WriteLine($"  {"Role",-10}| {"Endpoint",-23}| {"Slots",-7}| {"     Range",-17}| {"Replicas",-10}");
             Console.WriteLine($"  {new string('-', 10)}+{new string('-', 24)}+{new string('-', 8)}+{new string('-', 18)}+{new string('-', 11)}");
 
-            for (int s = 0; s < shards.Length; s++)
+            for (var s = 0; s < shards.Length; s++)
             {
                 var shard = shards[s];
                 var endpoint = $"{shard.Address}:{shard.Port}";
@@ -296,45 +294,91 @@ namespace Resp.benchmark
         /// Load data into all shards in parallel.
         /// Each provider loads its portion of the key space.
         /// </summary>
+        /// <summary>
+        /// Load data into the cluster. Supports both sharded and worker pool architectures.
+        /// In worker pool mode, only the first worker's providers are used to load data
+        /// to avoid duplicate loading.
+        /// </summary>
         public void LoadData()
         {
             Console.WriteLine(" Loading keys...");
             var sw = Stopwatch.StartNew();
 
-            var threads = new Thread[providers.Length];
-            for (var i = 0; i < providers.Length; i++)
+            if (opts.Pool)
             {
-                var p = providers[i];
-                threads[i] = new Thread(() => p.LoadData());
-                threads[i].Start();
+                // Worker pool mode: Use first worker's providers to load data
+                // This prevents duplicate loading since all workers have same providers
+                var firstWorker = workers[0];
+                var loadThreads = new Thread[shards.Length];
+
+                for (int s = 0; s < shards.Length; s++)
+                {
+                    var provider = firstWorker.GetProvider(s);
+                    loadThreads[s] = new Thread(() => provider.LoadData());
+                    loadThreads[s].Start();
+                }
+
+                foreach (var t in loadThreads)
+                    t.Join();
+
+                // Aggregate loaded keys from first worker's providers
+                long totalKeys = 0;
+                int maxEndpointLen = shards.Max(sh => $"{sh.Address}:{sh.Port}".Length);
+
+                for (int s = 0; s < shards.Length; s++)
+                {
+                    var provider = firstWorker.GetProvider(s);
+                    long shardKeys = provider.KeysLoaded;
+                    totalKeys += shardKeys;
+
+                    var endpoint = $"{shards[s].Address}:{shards[s].Port}";
+                    Console.WriteLine($"   Loaded {shardKeys} keys to {endpoint.PadLeft(maxEndpointLen)}");
+                }
+
+                Console.WriteLine($" Total: {totalKeys} keys ({shards.Length} shards, worker pool mode) in {sw.ElapsedMilliseconds}ms");
+                Console.WriteLine();
+
+                // Validate DBSIZE if under 1MB threshold
+                ValidateDBSize(totalKeys);
             }
-
-            foreach (var t in threads)
-                t.Join();
-
-            sw.Stop();
-
-            // Per-shard summary
-            int threadsPerShard = opts.NumThreads.First();
-            long totalKeys = 0;
-            int maxEndpointLen = shards.Max(s => $"{s.Address}:{s.Port}".Length);
-
-            for (int s = 0; s < shards.Length; s++)
+            else
             {
-                long shardKeys = 0;
-                for (int t = 0; t < threadsPerShard; t++)
-                    shardKeys += providers[s * threadsPerShard + t].KeysLoaded;
-                totalKeys += shardKeys;
+                // Sharded mode: Each provider loads its slice
+                var threads = new Thread[providers.Length];
+                for (var i = 0; i < providers.Length; i++)
+                {
+                    var p = providers[i];
+                    threads[i] = new Thread(() => p.LoadData());
+                    threads[i].Start();
+                }
 
-                var endpoint = $"{shards[s].Address}:{shards[s].Port}";
-                Console.WriteLine($"   Loaded {shardKeys} keys to {endpoint.PadLeft(maxEndpointLen)}");
+                foreach (var t in threads)
+                    t.Join();
+
+                sw.Stop();
+
+                // Per-shard summary
+                int threadsPerShard = opts.NumThreads.First();
+                long totalKeys = 0;
+                int maxEndpointLen = shards.Max(s => $"{s.Address}:{s.Port}".Length);
+
+                for (int s = 0; s < shards.Length; s++)
+                {
+                    long shardKeys = 0;
+                    for (int t = 0; t < threadsPerShard; t++)
+                        shardKeys += providers[s * threadsPerShard + t].KeysLoaded;
+                    totalKeys += shardKeys;
+
+                    var endpoint = $"{shards[s].Address}:{shards[s].Port}";
+                    Console.WriteLine($"   Loaded {shardKeys} keys to {endpoint.PadLeft(maxEndpointLen)}");
+                }
+
+                Console.WriteLine($" Total: {totalKeys} keys ({shards.Length} shards, {providers.Length} threads) in {sw.ElapsedMilliseconds}ms");
+                Console.WriteLine();
+
+                // Validate DBSIZE if under 1MB threshold
+                ValidateDBSize(totalKeys);
             }
-
-            Console.WriteLine($" Total: {totalKeys} keys ({shards.Length} shards, {providers.Length} threads) in {sw.ElapsedMilliseconds}ms");
-            Console.WriteLine();
-
-            // Validate DBSIZE if under 1MB threshold
-            ValidateDBSize(totalKeys);
         }
 
         /// <summary>
@@ -743,14 +787,24 @@ namespace Resp.benchmark
             }
 
             Console.WriteLine(" Validating DBSIZE per shard...");
-            int threadsPerShard = opts.NumThreads.First();
             bool allValid = true;
 
             for (int s = 0; s < shards.Length; s++)
             {
                 long expectedKeys = 0;
-                for (int t = 0; t < threadsPerShard; t++)
-                    expectedKeys += providers[s * threadsPerShard + t].KeysLoaded;
+
+                if (opts.Pool)
+                {
+                    // Worker pool mode: Only worker[0] loaded data
+                    expectedKeys = workers[0].GetProvider(s).KeysLoaded;
+                }
+                else
+                {
+                    // Sharded mode: Sum across all threads for this shard
+                    int threadsPerShard = opts.NumThreads.First();
+                    for (int t = 0; t < threadsPerShard; t++)
+                        expectedKeys += providers[s * threadsPerShard + t].KeysLoaded;
+                }
 
                 try
                 {
@@ -863,6 +917,7 @@ namespace Resp.benchmark
             long totalOps = 0;
             long totalPrimaryOps = 0;
             long totalReplicaOps = 0;
+            long totalBytes = 0;
 
             // Per-worker summary
             Console.WriteLine($"{"Worker",-10}{"Providers",-12}{"Total Ops",-15}{"Primary Ops",-15}{"Replica Ops",-15}");
@@ -875,9 +930,12 @@ namespace Resp.benchmark
                 totalPrimaryOps += metrics.PrimaryOperations;
                 totalReplicaOps += metrics.ReplicaOperations;
 
-                // Aggregate histograms
+                // Aggregate histograms and bytes
                 foreach (var provider in worker.Providers)
+                {
                     summary.Add(provider.Histogram);
+                    totalBytes += provider.BytesSent;
+                }
 
                 Console.WriteLine($"{metrics.WorkerId,-10}{worker.ProviderCount,-12}{metrics.TotalOperations,-15}{metrics.PrimaryOperations,-15}{metrics.ReplicaOperations,-15}");
             }
@@ -899,15 +957,20 @@ namespace Resp.benchmark
 
             // Throughput summary
             var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
+            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+            var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            var wireGBps = totalBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
 
             Console.WriteLine();
             Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
+            Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
+            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP bytes sent)");
             Console.WriteLine($"Workers: {workers.Length}, Shards: {shards.Length}, Providers: {workers.Length * shards.Length}");
 
             if (totalOps > 0 && totalReplicaOps > 0)
             {
-                double actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                var actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
                 Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
             }
 
@@ -926,9 +989,9 @@ namespace Resp.benchmark
             Console.WriteLine("Hit Rates (from INFO STATS):");
 
             double totalHitRate = 0;
-            int validShards = 0;
+            var validShards = 0;
 
-            for (int s = 0; s < shards.Length; s++)
+            for (var s = 0; s < shards.Length; s++)
             {
                 try
                 {
@@ -939,7 +1002,7 @@ namespace Resp.benchmark
                     var info = server.Info("STATS");
 
                     // Parse garnet_hit_rate from info
-                    double hitRate = 0.0;
+                    var hitRate = 0.0;
                     foreach (var section in info)
                     {
                         foreach (var kvp in section)
@@ -966,7 +1029,7 @@ namespace Resp.benchmark
 
             if (validShards > 0)
             {
-                double avgHitRate = totalHitRate / validShards;
+                var avgHitRate = totalHitRate / validShards;
                 Console.WriteLine($"  {"Average:",-25} {avgHitRate:F2}");
             }
         }

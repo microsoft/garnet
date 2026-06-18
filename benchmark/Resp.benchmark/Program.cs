@@ -245,14 +245,14 @@ namespace Resp.benchmark
         static void RunBasicCommandsBenchmark(Options opts)
         {
             int[] threadBench = [.. opts.NumThreads];
-            int keyLen = opts.KeyLength;
-            int valueLen = opts.ValueLength;
+            var keyLen = opts.KeyLength;
+            var valueLen = opts.ValueLength;
 
-            if (opts.Op == OpType.PUBLISH || opts.Op == OpType.SPUBLISH || opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
+            if (opts.Op is OpType.PUBLISH or OpType.SPUBLISH or OpType.ZADD or OpType.ZREM or OpType.ZADDREM or OpType.PING or OpType.GEOADD or OpType.GEOADDREM or OpType.SETEX or OpType.ZCARD or OpType.ZADDCARD)
                 opts.SkipLoad = true;
 
             //if we have scripts ops we need to load them in memory
-            if (opts.Op == OpType.SCRIPTGET || opts.Op == OpType.SCRIPTSET || opts.Op == OpType.SCRIPTRETKEY)
+            if (opts.Op is OpType.SCRIPTGET or OpType.SCRIPTSET or OpType.SCRIPTRETKEY)
             {
                 unsafe
                 {
@@ -337,8 +337,8 @@ namespace Resp.benchmark
             var bench = new RespPerfBench(opts, 0, redis);
             int[] threadBench = [.. opts.NumThreads];
 
-            int loadThreads = 8;
-            int loadBatchSize = opts.DbSize / loadThreads;
+            var loadThreads = 8;
+            var loadBatchSize = opts.DbSize / loadThreads;
             loadBatchSize = opts.DbSize < 4096 ? loadBatchSize : 4096;
 
             if (opts.SkipLoad && opts.Op != OpType.PFADD)
@@ -348,7 +348,7 @@ namespace Resp.benchmark
                 bench.LoadHLLData(loadDbThreads: loadThreads, BatchSize: loadBatchSize);
 
             //PFCOUNT, PFMERGE
-            foreach (int BatchSize in opts.BatchSize)
+            foreach (var BatchSize in opts.BatchSize)
                 bench.Run(opts.Op, opts.TotalOps, threadBench, keyLen: opts.KeyLength, valueLen: opts.ValueLength, BatchSize: BatchSize);
         }
     }

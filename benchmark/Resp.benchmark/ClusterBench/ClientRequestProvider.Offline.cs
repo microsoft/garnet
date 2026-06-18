@@ -41,16 +41,35 @@ namespace Resp.benchmark
         /// <summary>
         /// Load data into the shard for this provider's key space.
         /// Always uses primary connection only - replicas are read-only and cannot accept writes.
+        ///
+        /// In sharded mode: Each provider loads a slice of the key space based on shardThreadIndex.
+        /// In worker pool mode: Each provider loads the entire DbSize (only worker[0]'s providers are used).
         /// </summary>
         public void LoadData()
         {
             var threadsPerShard = opts.NumThreads.First();
-            var dbSizePerThread = opts.DbSize / threadsPerShard;
-            var batchSize = Math.Min(256, dbSizePerThread);
 
-            // Each thread loads a distinct slice of the key space:
-            // thread 0 loads [0, dbSizePerThread), thread 1 loads [dbSizePerThread, 2*dbSizePerThread), etc.
-            var keyOffset = shardThreadIndex * dbSizePerThread;
+            // In worker pool mode (--pool), load entire DbSize per shard
+            // In sharded mode, partition DbSize across threads-per-shard
+            int keysToLoad;
+            int keyOffset;
+
+            if (opts.Pool)
+            {
+                // Worker pool mode: Load entire DbSize
+                keysToLoad = opts.DbSize;
+                keyOffset = 0;
+            }
+            else
+            {
+                // Sharded mode: Partition key space across threads
+                // Each thread loads a distinct slice of the key space:
+                // thread 0 loads [0, dbSizePerThread), thread 1 loads [dbSizePerThread, 2*dbSizePerThread), etc.
+                keysToLoad = opts.DbSize / threadsPerShard;
+                keyOffset = shardThreadIndex * keysToLoad;
+            }
+
+            var batchSize = Math.Min(256, keysToLoad);
 
             // IMPORTANT: Always use primary endpoint for loading (replicas are read-only)
             var endpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
@@ -67,9 +86,9 @@ namespace Resp.benchmark
             client.Authenticate(opts.Auth);
 
             var loaded = 0;
-            while (loaded < dbSizePerThread)
+            while (loaded < keysToLoad)
             {
-                var thisBatch = Math.Min(batchSize, dbSizePerThread - loaded);
+                var thisBatch = Math.Min(batchSize, keysToLoad - loaded);
                 var buffer = GenerateLoadBatch(thisBatch, keyOffset + loaded);
 
                 fixed (byte* bufPtr = buffer)
