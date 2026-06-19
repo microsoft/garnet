@@ -411,7 +411,7 @@ namespace Garnet.server
                         {
                             Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
 
-                            var addRes = self.TryAdd(indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
+                            var addRes = self.TryAdd(key, indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
                             if (addRes != VectorManagerResult.OK)
                             {
