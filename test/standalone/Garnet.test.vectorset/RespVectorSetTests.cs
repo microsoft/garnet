@@ -879,9 +879,9 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            // FILTER-EF exceeding MaxRetrieveCount must be rejected
+            // FILTER-EF exceeding MaxFilteringScaleFactor must be rejected
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
-            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 0 and 100000000", exc1.Message);
+            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 4 and 256", exc1.Message);
 
             // COUNT exceeding MaxRetrieveCount must be rejected
             var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
@@ -894,32 +894,6 @@ namespace Garnet.test
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
             var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
-        }
-
-        [Test]
-        public void VSIMWithDefaultFilterEFOverflowDoesNotCrash()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            _ = db.KeyDelete("foo");
-
-            // Add a vector with attributes so FILTER can be used
-            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
-            ClassicAssert.AreEqual(1, (int)res1);
-
-            // Verify that a moderate COUNT with FILTER (no explicit FILTER-EF) works correctly.
-            // The default maxFilteringEffort = count*200. With count=1000, that's 200,000 which is safe.
-            // This validates the code path through the (long) cast fix without hitting resource limits.
-            var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "1000", "WITHATTRIBS"]);
-            ClassicAssert.AreEqual(2, res.Length, "Should return 1 result (1 pair of id+attribute) for year > 1950");
-
-            // Verify that COUNT values which would overflow count*200 in int32 are rejected.
-            // 10,737,419 * 200 = 2,147,483,800 > int32.MaxValue.
-            // Our (long) cast prevents the overflow, but MaxRetrieveCount caps COUNT itself.
-            // Any COUNT above MaxRetrieveCount (~178M) is rejected at parse time.
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "999999999", "WITHATTRIBS"]));
-            ClassicAssert.IsTrue(ex.Message.Contains("COUNT must be an integer between"), $"Expected COUNT validation error, got: {ex.Message}");
         }
 
         private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)

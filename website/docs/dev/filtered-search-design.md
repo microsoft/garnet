@@ -112,109 +112,33 @@ This would shift the filter cost from O(candidates_visited) callback invocations
 
 ## 3. DiskANN-Side: Filtered Search Algorithms
 
-The DiskANN library provides multiple search algorithms for filtered queries. All receive a filter predicate via the `QueryLabelProvider` trait and differ in how they integrate filtering into graph traversal.
+The DiskANN library provides multiple search algorithms for filtered queries. All receive a filter predicate and differ in how they integrate filtering into graph traversal.
 
 ### 3.1 Comparison of DiskANN Filtered Search Algorithms
 
-| Aspect | MultihopSearch | BetaFilter | TwoQueueSearch |
-|--------|---------------|------------|----------------|
-| Filter integration | Evaluate during standard single-queue search | Scale distances by beta factor for non-matching nodes | Separate explore queue (unfiltered) and result queue (filtered only) |
-| Data structures | `NeighborPriorityQueue` (sorted array) | Wraps any search strategy | `candidates` min-heap + `filtered_results` max-heap |
-| Exploration breadth at low selectivity | Limited — non-matching nodes occupy result slots | Moderate — non-matching nodes appear farther but still compete | Broad — all neighbors enter explore queue regardless of filter |
-| Convergence | Standard greedy convergence | Standard greedy convergence | Converges only when closest unexplored candidate is farther than worst *filtered* result |
-| Adaptive budget | No | No | Yes — doubles hop budget when fewer than K results found |
+| Aspect                                 | Inline (w adaptive L)                                                       | BetaFilter                                                     |
+|----------------------------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------|
+| Filter integration                     | Evaluate filter during search, scaling Lsearch based on sampled selectivity | Scale distances by beta factor for non-matching nodes          |
+| Data structures                        | `NeighborPriorityQueue` (sorted array)                                      | Wraps any search strategy                                      |
+| Exploration breadth at low selectivity | Bounded by the adaptive Lsearch                                             | Moderate — non-matching nodes appear farther but still compete |
+| Convergence                            | Standard greedy convergence                                                 | Standard greedy convergence                                    |
+| Adaptive budget                        | Yes                                                                         | No                                                             |
 
 #### Performance Comparison (TBD)
 
-Benchmark results on the 100K YFCC dataset comparing recall and latency across MultihopSearch, BetaFilter, and TwoQueueSearch at various selectivity levels are pending.
+Benchmark results on the 100K YFCC dataset comparing recall and latency are pending, but our choice of inline with adaptive-L was based on DiskANN benchmarks with in-mem providers across
+a range of selectivities and across various datasets.
 
-### 3.2 TwoQueueSearch Algorithm (Current Choice)
+### 3.2 Inline w/ Adaptive-L Algorithm (Current Choice)
 
-**File**: `DiskANN/diskann/src/graph/search/two_queue_search.rs`
-
-#### Data Structures
-
-| Queue | Type | Purpose |
-|-------|------|---------|
-| `candidates` | `BinaryHeap<Reverse<Neighbor>>` (min-heap) | Exploration frontier — all neighbors regardless of filter |
-| `filtered_results` | `BinaryHeap<Neighbor>` (max-heap) | Result accumulator — only filter-passing neighbors |
-
-#### Algorithm
-
-```
-Initialize: insert start_point into candidates and visited set
-
-while candidates is not empty AND hops < max_candidates:
-    Pop up to beam_width closest candidates
-
-    Convergence check:
-        if |filtered_results| >= result_cap
-        AND closest_candidate.distance > worst_filtered_result.distance:
-            → Converged, stop
-
-    For each popped candidate:
-        Expand neighbors via graph adjacency
-        For each neighbor not yet visited:
-            Compute distance to query
-            if |filtered_results| < result_cap OR distance < worst_filtered.distance:
-                Insert into candidates
-
-            Call filter_provider.on_visit(neighbor):
-                Accept → insert into filtered_results
-                Reject → skip
-                Terminate → abort immediately
-
-    Prune filtered_results to result_cap (= k × RESULT_SIZE_FACTOR)
-
-    Adaptive budget: if |filtered_results| < k after budget exhausted:
-        Double budget to 2 × max_candidates
-
-Return filtered_results sorted by distance, truncated to k
-```
-
-#### Key Parameters
-
-| Parameter | Source | Description |
-|-----------|--------|-------------|
-| `beam_width` | `search_l` (ef) | Number of candidates to expand per iteration |
-| `max_candidates` | `max(ef, maxFilteringEffort)` | Hop budget before stopping |
-| `result_cap` | `k × RESULT_SIZE_FACTOR` | Max size of filtered_results before pruning |
-| `RESULT_SIZE_FACTOR` | Constant | Overallocation factor for result queue |
-
-#### Termination Modes
-
-- **Exhausted**: candidates queue empty
-- **MaxCandidates**: hop budget reached
-- **Converged**: closest unexplored candidate is farther than worst result
-- **FilterTerminated**: filter callback returned `Terminate`
-
-#### Why TwoQueueSearch over MultihopSearch
-
-The key advantage of TwoQueueSearch is the **separation of exploration from result collection**. In MultihopSearch, non-matching candidates occupy slots in the single priority queue, limiting how far the search can explore. At low selectivity (e.g., 1% match rate), the queue fills with non-matching nodes and the search converges prematurely, missing closer matches that lie further in the graph.
-
-TwoQueueSearch solves this by maintaining two separate heaps: all neighbors enter the explore queue (keeping exploration broad), but only matching neighbors enter the result queue. The convergence check compares against the worst *filtered* result, not the worst candidate overall. This allows the search to keep exploring through non-matching regions of the graph until it finds enough filtered results.
+Please see the algorithm description in DiskANN.
 
 ### 3.3 Filter Mode Dispatch (Rust)
 
-**File**: `DiskANN/diskann-garnet/src/labels.rs`, `dyn_index.rs`
+**File**: `DiskANN/diskann-garnet/src/provider.rs`, `dyn_index.rs`
 
-```rust
-enum GarnetFilter {
-    Bitmap(GarnetQueryLabelProvider, f32),  // pre-computed bitmap + beta factor
-    Callback(GarnetFilterProvider, u32),    // per-candidate FFI callback + max_effort
-    None,
-}
-```
+A filter callback is provided which DiskANN will invoke to check whether vectors match the filter expression.
 
-| Filter Mode | Search Algorithm | When Used |
-|-------------|-----------------|-----------|
-| `None` | Standard greedy KNN | No filter specified |
-| `Bitmap` | BetaFilter (scale distances) | Pre-computed bitmap available (future/alternative path) |
-| `Callback` | **TwoQueueSearch** | Filter expression provided in VSIM command |
-
-The `Callback` variant creates a `GarnetFilterProvider` that wraps the FFI callback. The `TwoQueueSearch` calls `on_visit()` which invokes the callback for each candidate.
-
----
 
 ## 4. Architecture Overview
 
@@ -222,7 +146,7 @@ The `Callback` variant creates a `GarnetFilterProvider` that wraps the FFI callb
 ┌──────────────────────────────────────────────────────┐
 │  Client (RESP)                                       │
 │  VSIM key 10 VALUES vec... FILTER ".year > 2020"     │
-│         MAXFILTERINGEFFORT 2000                       │
+│         FILTER-EF 32                                 │
 └──────────┬───────────────────────────────────────────┘
            │
            ▼
@@ -241,24 +165,18 @@ The `Callback` variant creates a `GarnetFilterProvider` that wraps the FFI callb
 │  DiskANN (Rust, diskann-garnet)                      │
 │                                                      │
 │  search_vector()                                     │
-│    ├─ GarnetFilter::Callback → TwoQueueSearch        │
-│    │    ├─ candidates: min-heap (explore)             │
-│    │    └─ filtered_results: max-heap (results)       │
-│    │                                                  │
-│    │  For each candidate node:                        │
-│    │    ├─ Insert into candidates (unfiltered)        │
-│    │    ├─ Call filterCallback(ctx, internal_id)──┐   │
-│    │    │                    ┌────────────────────┘   │
-│    │    │                    ▼                        │
-│    │    │  ┌─────────────────────────────────────┐    │
-│    │    │  │ C# InlineFilterCandidateCallback     │    │
-│    │    │  │  ├─ Read BinaryAttrs[internal_id]   │    │
-│    │    │  │  ├─ ExtractFieldsBinary(selectors)   │    │
-│    │    │  │  └─ ExprRunner.Run(program)→0/1      │    │
-│    │    │  └─────────────────────────────────────┘    │
-│    │    │                                             │
-│    │    └─ If pass: insert into filtered_results      │
-│    └─ Return top-K from filtered_results              │
+│    │  For each candidate node:                       │
+│    │    ├─ Call filterCallback(ctx, internal_id)──┐  │
+│    │    │                    ┌────────────────────┘  │
+│    │    │                    ▼                       │
+│    │    │  ┌─────────────────────────────────────┐   │
+│    │    │  │ C# InlineFilterCandidateCallback    │   │
+│    │    │  │  ├─ Read BinaryAttrs[internal_id]   │   │
+│    │    │  │  ├─ ExtractFieldsBinary(selectors)  │   │
+│    │    │  │  └─ ExprRunner.Run(program)→0/1     │   │
+│    │    │  └─────────────────────────────────────┘   │
+│    │                                                 │
+│    └─ Return top-K                                   │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -403,15 +321,13 @@ Both paths are zero-allocation, operating on `ReadOnlySpan<byte>`.
 
 ### Compared to Post-Filtering
 
-| Aspect | Post-Filter | Two-Queue Inline |
-|--------|-------------|------------------|
-| Overfetch required | Yes (K/selectivity) | No |
-| Recall at low selectivity | Poor (misses nearby matches) | High (explores broadly) |
-| Per-candidate cost | Distance only | Distance + FFI callback + attribute read + filter eval |
-| Memory | Large result buffers | Fixed-size heaps |
+| Aspect                    | Post-Filter                  | Inline with Adaptive-L                                 |
+|---------------------------|------------------------------|--------------------------------------------------------|
+| Overfetch required        | Yes (K/selectivity)          | No                                                     |
+| Recall at low selectivity | Poor (misses nearby matches) | High (explores broadly)                                |
+| Per-candidate cost        | Distance only                | Distance + FFI callback + attribute read + filter eval |
+| Memory                    | Large result buffers         | Fixed-size heaps                                       |
 
 ### Tuning
 
-- **`maxFilteringEffort`** — Controls the hop budget. Higher values improve recall for selective filters at the cost of latency. Recommended: 2-10× the `ef` (search_l) parameter.
-- **`RESULT_SIZE_FACTOR`** — Overallocates the result queue to improve result quality during pruning.
-- **Adaptive budget doubling** — When fewer than K results are found within the initial budget, the algorithm automatically doubles exploration depth.
+- Use FILTER-EF to control the scaling of Lsearch when selectivity is low. Defaults to 16.

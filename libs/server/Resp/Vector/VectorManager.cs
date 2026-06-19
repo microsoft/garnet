@@ -72,6 +72,11 @@ namespace Garnet.server
         internal const int MaxRetrieveCount = 100_000_000;
 
         /// <summary>
+        /// Maximum scale factor for adaptive-L inline filtering.
+        /// </summary>
+        internal const int MaxFilteringScaleFactor = 256;
+
+        /// <summary>
         /// Maximum exploration factor (EF) for build and search operations.
         /// Matches Redis's hardcoded limit of 1,000,000.
         /// </summary>
@@ -700,12 +705,12 @@ namespace Garnet.server
 
                         var filterState = new InlineFilterState
                         {
-                            InstrBuf = instrBuf,
-                            TuplePoolBuf = tuplePoolBuf,
+                            InstrBuf = instrBuf[..instrCount],
+                            TuplePoolBuf = tuplePoolBuf[..tupleCount],
                             RuntimePoolBuf = runtimePoolBuf,
-                            ExtractedFields = extractedFields,
+                            ExtractedFields = extractedFields[..Math.Max(selectorCount, 1)],
                             StackBuf = stackBuf,
-                            SelectorRanges = selectorBuf,
+                            SelectorRanges = selectorBuf[..selectorCount],
                             FilterBytes = filter,
                         };
 
@@ -774,6 +779,8 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
+                EnsureFilterBitmapSize(ref filterBitmap, found);
+
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
@@ -863,12 +870,12 @@ namespace Garnet.server
 
                     var filterState = new InlineFilterState
                     {
-                        InstrBuf = instrBuf,
-                        TuplePoolBuf = tuplePoolBuf,
+                        InstrBuf = instrBuf[..instrCount],
+                        TuplePoolBuf = tuplePoolBuf[..tupleCount],
                         RuntimePoolBuf = runtimePoolBuf,
-                        ExtractedFields = extractedFields,
+                        ExtractedFields = extractedFields[..Math.Max(selectorCount, 1)],
                         StackBuf = stackBuf,
-                        SelectorRanges = selectorBuf,
+                        SelectorRanges = selectorBuf[..selectorCount],
                         FilterBytes = filter,
                     };
 
@@ -934,17 +941,7 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                // Ensure bitmap is large enough for the over-retrieved result set
-                var requiredBitmapBytes = (found + 7) >> 3;
-                if (requiredBitmapBytes > filterBitmap.Length)
-                {
-                    if (!filterBitmap.IsSpanByte)
-                    {
-                        filterBitmap.Memory.Dispose();
-                    }
-
-                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
-                }
+                EnsureFilterBitmapSize(ref filterBitmap, found);
 
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
