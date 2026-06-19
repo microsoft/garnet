@@ -174,6 +174,8 @@ namespace Garnet.server
         public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref VectorInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
+            Debug.Assert((srcLogRecord.KeyBytes.Length % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
             var value = srcLogRecord.ValueSpan;
 
             if (input.WriteDesiredSize < 0)
@@ -192,6 +194,8 @@ namespace Garnet.server
                 , allows ref struct
 #endif
         {
+            Debug.Assert((key.KeyBytes.Length % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
             var effectiveWriteDesiredSize = input.WriteDesiredSize;
 
             if (effectiveWriteDesiredSize < 0)
@@ -208,7 +212,11 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+        {
+            Debug.Assert((key.KeyBytes.Length % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+        }
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref VectorInput input)
@@ -225,7 +233,11 @@ namespace Garnet.server
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length };
+        {
+            Debug.Assert((key.KeyBytes.Length % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length };
+        }
         #endregion Variable Length
 
         #region InitialUpdater

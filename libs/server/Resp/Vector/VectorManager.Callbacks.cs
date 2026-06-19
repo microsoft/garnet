@@ -107,6 +107,8 @@ namespace Garnet.server
                 currentLen = *(int*)currentPtr;
                 currentIndex = 0;
 
+                Debug.Assert((currentLen % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
                 if (i == 0)
                 {
                     return;
@@ -224,6 +226,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
@@ -242,6 +246,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -255,6 +261,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -279,6 +287,8 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
+            // We explicitly DO NOT check alignment here because we're always in managed code which doesn't care
+
 #pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
 #pragma warning restore IDE0302
