@@ -125,7 +125,7 @@ namespace Tsavorite.core
         {
             // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
             // fresh op. The pendingState carries the conditional-op-only payload (keyHash, requestKey, diskLogRecord, min/maxAddress).
-            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentPendingIoContext();
             ref var pendingState = ref op.pendingState;
             pendingState.CopyKey(srcLogRecord, hlogBase.bufferPool, sessionFunctions);
             pendingState.type = opType;

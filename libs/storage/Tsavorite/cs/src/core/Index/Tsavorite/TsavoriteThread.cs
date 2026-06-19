@@ -151,7 +151,7 @@ namespace Tsavorite.core
                     // DisposeRecord is idempotent (record is nulled after the first call), so this safely frees the op's
                     // raw read buffer on the exception path where InternalCompletePendingRequestFromContext did not reach it.
                     op.DisposeRecord();
-                    sessionFunctions.Ctx.ReturnAsyncIOContext(op);
+                    sessionFunctions.Ctx.ReturnPendingIoContext(op);
                     // Decrement AFTER any re-pend has incremented its fresh op, so the count is never transiently
                     // zero across a hop and is decremented exactly once even if completion processing threw.
                     sessionFunctions.Ctx.pendingCount--;

@@ -32,7 +32,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v6
     - name: Apply filter
-      uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d   #v4  for security reasons have pinned tag (commit SHA) for 3rd party
+      uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d   #v4  for security reasons we have pinned the tag (commit SHA) for 3rd party
       id: filter
       with:
         filters: |

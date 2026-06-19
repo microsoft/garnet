@@ -261,7 +261,7 @@ namespace Tsavorite.core
             // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
             // fresh op and populate its pendingState. HandleOperationStatus will pick up operationState.pendingOp on RECORD_ON_DISK
             // to finalize the IO issue.
-            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentAsyncIOContext();
+            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentPendingIoContext();
             ref var pendingState = ref op.pendingState;
             pendingState.type = OperationType.RMW;
             pendingState.keyHash = stackCtx.hei.hash;

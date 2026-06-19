@@ -41,7 +41,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6 for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -56,14 +56,14 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3  # v4 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3  # v4 for security reasons we have pinned the tag (commit SHA) for 3rd party
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4 for security reasons we have pinned the tag (commit SHA) for 3rd party
       -
         name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4 for security reasons we have pinned the tag (commit SHA) for 3rd party
 
         with:
             registry: ghcr.io
@@ -71,7 +71,7 @@ jobs:
             password: ${{ secrets.GITHUB_TOKEN }}
       -
         name: Build and push
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7 for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
           file: ${{ matrix.dockerfile }}
           provenance: false

@@ -54,7 +54,7 @@ namespace Tsavorite.core
             /// carried across threads through the <see cref="readyResponses"/> queue, so pooling it avoids the
             /// per-IO struct copy (Buffer.BulkMoveWithWriteBarrier) the previous value-typed AsyncIOContext incurred.
             /// </summary>
-            public readonly Stack<PendingIoContext<TInput, TOutput, TContext>> asyncIOContextPool;
+            public readonly Stack<PendingIoContext<TInput, TOutput, TContext>> pendingIoContextPool;
 
             /// <summary>
             /// Per-session pool of <see cref="IHeapContainer{TInput}"/> wrappers
@@ -76,7 +76,7 @@ namespace Tsavorite.core
                 this.sessionID = sessionID;
                 readyResponses = new AsyncQueue<AsyncIOContext>();
                 heapContainerPool = new Stack<IHeapContainer<TInput>>();
-                asyncIOContextPool = new Stack<PendingIoContext<TInput, TOutput, TContext>>();
+                pendingIoContextPool = new Stack<PendingIoContext<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
                 isAcquiredTransactional = false;
             }
@@ -84,19 +84,19 @@ namespace Tsavorite.core
             /// <summary>
             /// Rent a pre-allocated <see cref="PendingIoContext{TInput, TOutput, TContext}"/> from the per-session
             /// pool. Single-threaded per session, so non-concurrent <see cref="Stack{T}"/> is safe. Caller fills the
-            /// instance's fields directly and returns it via <see cref="ReturnAsyncIOContext"/> after the IO completes.
+            /// instance's fields directly and returns it via <see cref="ReturnPendingIoContext"/> after the IO completes.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingIoContext<TInput, TOutput, TContext> RentAsyncIOContext()
+            internal PendingIoContext<TInput, TOutput, TContext> RentPendingIoContext()
             {
-                if (asyncIOContextPool.TryPop(out var ctx))
+                if (pendingIoContextPool.TryPop(out var ctx))
                     return ctx;
                 return new PendingIoContext<TInput, TOutput, TContext>();
             }
 
             /// <summary>Return a pending op to the per-session pool after completion.</summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void ReturnAsyncIOContext(PendingIoContext<TInput, TOutput, TContext> ctx)
+            internal void ReturnPendingIoContext(PendingIoContext<TInput, TOutput, TContext> ctx)
             {
                 // Drop the session-typed context (its input container / disk record were already disposed or
                 // moved by the drain) so a pooled op retains no stale references, then reset the base fields.
@@ -105,7 +105,7 @@ namespace Tsavorite.core
                 ctx.baseOperationState = default;
                 ctx.pendingState = default;
                 ctx.Reset();
-                asyncIOContextPool.Push(ctx);
+                pendingIoContextPool.Push(ctx);
             }
 
             public int SyncIoPendingCount => pendingCount;

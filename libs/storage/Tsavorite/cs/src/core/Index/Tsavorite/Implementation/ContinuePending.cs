@@ -94,7 +94,7 @@ namespace Tsavorite.core
                                 // HandleOperationStatus's RECORD_ON_DISK branch AFTER the Internal call has mutated
                                 // operationState (logicalAddress, initialEntryAddress, initialLatestLogicalAddress).
                                 // Setting it here would just be overwritten with a stale value.
-                                var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+                                var newOp = sessionFunctions.Ctx.RentPendingIoContext();
                                 newOp.pendingState = pendingState;
                                 pendingState = default;
                                 operationState.pendingOp = newOp;
@@ -117,7 +117,7 @@ namespace Tsavorite.core
                                     pendingState = newOp.pendingState;
                                     newOp.pendingState = default;
                                     operationState.pendingOp = null;
-                                    sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
+                                    sessionFunctions.Ctx.ReturnPendingIoContext(newOp);
                                 }
                                 return internalStatus;
                             }
@@ -303,7 +303,7 @@ namespace Tsavorite.core
             // baseOperationState, by contrast, is snapshotted by HandleOperationStatus's RECORD_ON_DISK branch AFTER the
             // Internal call has mutated operationState (logicalAddress, initialEntryAddress, initialLatestLogicalAddress).
             // Setting it here would just be overwritten with a stale value.
-            var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+            var newOp = sessionFunctions.Ctx.RentPendingIoContext();
             newOp.pendingState = pendingState;
             pendingState = default;
             operationState.pendingOp = newOp;
@@ -320,7 +320,7 @@ namespace Tsavorite.core
                 pendingState = newOp.pendingState;
                 newOp.pendingState = default;
                 operationState.pendingOp = null;
-                sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
+                sessionFunctions.Ctx.ReturnPendingIoContext(newOp);
             }
             return status;
         }
@@ -385,7 +385,7 @@ namespace Tsavorite.core
                         // diskLogRecord). The baseOperationState, by contrast, is snapshotted by HandleOperationStatus's
                         // RECORD_ON_DISK branch AFTER the prepare call has mutated operationState (originalAddress,
                         // initialLatestLogicalAddress, logicalAddress). Setting it here would just be overwritten with a stale value.
-                        var newOp = sessionFunctions.Ctx.RentAsyncIOContext();
+                        var newOp = sessionFunctions.Ctx.RentPendingIoContext();
                         newOp.pendingState = pendingState;
                         pendingState = default;
                         operationState.pendingOp = newOp;
