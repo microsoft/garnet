@@ -139,6 +139,6 @@ namespace Tsavorite.core
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
-        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) { }
     }
 }

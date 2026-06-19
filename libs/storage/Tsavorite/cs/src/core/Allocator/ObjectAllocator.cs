@@ -141,6 +141,6 @@ namespace Tsavorite.core
         public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
-        public readonly void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) => _this.EvictRecordsInRange(startAddress, endAddress, source);
+        public readonly void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) => _this.EvictRecordsInRange(startAddress, endAddress, source, isRecovery);
     }
 }

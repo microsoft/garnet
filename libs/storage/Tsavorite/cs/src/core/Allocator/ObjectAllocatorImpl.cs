@@ -384,7 +384,7 @@ namespace Tsavorite.core
         /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.EvictPageForRecovery"/>), so this routine walks records
         /// within that single page only.
         /// </summary>
-        internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source)
+        internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery)
         {
             var startPage = GetPage(startAddress);
             var firstValidAddress = GetFirstValidLogicalAddressOnPage(startPage);
@@ -392,10 +392,17 @@ namespace Tsavorite.core
             var pageEndAddress = GetLogicalAddressOfStartOfPage(startPage + 1);
             var stopAddress = endAddress < pageEndAddress ? endAddress : pageEndAddress;
 
+            // During recovery a page whose object load was deferred has an empty ObjectIdMap, and its per-record object/overflow slots still hold raw
+            // on-disk values, not valid ObjectIdMap ids; they must not be dereferenced and the records are not yet materialized, so skip the page.
+            // (In normal eviction an empty map merely means an object-free page, whose inline records must still be visited for OnEvict.)
+            var objectIdMap = objectPages[GetPageIndexForAddress(address)].objectIdMap;
+            if (isRecovery && objectIdMap.IsEmpty)
+                return;
+
             while (address < stopAddress)
             {
                 var physicalAddress = GetPhysicalAddress(address);
-                var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
+                var logRecord = new LogRecord(physicalAddress, objectIdMap);
                 var allocatedSize = logRecord.AllocatedSize;
 
                 if (allocatedSize <= 0)
@@ -765,6 +772,14 @@ namespace Tsavorite.core
             // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.
             ObjectLogWriter<TStoreFunctions> logWriter = null;
 
+            // For a snapshot-region recovery flush, the reader over the snapshot object-log device from which each record's object bytes are
+            // copied into the main object-log (appended via logWriter). Null for non-recovery flushes and for the hybrid-log region (whose
+            // objects are already durable in the main object-log).
+            var isSnapshotRecoveryCopy = asyncResult.recoverySnapshotObjectLogDevice is not null;
+            var formerFlushedUntilAddress = asyncResult.recoveryFormerFlushedUntilAddress;
+            CircularDiskReadBuffer snapshotObjectReadBuffers = null;
+            ObjectLogReader<TStoreFunctions> snapshotObjectReader = null;
+
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             SectorAlignedMemory srcBuffer = default;
             try
@@ -830,6 +845,7 @@ namespace Tsavorite.core
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
+
                 while (physicalAddress < endPhysicalAddress)
                 {
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
@@ -908,10 +924,38 @@ namespace Tsavorite.core
                                 }
                                 else
                                 {
-                                    // In recovery we just need to update the disk-image LogRecord with the object lengths and file position, and then
-                                    // advance the recoveryOngoingPageHeader position. This advancement will also take care of segment breaks if needed.
-                                    var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
-                                    recoveryOngoingPageHeader.Advance(objectLengths);
+                                    if (isSnapshotRecoveryCopy && logicalAddress >= formerFlushedUntilAddress)
+                                    {
+                                        // Snapshot-region recovery flush: the record's objects live only in the snapshot object-log. Copy their bytes
+                                        // into the main object-log (appended at the current objectLogTail via logWriter) so the page becomes durable and
+                                        // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
+                                        // deserialized at this point, so read the position/lengths from the R11 encoding (not from objectIdMap), and use
+                                        // RepointObjectLogPosition (which preserves the unchanged lengths) rather than SetRecoveredObjectLogRecordStartPosition.
+                                        var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength);
+                                        var copyObjectLength = (ulong)copyKeyLength + copyValueLength;
+
+                                        // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
+                                        // records avoid an up-front full-page pre-pass. The read-ahead range is sized by scanning forward from here.
+                                        snapshotObjectReader ??= CreateSnapshotObjectReader(physicalAddress + logRecordSize, endPhysicalAddress, snapshotPositionWord,
+                                            copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice, out snapshotObjectReadBuffers);
+
+                                        var mainRecordPosition = logWriter.GetNextRecordStartPosition();
+
+                                        // Position/await the snapshot read buffers at this record (skips sector padding and waits for the read-ahead IO),
+                                        // then stream the record's bytes verbatim into the main object-log.
+                                        if (!snapshotObjectReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits)))
+                                            throw new TsavoriteException("No snapshot object-log data available while copying objects during recovery");
+                                        logWriter.CopyRecoveredObjectBytes(snapshotObjectReader, copyObjectLength);
+                                        logRecord.RepointObjectLogPosition(mainRecordPosition);
+                                        recoveryOngoingPageHeader.Advance(copyObjectLength);
+                                    }
+                                    else
+                                    {
+                                        // In recovery we just need to update the disk-image LogRecord with the object lengths and file position, and then
+                                        // advance the recoveryOngoingPageHeader position. This advancement will also take care of segment breaks if needed.
+                                        var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
+                                        recoveryOngoingPageHeader.Advance(objectLengths);
+                                    }
                                 }
 
                                 // Do this for both cases so it's clear when debugging
@@ -956,7 +1000,43 @@ namespace Tsavorite.core
                 if (protectEpochWhenDone)
                     epoch.Resume();
                 logWriter?.Dispose();
+                snapshotObjectReader?.OnEndReadRecords();
+                snapshotObjectReadBuffers?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Demand-loads (creates and seeds) the reader over the snapshot object-log for a snapshot-region recovery flush, on the first valid record
+        /// with objects on the page. The read-ahead range is sized by scanning forward from <paramref name="nextRecordAddress"/> to the last object
+        /// record on the page, so pages with few or no object records avoid an up-front full-page pre-pass.
+        /// </summary>
+        /// <param name="nextRecordAddress">The (disk-image) address of the record just after the first object record.</param>
+        /// <param name="endPhysicalAddress">The end of the page's records in the disk image.</param>
+        /// <param name="firstPositionWord">The snapshot object-log position word of the first object record (the read-ahead start).</param>
+        /// <param name="firstKeyLength">The first object record's key length.</param>
+        /// <param name="firstValueLength">The first object record's value length.</param>
+        /// <param name="snapshotObjectLogDevice">The snapshot object-log device to read from.</param>
+        /// <param name="readBuffers">Outputs the created read buffers; the caller disposes them.</param>
+        private ObjectLogReader<TStoreFunctions> CreateSnapshotObjectReader(long nextRecordAddress, long endPhysicalAddress, ulong firstPositionWord,
+            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, out CircularDiskReadBuffer readBuffers)
+        {
+            var startPosition = new ObjectLogFilePositionInfo(firstPositionWord, objectLogTail.SegmentSizeBits);
+            var endPosition = startPosition;
+            var endKeyLength = firstKeyLength;
+            var endValueLength = firstValueLength;
+            for (var scanAddress = nextRecordAddress; scanAddress < endPhysicalAddress;)
+            {
+                var scanRecord = new LogRecord(scanAddress);
+                scanAddress += scanRecord.AllocatedSize;
+                if (scanRecord.Info.Valid && scanRecord.DataHeader.RecordHasObjects)
+                    endPosition = new(scanRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+            }
+            endPosition.Advance((ulong)endKeyLength + endValueLength);
+
+            readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
+            var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+            reader.OnBeginReadRecords(startPosition, endPosition - startPosition);
+            return reader;
         }
 
         /// <summary>

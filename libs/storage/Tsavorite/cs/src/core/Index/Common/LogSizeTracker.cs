@@ -112,8 +112,10 @@ namespace Tsavorite.core
             if (addingPage && numPages == logAccessor.allocatorBase.MaxAllocatedPageCount)
                 return true;
 
-            // Otherwise, we need at least MinEvictionHeadAddressLag to be able to evict anything.
-            return (TotalSize > highTargetSize) && logAccessor.allocatorBase.GetTailAddress() - logAccessor.allocatorBase.HeadAddress >= MinEvictionHeadAddressLag;
+            // Otherwise, we need at least MinEvictionHeadAddressLag to be able to evict anything. Use UnstableGetTailAddress (as above): this is
+            // reached from HandlePageOverflow on the thread that owns tail-address stabilization, and the stable GetTailAddress() would spin-wait
+            // forever for a TailPageOffset that only this same thread can reset (after NeedToWaitForClose returns).
+            return (TotalSize > highTargetSize) && logAccessor.allocatorBase.UnstableGetTailAddress(out _) - logAccessor.allocatorBase.HeadAddress >= MinEvictionHeadAddressLag;
         }
 
         /// <summary>Creates a new log size tracker</summary>

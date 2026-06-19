@@ -130,6 +130,14 @@ namespace Tsavorite.core
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
 
+        /// <summary>During snapshot recovery, the snapshot object-log device that is the source for copying object bytes into the main object-log
+        /// (for records at/above <see cref="recoveryFormerFlushedUntilAddress"/>). Null for non-recovery flushes and for the hybrid-log region.</summary>
+        internal IDevice recoverySnapshotObjectLogDevice;
+
+        /// <summary>During snapshot recovery, the former FlushedUntilAddress (the hybrid-log/snapshot boundary). Records whose logical address is at or
+        /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
+        internal long recoveryFormerFlushedUntilAddress;
+
         /// <inheritdoc/>
         public override string ToString()
         {

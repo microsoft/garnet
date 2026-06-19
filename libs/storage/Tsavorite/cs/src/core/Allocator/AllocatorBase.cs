@@ -1416,10 +1416,11 @@ namespace Tsavorite.core
             var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
 
             // Per-record eviction walk handles internal heap accounting (key + value via
-            // logSizeTracker) and optionally notifies the application via OnEvict.
+            // logSizeTracker) and optionally notifies the application via OnEvict. isRecovery: true so that pages whose
+            // object load was deferred (empty ObjectIdMap, un-deserialized object/overflow slots) are skipped.
             if (logSizeTracker is not null || storeFunctions.CallOnEvict)
             {
-                _wrapper.EvictRecordsInRange(start, end, source);
+                _wrapper.EvictRecordsInRange(start, end, source, isRecovery: true);
             }
             if (onEvictionObserver is not null)
             {
@@ -1507,7 +1508,7 @@ namespace Tsavorite.core
                     // via OnEvict for app-level cleanup.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
                     if (logSizeTracker is not null || storeFunctions.CallOnEvict)
-                        _wrapper.EvictRecordsInRange(start, end, evictSource);
+                        _wrapper.EvictRecordsInRange(start, end, evictSource, isRecovery: false);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -1895,11 +1896,23 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Flush pages asynchronously for recovery (such as when we have invalidated v+1 records).
+        /// Flush pages asynchronously for recovery (such as when we have invalidated v+1 records, or when replaying snapshot pages into the main log).
         /// </summary>
-        public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
+        /// <param name="scanFromAddress">The lowest address being flushed on <paramref name="flushPageStart"/></param>
+        /// <param name="flushPageStart">First page to flush</param>
+        /// <param name="numPages">Number of pages to flush</param>
+        /// <param name="callback">Flush completion callback</param>
+        /// <param name="context">Callback context</param>
+        /// <param name="snapshotObjectLogDevice">For the snapshot-replay flush, the snapshot object-log device whose object bytes (for records at/above
+        ///     <paramref name="formerFlushedUntilAddress"/>) are copied into the main object-log during the flush. Null for non-object or hybrid-log-only flushes.</param>
+        /// <param name="formerFlushedUntilAddress">The former FlushedUntilAddress (hybrid-log/snapshot boundary); records at/above it have their objects copied.</param>
+        public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context,
+            IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue)
         {
             Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
+
+            // When copying snapshot object bytes into the main object-log, we need write buffers on the main object-log device (as for a normal flush).
+            var copyObjects = snapshotObjectLogDevice is not null;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var asyncResult = new PageAsyncFlushResult<TContext>()
@@ -1910,11 +1923,14 @@ namespace Tsavorite.core
                     partial = false,
                     fromAddress = Math.Max(scanFromAddress, GetLogicalAddressOfStartOfPage(flushPage)),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
-                    flushRequestState = FlushRequestState.Recovery
+                    flushRequestState = FlushRequestState.Recovery,
+                    recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
+                    recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
+                    flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null
                 };
 
-                // For OA, we do not use FlushBuffers here; we set isForRecovery to reuse the stored lengths rather than re-serializing objects,
-                // using the lengths filled in during deserialization in RecoverHybridLog(Async), and when that is complete we fill in objectLogTail.
+                // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
+                // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
                 WriteAsync(flushPage, callback, asyncResult);
             }
         }
