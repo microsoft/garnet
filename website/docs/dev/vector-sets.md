@@ -41,14 +41,15 @@ The index key (represented by the `Index` struct) contains the following data:
      > Today this ignored except for validation purposes, eventually DiskANN will use it.
  - `uint NumLinks` - the `M` used to create the Vector Set, or the default value of 16 if not specified
  - `uint BuildExplorationFactor` - the `EF` used to create the Vector Set, or the default value of 200 if not specified
- - `VectorQuantType QuantType` - the quantizier specified at creation time, or the default value of `Q8` if not specified
+ - `VectorQuantType QuantType` - the quantizer specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
-     > We have an extension here, `XPREQ8` which is not from Redis.
-     > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
+     > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
+     > This is a quantizer for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
      > It forbids the `REDUCE` option and requires 4-byte element ids.
    * > [!IMPORTANT]
      > Today only `XPREQ` is actually implemented, eventually DiskANN will provide reasonable versions of all the Redis builtin quantizers.
  - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after [recovery](#recovery) or [replication](#replication) to detect if `IndexPtr` is dangling
+     > They forbid the `REDUCE` option, a restriction we may lift in the future.
 
 The index key is in the main store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with the `VectorSet` bit on `RecordInfo`.
 
@@ -397,10 +398,10 @@ Garnet calls into the following DiskANN functions:
 
  - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
- - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+ - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
  - [ ] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
- - [x] `int search_vector(ulong context, nint index, VectorValueType vector_value_type, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
@@ -409,7 +410,7 @@ Garnet calls into the following DiskANN functions:
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
   - `output_distances_len` is the number of _floats_ in `output_distances`, not bytes
-  - When inserting, if `vector_value_type == FP32` then `vector_len` is the number of _floats_ in `vector_data`, otherwise it is the number of bytes
+  - When inserting and searching, the `VectorQuantType` used to create the index defines the expected format of `vector_data` and whether `vector_len` is counting bytes, floats, etc.
   - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8

@@ -1088,6 +1088,7 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.Initialize();
                 databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
             }
         }

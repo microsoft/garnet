@@ -425,6 +425,7 @@ namespace Garnet.test.cluster
             bool useAcl = false,
             bool asyncReplay = false,
             int vectorSetReplayTaskCount = 0,
+            int vectorSetQuantizationTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
@@ -461,7 +462,8 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
-                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount);
 
             return new GarnetServer(opts, loggerFactory);
         }

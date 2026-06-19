@@ -1057,6 +1057,106 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void VectorSetQuantizationTaskCount()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(1, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Zero is accepted
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "0" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "foo" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too low rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "-1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too high rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "2147483648" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Field is accepted
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(1, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Zero is accepted
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 0 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too low rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": -1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too high rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 2147483648 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>
