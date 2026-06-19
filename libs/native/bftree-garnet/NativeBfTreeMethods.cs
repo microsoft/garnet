@@ -23,8 +23,8 @@ namespace Garnet.server.BfTreeInterop
         /// storage_backend: 0 = Disk, 1 = Memory.
         /// For disk-backed trees, file_path/file_path_len specify the data file path.
         /// For in-memory trees, file_path can be null.
-        /// snapshot_file_path/snapshot_file_path_len configure the CPR snapshot output
-        /// path (use_snapshot=true if non-empty). Pass null/0 to disable snapshots.
+        /// use_snapshot: non-zero enables CPR snapshots on the tree (the snapshot
+        /// destination is supplied at <c>bftree_cpr_snapshot</c> call time). Pass 0 to disable.
         /// </summary>
         [LibraryImport(LibName)]
         internal static partial nint bftree_create(
@@ -36,8 +36,7 @@ namespace Garnet.server.BfTreeInterop
             byte storage_backend,
             byte* file_path,
             int file_path_len,
-            byte* snapshot_file_path,
-            int snapshot_file_path_len);
+            byte use_snapshot);
 
         /// <summary>
         /// Free a BfTree instance.
@@ -119,24 +118,26 @@ namespace Garnet.server.BfTreeInterop
         internal static partial void bftree_scan_drop(nint handle);
 
         // ---------------------------------------------------------------
-        // Snapshot / Recovery (CPR — bftree 0.5+)
+        // Snapshot / Recovery (CPR)
         // ---------------------------------------------------------------
 
         /// <summary>
-        /// Take a CPR (Concurrent Prefix Recovery) snapshot of a BfTree. Synchronous;
-        /// designed to be non-blocking to concurrent insert/read/delete callers. Writes
-        /// the snapshot to the path configured at tree-creation time via
-        /// <c>Config::snapshot_file_path</c> / <c>use_snapshot=true</c>.
+        /// Take a CPR (Concurrent Prefix Recovery) snapshot of a BfTree, writing it to
+        /// <paramref name="snapshot_path"/>. Synchronous; designed to be non-blocking to
+        /// concurrent insert/read/delete callers. The snapshot destination is a call-time
+        /// argument.
         ///
         /// Internal <c>snapshot_in_progress</c> AtomicBool serializes concurrent calls;
         /// losers no-op silently. To produce snapshots at multiple destination paths,
-        /// the caller is expected to <c>File.Move</c> / copy the configured snapshot
-        /// file to the final destination after each call.
+        /// the caller is expected to <c>File.Move</c> / copy the snapshot file to the
+        /// final destination after each call.
         ///
-        /// Returns 0 on success, -1 on panic.
+        /// Returns 0 on success, -1 on panic or invalid/empty path.
         /// </summary>
         [LibraryImport(LibName)]
-        internal static partial int bftree_cpr_snapshot(nint tree);
+        internal static partial int bftree_cpr_snapshot(
+            nint tree,
+            byte* snapshot_path, int snapshot_path_len);
 
         /// <summary>
         /// Recover a BfTree from a CPR snapshot file. Unified for disk-backed and
@@ -144,8 +145,8 @@ namespace Garnet.server.BfTreeInterop
         /// snapshot.
         ///
         /// recovery_path: source CPR snapshot file to recover from.
-        /// new_snapshot_path: scratch path for the recovered tree's future cpr_snapshot
-        ///   calls. Pass null/0 to disable snapshots on the recovered tree.
+        /// use_snapshot: non-zero enables CPR snapshots on the recovered tree (the
+        ///   destination is supplied at <c>bftree_cpr_snapshot</c> call time). Pass 0 to disable.
         /// buffer_ptr: optional pre-allocated buffer for the recovered tree's cache.
         ///   If null, bftree allocates and owns the buffer (freed on tree.Dispose).
         ///   If non-null, the caller owns the buffer.
@@ -155,7 +156,7 @@ namespace Garnet.server.BfTreeInterop
         [LibraryImport(LibName)]
         internal static partial nint bftree_new_from_cpr_snapshot(
             byte* recovery_path, int recovery_path_len,
-            byte* new_snapshot_path, int new_snapshot_path_len,
+            byte use_snapshot,
             byte* buffer_ptr, nuint buffer_size);
 
         /// <summary>

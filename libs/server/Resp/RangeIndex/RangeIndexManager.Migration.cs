@@ -315,7 +315,7 @@ namespace Garnet.server
                     {
                         try
                         {
-                            BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr);
+                            BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr, scratchPath);
                             File.Copy(scratchPath, migrationPath, overwrite: false);
                         }
                         finally

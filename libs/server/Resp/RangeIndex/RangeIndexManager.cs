@@ -725,7 +725,7 @@ namespace Garnet.server
             }
             try
             {
-                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
+                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr, scratchPath);
                 File.Copy(scratchPath, flushPath, overwrite: false);
             }
             finally
@@ -848,7 +848,7 @@ namespace Garnet.server
                             while (!entry.TryClaimSnapshot()) Thread.Yield();
                             try
                             {
-                                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
+                                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr, scratchPath);
                                 // Copy scratch -> token-tagged checkpoint destination. Copy rather
                                 // than move because bftree's internal VFS keeps a file descriptor
                                 // for the scratch path (see SnapshotForFlushViaCpr docs).
