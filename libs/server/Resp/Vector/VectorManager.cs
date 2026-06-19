@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -715,7 +714,9 @@ namespace Garnet.server
                         // Save a pointer off so it's easy to grab InlineFilterState in callbacks.
                         unsafe
                         {
-                            InlineFilterStatePtr = (InlineFilterState*)Unsafe.AsPointer(ref filterState);
+#pragma warning disable CS8500 // InlineFilterState only contains unmanaged types or spans of pinned arrays, this is safe
+                            InlineFilterStatePtr = &filterState;
+#pragma warning restore CS8500
                         }
 
                         found = Service.SearchVector(
@@ -860,63 +861,63 @@ namespace Garnet.server
 
                     var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
 
-                    fixed (byte* filterPtr = filter)
-                    fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
-                    fixed ((int, int)* selPtr = selectorBuf)
+                    var filterState = new InlineFilterState
                     {
-                        InlineFilterStatePtr = new InlineFilterState
-                        {
-                            Context = context,
-                            InstrCount = instrCount,
-                            TupleCount = tupleCount,
-                            SelectorCount = selectorCount,
-                            InstrBuf = instrPtr,
-                            TuplePoolBuf = tuplePtr,
-                            RuntimePoolBuf = runtimePtr,
-                            ExtractedFields = fieldsPtr,
-                            StackBuf = stackPtr,
-                            SelectorRanges = selPtr,
-                            FilterBytes = filterPtr,
-                            FilterBytesLen = filter.Length,
-                        };
+                        InstrBuf = instrBuf,
+                        TuplePoolBuf = tuplePoolBuf,
+                        RuntimePoolBuf = runtimePoolBuf,
+                        ExtractedFields = extractedFields,
+                        StackBuf = stackBuf,
+                        SelectorRanges = selectorBuf,
+                        FilterBytes = filter,
+                    };
 
-                        found = Service.SearchElement(
-                            context,
-                            indexPtr,
-                            element,
-                            delta,
-                            effectiveEF,
-                            filter,
-                            maxFilteringEffort,
-                            outputIds,
-                            outputDistances,
-                            out continuation
-                        );
-
+                    // InlineFilterState is a ref struct, so will remain on stack for the SearchVector call.
+                    //
+                    // Save a pointer off so it's easy to grab InlineFilterState in callbacks.
+                    unsafe
+                    {
+#pragma warning disable CS8500 // InlineFilterState only contains unmanaged types or spans of pinned arrays, this is safe
+                        InlineFilterStatePtr = &filterState;
+#pragma warning restore CS8500
                     }
+
+                    found = Service.SearchElement(
+                        context,
+                        indexPtr,
+                        element,
+                        delta,
+                        effectiveEF,
+                        filter,
+                        maxFilteringEffort,
+                        outputIds,
+                        outputDistances,
+                        out continuation
+                    );
+
                 }
                 finally
                 {
                     ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                    InlineFilterStatePtr = null;
                 }
             }
             else
             {
                 found =
-        Service.SearchElement(
-        context,
-        indexPtr,
-        element,
-        delta,
-        effectiveEF,
-        filter,
-        maxFilteringEffort,
-        outputIds,
-        outputDistances,
-        out continuation
-        );
+                    Service.SearchElement(
+                    context,
+                    indexPtr,
+                    element,
+                    delta,
+                    effectiveEF,
+                    filter,
+                    maxFilteringEffort,
+                    outputIds,
+                    outputDistances,
+                    out continuation
+                    );
             }
-
 
             if (found < 0)
             {
