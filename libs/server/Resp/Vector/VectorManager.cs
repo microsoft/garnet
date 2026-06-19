@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -698,45 +699,43 @@ namespace Garnet.server
 
                         var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
 
-                        // Pin filter bytes and scratch buffer pointers, then populate thread-static state
-                        fixed (byte* filterPtr = filter)
-                        fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
-                        fixed ((int, int)* selPtr = selectorBuf)
+                        var filterState = new InlineFilterState
                         {
-                            t_inlineFilterStatePtr = new InlineFilterState
-                            {
-                                InstrCount = instrCount,
-                                TupleCount = tupleCount,
-                                SelectorCount = selectorCount,
-                                InstrBuf = instrPtr,
-                                TuplePoolBuf = tuplePtr,
-                                RuntimePoolBuf = runtimePtr,
-                                ExtractedFields = fieldsPtr,
-                                StackBuf = stackPtr,
-                                SelectorRanges = selPtr,
-                                FilterBytes = filterPtr,
-                                FilterBytesLen = filter.Length,
-                            };
+                            InstrBuf = instrBuf,
+                            TuplePoolBuf = tuplePoolBuf,
+                            RuntimePoolBuf = runtimePoolBuf,
+                            ExtractedFields = extractedFields,
+                            StackBuf = stackBuf,
+                            SelectorRanges = selectorBuf,
+                            FilterBytes = filter,
+                        };
 
-                            found = Service.SearchVector(
-                                context,
-                                indexPtr,
-                                vectorData.ReadOnlySpan,
-                                vectorData.ElementCount,
-                                delta,
-                                effectiveEF,
-                                filter,
-                                maxFilteringEffort,
-                                outputIds,
-                                outputDistances,
-                                out continuation
-                            );
+                        // InlineFilterState is a ref struct, so will remain on stack for the SearchVector call.
+                        //
+                        // Save a pointer off so it's easy to grab InlineFilterState in callbacks.
+                        unsafe
+                        {
+                            InlineFilterStatePtr = (InlineFilterState*)Unsafe.AsPointer(ref filterState);
                         }
+
+                        found = Service.SearchVector(
+                            context,
+                            indexPtr,
+                            vectorData.ReadOnlySpan,
+                            vectorData.ElementCount,
+                            delta,
+                            effectiveEF,
+                            filter,
+                            maxFilteringEffort,
+                            outputIds,
+                            outputDistances,
+                            out continuation
+                        );
                     }
                     finally
                     {
                         ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
-                        t_inlineFilterStatePtr = default;
+                        InlineFilterStatePtr = null;
                     }
                 }
                 else
@@ -865,7 +864,7 @@ namespace Garnet.server
                     fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
                     fixed ((int, int)* selPtr = selectorBuf)
                     {
-                        t_inlineFilterStatePtr = new InlineFilterState
+                        InlineFilterStatePtr = new InlineFilterState
                         {
                             Context = context,
                             InstrCount = instrCount,

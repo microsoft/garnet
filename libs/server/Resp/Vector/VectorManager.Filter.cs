@@ -3,7 +3,10 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Diagnostics;
+#if NET9_0_OR_GREATER
 using System.Runtime.CompilerServices;
+#endif
 using System.Runtime.InteropServices;
 using Tsavorite.core;
 
@@ -232,8 +235,9 @@ namespace Garnet.server
         /// Set before the FFI call into Rust, read by <see cref="FilterCallbackUnmanaged"/>.
         /// </summary>
         [ThreadStatic]
-        internal static unsafe void* t_inlineFilterStatePtr;
-
+#pragma warning disable CS8500 // InlineFilterState only contains unmanaged types or spans of pinned arrays, this is safe
+        internal static unsafe InlineFilterState* InlineFilterStatePtr;
+#pragma warning restore CS8500
 
         /// <summary>
         /// Per-query filter state maintained on the C# side.
@@ -261,7 +265,13 @@ namespace Garnet.server
         /// </summary>
         private static unsafe byte EvaluateCandidateFilter(ulong context, uint internalId)
         {
-            ref var state = ref Unsafe.As<byte, InlineFilterState>(ref Unsafe.AsRef<byte>(t_inlineFilterStatePtr));
+            Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
+            ref var state
+#if NET9_0_OR_GREATER
+                = ref Unsafe.AsRef<InlineFilterState>(InlineFilterStatePtr);
+#else
+                = ref *InlineFilterStatePtr;
+#endif
 
             // 1. Read external ID for this internal_id via ExtMap
             Span<byte> iidKey = stackalloc byte[sizeof(uint)];
