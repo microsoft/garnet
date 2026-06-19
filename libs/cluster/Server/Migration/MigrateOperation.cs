@@ -105,7 +105,7 @@ namespace Garnet.cluster
 
                     VectorInput vectorInput = new()
                     {
-                        MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve
+                        IsMigrationRead = true,
                     };
 
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)

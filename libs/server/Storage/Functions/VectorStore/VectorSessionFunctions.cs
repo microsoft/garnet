@@ -98,7 +98,7 @@ namespace Garnet.server
                 }
             }
 
-            if (input.ReadDesiredSize > 0)
+            if (!input.VariableSizedRead)
             {
                 Debug.Assert(output.SpanByteAndMemory.Length >= value.Length, "Should always have space for vector point reads");
 

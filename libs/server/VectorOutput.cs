@@ -19,7 +19,7 @@ namespace Garnet.server
         public SpanByteAndMemory SpanByteAndMemory;
 
         /// <summary>
-        /// If a call needs a larger <see cref="VectorInput.ReadDesiredSize"/> than was provided, it is stored here.
+        /// If a call needs a larger output buffer than was provided, it is stored here.
         /// </summary>
         public int? UpdatedReadDesiredSize { get; set; }
 

@@ -291,7 +291,7 @@ namespace Garnet.server
             {
                 VectorInput input = new()
                 {
-                    ReadDesiredSize = -1
+                    VariableSizedRead = true,
                 };
 
                 fixed (byte* ptr = value.Span)
@@ -310,10 +310,11 @@ namespace Garnet.server
                         return false;
                     }
 
-                    if (output.UpdatedReadDesiredSize != null && output.UpdatedReadDesiredSize.Value > output.SpanByteAndMemory.Length)
+                    var updateReadDesiredSize = output.UpdatedReadDesiredSize.GetValueOrDefault(-1);
+                    if (updateReadDesiredSize > output.SpanByteAndMemory.Length)
                     {
                         value.Memory?.Dispose();
-                        var newAlloc = MemoryPool<byte>.Shared.Rent(output.UpdatedReadDesiredSize.Value);
+                        var newAlloc = MemoryPool<byte>.Shared.Rent(updateReadDesiredSize);
                         value = new(newAlloc, newAlloc.Memory.Length);
                         continue;
                     }

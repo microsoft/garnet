@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -613,18 +612,42 @@ namespace Garnet.server
     {
         public int SerializedLength => throw new NotImplementedException();
 
-        public int ReadDesiredSize { get; init; }
+        /// <summary>
+        /// True if the read value might not fit in the provided output buffer.
+        /// 
+        /// If false, the output buffer is guaranteed to be correctly sized.
+        /// </summary>
+        public bool VariableSizedRead { get; init; }
 
+        /// <summary>
+        /// Size of write in bytes.
+        /// 
+        /// If negative, this is an append to an existing value.
+        /// If positive, this is a create of a new value or an overwrite of an existing value.
+        /// </summary>
         public int WriteDesiredSize { get; init; }
 
+        /// <summary>
+        /// If part of a batch operation, the zero-based index of that operation.
+        /// </summary>
         public int Index { get; init; }
+
+        /// <summary>
+        /// Context to pass to <see cref="Callback"/>, if any.
+        /// 
+        /// This value is opaque to Garnet and should not be modified.
+        /// </summary>
         public nint CallbackContext { get; init; }
+
+        /// <summary>
+        /// The native callback to invoke, if any, on the inplace record data.
+        /// </summary>
         public nint Callback { get; init; }
 
-        [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
-        public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
-
-        public int? MaxMigrationHeapAllocationSize { get; init; }
+        /// <summary>
+        /// True if the read being performed is part of a migration operation.
+        /// </summary>
+        public bool IsMigrationRead { get; init; }
 
         public VectorInput()
         {
