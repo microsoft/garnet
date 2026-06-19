@@ -10,6 +10,11 @@ metadata:
   {{- end }}
 spec:
   clusterIP: None
+  ipFamilies:
+    {{- with .Values.service.ipFamilies }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  ipFamilyPolicy: {{ .Values.service.ipFamilyPolicy }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: {{ .Values.containers.port }}

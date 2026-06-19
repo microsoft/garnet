@@ -134,13 +134,15 @@ namespace Garnet.server
         /// </summary>
         public bool IsEnabled { get; }
 
+        private bool initialized;
+
         private readonly ILogger logger;
 
         private readonly int dbId;
 
         private ConcurrentDictionary<ulong, byte> recoveredIndexes;
 
-        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
@@ -164,13 +166,29 @@ namespace Garnet.server
 
             vectorSetLocks = new(vectorSetReplayCount);
 
-            this.getCleanupSession = getCleanupSession;
+            this.getTempSession = getTempSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            requestDropTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
+            requestDropTask = RunRequestDropTaskAsync();
+
+            requestedDrops = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+            requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
             recoveredIndexes = new();
+
+            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+
+            if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
+                throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
+            var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
+            Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -180,15 +198,20 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
-            if (!IsEnabled) return;
+            if (!IsEnabled || initialized) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            initialized = true;
+
+            using var session = (RespServerSession)getTempSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
             {
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-            VectorElementKey key = new(MetadataNamespace, []);
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
+#pragma warning restore IDE0302 
+            VectorElementKey key = new(nsBytes, []);
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
@@ -212,6 +235,8 @@ namespace Garnet.server
                     contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
                 }
             }
+
+            StartQuantizationTasks();
         }
 
         /// <summary>
@@ -221,7 +246,7 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            using var session = (RespServerSession)getTempSession();
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
@@ -286,6 +311,11 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
+            // Wait for any _drops_ in progress to finish
+            requestDropTaskChannel.Writer.Complete();
+            AsyncUtils.BlockingWait(requestDropTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(requestDropTask);
+
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
@@ -302,6 +332,11 @@ namespace Garnet.server
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
+
+            // drain quantization task
+            _ = quantizationChannel.Writer.TryComplete();
+            while (quantizationChannel.Reader.TryRead(out _)) { }
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -311,6 +346,27 @@ namespace Garnet.server
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
+            Debug.Assert(!completedOutputs.Next());
+            completedOutputs.Dispose();
+        }
+
+        /// <summary>
+        /// As <see cref="CompletePending(ref Status, ref VectorOutput, ref VectorBasicContext)"/>, but also propagates the
+        /// completed <paramref name="input"/> back to the caller.
+        ///
+        /// This is required for the unknown-size read path (<see cref="ReadSizeUnknown"/>): the Reader records the actual
+        /// value size on <see cref="VectorInput.ReadDesiredSize"/>, and on the pending (disk) path that update lives on the
+        /// pending context's copy of the input. Without propagating it back the caller keeps its stale value and skips the
+        /// grow-and-retry, returning a truncated/uninitialized buffer.
+        /// </summary>
+        private static void CompletePending(ref Status status, ref VectorInput input, ref VectorOutput output, ref VectorBasicContext ctx)
+        {
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            output = completedOutputs.Current.Output;
+            input = completedOutputs.Current.Input;
             Debug.Assert(!completedOutputs.Next());
             completedOutputs.Dispose();
         }
@@ -332,6 +388,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
+            scoped ReadOnlySpan<byte> key,
             scoped ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             VectorValueType valueType,
@@ -351,28 +408,15 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
 
-            var valueDims = CalculateValueDimensions(valueType, values);
-
-            if (dimensions != valueDims)
+            if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
-                // Matching Redis behavior
-                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {dimensions}");
-                return VectorManagerResult.BadParams;
-            }
-
-            if (providedReduceDims == 0 && reduceDims != 0)
-            {
-                // Matching Redis behavior, which is definitely a bit weird here
-                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {reduceDims}");
-                return VectorManagerResult.BadParams;
-            }
-            else if (providedReduceDims != 0 && providedReduceDims != reduceDims)
-            {
+                errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
                 return VectorManagerResult.BadParams;
             }
 
             if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
             {
+                errorMsg = "ERR asked quantization mismatch with existing vector set"u8;
                 return VectorManagerResult.BadParams;
             }
 
@@ -389,18 +433,47 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            var insert =
-                Service.Insert(
-                    context,
-                    indexPtr,
-                    element,
-                    valueType,
-                    values,
-                    attributes
-                );
+            bool insert;
+            bool needsQuantization;
+            using (var vectorData = PrepareVectorData(quantType, valueType, values, out errorMsg))
+            {
+                if (!errorMsg.IsEmpty)
+                {
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (vectorData.ElementCount != dimensions)
+                {
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {vectorData.ElementCount} but set has {dimensions}");
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (providedReduceDims == 0 && reduceDims != 0)
+                {
+                    // Matching Redis behavior, which is definitely a bit weird here
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {vectorData.ElementCount} but set has {reduceDims}");
+                    return VectorManagerResult.BadParams;
+                }
+
+                insert =
+                    Service.Insert(
+                        context,
+                        indexPtr,
+                        element,
+                        vectorData.ReadOnlySpan,
+                        vectorData.ElementCount,
+                        attributes,
+                        out needsQuantization
+                    );
+            }
 
             if (insert)
             {
+                if (needsQuantization)
+                {
+                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                }
+
                 return VectorManagerResult.OK;
             }
 
@@ -451,9 +524,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Request that the DiskANN side of an index be dropped.
+        /// 
+        /// This happens when a record is evicted to disk.
+        /// 
+        /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
+        /// and we can't allow the index to be recreated until any requested drops are processed.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
+        {
+            if (value.Length != IndexSize)
+            {
+                logger?.LogWarning($"Ignored Vector Set drop index due to size mismatch");
+                return;
+            }
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            // It's possible for an index to be recovered from disk but never initialized, which means we need no drop
+            if (indexPtr != 0)
+            {
+                if (!requestedDrops.TryAdd(key.ToArray(), (context, indexPtr)))
+                {
+                    throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
+                }
+
+                _ = requestDropTaskChannel.Writer.TryWrite(null);
+            }
+        }
+
+        /// <summary>
         /// Ask DiskANN to drop its index.
         /// </summary>
-        internal void DropInMemoryIndex(ReadOnlySpan<byte> value)
+        private void DropInMemoryIndex(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -486,17 +591,18 @@ namespace Garnet.server
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
         internal VectorManagerResult ValueSimilarity(
-            ReadOnlySpan<byte> indexValue,
+            scoped ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
-            ReadOnlySpan<byte> values,
+            scoped ReadOnlySpan<byte> values,
             int count,
             float delta,
             int searchExplorationFactor,
-            ReadOnlySpan<byte> filter,
+            scoped ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
             bool includeAttributes,
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
+            scoped out ReadOnlySpan<byte> errorMsg,
             ref SpanByteAndMemory outputDistances,
             ref SpanByteAndMemory outputAttributes,
             ref SpanByteAndMemory filterBitmap
@@ -505,13 +611,6 @@ namespace Garnet.server
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
-
-            var valueDims = CalculateValueDimensions(valueType, values);
-            if (dimensions != valueDims)
-            {
-                outputIdFormat = VectorIdFormat.Invalid;
-                return VectorManagerResult.BadParams;
-            }
 
             // When a filter is present, over-retrieve candidates from DiskANN so that
             // post-filtering has enough results to fill the requested count.
@@ -533,25 +632,46 @@ namespace Garnet.server
             EnsureDistanceBufferSize(ref outputDistances, retrieveCount);
             EnsureIdBufferSize(ref outputIds, retrieveCount);
 
-            var found =
-                Service.SearchVector(
-                    context,
-                    indexPtr,
-                    valueType,
-                    values,
-                    delta,
-                    effectiveEF,
-                    filter,
-                    maxFilteringEffort,
-                    outputIds,
-                    outputDistances,
-                    out var continuation
-                );
+            int found;
+            nint continuation;
+            using (var vectorData = PrepareVectorData(quantType, valueType, values, out var tempErrorMsg))
+            {
+                if (!tempErrorMsg.IsEmpty)
+                {
+                    // Have to copy for scoping reasons - it's an error path, so we'll just eat the perf hit for now
+                    errorMsg = tempErrorMsg.ToArray();
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (dimensions != vectorData.ElementCount)
+                {
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    errorMsg = "ERR Dimensions provided do not match Vector Set dimensions"u8;
+                    return VectorManagerResult.BadParams;
+                }
+
+                found =
+                    Service.SearchVector(
+                        context,
+                        indexPtr,
+                        vectorData.ReadOnlySpan,
+                        vectorData.ElementCount,
+                        delta,
+                        effectiveEF,
+                        filter,
+                        maxFilteringEffort,
+                        outputIds,
+                        outputDistances,
+                        out continuation
+                    );
+            }
 
             if (found < 0)
             {
                 logger?.LogWarning("Error indicating response from vector service {found}", found);
                 outputIdFormat = VectorIdFormat.Invalid;
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Error indicating response from vector service {found}");
                 return VectorManagerResult.BadParams;
             }
 
@@ -575,7 +695,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
+                _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -589,13 +709,7 @@ namespace Garnet.server
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
-                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
-
+            errorMsg = default;
             return VectorManagerResult.OK;
         }
 
@@ -678,7 +792,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
+                _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -691,13 +805,6 @@ namespace Garnet.server
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
-                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
 
             return VectorManagerResult.OK;
         }
@@ -863,24 +970,39 @@ namespace Garnet.server
                 }
 
                 var into = MemoryMarshal.Cast<byte, float>(outputDistances.Span);
-
                 var from = asBytes.ReadOnlySpan;
-                if (quantType == VectorQuantType.NoQuant)
+
+                // Internal vector format differs depend on the selected quantizer, so do that mapping as needed
+                switch (quantType)
                 {
-                    var fromFloat = MemoryMarshal.Cast<byte, float>(from);
-                    fromFloat.CopyTo(into);
-                }
-                else if (quantType == VectorQuantType.XPreQ8)
-                {
-                    for (var i = 0; i < asBytes.Length; i++)
-                    {
-                        into[i] = from[i];
-                    }
-                }
-                else
-                {
-                    // TODO: Handle Q8 and BIN as they are implemented
-                    throw new NotImplementedException($"Unexpected quantization: {quantType}");
+                    // All Redis quantizers store F32s
+                    case VectorQuantType.Bin:
+                    case VectorQuantType.Q8:
+                    case VectorQuantType.NoQuant:
+                        MemoryMarshal.Cast<byte, float>(from).CopyTo(into);
+                        break;
+
+                    // XNoQuant_I8 & XBin_I8 stores _signed_ bytes
+                    case VectorQuantType.XNoQuant_I8:
+                    case VectorQuantType.XBin_I8:
+                        for (var i = 0; i < from.Length; i++)
+                        {
+                            into[i] = (sbyte)from[i];
+                        }
+                        break;
+
+                    // XNoQuant_I8 & NoQuant_U8 stores unsigned bytes
+                    case VectorQuantType.XNoQuant_U8:
+                    case VectorQuantType.XBin_U8:
+                        for (var i = 0; i < from.Length; i++)
+                        {
+                            into[i] = from[i];
+                        }
+                        break;
+
+                    case VectorQuantType.Invalid:
+                    default:
+                        throw new InvalidOperationException($"Unexpected VectorQuantType: {quantType}");
                 }
 
                 // Vector might have been deleted, so check that after getting data
@@ -889,25 +1011,6 @@ namespace Garnet.server
             finally
             {
                 asBytes.Memory?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
-        /// </summary>
-        internal static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
-        {
-            if (valueType == VectorValueType.FP32)
-            {
-                return (uint)(values.Length / sizeof(float));
-            }
-            else if (valueType == VectorValueType.XB8)
-            {
-                return (uint)(values.Length);
-            }
-            else
-            {
-                throw new NotImplementedException($"{valueType}");
             }
         }
 

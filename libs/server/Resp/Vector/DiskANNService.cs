@@ -43,16 +43,23 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            out bool quantizationRequested
         )
         {
 #if DEBUG
             System.Threading.Interlocked.Increment(ref CreateIndexCalls);
 #endif
+            // TODO: This needs to be set appropriately - requires DiskANN changes
+            quantizationRequested = false;
 
             unsafe
             {
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+
+                Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
+
+                return ret;
             }
         }
 
@@ -67,9 +74,10 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            out bool quantizationRequested
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, out quantizationRequested);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -80,31 +88,35 @@ namespace Garnet.server
             NativeDiskANNMethods.drop_index(context, index);
         }
 
-        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, VectorValueType vectorType, ReadOnlySpan<byte> vector, ReadOnlySpan<byte> attributes)
+        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
         {
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
 
             var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            int vector_len;
-
-            if (vectorType == VectorValueType.FP32)
-            {
-                vector_len = vector.Length / sizeof(float);
-            }
-            else if (vectorType == VectorValueType.XB8)
-            {
-                vector_len = vector.Length;
-            }
-            else
-            {
-                throw new NotImplementedException($"{vectorType}");
-            }
 
             var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
             var attributes_len = attributes.Length;
 
-            return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, vectorType, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
+            var res = NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vectorElementCount, (nint)attributes_data, (nuint)attributes_len);
+            if (res == NativeDiskANNMethods.DiskANNInsertResult.False)
+            {
+                needsQuantization = false;
+                return false;
+            }
+
+            needsQuantization = res == NativeDiskANNMethods.DiskANNInsertResult.QuantizationRequested;
+            return true;
+        }
+
+        public bool BuildQuantizationTable(ulong context, nint index)
+        {
+            return NativeDiskANNMethods.build_quant_table(context, index) == 1;
+        }
+
+        public void BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
+        {
+            NativeDiskANNMethods.backfill_quant_vectors(context, index, (nuint)taskIndex, (nuint)taskCount);
         }
 
         public bool Remove(ulong context, nint index, ReadOnlySpan<byte> id)
@@ -118,8 +130,8 @@ namespace Garnet.server
         public int SearchVector(
             ulong context,
             nint index,
-            VectorValueType vectorType,
             ReadOnlySpan<byte> vector,
+            int vectorElementCount,
             float delta,
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
@@ -130,20 +142,6 @@ namespace Garnet.server
         )
         {
             var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            int vector_len;
-
-            if (vectorType == VectorValueType.FP32)
-            {
-                vector_len = vector.Length / sizeof(float);
-            }
-            else if (vectorType == VectorValueType.XB8)
-            {
-                vector_len = vector.Length;
-            }
-            else
-            {
-                throw new NotImplementedException($"{vectorType}");
-            }
 
             var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;
@@ -194,9 +192,8 @@ namespace Garnet.server
                 return NativeDiskANNMethods.search_vector(
                     context,
                     index,
-                    vectorType,
                     (nint)vector_data,
-                    (nuint)vector_len,
+                    (nuint)vectorElementCount,
                     delta,
                     searchExplorationFactor,
                     (nint)filter_data,
@@ -326,6 +323,13 @@ namespace Garnet.server
 
     public static partial class NativeDiskANNMethods
     {
+        public enum DiskANNInsertResult : byte
+        {
+            False = 0,
+            True = 1,
+            QuantizationRequested = 2,
+        }
+
         const string DISKANN_GARNET = "diskann_garnet";
 
         [LibraryImport(DISKANN_GARNET)]
@@ -350,12 +354,11 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial byte insert(
+        public static partial DiskANNInsertResult insert(
             ulong context,
             nint index,
             nint id_data,
             nuint id_len,
-            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             nint attribute_data,
@@ -384,7 +387,6 @@ namespace Garnet.server
         public static partial int search_vector(
             ulong context,
             nint index,
-            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             float delta,
@@ -449,6 +451,20 @@ namespace Garnet.server
             nint index,
             nint external_id,
             nuint external_id_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte build_quant_table(
+            ulong context,
+            nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial void backfill_quant_vectors(
+            ulong context,
+            nint index,
+            nuint task_index,
+            nuint task_count
         );
     }
 }

@@ -19,5 +19,6 @@
     <Project Path="test/test.hlog/Tsavorite.test.hlog.csproj" />
     <Project Path="test/test.recovery/Tsavorite.test.recovery.csproj" />
     <Project Path="test/test.stress/Tsavorite.test.stress.csproj" />
+    <Project Path="test/stress/MLPAStress/MLPAStress.csproj" />
   </Folder>
 </Solution>

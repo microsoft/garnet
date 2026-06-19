@@ -392,6 +392,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void RecoverVectorSets()
         {
+            // Guarantee initialize has happened before we attempt to recover
+            defaultDatabase.VectorManager.Initialize();
+
             defaultDatabase.VectorManager.ResumePostRecovery();
         }
 

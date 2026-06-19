@@ -35,19 +35,29 @@ inline const char* get_last_error() {
     return last_error_storage().c_str();
 }
 
-inline void set_last_error(const char* fmt, ...)
+inline void set_last_error(const char* fmt, ...) noexcept
 #ifdef __GNUC__
     __attribute__((format(printf, 1, 2)))
 #endif
 ;
 
-inline void set_last_error(const char* fmt, ...) {
+// noexcept: error reporting is best-effort and must never itself unwind. This function is
+// called from the C ABI exception firewall (native_device_wrapper.cc) and from device
+// construction error paths — including the std::bad_alloc path — so the assignment to the
+// thread-local std::string (which can throw bad_alloc) is wrapped and swallowed. A dropped
+// message is acceptable; an exception escaping across the extern "C"/P-Invoke boundary is not.
+inline void set_last_error(const char* fmt, ...) noexcept {
     char buf[512];
     va_list ap;
     va_start(ap, fmt);
     (void)vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    last_error_storage() = buf;
+    try {
+        last_error_storage() = buf;
+    } catch (...) {
+        // Best-effort: if recording the message allocates and fails, drop it rather than
+        // letting the exception escape the firewall.
+    }
 }
 
 }  // namespace native_device

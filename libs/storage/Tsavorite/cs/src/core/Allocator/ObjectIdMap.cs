@@ -43,7 +43,11 @@ namespace Tsavorite.core
         {
             if (freeSlots.TryPop(out var objectId))
             {
-                Debug.Assert(objectId < objectArray.tail, $"objectId {objectId} retrieved from freelist must be less than tail {objectArray.tail}");
+                // Cache Count in a local so the assertion check and its message see the same value. (Count is monotonically non-decreasing
+                // in the non-OOM path, so a freshly-returned freelist id is always < Count, but a concurrent Allocate on another thread can
+                // advance Count between the two reads we would otherwise do, producing a misleading message.)
+                var countSnapshot = objectArray.Count;
+                Debug.Assert(objectId < countSnapshot, $"objectId {objectId} retrieved from freelist must be less than Count {countSnapshot}");
                 return objectId;
             }
             return objectArray.Allocate();
@@ -101,8 +105,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear()
         {
-            objectArray?.Clear(1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits);
-            freeSlots.Clear(1 << MultiLevelPageArray.FreeListClearRetainedChapterSizeBits);
+            objectArray?.Clear(1 << MultiLevelPageArray.PrimaryClearRetainedPageSizeBits);
+            freeSlots.Clear(1 << MultiLevelPageArray.FreeListClearRetainedPageSizeBits);
         }
 
         /// <inheritdoc/>

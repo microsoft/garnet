@@ -36,11 +36,10 @@ The index key (represented by the `Index` struct) contains the following data:
      > Today this ignored except for validation purposes, eventually DiskANN will use it.
  - `uint NumLinks` - the `M` used to create the Vector Set, or the default value of 16 if not specified
  - `uint BuildExplorationFactor` - the `EF` used to create the Vector Set, or the default value of 200 if not specified
- - `VectorQuantType QuantType` - the quantizier specified at creation time, or the default value of `Q8` if not specified
+ - `VectorQuantType QuantType` - the quantizer specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
-     > We have an extension here, `XPREQ8` which is not from Redis.
-     > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
-     > It forbids the `REDUCE` option and requires 4-byte element ids.
+     > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
+     > They forbid the `REDUCE` option, a restriction we may lift in the future.
 
 The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 
@@ -145,14 +144,44 @@ During recovery partially deleted Vector Sets are found by checking [`ContextMet
 
 `FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 
+# Quantization
+
+To speed up search and reduce the size of the "live set" Vector Sets support quantization.
+
+The following quantizers are supported:
+ - `NOQUANT` - disables quantization, dimensions are `float`s
+ - `BIN` - binary quantization, each dimension is a single bit
+ - `Q8` - signed 8-bit quantization, each dimension is an `sbyte`
+ - `XNOQUANT_U8` - disables quantization, but requires dimensions are [0, 255]
+ - `XNOQUANT_I8` - disables quantization, but requires dimensions are [-128, 127]
+ - `XBIN_U8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [0, 255]
+ - `XBIN_I8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [-128, 127]
+
+Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
+
+Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to background tasks.
+
+Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
+ - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
+ - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
+ - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
+ 
+ It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
+
+ > [!NOTE]
+ > Today DiskANN does not recover quantization state.
+ >
+ > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
+
 # Locking
 
 Vector Sets workloads require extreme parallelism, and so intricate locking protocols are required for both performance and correctness.
 
-Concretely, there are 3 sorts of locks involved:
+Concretely, there are 4 sorts of locks involved:
  - Tsavorite hashbucket locks
  - A `ReadOptimizedLock` instance
  - `VectorManager` lock around `ContextMetadata`
+ - Spin wait around `drop_index` calls
 
 ## Tsavorite Locks
 
@@ -183,6 +212,19 @@ The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a 
 > [!NOTE]
 > Rapid creation or deletion of Vector Sets is expected to perform poorly due to this lock.
 > This isn't a case we're very interested in right now, but if that changes this will need to be reworked.
+
+## Spin wait around `drop_index` calls
+
+When a DiskANN index needs to be dropped due to memory pressure (as indicated by a `GarnetRecordTriggers.OnEvict` call) we move that drop on a background task and guard it with exclusive `ReadOptimizedLock` acquisitions.  This is necessary to prevent an index from being dropped while it is in use.
+
+This introduces a rare race where we might try to recreate an index that was evicted to disk and then reloaded from disk _before_ the drop actually executes.  If we allowed that, the two DiskANN index instances could disagree about internal state and corrupt future inserts.
+
+To prevent that, when we recreate an index we first check if that key has a scheduled drop and if so we spin waiting for it to be processed before recreating the index.
+
+> [!NOTE]
+> The code in `VectorManager.WaitForDiskANNIndexDrop` is a naive `while(...) { Thread.Yield(); }`-loop, which is decidedly suboptimal.
+> 
+> Since this case should be rare, that should be fine.  If it turns out this is less rare than hoped, we'll need to do something smarter.
 
 # Replication
 
@@ -366,19 +408,21 @@ Garnet calls into the following DiskANN functions:
 
  - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
- - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+ - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
  - [ ] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
- - [x] `int search_vector(ulong context, nint index, VectorValueType vector_value_type, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
  - [x] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
+ - [x] `build_quant_table(ulong context, nint index)`
+ - [x] `backfill_quant_vectors(ulong context, nint index, nuint task_index, nuint task_count)`
 
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
   - `output_distances_len` is the number of _floats_ in `output_distances`, not bytes
-  - When inserting, if `vector_value_type == FP32` then `vector_len` is the number of _floats_ in `vector_data`, otherwise it is the number of bytes
+  - When inserting and searching, the `VectorQuantType` used to create the index defines the expected format of `vector_data` and whether `vector_len` is counting bytes, floats, etc.
   - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
