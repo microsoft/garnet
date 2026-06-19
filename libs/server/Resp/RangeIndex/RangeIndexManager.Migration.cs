@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-
+using System.Threading;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
@@ -302,26 +302,19 @@ namespace Garnet.server
                 var keyId = KeyId(keyBytes);
                 if (stub.TreeHandle != nint.Zero && liveIndexes.TryGetValue(keyId, out var treeEntry) && treeEntry.Tree != null)
                 {
-                    // Tree is live — CPR snapshot + copy from scratch path (same pattern as SnapshotForFlushViaCpr).
-                    // If a concurrent checkpoint already owns the snapshot claim, wait for it
-                    // then copy the scratch file it just produced — avoids spinning under the exclusive lock.
-                    var scratchPath = LogScratchPath(hashPrefix);
-                    if (!treeEntry.TryClaimSnapshot())
+                    // Tree is live — CPR snapshot straight to the migration destination. The per-tree
+                    // atomic serializes against concurrent checkpoint/flush snapshots on the same tree
+                    // (bftree silently no-ops a racing cpr_snapshot). The claim is independent of the
+                    // exclusive rangeIndex lock and is held only for one non-blocking snapshot.
+                    while (!treeEntry.TryClaimSnapshot())
+                        Thread.Yield();
+                    try
                     {
-                        treeEntry.WaitForSnapshot();
-                        File.Copy(scratchPath, migrationPath, overwrite: false);
+                        BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr, migrationPath);
                     }
-                    else
+                    finally
                     {
-                        try
-                        {
-                            BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr, scratchPath);
-                            File.Copy(scratchPath, migrationPath, overwrite: false);
-                        }
-                        finally
-                        {
-                            treeEntry.ReleaseSnapshot();
-                        }
+                        treeEntry.ReleaseSnapshot();
                     }
                 }
                 else
