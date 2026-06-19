@@ -101,9 +101,13 @@ namespace BDN.benchmark.Operations
             {
                 // Nothing to create here: the device is built downstream by GarnetServerOptions.GetSettings()
                 // (called from GarnetServer.CreateStore). Its EnableStorageTier branch calls GetInitializedDeviceFactory()
-                // -> LocalStorageNamedDeviceFactory.Get() -> Devices.CreateLogDevice(deviceType: LocalMemory), which builds a
-                // LocalMemoryDevice with latencyUs:0 (a pure in-memory device, so we measure the Tsavorite pending codepaths
-                // rather than real device IO), and assigns it to kvSettings.LogDevice before TsavoriteKV is constructed.
+                // -> LocalStorageNamedDeviceFactory.Get() -> Devices.CreateLogDevice(deviceType: LocalMemory,
+                // numCompletionThreads: opts.DeviceCompletionThreads), which builds a LocalMemoryDevice with latencyUs:0
+                // (a pure in-memory device, so we measure the Tsavorite pending codepaths rather than real device IO),
+                // and assigns it to kvSettings.LogDevice before TsavoriteKV is constructed. A derived benchmark that sets
+                // DeviceCompletionThreads = 0 selects parallelism:0 (inline completion: copy + callback on the submitting
+                // thread, no completion thread or ring handoff) — see LTM.RawStringOperations, which uses that to avoid the
+                // cross-thread/cross-socket handoff variance without any process/thread pinning.
                 //
                 // The only requirement on our side is that the precondition for that branch holds, so fail loudly on a
                 // misconfiguration that would otherwise be silently downgraded to a NullDevice (the non-tiered fallback).

@@ -46,8 +46,12 @@ namespace Tsavorite.core
         private readonly bool latencyEnabled;
 
         // IO processor threads — one per submission ring. Each processor drains exactly
-        // one ring (SPSC consumer side).
+        // one ring (SPSC consumer side). When inlineCompletion is set (parallelism == 0) there
+        // are no rings or threads: ReadAsync/WriteAsync run the copy + completion callback
+        // synchronously on the caller's thread. This models a device with zero handoff cost and
+        // isolates the cross-thread run-thread→completion-thread handoff from the per-op work.
         private readonly int parallelism;
+        private readonly bool inlineCompletion;
         private readonly Thread[] processors;
         private readonly SpscRing<IORequestLocalMemory>[] rings;
 
@@ -71,6 +75,16 @@ namespace Tsavorite.core
         // "unset" (0) and any valid idx+1 (>= 1), so it is recognized with the same single TLS read.
         private const int ProcessorThreadRingIdx = int.MinValue;
 
+        // The device instance whose ProcessorLoop is running on this thread. The sentinel above is
+        // process-wide, so it must be paired with an identity check: inline-complete only when the
+        // re-entrant submit targets the SAME instance this thread drains. A submit to a DIFFERENT
+        // LocalMemoryDevice must route through that instance's ring (no self-deadlock risk there).
+        // Set once on the dedicated drain thread (see ProcessorLoop) and never cleared; this is safe
+        // only because drain work runs on dedicated threads, so the slot can never leak to a pooled
+        // thread reused for unrelated work.
+        [ThreadStatic]
+        private static LocalMemoryDevice t_processorOwner;
+
         // When capacity is unspecified, cap the segment-pointer arrays at this many segments
         // (≈ 32 KB of overhead per array at 4096 entries). Segments themselves are still lazily
         // allocated, so this bounds the upper limit of data that can be stored, not the working
@@ -82,23 +96,21 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="capacity">Maximum number of bytes this device can accommodate. Pass <see cref="Devices.CAPACITY_UNSPECIFIED"/> or any value &lt;= 0 to default to a large bounded capacity of <c>segmentSize * DefaultMaxSegments</c> (segments are still allocated lazily, so this only sizes the per-segment lookup arrays). When &gt; 0 it must be a multiple of <paramref name="segmentSize"/>.</param>
         /// <param name="segmentSize">Size in bytes of each segment.</param>
-        /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Must be &gt;= 1.</param>
+        /// <param name="parallelism">Number of dedicated IO processor threads (and rings). Pass 0 for
+        /// <em>inline completion</em>: no IO threads or rings — the copy and completion callback run
+        /// synchronously on the submitting thread (zero cross-thread handoff). Must be &gt;= 0.</param>
         /// <param name="latencyUs">Per-IO simulated wall-clock latency in microseconds (0 = none). Microsecond
         /// granularity models modern low-latency devices (single-digit microsecond NVMe).</param>
         /// <param name="sectorSize">Sector size for device (default 512).</param>
-        /// <param name="ringCapacity">Per-ring slot count (power of two). Defaults to 4096.</param>
+        /// <param name="ringCapacity">Per-ring slot count (power of two), which is the device's per-submitter in-flight bound (the producer blocks when its ring is full). Defaults to 1024 — deep enough to pipeline yet small enough that the in-flight read-buffer working set stays cache-resident (a larger ring measurably regresses throughput by saturating memory bandwidth).</param>
         /// <param name="fileName">Virtual path used as the device identifier.</param>
-        public LocalMemoryDevice(long capacity, long segmentSize, int parallelism, int latencyUs = 0, uint sectorSize = 512, int ringCapacity = 4096, string fileName = "/userspace/ram/storage")
+        public LocalMemoryDevice(long capacity, long segmentSize, int parallelism, int latencyUs = 0, uint sectorSize = 512, int ringCapacity = 1024, string fileName = "/userspace/ram/storage")
             : base(fileName, sectorSize, capacity > 0 ? capacity : checked(segmentSize * DefaultMaxSegments))
         {
-            if (segmentSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be > 0");
-            if (segmentSize > int.MaxValue)
-                throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be <= int.MaxValue");
-            if (parallelism < 1)
-                throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 1");
-            if (latencyUs < 0)
-                throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
+            if (segmentSize <= 0) throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be > 0");
+            if (segmentSize > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(segmentSize), "segmentSize must be <= int.MaxValue");
+            if (parallelism < 0) throw new ArgumentOutOfRangeException(nameof(parallelism), "parallelism must be >= 0 (0 = inline completion)");
+            if (latencyUs < 0) throw new ArgumentOutOfRangeException(nameof(latencyUs), "latencyUs must be >= 0");
             if (ringCapacity <= 0 || (ringCapacity & (ringCapacity - 1)) != 0)
                 throw new ArgumentOutOfRangeException(nameof(ringCapacity), "ringCapacity must be a positive power of two");
             if (capacity > 0 && capacity % segmentSize != 0)
@@ -107,8 +119,9 @@ namespace Tsavorite.core
             // base.Capacity already holds the effective capacity (the caller's value when > 0, else the
             // lazily-backed segmentSize * DefaultMaxSegments default passed to the base ctor above).
             this.sz_segment = segmentSize;
-            maxSegments = checked((int)(Capacity / segmentSize));
+            maxSegments = checked((int)(Capacity / sz_segment));
             this.parallelism = parallelism;
+            inlineCompletion = parallelism == 0;
 
             latencyTimestampTicks = latencyUs > 0
                 ? (long)((double)latencyUs * Stopwatch.Frequency / 1_000_000.0)
@@ -119,21 +132,30 @@ namespace Tsavorite.core
             segmentArrays = new byte[maxSegments][];
             segmentPtrs = new byte*[maxSegments];
 
-            rings = new SpscRing<IORequestLocalMemory>[parallelism];
-            processors = new Thread[parallelism];
-            for (int i = 0; i < parallelism; i++)
+            if (inlineCompletion)
             {
-                rings[i] = new SpscRing<IORequestLocalMemory>(ringCapacity);
-                int local = i;
-                processors[i] = new Thread(() => ProcessorLoop(rings[local]))
+                // No rings or processor threads: ReadAsync/WriteAsync complete inline (see Enqueue).
+                rings = [];
+                processors = [];
+            }
+            else
+            {
+                rings = new SpscRing<IORequestLocalMemory>[parallelism];
+                processors = new Thread[parallelism];
+                for (int i = 0; i < parallelism; i++)
                 {
-                    IsBackground = true,
-                    Name = $"TsavoriteLocalMemIO-{local}",
-                };
-                processors[i].Start();
+                    rings[i] = new SpscRing<IORequestLocalMemory>(ringCapacity);
+                    int local = i;
+                    processors[i] = new Thread(() => ProcessorLoop(rings[local]))
+                    {
+                        IsBackground = true,
+                        Name = $"TsavoriteLocalMemIO-{local}",
+                    };
+                    processors[i].Start();
+                }
             }
 
-            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={segmentSize} parallelism={parallelism} latencyUs={latencyUs} ringCapacity={ringCapacity}");
+            Debug.WriteLine($"LocalMemoryDevice: capacity={Capacity} segments={maxSegments} segSize={sz_segment} parallelism={parallelism} inline={inlineCompletion} latencyUs={latencyUs} ringCapacity={ringCapacity}");
         }
 
         /// <summary>
@@ -200,14 +222,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Enqueue(void* src, void* dst, uint bytes, DeviceIOCompletionCallback callback, object context)
         {
+            // Inline completion (parallelism == 0): copy and fire the callback synchronously on the
+            // caller's thread — no ring, no handoff. Exceptions propagate to the caller (matching the
+            // re-entrant inline path below).
+            if (inlineCompletion)
+            {
+                if (latencyEnabled)
+                    WaitLatency(Stopwatch.GetTimestamp());
+                Buffer.MemoryCopy(src, dst, bytes, bytes);
+                callback(0, bytes, context);
+                return;
+            }
+
             int idxPlusOne = t_ringIdxPlusOne;
 
-            // Re-entrant submit from a completion callback running on a drain thread (e.g. Tsavorite's
-            // synchronous flush-chain WriteAsync invoked from req.callback). Execute inline rather than
-            // posting to the bounded ring this same thread drains — otherwise, if the ring is full, the
-            // thread would spin forever in WaitForSlotEmpty waiting for itself to drain (self-deadlock).
-            // No latency model on this rare internal path; exceptions propagate to the re-entrant caller.
-            if (idxPlusOne == ProcessorThreadRingIdx)
+            // Re-entrant submit from a completion callback running on THIS instance's drain thread (e.g.
+            // Tsavorite's synchronous flush-chain WriteAsync invoked from req.callback). Execute inline
+            // rather than posting to the bounded ring this same thread drains — otherwise, if the ring is
+            // full, the thread would spin forever in WaitForSlotEmpty waiting for itself to drain
+            // (self-deadlock). The owner check is required because the sentinel is process-wide: a submit
+            // from another LocalMemoryDevice's drain thread has no self-deadlock risk and must route through
+            // this instance's ring below. No latency model on this rare internal path; exceptions propagate.
+            if (idxPlusOne == ProcessorThreadRingIdx && ReferenceEquals(t_processorOwner, this))
             {
                 Buffer.MemoryCopy(src, dst, bytes, bytes);
                 callback(0, bytes, context);
@@ -217,9 +253,15 @@ namespace Tsavorite.core
             // Validate against THIS instance's parallelism: a single unsigned compare catches both
             // the unset slot (-1 after the decrement) and a stale index cached while submitting to
             // another instance with larger parallelism. Either way we (re)assign a valid ring index.
-            int idx = idxPlusOne - 1;
-            if ((uint)idx >= (uint)parallelism)
+            // The sentinel reaches here only for a cross-instance re-entrant submit (same-instance
+            // re-entrancy inlined above). Treat the sentinel, the unset slot (0), and any stale
+            // out-of-range index as "needs a fresh ring for this instance". The short-circuit guards the
+            // sentinel (int.MinValue) so the index computation never underflows.
+            int idx;
+            if (idxPlusOne <= 0 || (uint)(idxPlusOne - 1) >= (uint)parallelism)
                 idx = AssignRingIdx();
+            else
+                idx = idxPlusOne - 1;
 
             var req = new IORequestLocalMemory
             {
@@ -237,12 +279,36 @@ namespace Tsavorite.core
             rings[idx].Enqueue(req);
         }
 
+        // Block until startTimestamp + latency elapses: Sleep while >1ms remains (Thread.Sleep is too
+        // coarse for finer waits), then busy-spin the sub-millisecond remainder so microsecond-scale
+        // latencies release close to on time.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WaitLatency(long startTimestamp)
+        {
+            long deadline = startTimestamp + latencyTimestampTicks;
+            while (true)
+            {
+                long remainingTicks = deadline - Stopwatch.GetTimestamp();
+                if (remainingTicks <= 0)
+                    break;
+                if (remainingTicks > oneMsTicks)
+                    Thread.Sleep(1);
+                else
+                    Thread.SpinWait(16);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private int AssignRingIdx()
         {
             int seq = Interlocked.Increment(ref nextRingIdx) - 1;
             int idx = (int)((uint)seq % (uint)parallelism);
-            t_ringIdxPlusOne = idx + 1;
+            // Do NOT clobber a processor (drain) thread's sentinel: that would break same-instance
+            // reentrant inline completion and risk self-deadlock if a later submit back to this instance
+            // hit a full ring this same thread is the only consumer of. A drain thread routing a rare
+            // cross-instance submit just round-robins per call without caching the index.
+            if (t_ringIdxPlusOne != ProcessorThreadRingIdx)
+                t_ringIdxPlusOne = idx + 1;
             return idx;
         }
 
@@ -251,28 +317,14 @@ namespace Tsavorite.core
             // Mark this as a drain thread: a re-entrant Enqueue from within a completion callback below
             // executes inline instead of blocking on a ring only this thread can drain (see Enqueue).
             t_ringIdxPlusOne = ProcessorThreadRingIdx;
+            t_processorOwner = this;
 
             while (!ring.IsStopped)
             {
                 if (ring.TryDequeue(out var req))
                 {
                     if (latencyEnabled)
-                    {
-                        // Release the IO at startTimestamp + latency. Sleep only while more than ~1ms
-                        // remains (Thread.Sleep is too coarse for finer waits); busy-spin the sub-millisecond
-                        // remainder so microsecond-scale latencies release close to on time.
-                        long deadline = req.startTimestamp + latencyTimestampTicks;
-                        while (true)
-                        {
-                            long remainingTicks = deadline - Stopwatch.GetTimestamp();
-                            if (remainingTicks <= 0)
-                                break;
-                            if (remainingTicks > oneMsTicks)
-                                Thread.Sleep(1);
-                            else
-                                Thread.SpinWait(16);
-                        }
-                    }
+                        WaitLatency(req.startTimestamp);
 
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
                     // Guard the callback inline (no helper — a try/catch blocks JIT inlining, so factoring
