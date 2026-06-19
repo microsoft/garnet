@@ -286,6 +286,14 @@ namespace Tsavorite.core
                 // We are evicting in units of pages, so we set this to the start of the maxEvictUntilPage.
                 maxEvictUntilAddress = allocator.GetLogicalAddressOfStartOfPage(maxEvictUntilPage);
                 var evictableSize = maxEvictUntilAddress - headAddress;
+
+                // evictableSize is the resident span [headAddress, tail-aligned). When heapSize is 0, TotalSize == AllocatedPageCount * PageSize, so being
+                // over budget here means AllocatedPageCount * PageSize > budget; recovery keeps AllocatedPageCount within MaxAllocatedPageCount (the read
+                // batch is capped at the budget and a final trim evicts any object-free overage), so AllocatedPageCount ~= the resident page count and that
+                // resident span must itself exceed the budget => evictableSize > 0. A negative value would mean AllocatedPageCount exceeds the resident set
+                // (stale pages left allocated below headAddress), which we must not reach.
+                Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
+
                 var margin = overBudgetAmount - evictableSize;
                 var isComplete = margin > 0;
                 if (isComplete)

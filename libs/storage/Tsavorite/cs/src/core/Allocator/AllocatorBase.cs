@@ -930,13 +930,7 @@ namespace Tsavorite.core
         {
             try
             {
-                // Allocate this page, if needed
-                if (!IsAllocated(pageIndex % BufferSize))
-                    _wrapper.AllocatePage(pageIndex % BufferSize);
-
-                // Allocate next page in advance, if needed
-                if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    _wrapper.AllocatePage((pageIndex + 1) % BufferSize);
+                AllocateCurrentAndNextPage(pageIndex);
             }
             catch
             {
@@ -945,6 +939,25 @@ namespace Tsavorite.core
                 _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Allocate the page containing <paramref name="page"/> and, as the allocator's allocate-ahead invariant, the page following it, each only if it is
+        /// not already allocated.
+        /// </summary>
+        /// <param name="page">The page number whose page (and the next page) should be allocated.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void AllocateCurrentAndNextPage(long page)
+        {
+            // Allocate the current page, if needed.
+            var pageIndex = (int)(page % BufferSize);
+            if (!IsAllocated(pageIndex))
+                _wrapper.AllocatePage(pageIndex);
+
+            // Allocate the next page in advance (an invariant in the allocator), if needed.
+            var nextPageIndex = (pageIndex + 1) % BufferSize;
+            if (!IsAllocated(nextPageIndex))
+                _wrapper.AllocatePage(nextPageIndex);
         }
 
         /// <summary>
@@ -1644,15 +1657,8 @@ namespace Tsavorite.core
             if (pageHeaderSize > 0 && TailPageOffset.Offset == 0)
                 TailPageOffset.Offset = pageHeaderSize;
 
-            // Allocate current page if necessary
-            var pageIndex = TailPageOffset.Page % BufferSize;
-            if (!IsAllocated(pageIndex))
-                _wrapper.AllocatePage(pageIndex);
-
-            // Allocate next page as well - this is an invariant in the allocator!
-            var nextPageIndex = (pageIndex + 1) % BufferSize;
-            if (!IsAllocated(nextPageIndex))
-                _wrapper.AllocatePage(nextPageIndex);
+            // Allocate the current page and the next page (the allocate-ahead invariant) if necessary.
+            AllocateCurrentAndNextPage(TailPageOffset.Page);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
@@ -1663,7 +1669,7 @@ namespace Tsavorite.core
             SafeReadOnlyAddress = readonlyAddress;
 
             // for the last page which contains tailoffset, it must be open
-            pageIndex = GetPageIndexForAddress(tailAddress);
+            var pageIndex = GetPageIndexForAddress(tailAddress);
 
             // clear the last page starting from tail address
             ClearPage(pageIndex, (int)GetOffsetOnPage(tailAddress));

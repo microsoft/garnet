@@ -637,6 +637,35 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// After the recovery read loop and deferred object load, evict object-free resident pages from headAddress upward until AllocatedPageCount is within
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.MaxAllocatedPageCount"/>, respecting <see cref="LogSizeTracker.MinEvictionHeadAddressLag"/>.
+        /// The per-batch <see cref="TrimLogPages"/> reserves room for each upcoming read against the delta-padded highTargetSize budget and does not run after
+        /// the final batch, so an object-free (inline) store can settle one page above the hard MaxAllocatedPageCount cap. Object-free pages are durable on the
+        /// main log (re-read on demand); the walk stops at the first page with live objects, whose budget is governed by <see cref="RecoveryLoadObjectsPass2"/>'s
+        /// heap-aware eviction. Dead pages below startPage (from store initialization) are freed up front in RecoverHybridLogAsync, so AllocatedPageCount here
+        /// reflects only resident data and this budget walk is accurate.
+        /// </summary>
+        private void TrimResidentPagesToBudget(RecoveryStatus recoveryStatus, long untilAddress)
+        {
+            if (hlogBase.logSizeTracker is null)
+                return;
+
+            var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
+            while (hlogBase.AllocatedPageCount > hlogBase.MaxAllocatedPageCount && recoveryStatus.headAddress < maxHeadAddress)
+            {
+                var hp = hlogBase.GetPage(recoveryStatus.headAddress);
+                if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(hp)))
+                {
+                    var objectIdMap = hlogBase._wrapper.GetPageObjectIdMap(hp);
+                    if (objectIdMap is not null && objectIdMap.Count > 0)
+                        break;
+                    hlogBase.EvictPageForRecovery(hp);
+                }
+                recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(hp + 1);
+            }
+        }
+
         private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
@@ -670,6 +699,16 @@ namespace Tsavorite.core
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int numPagesToReadPerIteration);
             recoveryStatus.headAddress = headAddress;
 
+            // Free any pages still allocated below startPage before reading. The store is freshly constructed for recovery with the allocator's minimum
+            // pages allocated at page 0 (Head=Begin=Tail=0); when the checkpoint's BeginAddress is above page 0 those low pages lie below the first page we
+            // read (startPage), and the upward-only read/eviction never reaches them. Freeing them up front keeps them out of AllocatedPageCount for the
+            // whole budget-checked recovery, instead of carrying the dead pages through every budget check and reclaiming them at the end.
+            for (var deadPage = 0L; deadPage < startPage && deadPage < hlogBase.BufferSize; deadPage++)
+            {
+                if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(deadPage)))
+                    hlogBase.EvictPageForRecovery(deadPage);
+            }
+
             if (untilAddress <= scanFromAddress)
                 return recoveryStatus;
 
@@ -694,7 +733,10 @@ namespace Tsavorite.core
             // loads the objects once after the snapshot pages have also been read (without their objects), so the final headAddress
             // (after eviction over the full recovered range) is honored. For FoldOver there is no following snapshot phase.
             if (checkpointType != CheckpointType.Snapshot)
+            {
                 RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, objectLogDevice: null, evictForBudget: true);
+                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+            }
             return recoveryStatus;
         }
 
@@ -718,6 +760,14 @@ namespace Tsavorite.core
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
             numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
+
+            // Never read more pages per batch than the memory budget allows. BufferSize can exceed MaxAllocatedPageCount when the budget is not a
+            // power-of-two page count (e.g. a 23k budget => MaxAllocatedPageCount 5, BufferSize 8); reading a full BufferSize-1 batch would fill the
+            // circular buffer above MaxAllocatedPageCount, leaving over-budget pages resident that read-time eviction (TrimLogPages) cannot reclaim
+            // because they were read below the eviction floor (untilAddress - MinEvictionHeadAddressLag). MaxAllocatedPageCount is the allocator's hard
+            // cap on AllocatedPageCount, so honoring it here keeps recovery within budget at every step (modulo the MinEvictionHeadAddressLag tail).
+            if (hlogBase.logSizeTracker is not null && hlogBase.MaxAllocatedPageCount < numPagesToReadPerIteration)
+                numPagesToReadPerIteration = hlogBase.MaxAllocatedPageCount;
             return new RecoveryStatus(hlogBase.BufferSize);
         }
 
@@ -875,6 +925,10 @@ namespace Tsavorite.core
             // memory budget. These pages are durable on the main log/object-log, so an evicted record is simply read back from disk on demand.
             if (recoveryStatus.headAddress < boundaryPageStart)
                 RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, boundaryPageStart, objectLogDevice: null, evictForBudget: true);
+
+            // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
+            // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
+            TrimResidentPagesToBudget(recoveryStatus, untilAddress);
 
             var finalHeadAddress = recoveryStatus.headAddress;
             recoveryStatus.Dispose();
@@ -1075,6 +1129,12 @@ namespace Tsavorite.core
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
             numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
+
+            // Never read more pages per batch than the memory budget allows (see GetPageRangesToRead for the full rationale): BufferSize can exceed
+            // MaxAllocatedPageCount when the budget is not a power-of-two page count, and a full BufferSize-1 batch would fill the circular buffer above
+            // MaxAllocatedPageCount with pages read below the eviction floor that TrimLogPages cannot reclaim.
+            if (hlogBase.logSizeTracker is not null && hlogBase.MaxAllocatedPageCount < numPagesToReadPerIteration)
+                numPagesToReadPerIteration = hlogBase.MaxAllocatedPageCount;
         }
 
         private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
