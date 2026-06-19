@@ -84,7 +84,7 @@ namespace Tsavorite.core
                 if (stackCtx.hei.IsReadCache)
                     SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
 
-                // We don't have a operationState here, so pass the minAddress directly.
+                // We don't have an operationState here, so pass the minAddress directly.
                 needIO = false;
                 if (TryFindRecordInMainLogForPendingOperation(key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, maxAddress, out internalStatus))
                     return true;

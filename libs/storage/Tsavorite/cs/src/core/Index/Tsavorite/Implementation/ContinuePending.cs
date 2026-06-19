@@ -77,9 +77,9 @@ namespace Tsavorite.core
                             // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
                             // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. Reissue the Read(),
                             // using the LogicalAddress we just found as minAddress. We will either find an in-memory version of the key that was added after the
-                            // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
-                            // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
-                            // after our just-completed TryFindRecordInMemory.
+                            // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress
+                            // if we do IO, in which case the next time we come to CompletePendingRead we will only search for a newer version of the key in any records
+                            // added after our just-completed TryFindRecordInMemory.
                             if (stackCtx.recSrc.LogicalAddress > operationState.initialLatestLogicalAddress
                                 && (!pendingState.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingState.minAddress))
                             {
@@ -116,6 +116,7 @@ namespace Tsavorite.core
                                 {
                                     pendingState = newOp.pendingState;
                                     newOp.pendingState = default;
+                                    operationState.pendingOp = null;
                                     sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
                                 }
                                 return internalStatus;
@@ -318,6 +319,7 @@ namespace Tsavorite.core
             {
                 pendingState = newOp.pendingState;
                 newOp.pendingState = default;
+                operationState.pendingOp = null;
                 sessionFunctions.Ctx.ReturnAsyncIOContext(newOp);
             }
             return status;
