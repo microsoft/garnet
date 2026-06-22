@@ -175,7 +175,7 @@ namespace Garnet.server
             /// internal <c>snapshot_in_progress</c> flag, so each caller must hold the claim
             /// while it snapshots. bftree takes the destination path as a <c>cpr_snapshot</c>
             /// argument and writes a fresh self-contained file, so we snapshot straight to
-            /// <paramref name="destinationPath"/> with no scratch+copy staging.
+            /// <paramref name="destinationPath"/>.
             /// </summary>
             public void SnapshotUnderClaim(string destinationPath)
             {
