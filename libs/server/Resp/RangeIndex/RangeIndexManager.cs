@@ -66,6 +66,14 @@ namespace Garnet.server
         /// <summary>Gets the number of live (registered) BfTree indexes (activated + pending).</summary>
         internal int LiveIndexCount => liveIndexes.Count;
 
+        /// <summary>
+        /// Test-only: returns the live <see cref="TreeEntry"/> for the given key, or <c>null</c>
+        /// if no live (activated) tree exists for it. Used by tests that need to drive the
+        /// per-tree snapshot claim directly.
+        /// </summary>
+        internal TreeEntry GetLiveTreeEntryForTest(ReadOnlySpan<byte> keyBytes)
+            => liveIndexes.TryGetValue(KeyId(keyBytes), out var entry) && entry?.Tree != null ? entry : null;
+
         /// <summary>Gets the log-tied root directory for RI files. Used by the cluster replication layer
         /// to determine the target directory for received flush files on the replica side.</summary>
         public string RiLogRoot => riLogRoot;
@@ -149,45 +157,55 @@ namespace Garnet.server
             public int SnapshotPending;
 
             /// <summary>
-            /// Per-tree snapshot serialization atomic. 0 = idle; 1 = a snapshot is in flight.
-            /// Both <see cref="GarnetRecordTriggers.OnFlush"/> and
-            /// <see cref="SnapshotAllTreesForCheckpoint"/> claim this before calling
-            /// <c>cpr_snapshot</c> so the two callers do not race for bftree's internal
-            /// <c>snapshot_in_progress</c> flag (which would no-op one of them silently).
+            /// Per-tree snapshot serialization lock (binary semaphore). Held while a CPR snapshot
+            /// of this tree is in flight, so concurrent snapshot producers — <see cref="GarnetRecordTriggers.OnFlush"/>,
+            /// <see cref="SnapshotAllTreesForCheckpoint"/>, and migration — do not race for bftree's
+            /// internal <c>snapshot_in_progress</c> flag (which would silently no-op one of them).
+            ///
+            /// <para>A semaphore (not a spin/CAS) because the critical section is a full CPR
+            /// snapshot, which is multi-second — waiters must block, not busy-spin, to avoid
+            /// burning a core each. A <c>SemaphoreSlim</c> (rather than <c>lock</c>/Monitor) keeps
+            /// the door open to an async snapshot path (<c>WaitAsync</c>) in the future.</para>
+            ///
+            /// <para>Intentionally not disposed: <see cref="TreeEntry"/> has no disposal lifecycle,
+            /// and the semaphore holds no unmanaged handle (its <c>AvailableWaitHandle</c> is never
+            /// used), so the GC reclaims it. This also avoids a dispose-vs-in-flight-snapshot race.
+            /// Mirrors <c>CollectionItemObserver.ResultFoundSemaphore</c>.</para>
             /// </summary>
-            public int SnapshotInProgress;
-
-            /// <summary>Try to claim the per-tree snapshot atomic. Returns true if claimed.</summary>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool TryClaimSnapshot()
-                => Interlocked.CompareExchange(ref SnapshotInProgress, 1, 0) == 0;
-
-            /// <summary>Release the per-tree snapshot atomic.</summary>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void ReleaseSnapshot()
-                => Volatile.Write(ref SnapshotInProgress, 0);
+            private readonly SemaphoreSlim snapshotLock = new(1, 1);
 
             /// <summary>
-            /// Spin to claim the per-tree snapshot atomic, take a CPR snapshot of the live tree
-            /// directly into <paramref name="destinationPath"/>, then release the claim. The
-            /// claim serializes against concurrent flush / checkpoint / migration snapshots on
-            /// the same tree — bftree silently no-ops a <c>cpr_snapshot</c> that races its
-            /// internal <c>snapshot_in_progress</c> flag, so each caller must hold the claim
-            /// while it snapshots. bftree takes the destination path as a <c>cpr_snapshot</c>
-            /// argument and writes a fresh self-contained file, so we snapshot straight to
+            /// Test-only: <c>true</c> while a snapshot holds <see cref="snapshotLock"/>. Lets a test
+            /// detect that the holder has entered the critical section.
+            /// </summary>
+            internal bool IsSnapshotInProgressForTest => snapshotLock.CurrentCount == 0;
+
+            /// <summary>
+            /// Acquire the per-tree snapshot lock (blocking — no busy-spin), take a CPR snapshot of
+            /// the live tree directly into <paramref name="destinationPath"/>, then release the
+            /// lock. The lock serializes against concurrent flush / checkpoint / migration snapshots
+            /// on the same tree — bftree silently no-ops a <c>cpr_snapshot</c> that races its
+            /// internal <c>snapshot_in_progress</c> flag, so each caller must hold the lock while it
+            /// snapshots. bftree takes the destination path as a <c>cpr_snapshot</c> argument and
+            /// writes a fresh self-contained file, so we snapshot straight to
             /// <paramref name="destinationPath"/>.
             /// </summary>
             public void SnapshotUnderClaim(string destinationPath)
             {
-                while (!TryClaimSnapshot())
-                    Thread.Yield();
+                snapshotLock.Wait();
                 try
                 {
+                    // Test-only latency injection: while enabled, hold the per-tree snapshot lock
+                    // (blocking, negligible CPU) to emulate a slow cpr_snapshot. Concurrent
+                    // SnapshotUnderClaim callers on the same tree (e.g. migration) block on the
+                    // semaphore above rather than busy-spinning. No-op in Release and whenever the
+                    // injection is disabled.
+                    ExceptionInjectionHelper.WaitOnClearBlocking(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
                     BfTreeService.CprSnapshotByPtr(Tree.NativePtr, destinationPath);
                 }
                 finally
                 {
-                    ReleaseSnapshot();
+                    snapshotLock.Release();
                 }
             }
 
@@ -648,7 +666,7 @@ namespace Garnet.server
         ///
         /// <para><b>Live case</b> (<c>stub.TreeHandle != 0</c>): take a CPR snapshot via the
         /// native handle. CPR is concurrent-safe with workers (no per-key X-lock needed).
-        /// Per-tree atomic <see cref="TreeEntry.SnapshotInProgress"/> serializes against
+        /// Per-tree lock <see cref="TreeEntry.SnapshotUnderClaim"/> serializes against
         /// concurrent <see cref="SnapshotAllTreesForCheckpoint"/> for the same tree (otherwise
         /// bftree's internal <c>snapshot_in_progress</c> would no-op one of them).</para>
         ///
@@ -784,7 +802,7 @@ namespace Garnet.server
         /// to snapshot from; data.bftree was pre-staged by PreStage).</item>
         /// </list></para>
         ///
-        /// <para>Uses the per-tree atomic <see cref="TreeEntry.SnapshotInProgress"/> to serialize
+        /// <para>Uses the per-tree lock <see cref="TreeEntry.SnapshotUnderClaim"/> to serialize
         /// against concurrent <see cref="SnapshotTreeForFlush"/> for the same tree. Per-key
         /// X-lock is NOT taken here — that lock would deadlock if any deferred OnFlush fired
         /// on the checkpoint thread while it held S-locks on hot-path readers' shards.</para>

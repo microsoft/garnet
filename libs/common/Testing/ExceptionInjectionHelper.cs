@@ -150,6 +150,19 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Block (without busy-spinning) while the given injection is enabled, returning once it
+        /// is disabled. Unlike <see cref="WaitOnClear"/> this consumes negligible CPU while
+        /// waiting (1 ms polling sleeps), so any significant CPU observed during the wait is
+        /// attributable to other (busy-spinning) threads.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public static void WaitOnClearBlocking(ExceptionInjectionType exceptionType)
+        {
+            while (IsEnabled(exceptionType))
+                Thread.Sleep(1);
+        }
+
+        /// <summary>
         /// Wait on clear condition
         /// </summary>
         /// <param name="exceptionType"></param>

@@ -112,5 +112,11 @@ namespace Garnet.common
         /// in-flight ProcessRecord.
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
+        /// <summary>
+        /// RangeIndex CPR snapshot: while enabled, the snapshot holds the per-tree snapshot claim
+        /// (blocking, no CPU) to emulate a slow <c>cpr_snapshot</c>. A concurrent snapshot on the
+        /// same tree (e.g. migration) busy-spins on the claim, reproducing the high-CPU spin.
+        /// </summary>
+        RangeIndex_Snapshot_Inject_Latency,
     }
 }

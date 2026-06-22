@@ -6,6 +6,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+#if DEBUG
+using System.Diagnostics;
+using Garnet.common;
+#endif
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -2491,5 +2495,141 @@ namespace Garnet.test
             ClassicAssert.IsTrue(rangeIndexManager.KeyExists(System.Text.Encoding.ASCII.GetBytes("str-key"), ref ctx));
             ClassicAssert.IsFalse(rangeIndexManager.KeyExists(System.Text.Encoding.ASCII.GetBytes("nope"), ref ctx));
         }
+
+#if DEBUG
+        /// <summary>
+        /// Verifies that concurrent CPR snapshots of the same tree serialize by <b>blocking</b>
+        /// (not busy-spinning). When one snapshot is slow (here, artificial latency injected while
+        /// holding the per-tree snapshot lock), concurrent snapshots on the same tree — exactly
+        /// what the migration snapshot path does (<c>SnapshotForMigration</c> →
+        /// <c>TreeEntry.SnapshotUnderClaim</c>) — park on the <c>SemaphoreSlim</c> rather than
+        /// burning a core each.
+        ///
+        /// <para>The assertions are deterministic: no waiter can complete while the holder holds
+        /// the lock, and all complete once the injected latency is cleared. The CPU consumed during
+        /// the wait window is measured and logged only (not asserted) to avoid CI flakiness — with
+        /// the semaphore it should read ~0 cores; with the previous <c>Thread.Yield()</c> spin it
+        /// read ~<c>waiterCount</c> cores.</para>
+        /// </summary>
+        [Test]
+        public void RIConcurrentSnapshotsBlockWithoutBusySpinTest()
+        {
+            const int waiterCount = 10;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // DISK-backed RI so it mirrors migration (which requires a disk-backed tree) and
+            // SnapshotUnderClaim writes a real snapshot file to riLogRoot.
+            db.Execute("RI.CREATE", "snapidx", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "snapidx", "field1", "value1");
+
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var entry = rangeIndexManager.GetLiveTreeEntryForTest("snapidx"u8);
+            ClassicAssert.IsNotNull(entry, "expected a live BfTree for 'snapidx'");
+
+            var logRoot = rangeIndexManager.RiLogRoot;
+            var holderPath = Path.Combine(logRoot, "holder.snapshot.bftree");
+
+            Exception holderEx = null;
+            var waiterEx = new Exception[waiterCount];
+            var waitersDone = new CountdownEvent(waiterCount);
+            var waitersCompleted = 0;
+
+            // Arm the latency injection BEFORE the holder acquires, so the holder blocks (negligible
+            // CPU) while holding the per-tree snapshot lock.
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
+
+            var holder = new Thread(() =>
+            {
+                try { entry.SnapshotUnderClaim(holderPath); }
+                catch (Exception ex) { holderEx = ex; }
+            })
+            { IsBackground = true, Name = "ri-snapshot-holder" };
+
+            // Multiple waiters — each emulating the migration snapshot path on the SAME tree. All
+            // block on the per-tree SemaphoreSlim because the holder owns the lock (no busy-spin).
+            var waiters = new Thread[waiterCount];
+            for (var i = 0; i < waiterCount; i++)
+            {
+                var idx = i;
+                var waiterPath = Path.Combine(logRoot, $"waiter{idx}.snapshot.bftree");
+                waiters[idx] = new Thread(() =>
+                {
+                    try { entry.SnapshotUnderClaim(waiterPath); }
+                    catch (Exception ex) { waiterEx[idx] = ex; }
+                    finally
+                    {
+                        Interlocked.Increment(ref waitersCompleted);
+                        waitersDone.Signal();
+                    }
+                })
+                { IsBackground = true, Name = $"ri-snapshot-waiter-{idx}" };
+            }
+
+            try
+            {
+                holder.Start();
+
+                // Wait until the holder has actually acquired the snapshot lock and is parked in
+                // the injected latency wait.
+                var deadline = Stopwatch.GetTimestamp();
+                while (!entry.IsSnapshotInProgressForTest
+                       && Stopwatch.GetElapsedTime(deadline) < TimeSpan.FromSeconds(10))
+                    Thread.Yield();
+                ClassicAssert.IsTrue(entry.IsSnapshotInProgressForTest,
+                    "holder failed to acquire the snapshot lock");
+
+                // Start all waiters.
+                var cpuBefore = Process.GetCurrentProcess().TotalProcessorTime;
+                var wallBefore = Stopwatch.GetTimestamp();
+                foreach (var w in waiters)
+                    w.Start();
+
+                // Deterministic assertion #1: while the holder holds the lock, NO waiter can
+                // complete (they are all blocked). The 500ms window is enough to observe in
+                // Task Manager / dotnet-counters that the waiters consume ~no CPU (unlike the
+                // previous Thread.Yield() spin, which burned a core each).
+                var allCompletedWhileBlocked = waitersDone.Wait(TimeSpan.FromMilliseconds(500));
+
+                var cpuDuringWait = Process.GetCurrentProcess().TotalProcessorTime - cpuBefore;
+                var wallDuringWait = Stopwatch.GetElapsedTime(wallBefore);
+
+                ClassicAssert.IsFalse(allCompletedWhileBlocked,
+                    "waiters unexpectedly completed while the holder held the snapshot lock");
+                ClassicAssert.AreEqual(0, Volatile.Read(ref waitersCompleted),
+                    "no waiter should complete while the holder holds the lock");
+
+                // Log (do NOT assert) the CPU consumed during the wait window. With the SemaphoreSlim
+                // this should read ~0 cores; with the previous Thread.Yield() spin it read
+                // ~waiterCount cores.
+                TestContext.Progress.WriteLine(
+                    $"[snapshot-wait] waiters={waiterCount} window={wallDuringWait.TotalMilliseconds:F0}ms " +
+                    $"cpu={cpuDuringWait.TotalMilliseconds:F0}ms " +
+                    $"(~{cpuDuringWait.TotalMilliseconds / Math.Max(1, wallDuringWait.TotalMilliseconds):F2} cores)");
+
+                // Release the injected latency: the holder finishes its real snapshot and releases
+                // the lock; the waiters then acquire one-by-one and complete.
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
+
+                // Deterministic assertion #2: all waiters complete once the lock is released.
+                // Each does a real (~3s) CPR snapshot serially, so allow a generous timeout.
+                ClassicAssert.IsTrue(waitersDone.Wait(TimeSpan.FromSeconds(60)),
+                    "waiters did not all complete after the snapshot lock was released");
+            }
+            finally
+            {
+                // Always clear the injection so a mid-test failure cannot wedge other tests.
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
+                holder.Join(TimeSpan.FromSeconds(60));
+                foreach (var w in waiters)
+                    w.Join(TimeSpan.FromSeconds(60));
+            }
+
+            ClassicAssert.IsNull(holderEx, $"holder threw: {holderEx}");
+            for (var i = 0; i < waiterCount; i++)
+                ClassicAssert.IsNull(waiterEx[i], $"waiter {i} threw: {waiterEx[i]}");
+        }
+#endif
     }
 }
