@@ -174,10 +174,8 @@ namespace Tsavorite.core
                 else
                 {
                     // Extended namespace
-                    // var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
-                    // return new ReadOnlySpan<byte>((byte*)(ExtendedNamespaceAddress + 1), length);
-                    ThrowTsavoriteException("Extended namespace not yet supported");
-                    return default;
+                    var (length, dataAddress) = DataHeader.GetExtendedNamespaceInfo(physicalAddress);
+                    return new ReadOnlySpan<byte>((byte*)dataAddress, length);
                 }
             }
         }
@@ -559,7 +557,6 @@ namespace Tsavorite.core
             if (key.HasNamespace)
             {
                 var namespaceBytes = key.NamespaceBytes;
-                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
                 namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
 
@@ -620,7 +617,6 @@ namespace Tsavorite.core
             if (key.HasNamespace)
             {
                 var namespaceBytes = key.NamespaceBytes;
-                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
                 namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
         }

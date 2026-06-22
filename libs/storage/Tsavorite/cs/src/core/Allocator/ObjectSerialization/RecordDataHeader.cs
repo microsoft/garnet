@@ -515,6 +515,11 @@ namespace Tsavorite.core
 
         // ── Key and Value field info ───────────────────────────────────────────────
 
+        /// <summary>Get the extended namespace length and extended namespace data address.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (int namespaceLength, long namespaceAddress) GetExtendedNamespaceInfo(long recordBaseAddress)
+        => ((byte)((word >> kNamespaceShift) & ByteMask) & ~(1 << ExtendedNamespaceIndicatorBit), recordBaseAddress + Constants.FixedHeaderSize);
+
         /// <summary>Get the offset of the key data, relative to the RecordInfo start.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetOffsetToKeyStart() => Constants.FixedHeaderSize + ExtendedNamespaceLength;
@@ -602,7 +607,18 @@ namespace Tsavorite.core
                  | ((ulong)namespaceByte << kNamespaceShift)
                  | ((ulong)recordType << kRecordTypeShift);
 
-            namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
+            // Namespace can be in two different places depending on if we're using the extended namespace space...
+            if (extendedNamespaceSize == 0)
+            {
+                // In a fix position in DataHeader
+                namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
+            }
+            else
+            {
+                // Before the key
+                namespaceAddress = recordBaseAddress + Constants.FixedHeaderSize;
+            }
+
             keyAddress = recordBaseAddress + Constants.FixedHeaderSize + extendedNamespaceSize;
             valueAddress = keyAddress + keyLength;
 
