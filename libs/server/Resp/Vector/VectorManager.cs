@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -211,31 +212,84 @@ namespace Garnet.server
 #pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
 #pragma warning restore IDE0302 
-            VectorElementKey key = new(nsBytes, []);
+
+            Span<byte> keyBytes = stackalloc byte[sizeof(int)];
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
-            VectorOutput data = new(dataSpan);
+            var metadataContextIndex = 0;
 
-            ref var ctx = ref session.storageSession.vectorBasicContext;
+            var allMetadataContexts = new List<ContextMetadata>();
 
-            var status = ctx.Read(key, ref data);
-
-            if (status.IsPending)
+            while (true)
             {
-                VectorOutput ignored = new();
-                CompletePending(ref status, ref ignored, ref ctx);
+                BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
+
+                VectorElementKey key = new(nsBytes, keyBytes);
+
+                VectorOutput data = new(dataSpan);
+
+                ref var ctx = ref session.storageSession.vectorBasicContext;
+
+                var status = ctx.Read(key, ref data);
+
+                if (status.IsPending)
+                {
+                    VectorOutput ignored = new();
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
+
+                if (!status.Found)
+                {
+                    break;
+                }
+
+                allMetadataContexts.Add(MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0]);
+
+                metadataContextIndex++;
             }
 
-            // Can be not found if we've never spun up a Vector Set
-            if (status.Found)
+            // Cleanup the tail of any context metadatas
+            for (var i = allMetadataContexts.Count - 1; i >= 0; i--)
             {
-                lock (this)
+                if (allMetadataContexts[i].IsEmpty())
                 {
-                    contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
+                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
+
+                    VectorElementKey key = new(nsBytes, keyBytes);
+
+                    VectorOutput data = new(dataSpan);
+
+                    ref var ctx = ref session.storageSession.vectorBasicContext;
+
+                    var status = ctx.Delete(key);
+                    if (status.IsPending)
+                    {
+                        VectorOutput ignored = new();
+                        CompletePending(ref status, ref ignored, ref ctx);
+                    }
+
+                    allMetadataContexts.RemoveAt(i);
                 }
             }
 
+            // Store current context state off for future use
+            lock (this)
+            {
+                if (allMetadataContexts.Count > 0)
+                {
+                    contextMetadatas = [.. allMetadataContexts];
+                }
+                else
+                {
+                    contextMetadatas = new ContextMetadata[1];
+                }
+            }
+
+            // Start tracking the dirty state of ContextMetadatas
+            dirtyContextMetadatas = [];
+
+            // Spin up quantization
             StartQuantizationTasks();
         }
 
@@ -250,40 +304,46 @@ namespace Garnet.server
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
+            var needsUpdated = false;
+
             lock (this)
             {
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
-                var abandonedMigrations = contextMetadata.GetMigrating();
-                var needsUpdated = false;
-
-                if (abandonedMigrations != null)
+                for (var i = 0; i < contextMetadatas.Length; i++)
                 {
-                    foreach (var abandoned in abandonedMigrations)
-                    {
-                        contextMetadata.MarkMigrationComplete(abandoned, ushort.MaxValue);
-                        contextMetadata.MarkCleaningUp(abandoned);
-                    }
+                    var abandonedMigrations = contextMetadatas[i].GetMigrating();
 
-                    needsUpdated = true;
+                    if (abandonedMigrations != null)
+                    {
+                        foreach (var abandoned in abandonedMigrations)
+                        {
+                            contextMetadatas[i].MarkMigrationComplete(i != 0, abandoned, ushort.MaxValue);
+                            contextMetadatas[i].MarkCleaningUp(i != 0, abandoned);
+                        }
+
+                        needsUpdated = true;
+                    }
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
                 foreach (var (context, _) in recoveredIndexes)
                 {
-                    if (contextMetadata.IsCleaningUp(context))
+                    var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                    if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
-                        contextMetadata.ClearIsCleaningUp(context);
+                        contextMetadatas[contextIndex].ClearIsCleaningUp(contextIndex != 0, contextValue);
                         needsUpdated = true;
                     }
-
-                    recoveredIndexes = null;
                 }
 
-                if (needsUpdated)
-                {
-                    UpdateContextMetadata(ref ctx);
-                }
+                recoveredIndexes = null;
+            }
+
+            if (needsUpdated)
+            {
+                UpdateContextMetadata(ref ctx);
             }
 
             // Resume any cleanups we didn't complete before recovery

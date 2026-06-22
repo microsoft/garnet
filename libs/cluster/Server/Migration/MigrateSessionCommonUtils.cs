@@ -16,8 +16,6 @@ namespace Garnet.cluster
     {
         private unsafe ValueTask<bool> WriteOrSendRecordAsync(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
         {
-            Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces not yet supported");
-
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);

@@ -220,9 +220,10 @@ namespace Garnet.server
                                 completions.Add(t.MarkCompleted);
                             }
 
-                            if (!contextMetadata.IsCleaningUp(t.Context))
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
+                            if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
-                                contextMetadata.MarkCleaningUp(t.Context);
+                                contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
 
                                 needsUpdate = true;
                             }
@@ -299,10 +300,23 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
-                    HashSet<ulong> needCleanup;
+                    HashSet<ulong> needCleanup = null;
                     lock (this)
                     {
-                        needCleanup = contextMetadata.GetNeedCleanup();
+                        for (var i = 0; i < contextMetadatas.Length; i++)
+                        {
+                            var subCleanup = contextMetadatas[i].GetNeedCleanup();
+                            if (subCleanup != null)
+                            {
+                                var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                                needCleanup ??= [];
+                                foreach (var item in subCleanup)
+                                {
+                                    _ = needCleanup.Add(offset + item);
+                                }
+                            }
+                        }
                     }
 
                     if (needCleanup == null)
@@ -326,7 +340,8 @@ namespace Garnet.server
                     {
                         foreach (var cleanedUp in needCleanup)
                         {
-                            contextMetadata.FinishedCleaningUp(cleanedUp);
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(cleanedUp);
+                            contextMetadatas[contextIndex].FinishedCleaningUp(contextIndex != 0, contextValue);
                         }
                     }
 

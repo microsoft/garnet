@@ -34,16 +34,40 @@ namespace Garnet.server
             ReadOnlySpan<byte> value
         )
         {
-            Debug.Assert(namespaceBytes.Length == 1 && namespaceBytes[0] <= 127, "Larger than byte namespaces not yet supported");
 #if DEBUG
             // Do some extra sanity checking in DEBUG builds
             lock (this)
             {
-                var ns = (byte)namespaceBytes[0];
-                var context = (ulong)(ns & ~(ContextStep - 1));
-                Debug.Assert(contextMetadata.IsInUse(context), "Shouldn't be migrating to an unused context");
-                Debug.Assert(contextMetadata.IsMigrating(context), "Shouldn't be migrating to context not marked for it");
-                Debug.Assert(!(contextMetadata.GetNeedCleanup()?.Contains(context) ?? false), "Shouldn't be migrating into context being deleted");
+                ulong ns;
+                if(namespaceBytes.Length == 1)
+                {
+                    ns = namespaceBytes[0];
+                }
+                else if (namespaceBytes.Length == 2)
+                {
+                    ns = BinaryPrimitives.ReadUInt16LittleEndian(namespaceBytes);
+                }
+                else if(namespaceBytes.Length == 4)
+                {
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+                }
+                else if(namespaceBytes.Length == 8)
+                {
+                    ns = BinaryPrimitives.ReadUInt64LittleEndian(namespaceBytes);
+                }
+                else
+                {
+                    Debug.Fail($"Unexpected namespace length: {namespaceBytes.Length}");
+                    ns = 0;
+                }
+
+                var context = ns & ~(ContextStep - 1);
+
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Shouldn't be migrating to an unused context");
+                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Shouldn't be migrating to context not marked for it");
+                Debug.Assert(!(contextMetadatas[contextIndex].GetNeedCleanup()?.Contains(contextValue) ?? false), "Shouldn't be migrating into context being deleted");
             }
 #endif
 
@@ -51,7 +75,7 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
+            VectorElementKey key = new(namespaceBytes, keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
@@ -139,8 +163,10 @@ namespace Garnet.server
 #if DEBUG
             lock (this)
             {
-                Debug.Assert(contextMetadata.IsInUse(context), "Context should be assigned if we're migrating");
-                Debug.Assert(contextMetadata.IsMigrating(context), "Context should be marked migrating if we're moving an index key in");
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
+                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex !=0, contextValue), "Context should be marked migrating if we're moving an index key in");
             }
 #endif
 
@@ -224,9 +250,11 @@ namespace Garnet.server
 
                     var hashSlot = HashSlotUtils.HashSlot(key);
 
+                    var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
                     lock (this)
                     {
-                        contextMetadata.MarkMigrationComplete(context, hashSlot);
+                        contextMetadatas[contextIndex].MarkMigrationComplete(contextIndex != 0, contextValue, hashSlot);
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorBasicContext);

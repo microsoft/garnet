@@ -155,13 +155,7 @@ namespace Garnet.cluster
 
             invalidParameters = false;
 
-            if (!vectorManager.TryReserveContextsForMigration(ref vectorBasicContext, numVectorSetContexts, out var newContexts))
-            {
-                while (!RespWriteUtils.TryWriteError("Insufficients contexts available to reserve"u8, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
-            }
+            var newContexts = vectorManager.ReserveContextsForMigration(ref vectorBasicContext, numVectorSetContexts);
 
             while (!RespWriteUtils.TryWriteArrayLength(newContexts.Count, ref dcurr, dend))
                 SendAndReset();

@@ -290,7 +290,7 @@ namespace Garnet.server
                 if (input.Callback == 0)
                 {
                     Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-                    Debug.Assert(key.Length == 0, "Shouldn't have a non-zero key, expected to working on ContextMetadata");
+                    Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
                     // Operating on ContextMetadata
 
@@ -356,7 +356,7 @@ namespace Garnet.server
                     // We're doing a Metadata or InProgressDelete update
 
                     Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
-                    Debug.Assert(key.Length == 0, "Shouldn't have a non-zero key, expected to working on ContextMetadata");
+                    Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
                     // Doing a Metadata update
                     Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
@@ -430,54 +430,29 @@ namespace Garnet.server
 
                     Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
 
-                    if (key.Length == 0)
+                    // Doing a Metadata update
+                    Debug.Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                    Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
+
+                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(alignedValue)[0];
+
+                    PinnedSpanByte newMetadataValue;
+                    unsafe
                     {
-                        // Doing a Metadata update
-                        Debug.Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-
-                        ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(alignedValue)[0];
-
-                        PinnedSpanByte newMetadataValue;
-                        unsafe
-                        {
-                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
-                        }
-
-                        ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
-
-                        if (newMetadata.Version < oldMetadata.Version)
-                        {
-                            rmwInfo.Action = RMWAction.CancelOperation;
-                            return false;
-                        }
-
-                        newMetadataValue.CopyTo(alignedValue);
-                        return true;
+                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
                     }
-                    else
+
+                    ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
+
+                    if (newMetadata.Version < oldMetadata.Version)
                     {
-                        // Doing an InProgressDelete update
-                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
-
-                        Span<byte> inProgressDeleteUpdateData;
-                        bool adding;
-
-                        unsafe
-                        {
-                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                            adding = len > 0;
-                            if (!adding)
-                            {
-                                len = -len;
-                            }
-
-                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
-                        }
-
-                        return true;
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
                     }
+
+                    newMetadataValue.CopyTo(alignedValue);
+                    return true;
                 }
                 else
                 {
@@ -689,9 +664,26 @@ namespace Garnet.server
             var span = readOutput.SpanByteAndMemory.Span;
 
             var nsLen = BinaryPrimitives.ReadInt32LittleEndian(span);
-            Debug.Assert(nsLen == 1, "Longer namespaces not supported");
+            var oldNsBytes = span.Slice(sizeof(int), nsLen);
 
-            var oldNs = (ulong)span[sizeof(int)];
+            ulong oldNs;
+            if (oldNsBytes.Length == 1)
+            {
+                oldNs = (ulong)oldNsBytes[0];
+            }
+            else if (oldNsBytes.Length == 2)
+            {
+                oldNs = BinaryPrimitives.ReadUInt16LittleEndian(oldNsBytes);
+            }
+            else if (oldNsBytes.Length == 4)
+            {
+                oldNs = BinaryPrimitives.ReadUInt32LittleEndian(oldNsBytes);
+            }
+            else
+            {
+                Debug.Assert(oldNsBytes.Length == 8, "Unexpected namespace length");
+                oldNs = BinaryPrimitives.ReadUInt64LittleEndian(oldNsBytes);
+            }
 
             if (!oldToNewNamespaces.TryGetValue(oldNs, out var newNs))
             {

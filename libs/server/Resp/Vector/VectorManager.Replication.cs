@@ -161,31 +161,43 @@ namespace Garnet.server
 
                 var value = input.parseState.GetArgSliceByRef(1);
 
-                Debug.Assert(elementNsBytes.Length == 1, "Longer length namespaces not supported");
-
-                var ns = (ulong)elementNsBytes[0];
+                ulong ns;
+                if (elementNsBytes.Length == 1)
+                {
+                    ns = elementNsBytes[0];
+                }
+                else if (elementNsBytes.Length == 2)
+                {
+                    ns = BinaryPrimitives.ReadUInt16LittleEndian(elementNsBytes);
+                }
+                else if (elementNsBytes.Length == 4)
+                {
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
+                }
+                else
+                {
+                    Debug.Assert(elementNsBytes.Length == 8, "Unexpected namespace length");
+                    ns = BinaryPrimitives.ReadUInt64LittleEndian(elementNsBytes);
+                }
 
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
-                var ctx = ns & ~(ContextStep - 1);
-                if (!contextMetadata.IsMigrating(ctx))
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(ns & ~(ContextStep - 1));
+
+                var needsUpdate = false;
+                lock (this)
                 {
-                    var needsUpdate = false;
-
-                    lock (this)
+                    if (!contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
                     {
-                        if (!contextMetadata.IsMigrating(ctx))
-                        {
-                            contextMetadata.MarkInUse(ctx, ushort.MaxValue);
-                            contextMetadata.MarkMigrating(ctx);
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
+                        contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
 
-                            needsUpdate = true;
-                        }
+                        needsUpdate = true;
                     }
+                }
 
-                    if (needsUpdate)
-                    {
-                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
-                    }
+                if (needsUpdate)
+                {
+                    UpdateContextMetadata(ref currentSession.vectorBasicContext);
                 }
 
                 HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, elementNsBytes, elementKeyBytes, value);
@@ -203,25 +215,23 @@ namespace Garnet.server
                 // but if you a migrate an EMPTY Vector Set that is not necessarily true
                 //
                 // So force reservation now
-                if (!contextMetadata.IsMigrating(context))
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context & ~(ContextStep - 1));
+
+                var needsUpdate = false;
+                lock (this)
                 {
-                    var needsUpdate = false;
-
-                    lock (this)
+                    if (!contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
                     {
-                        if (!contextMetadata.IsMigrating(context))
-                        {
-                            contextMetadata.MarkInUse(context, ushort.MaxValue);
-                            contextMetadata.MarkMigrating(context);
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
+                        contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
 
-                            needsUpdate = true;
-                        }
+                        needsUpdate = true;
                     }
+                }
 
-                    if (needsUpdate)
-                    {
-                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
-                    }
+                if (needsUpdate)
+                {
+                    UpdateContextMetadata(ref currentSession.vectorBasicContext);
                 }
 
                 ActiveThreadSession = currentSession;
