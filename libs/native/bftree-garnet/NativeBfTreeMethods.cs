@@ -128,9 +128,9 @@ namespace Garnet.server.BfTreeInterop
         /// argument.
         ///
         /// Internal <c>snapshot_in_progress</c> AtomicBool serializes concurrent calls;
-        /// losers no-op silently. To produce snapshots at multiple destination paths,
-        /// the caller is expected to <c>File.Move</c> / copy the snapshot file to the
-        /// final destination after each call.
+        /// losers no-op silently. Each call writes a fresh, self-contained snapshot file to
+        /// the supplied <paramref name="snapshot_path"/>; callers that need concurrent
+        /// snapshots of the same tree to all succeed must serialize externally.
         ///
         /// Returns 0 on success, -1 on panic or invalid/empty path.
         /// </summary>

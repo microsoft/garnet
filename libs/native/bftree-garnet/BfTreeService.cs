@@ -475,6 +475,13 @@ namespace Garnet.server.BfTreeInterop
         /// Take a CPR snapshot of a tree given only its native handle (no managed wrapper).
         /// Used by RangeIndex's <c>OnFlush</c> path which has direct access to the stub's
         /// TreeHandle but not the managed <see cref="BfTreeService"/> instance.
+        ///
+        /// <para><b>Caller contract:</b> this method does NOT self-serialize. bftree's internal
+        /// <c>snapshot_in_progress</c> flag makes a <c>cpr_snapshot</c> that races another
+        /// snapshot on the same tree <b>silently no-op</b> (no file written) while this method
+        /// still returns success. Callers MUST hold external per-tree serialization (e.g.
+        /// RangeIndex's per-tree snapshot claim) around this call so concurrent snapshots of the
+        /// same handle cannot race.</para>
         /// </summary>
         /// <param name="handle">Native BfTree pointer.</param>
         /// <param name="snapshotPath">Destination path for the snapshot file. The snapshot

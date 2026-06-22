@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
@@ -256,8 +255,8 @@ namespace Garnet.server
         /// Source side: snapshot a BfTree for migration under an exclusive lock.
         /// Acquires the exclusive lock, re-reads the stub from the store to get a fresh
         /// <c>TreeHandle</c>. If the tree is live, takes a CPR snapshot straight to a
-        /// temporary migration file (following the same pattern as
-        /// <see cref="SnapshotForFlushViaCpr"/>). If evicted, copies the working
+        /// temporary migration file (via <see cref="TreeEntry.SnapshotUnderClaim"/>). If
+        /// evicted, copies the working
         /// <c>data.bftree</c> file (same source as checkpoint pending entries).
         /// </summary>
         internal bool SnapshotForMigration(StorageSession session, PinnedSpanByte key, out string path, out long totalBytes, out byte[] stubBytes)
@@ -301,20 +300,11 @@ namespace Garnet.server
                 var keyId = KeyId(keyBytes);
                 if (stub.TreeHandle != nint.Zero && liveIndexes.TryGetValue(keyId, out var treeEntry) && treeEntry.Tree != null)
                 {
-                    // Tree is live — CPR snapshot straight to the migration destination. The per-tree
-                    // atomic serializes against concurrent checkpoint/flush snapshots on the same tree
-                    // (bftree silently no-ops a racing cpr_snapshot). The claim is independent of the
-                    // exclusive rangeIndex lock and is held only for one non-blocking snapshot.
-                    while (!treeEntry.TryClaimSnapshot())
-                        Thread.Yield();
-                    try
-                    {
-                        BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr, migrationPath);
-                    }
-                    finally
-                    {
-                        treeEntry.ReleaseSnapshot();
-                    }
+                    // Tree is live — CPR snapshot straight to the migration destination under the
+                    // per-tree claim (serializes against concurrent checkpoint / flush snapshots on
+                    // the same tree). The claim is independent of the exclusive rangeIndex lock and
+                    // is held only for one non-blocking snapshot.
+                    treeEntry.SnapshotUnderClaim(migrationPath);
                 }
                 else
                 {

@@ -351,9 +351,9 @@ pub unsafe extern "C" fn bftree_scan_drop(handle: *mut ScanHandle<'static>) {
 /// the path it configured for this tree.
 ///
 /// Internal `snapshot_in_progress` AtomicBool serializes concurrent calls;
-/// losers no-op silently. To produce snapshots at multiple destination paths,
-/// the caller is expected to `File.Move` / copy the snapshot file to the final
-/// destination after each call.
+/// losers no-op silently. Each call writes a fresh, self-contained snapshot file
+/// to the supplied `snapshot_path`; callers that need concurrent snapshots of the
+/// same tree to all succeed must serialize externally.
 ///
 /// Returns 0 on success, -1 on panic or invalid/empty path.
 ///
