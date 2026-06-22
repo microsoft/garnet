@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
@@ -167,10 +166,9 @@ namespace Garnet.server
 
                 ref readonly var srcStub = ref ReadIndex(stubBytes);
 
-                var scratchPath = LogScratchPathFor(keyBytes);
                 var bfTree = BfTreeService.RecoverFromCprSnapshot(
                     bftreeDataPath,
-                    scratchPath,
+                    enableSnapshots: true,
                     (StorageBackendType)srcStub.StorageBackend);
 
                 Span<byte> newStubBytes = stackalloc byte[IndexSizeBytes];
@@ -256,9 +254,9 @@ namespace Garnet.server
         /// <summary>
         /// Source side: snapshot a BfTree for migration under an exclusive lock.
         /// Acquires the exclusive lock, re-reads the stub from the store to get a fresh
-        /// <c>TreeHandle</c>. If the tree is live, takes a CPR snapshot and copies
-        /// the scratch file to a temporary migration file (following the same pattern as
-        /// <see cref="SnapshotForFlushViaCpr"/>). If evicted, copies the working
+        /// <c>TreeHandle</c>. If the tree is live, takes a CPR snapshot straight to a
+        /// temporary migration file (via <see cref="TreeEntry.SnapshotUnderClaim"/>). If
+        /// evicted, copies the working
         /// <c>data.bftree</c> file (same source as checkpoint pending entries).
         /// </summary>
         internal bool SnapshotForMigration(StorageSession session, PinnedSpanByte key, out string path, out long totalBytes, out byte[] stubBytes)
@@ -302,27 +300,11 @@ namespace Garnet.server
                 var keyId = KeyId(keyBytes);
                 if (stub.TreeHandle != nint.Zero && liveIndexes.TryGetValue(keyId, out var treeEntry) && treeEntry.Tree != null)
                 {
-                    // Tree is live — CPR snapshot + copy from scratch path (same pattern as SnapshotForFlushViaCpr).
-                    // If a concurrent checkpoint already owns the snapshot claim, wait for it
-                    // then copy the scratch file it just produced — avoids spinning under the exclusive lock.
-                    var scratchPath = LogScratchPath(hashPrefix);
-                    if (!treeEntry.TryClaimSnapshot())
-                    {
-                        treeEntry.WaitForSnapshot();
-                        File.Copy(scratchPath, migrationPath, overwrite: false);
-                    }
-                    else
-                    {
-                        try
-                        {
-                            BfTreeService.CprSnapshotByPtr(treeEntry.Tree.NativePtr);
-                            File.Copy(scratchPath, migrationPath, overwrite: false);
-                        }
-                        finally
-                        {
-                            treeEntry.ReleaseSnapshot();
-                        }
-                    }
+                    // Tree is live — CPR snapshot straight to the migration destination under the
+                    // per-tree claim (serializes against concurrent checkpoint / flush snapshots on
+                    // the same tree). The claim is independent of the exclusive rangeIndex lock and
+                    // is held only for one non-blocking snapshot.
+                    treeEntry.SnapshotUnderClaim(migrationPath);
                 }
                 else
                 {
