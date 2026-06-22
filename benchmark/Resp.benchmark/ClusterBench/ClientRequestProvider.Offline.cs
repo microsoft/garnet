@@ -175,6 +175,10 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                     }
 
+                    // Track bytes received
+                    var bytesRcvd = client.TotalBytesReceived;
+                    Interlocked.Exchange(ref bytesReceived, bytesRcvd);
+
                     var elapsed = Stopwatch.GetTimestamp() - opStart;
 
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)

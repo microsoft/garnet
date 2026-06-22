@@ -35,6 +35,7 @@ namespace Resp.benchmark
         readonly LongHistogram histogram;
         long opsCompleted;
         long bytesSent;
+        long bytesReceived;
         long keysLoaded;
         long primaryOps;  // Operations executed on primary
         long replicaOps;  // Operations executed on replica
@@ -43,6 +44,7 @@ namespace Resp.benchmark
 
         public long OpsCompleted => Interlocked.Read(ref opsCompleted);
         public long BytesSent => Interlocked.Read(ref bytesSent);
+        public long BytesReceived => Interlocked.Read(ref bytesReceived);
         public long KeysLoaded => Interlocked.Read(ref keysLoaded);
         public long PrimaryOps => Interlocked.Read(ref primaryOps);
         public long ReplicaOps => Interlocked.Read(ref replicaOps);

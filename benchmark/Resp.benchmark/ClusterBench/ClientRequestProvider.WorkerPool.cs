@@ -283,6 +283,10 @@ namespace Resp.benchmark
                 }
             }
 
+            // Track bytes received
+            var bytesRcvd = client.TotalBytesReceived;
+            Interlocked.Exchange(ref bytesReceived, bytesRcvd);
+
             // Record latency
             var elapsed = Stopwatch.GetTimestamp() - opStart;
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)

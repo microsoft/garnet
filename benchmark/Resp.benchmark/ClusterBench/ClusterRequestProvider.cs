@@ -849,7 +849,8 @@ namespace Resp.benchmark
 
             var summary = new LongHistogram(1, TimeStamp.Seconds(100), 2);
             long totalOps = 0;
-            long totalBytes = 0;
+            long totalBytesSent = 0;
+            long totalBytesReceived = 0;
 
             // Per-shard summary
             Console.WriteLine($"{"Shard",-8}{"Endpoint",-25}{"Threads",-10}{"Ops",-15}{"Ops/sec",-15}");
@@ -860,16 +861,19 @@ namespace Resp.benchmark
             for (int s = 0; s < shards.Length; s++)
             {
                 long shardOps = 0;
-                long shardBytes = 0;
+                long shardBytesSent = 0;
+                long shardBytesRcvd = 0;
                 for (int t = 0; t < threadsPerShard; t++)
                 {
                     var provider = providers[s * threadsPerShard + t];
                     shardOps += provider.OpsCompleted;
-                    shardBytes += provider.BytesSent;
+                    shardBytesSent += provider.BytesSent;
+                    shardBytesRcvd += provider.BytesReceived;
                     summary.Add(provider.Histogram);
                 }
                 totalOps += shardOps;
-                totalBytes += shardBytes;
+                totalBytesSent += shardBytesSent;
+                totalBytesReceived += shardBytesRcvd;
 
                 double shardOpsPerSec = shardOps / totalElapsed.TotalSeconds;
                 Console.WriteLine($"{s,-8}{shards[s].Address + ":" + shards[s].Port,-25}{threadsPerShard,-10}{shardOps,-15}{shardOpsPerSec,-15:N0}");
@@ -894,13 +898,14 @@ namespace Resp.benchmark
             // Throughput summary
             var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
             double dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
-            double wireGBps = totalBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            var totalWireBytes = totalBytesSent + totalBytesReceived;
+            double wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
 
             Console.WriteLine();
             Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
             Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
-            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP bytes sent)");
+            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP sent: {totalBytesSent:N0} B, received: {totalBytesReceived:N0} B)");
 
             // Report hit rates from INFO STATS
             ReportHitRates();
@@ -918,7 +923,8 @@ namespace Resp.benchmark
             long totalOps = 0;
             long totalPrimaryOps = 0;
             long totalReplicaOps = 0;
-            long totalBytes = 0;
+            long totalBytesSent = 0;
+            long totalBytesReceived = 0;
 
             // Per-worker summary
             Console.WriteLine($"{"Worker",-10}{"Providers",-12}{"Total Ops",-15}{"Primary Ops",-15}{"Replica Ops",-15}");
@@ -935,7 +941,8 @@ namespace Resp.benchmark
                 foreach (var provider in worker.Providers)
                 {
                     summary.Add(provider.Histogram);
-                    totalBytes += provider.BytesSent;
+                    totalBytesSent += provider.BytesSent;
+                    totalBytesReceived += provider.BytesReceived;
                 }
 
                 Console.WriteLine($"{metrics.WorkerId,-10}{worker.ProviderCount,-12}{metrics.TotalOperations,-15}{metrics.PrimaryOperations,-15}{metrics.ReplicaOperations,-15}");
@@ -960,13 +967,14 @@ namespace Resp.benchmark
             var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
             var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
             var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
-            var wireGBps = totalBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            var totalWireBytes = totalBytesSent + totalBytesReceived;
+            var wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
 
             Console.WriteLine();
             Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
             Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
-            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP bytes sent)");
+            Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP sent: {totalBytesSent:N0} B, received: {totalBytesReceived:N0} B)");
             Console.WriteLine($"Workers: {workers.Length}, Shards: {shards.Length}, Providers: {workers.Length * shards.Length}");
 
             if (totalOps > 0 && totalReplicaOps > 0)
