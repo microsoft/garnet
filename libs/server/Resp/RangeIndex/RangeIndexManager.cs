@@ -90,8 +90,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Log-tied root directory (without trailing separator). Holds the working file
-        /// (<c>&lt;hash&gt;.data.bftree</c>), CPR scratch files (<c>&lt;hash&gt;.scratch.cpr</c>),
-        /// and immutable per-flush snapshots (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
+        /// (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+        /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
         private readonly string riLogRoot;
 
@@ -272,10 +272,6 @@ namespace Garnet.server
         internal string LogDataPath(string hashPrefix)
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree");
 
-        /// <summary>{logRoot}/&lt;hash&gt;.scratch.cpr — bftree CPR snapshot scratch file (overwritten each cpr_snapshot).</summary>
-        internal string LogScratchPath(string hashPrefix)
-            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".scratch.cpr");
-
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
         public string LogFlushPath(string hashPrefix, long logicalAddress)
             => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}{FlushSuffix}");
@@ -290,7 +286,6 @@ namespace Garnet.server
 
         // -- Convenience helpers used outside this class (RangeIndexOps via raw key) --
         internal string LogDataPathFor(ReadOnlySpan<byte> keyBytes) => LogDataPath(HashKeyToPrefix(keyBytes));
-        internal string LogScratchPathFor(ReadOnlySpan<byte> keyBytes) => LogScratchPath(HashKeyToPrefix(keyBytes));
 
         /// <summary>
         /// Creates a new BfTree instance via the native interop layer.
@@ -307,26 +302,22 @@ namespace Garnet.server
         {
             var hashPrefix = HashKeyToPrefix(keyBytes);
             string filePath = null;
-            string snapshotFilePath = null;
 
             if (storageBackend == StorageBackendType.Disk)
             {
                 filePath = LogDataPath(hashPrefix);
             }
 
-            // Configure the bftree's CPR snapshot scratch path. cpr_snapshot writes here;
-            // OnFlush / SnapshotAllTreesForCheckpoint File.Move scratch -> final destination.
-            // Required for both backends; leave null only if riLogRoot is unset (test scenarios).
-            // riLogRoot itself was already created in the constructor.
-            if (!string.IsNullOrEmpty(riLogRoot))
-            {
-                snapshotFilePath = LogScratchPath(hashPrefix);
-            }
+            // Enable CPR snapshots whenever a log root is configured. The destination path is
+            // supplied per call by OnFlush / SnapshotAllTreesForCheckpoint / migration, so only
+            // the on/off toggle is needed here. Leave disabled only if riLogRoot is unset (test
+            // scenarios). riLogRoot itself was already created in the constructor.
+            bool enableSnapshots = !string.IsNullOrEmpty(riLogRoot);
 
             return new BfTreeService(
                 storageBackend: storageBackend,
                 filePath: filePath,
-                snapshotFilePath: snapshotFilePath,
+                enableSnapshots: enableSnapshots,
                 cbSizeByte: cacheSize,
                 cbMinRecordSize: minRecordSize,
                 cbMaxRecordSize: maxRecordSize,

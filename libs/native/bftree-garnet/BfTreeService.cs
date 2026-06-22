@@ -101,7 +101,6 @@ namespace Garnet.server.BfTreeInterop
         private int _disposed;
         private readonly StorageBackendType _storageBackend;
         private readonly string _filePath;
-        private readonly string _snapshotFilePath;
 
         /// <summary>
         /// Gets the native tree pointer for storage in stubs and direct P/Invoke.
@@ -119,19 +118,13 @@ namespace Garnet.server.BfTreeInterop
         public StorageBackendType StorageBackend => _storageBackend;
 
         /// <summary>
-        /// Gets the CPR snapshot scratch file path configured at construction. Null if the
-        /// tree was created without snapshot support.
-        /// </summary>
-        public string SnapshotFilePath => _snapshotFilePath;
-
-        /// <summary>
         /// Creates a new BfTree with the given configuration.
         /// Pass 0 for any numeric parameter to use the bf-tree default.
         /// </summary>
         /// <param name="storageBackend">Disk (default, file-backed) or Memory (bounded in-memory).</param>
         /// <param name="filePath">Data file path for disk-backed trees. Ignored for memory-only.</param>
-        /// <param name="snapshotFilePath">Scratch path for CPR snapshot output. Required if
-        /// <see cref="CprSnapshot"/> will be called later. Null disables snapshots.</param>
+        /// <param name="enableSnapshots">Enable CPR snapshot support. Required if
+        /// <see cref="CprSnapshotByPtr"/> will be called later for this tree.</param>
         /// <param name="cbSizeByte">Circular buffer size in bytes (hot-data cache for Disk; total capacity for Memory).</param>
         /// <param name="cbMinRecordSize">Minimum record size.</param>
         /// <param name="cbMaxRecordSize">Maximum record size.</param>
@@ -140,7 +133,7 @@ namespace Garnet.server.BfTreeInterop
         public BfTreeService(
             StorageBackendType storageBackend = StorageBackendType.Disk,
             string filePath = null,
-            string snapshotFilePath = null,
+            bool enableSnapshots = false,
             ulong cbSizeByte = 0,
             uint cbMinRecordSize = 0,
             uint cbMaxRecordSize = 0,
@@ -149,11 +142,10 @@ namespace Garnet.server.BfTreeInterop
         {
             _storageBackend = storageBackend;
             _filePath = filePath;
-            _snapshotFilePath = snapshotFilePath;
             if (storageBackend == StorageBackendType.Disk && string.IsNullOrEmpty(filePath))
                 throw new ArgumentException("filePath is required for disk-backed trees.", nameof(filePath));
             byte[] pathBytes = filePath != null ? Encoding.UTF8.GetBytes(filePath) : null;
-            byte useSnapshot = (byte)(string.IsNullOrEmpty(snapshotFilePath) ? 0 : 1);
+            byte useSnapshot = (byte)(enableSnapshots ? 1 : 0);
             fixed (byte* pp = pathBytes)
             {
                 _tree = NativeBfTreeMethods.bftree_create(
@@ -169,14 +161,13 @@ namespace Garnet.server.BfTreeInterop
         /// Creates a BfTreeService wrapping an existing native tree pointer (e.g. from snapshot restore).
         /// Takes ownership of the pointer.
         /// </summary>
-        internal BfTreeService(nint treePtr, StorageBackendType storageBackend, string filePath = null, string snapshotFilePath = null)
+        internal BfTreeService(nint treePtr, StorageBackendType storageBackend, string filePath = null)
         {
             if (treePtr == 0)
                 throw new ArgumentException("Tree pointer must not be null.", nameof(treePtr));
             _tree = treePtr;
             _storageBackend = storageBackend;
             _filePath = filePath;
-            _snapshotFilePath = snapshotFilePath;
         }
 
         // ---------------------------------------------------------------
@@ -481,27 +472,6 @@ namespace Garnet.server.BfTreeInterop
         }
 
         /// <summary>
-        /// Take a CPR (Concurrent Prefix Recovery) snapshot of this tree. Synchronous;
-        /// non-blocking to concurrent insert/read/delete callers. Writes the snapshot to
-        /// the path configured at construction (<see cref="SnapshotFilePath"/>).
-        ///
-        /// <para>To produce snapshots at multiple destination paths, the caller is expected
-        /// to <c>File.Move</c> / copy the configured snapshot file to the final destination
-        /// after each call.</para>
-        ///
-        /// <para>Internal <c>snapshot_in_progress</c> AtomicBool serializes concurrent calls;
-        /// losers no-op silently. Callers that need both snapshots to succeed must serialize
-        /// externally.</para>
-        /// </summary>
-        public void CprSnapshot()
-        {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            if (string.IsNullOrEmpty(_snapshotFilePath))
-                throw new InvalidOperationException("CprSnapshot requires the tree to be constructed with a snapshotFilePath.");
-            CprSnapshotByPtr(_tree, _snapshotFilePath);
-        }
-
-        /// <summary>
         /// Take a CPR snapshot of a tree given only its native handle (no managed wrapper).
         /// Used by RangeIndex's <c>OnFlush</c> path which has direct access to the stub's
         /// TreeHandle but not the managed <see cref="BfTreeService"/> instance.
@@ -533,19 +503,19 @@ namespace Garnet.server.BfTreeInterop
         /// snapshot and inferred by the native library.
         /// </summary>
         /// <param name="recoveryPath">Source CPR snapshot file path.</param>
-        /// <param name="newSnapshotPath">Scratch path for the recovered tree's future cpr_snapshot
-        /// calls. Pass null to disable snapshots on the recovered tree.</param>
+        /// <param name="enableSnapshots">Enable CPR snapshot support on the recovered tree.
+        /// Required if the recovered tree will be snapshotted later (flush/checkpoint/migration).</param>
         /// <param name="storageBackend">Storage backend of the recovered tree (for managed tracking).</param>
         public static BfTreeService RecoverFromCprSnapshot(
             string recoveryPath,
-            string newSnapshotPath,
+            bool enableSnapshots,
             StorageBackendType storageBackend)
         {
             if (string.IsNullOrEmpty(recoveryPath))
                 throw new ArgumentException("recoveryPath is required.", nameof(recoveryPath));
 
             var recoveryBytes = Encoding.UTF8.GetBytes(recoveryPath);
-            byte useSnapshot = (byte)(string.IsNullOrEmpty(newSnapshotPath) ? 0 : 1);
+            byte useSnapshot = (byte)(enableSnapshots ? 1 : 0);
             nint treePtr;
             fixed (byte* rp = recoveryBytes)
             {
@@ -556,7 +526,7 @@ namespace Garnet.server.BfTreeInterop
             }
             if (treePtr == 0)
                 throw new InvalidOperationException($"Failed to recover BfTree from CPR snapshot '{recoveryPath}'.");
-            return new BfTreeService(treePtr, storageBackend, filePath: null, snapshotFilePath: newSnapshotPath);
+            return new BfTreeService(treePtr, storageBackend, filePath: null);
         }
 
         /// <summary>

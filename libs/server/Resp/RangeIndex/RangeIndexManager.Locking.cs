@@ -310,7 +310,6 @@ namespace Garnet.server
                 {
                     var hashPrefix = HashKeyToPrefix(keySpan);
                     var workingPath = LogDataPath(hashPrefix);
-                    var scratchPath = LogScratchPath(hashPrefix);
 
                     if (!File.Exists(workingPath))
                     {
@@ -325,7 +324,7 @@ namespace Garnet.server
 
                     var bfTree = BfTreeService.RecoverFromCprSnapshot(
                         workingPath,
-                        scratchPath,
+                        enableSnapshots: true,
                         (StorageBackendType)stub.StorageBackend);
 
                     RegisterIndex(bfTree, keyHash, keySpan);

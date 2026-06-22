@@ -167,10 +167,9 @@ namespace Garnet.server
 
                 ref readonly var srcStub = ref ReadIndex(stubBytes);
 
-                var scratchPath = LogScratchPathFor(keyBytes);
                 var bfTree = BfTreeService.RecoverFromCprSnapshot(
                     bftreeDataPath,
-                    scratchPath,
+                    enableSnapshots: true,
                     (StorageBackendType)srcStub.StorageBackend);
 
                 Span<byte> newStubBytes = stackalloc byte[IndexSizeBytes];
@@ -256,8 +255,8 @@ namespace Garnet.server
         /// <summary>
         /// Source side: snapshot a BfTree for migration under an exclusive lock.
         /// Acquires the exclusive lock, re-reads the stub from the store to get a fresh
-        /// <c>TreeHandle</c>. If the tree is live, takes a CPR snapshot and copies
-        /// the scratch file to a temporary migration file (following the same pattern as
+        /// <c>TreeHandle</c>. If the tree is live, takes a CPR snapshot straight to a
+        /// temporary migration file (following the same pattern as
         /// <see cref="SnapshotForFlushViaCpr"/>). If evicted, copies the working
         /// <c>data.bftree</c> file (same source as checkpoint pending entries).
         /// </summary>
