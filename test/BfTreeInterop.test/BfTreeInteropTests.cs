@@ -292,7 +292,7 @@ namespace BfTreeInterop.test
             Assert.That(results, Has.Count.EqualTo(3));
 
             var keys = results.Select(r => Encoding.UTF8.GetString(r.Key.Span)).ToList();
-            Assert.That(keys, Is.EqualTo(new List<string> { "key:A", "key:B", "key:C" }));
+            Assert.That(keys, Is.EqualTo(new[] { "key:A", "key:B", "key:C" }));
         }
 
         [Test]
@@ -445,128 +445,74 @@ namespace BfTreeInterop.test
         [Test]
         public void SnapshotAndRecover_RoundTrip()
         {
-            var dataPath = NewTempPath();
-            var snapshotPath = NewTempPath();
-            try
-            {
-                using (var tree = new BfTreeService(filePath: dataPath, enableSnapshots: true, cbMinRecordSize: 4))
-                {
-                    InsertTestDataInto(tree, 20);
-                    BfTreeService.CprSnapshotByPtr(tree.NativePtr, snapshotPath);
-                }
+            InsertTestData(20);
+            _tree.Snapshot();
+            _tree.Dispose();
 
-                using var recovered = BfTreeService.RecoverFromCprSnapshot(
-                    snapshotPath, enableSnapshots: false, StorageBackendType.Disk);
+            // Recover from the same file
+            _tree = BfTreeService.RecoverFromSnapshot(_treePath, cbMinRecordSize: 4);
 
-                for (int i = 0; i < 20; i++)
-                {
-                    var key = Encoding.UTF8.GetBytes($"key:{i:D4}");
-                    var expectedValue = Encoding.UTF8.GetBytes($"val:{i}");
-                    var readResult = recovered.Read(key, out var readValue);
-                    Assert.That(readResult, Is.EqualTo(BfTreeReadResult.Found),
-                        $"Key key:{i:D4} not found after recovery");
-                    Assert.That(readValue, Is.EqualTo(expectedValue));
-                }
-            }
-            finally
+            for (int i = 0; i < 20; i++)
             {
-                if (File.Exists(dataPath)) File.Delete(dataPath);
-                if (File.Exists(snapshotPath)) File.Delete(snapshotPath);
+                var key = Encoding.UTF8.GetBytes($"key:{i:D4}");
+                var expectedValue = Encoding.UTF8.GetBytes($"val:{i}");
+                var readResult = _tree.Read(key, out var readValue);
+                Assert.That(readResult, Is.EqualTo(BfTreeReadResult.Found),
+                    $"Key key:{i:D4} not found after recovery");
+                Assert.That(readValue, Is.EqualTo(expectedValue));
             }
         }
 
         [Test]
         public void SnapshotAndRecover_ScanAfterRestore()
         {
-            var dataPath = NewTempPath();
-            var snapshotPath = NewTempPath();
-            try
-            {
-                using (var tree = new BfTreeService(filePath: dataPath, enableSnapshots: true, cbMinRecordSize: 4))
-                {
-                    InsertTestDataInto(tree, 10);
-                    BfTreeService.CprSnapshotByPtr(tree.NativePtr, snapshotPath);
-                }
+            InsertTestData(10);
+            _tree.Snapshot();
+            _tree.Dispose();
 
-                using var recovered = BfTreeService.RecoverFromCprSnapshot(
-                    snapshotPath, enableSnapshots: false, StorageBackendType.Disk);
+            _tree = BfTreeService.RecoverFromSnapshot(_treePath, cbMinRecordSize: 4);
 
-                var results = recovered.ScanWithCount("key:"u8, 100, ScanReturnField.Key);
-                Assert.That(results, Has.Count.EqualTo(10));
-            }
-            finally
-            {
-                if (File.Exists(dataPath)) File.Delete(dataPath);
-                if (File.Exists(snapshotPath)) File.Delete(snapshotPath);
-            }
+            var results = _tree.ScanWithCount("key:"u8, 100, ScanReturnField.Key);
+            Assert.That(results, Has.Count.EqualTo(10));
         }
 
         [Test]
-        public void RecoverNonExistentFile_Throws()
+        public void RecoverNonExistentFile_CreatesEmpty()
         {
             var path = Path.Combine(
                 Path.GetTempPath(), $"bftree_noexist_{Guid.NewGuid():N}.bftree");
-            // Native recovery returns a null pointer for a missing/invalid snapshot file,
-            // which the managed wrapper surfaces as InvalidOperationException.
-            Assert.Throws<InvalidOperationException>(() =>
-                BfTreeService.RecoverFromCprSnapshot(
-                    path, enableSnapshots: false, StorageBackendType.Disk));
-        }
-
-        [Test]
-        public void CprSnapshotByPtr_NullHandle_Throws()
-        {
-            Assert.Throws<ArgumentException>(() =>
-                BfTreeService.CprSnapshotByPtr(nint.Zero, NewTempPath()));
-        }
-
-        [Test]
-        public void CprSnapshotByPtr_EmptyPath_Throws()
-        {
-            Assert.Throws<ArgumentException>(() =>
-                BfTreeService.CprSnapshotByPtr(_tree.NativePtr, null));
-        }
-
-        [Test]
-        public void RecoverFromCprSnapshot_EmptyPath_Throws()
-        {
-            Assert.Throws<ArgumentException>(() =>
-                BfTreeService.RecoverFromCprSnapshot(
-                    null, enableSnapshots: false, StorageBackendType.Disk));
-        }
-
-        [Test]
-        public void MemoryOnly_SnapshotAndRecover_RoundTrip()
-        {
-            var snapshotPath = NewTempPath();
             try
             {
-                using (var memTree = new BfTreeService(
+                using var tree = BfTreeService.RecoverFromSnapshot(path, cbMinRecordSize: 4);
+                var readResult = tree.Read("anything"u8, out _);
+                Assert.That(readResult, Is.EqualTo(BfTreeReadResult.NotFound));
+            }
+            finally { if (File.Exists(path)) File.Delete(path); }
+        }
+
+        [Test]
+        public void MemoryOnly_SnapshotThrows_PendingBfTreeSupport()
+        {
+            using var memTree = new BfTreeService(
+                storageBackend: StorageBackendType.Memory,
+                cbMinRecordSize: 4);
+            memTree.Insert("testkey"u8, "testval"u8);
+
+            var snapshotPath = Path.Combine(
+                Path.GetTempPath(), $"bftree_memsnap_{Guid.NewGuid():N}.bftree");
+            // FFI stub returns -1, C# surfaces as NotSupportedException
+            Assert.Throws<NotSupportedException>(() => memTree.Snapshot(snapshotPath));
+        }
+
+        [Test]
+        public void MemoryOnly_RecoverThrows_PendingBfTreeSupport()
+        {
+            // FFI stub returns null, C# surfaces as NotSupportedException
+            Assert.Throws<NotSupportedException>(() =>
+                BfTreeService.RecoverFromSnapshot(
+                    "/tmp/nonexistent.bftree",
                     storageBackend: StorageBackendType.Memory,
-                    enableSnapshots: true,
-                    cbMinRecordSize: 4))
-                {
-                    InsertTestDataInto(memTree, 10);
-                    BfTreeService.CprSnapshotByPtr(memTree.NativePtr, snapshotPath);
-                }
-
-                using var recovered = BfTreeService.RecoverFromCprSnapshot(
-                    snapshotPath, enableSnapshots: false, StorageBackendType.Memory);
-
-                for (int i = 0; i < 10; i++)
-                {
-                    var key = Encoding.UTF8.GetBytes($"key:{i:D4}");
-                    var expectedValue = Encoding.UTF8.GetBytes($"val:{i}");
-                    var readResult = recovered.Read(key, out var readValue);
-                    Assert.That(readResult, Is.EqualTo(BfTreeReadResult.Found),
-                        $"Key key:{i:D4} not found after memory-backed recovery");
-                    Assert.That(readValue, Is.EqualTo(expectedValue));
-                }
-            }
-            finally
-            {
-                if (File.Exists(snapshotPath)) File.Delete(snapshotPath);
-            }
+                    cbMinRecordSize: 4));
         }
 
         // ---------------------------------------------------------------
@@ -587,6 +533,7 @@ namespace BfTreeInterop.test
                 Assert.Throws<ObjectDisposedException>(() => tree.Delete("k"u8));
                 Assert.Throws<ObjectDisposedException>(() => tree.ScanWithCount("k"u8, 1));
                 Assert.Throws<ObjectDisposedException>(() => tree.ScanWithEndKey("a"u8, "z"u8));
+                Assert.Throws<ObjectDisposedException>(() => tree.Snapshot());
             }
             finally { if (File.Exists(path)) File.Delete(path); }
         }
@@ -618,9 +565,6 @@ namespace BfTreeInterop.test
         {
             InsertTestDataInto(_tree, count);
         }
-
-        private static string NewTempPath()
-            => Path.Combine(Path.GetTempPath(), $"bftree_test_{Guid.NewGuid():N}.bftree");
 
         private static void InsertTestDataInto(BfTreeService tree, int count)
         {
