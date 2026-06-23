@@ -28,8 +28,7 @@ namespace Garnet.server
             Span<ExprToken> results,
             ref ExprProgram program)
         {
-            for (var i = 0; i < selectorRanges.Length; i++)
-                results[i] = default;
+            results[..selectorRanges.Length].Clear();
 
             var s = TrimWhiteSpace(json);
             if (s.IsEmpty || s[0] != (byte)'{') return 0;
@@ -81,7 +80,11 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return found;
-                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)',') 
+                { 
+                    s = s[1..]; 
+                    continue; 
+                }
                 if (s[0] == (byte)'}') return found;
                 return found;
             }
@@ -126,7 +129,11 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)',') 
+                {
+                    s = s[1..]; 
+                    continue; 
+                }
                 if (s[0] == (byte)'}') return default;
                 return default;
             }
@@ -162,7 +169,7 @@ namespace Garnet.server
 
             var c = s[0];
             if (c == (byte)'"') return ParseStringToken(json, ref s);
-            if (c == (byte)'[') return ParseArrayTokenNoPool(json, ref s);
+            if (c == (byte)'[') return ParseArrayTokenNoPool(ref s);
             if (c == (byte)'{') return default; // Nested objects not supported
             if (c == (byte)'t') return ParseLiteralToken(ref s, "true"u8, ExprTokenType.Num, 1);
             if (c == (byte)'f') return ParseLiteralToken(ref s, "false"u8, ExprTokenType.Num, 0);
@@ -245,7 +252,11 @@ namespace Garnet.server
             s = TrimWhiteSpace(s);
 
             // Empty array
-            if (!s.IsEmpty && s[0] == (byte)']') { s = s[1..]; return ExprToken.NewTuple(0, 0); }
+            if (!s.IsEmpty && s[0] == (byte)']') 
+            { 
+                s = s[1..]; 
+                return ExprToken.NewTuple(0, 0);
+            }
 
             Span<ExprToken> localBuf = stackalloc ExprToken[MaxArrayElements];
             var count = 0;
@@ -254,7 +265,11 @@ namespace Garnet.server
             {
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (count >= MaxArrayElements) { SkipBracketed(ref s, (byte)'[', (byte)']'); return ExprToken.NewNull(); }
+                if (count >= MaxArrayElements) 
+                { 
+                    _ = SkipBracketed(ref s, (byte)'[', (byte)']'); 
+                    return ExprToken.NewNull(); 
+                }
 
                 var elem = ParseValueToken(json, ref s);
                 if (elem.IsNone) return default;
@@ -262,7 +277,11 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (s[0] == (byte)']') { s = s[1..]; break; }
+                if (s[0] == (byte)']') 
+                { 
+                    s = s[1..]; 
+                    break; 
+                }
                 if (s[0] != (byte)',') return default;
                 s = s[1..];
             }
@@ -283,7 +302,7 @@ namespace Garnet.server
             return ExprToken.NewNull();
         }
 
-        private static ExprToken ParseArrayTokenNoPool(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
+        private static ExprToken ParseArrayTokenNoPool(ref ReadOnlySpan<byte> s)
         {
             // Standalone extraction without a program — just skip the array
             if (!SkipValue(ref s)) return default;
@@ -315,8 +334,16 @@ namespace Garnet.server
             s = s[1..];
             while (!s.IsEmpty)
             {
-                if (s[0] == (byte)'\\') { s = s[2..]; continue; }
-                if (s[0] == (byte)'"') { s = s[1..]; return true; }
+                if (s[0] == (byte)'\\') 
+                { 
+                    s = s[2..]; 
+                    continue; 
+                }
+                if (s[0] == (byte)'"') 
+                { 
+                    s = s[1..]; 
+                    return true; 
+                }
                 s = s[1..];
             }
             return false;
@@ -333,8 +360,15 @@ namespace Garnet.server
                     if (!SkipString(ref s)) return false;
                     continue;
                 }
-                if (s[0] == opener) depth++;
-                else if (s[0] == closer) depth--;
+
+                if (s[0] == opener)
+                {
+                    depth++;
+                }
+                else if (s[0] == closer)
+                {
+                    depth--;
+                }
                 s = s[1..];
             }
             return depth == 0;
@@ -429,7 +463,11 @@ namespace Garnet.server
                 var keyHasEscape = false;
                 for (var ki = 0; ki < keyContent.Length; ki++)
                 {
-                    if (keyContent[ki] == (byte)'\\') { keyHasEscape = true; break; }
+                    if (keyContent[ki] == (byte)'\\') 
+                    {
+                        keyHasEscape = true; 
+                        break;
+                    }
                 }
                 if (keyHasEscape) return -1; // keys with escapes not supported
 
@@ -458,7 +496,12 @@ namespace Garnet.server
                     var hasEscape = false;
                     while (!s.IsEmpty)
                     {
-                        if (s[0] == (byte)'\\') { hasEscape = true; s = s[2..]; continue; }
+                        if (s[0] == (byte)'\\') 
+                        { 
+                            hasEscape = true; 
+                            s = s[2..]; 
+                            continue; 
+                        }
                         if (s[0] == (byte)'"') break;
                         s = s[1..];
                     }
@@ -522,7 +565,7 @@ namespace Garnet.server
                     output[pos] = 8;
                     output[pos + 1] = 0;
                     pos += 2;
-                    System.BitConverter.TryWriteBytes(output[pos..], numVal);
+                    _ = BitConverter.TryWriteBytes(output[pos..], numVal);
                     pos += 8;
                 }
                 else if (c == (byte)'t')
@@ -563,7 +606,11 @@ namespace Garnet.server
                 // Next field or end
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return -1;
-                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)',') 
+                { 
+                    s = s[1..]; 
+                    continue; 
+                }
                 if (s[0] == (byte)'}') break;
                 return -1;
             }
@@ -580,11 +627,9 @@ namespace Garnet.server
             ReadOnlySpan<byte> binary,
             ReadOnlySpan<byte> filterBytes,
             ReadOnlySpan<(int Start, int Length)> selectorRanges,
-            Span<ExprToken> results,
-            ref ExprProgram program)
+            Span<ExprToken> results)
         {
-            for (var i = 0; i < selectorRanges.Length; i++)
-                results[i] = default;
+            results[..selectorRanges.Length].Clear();
 
             if (binary.Length < 2 || binary[0] != BinaryMarker)
                 return 0;
@@ -609,7 +654,7 @@ namespace Garnet.server
 
                 // Read value length
                 if (pos + 2 > binary.Length) break;
-                var valueLen = (int)(binary[pos] | (binary[pos + 1] << 8));
+                var valueLen = binary[pos] | (binary[pos + 1] << 8);
                 pos += 2;
 
                 // Read value bytes

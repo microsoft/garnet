@@ -135,10 +135,7 @@ namespace Garnet.server
             var sizeBytes = (resultCount + 7) >> 3;
             if (sizeBytes > buffer.Length)
             {
-                if (!buffer.IsSpanByte)
-                {
-                    buffer.Memory.Dispose();
-                }
+                buffer.Memory?.Dispose();
 
                 buffer = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(sizeBytes), sizeBytes);
             }
@@ -616,7 +613,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal unsafe VectorManagerResult ValueSimilarity(
+        internal VectorManagerResult ValueSimilarity(
             scoped ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
             scoped ReadOnlySpan<byte> values,
@@ -741,7 +738,11 @@ namespace Garnet.server
                     finally
                     {
                         ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
-                        InlineFilterStatePtr = null;
+
+                        unsafe
+                        {
+                            InlineFilterStatePtr = null;
+                        }
                     }
                 }
                 else
@@ -802,7 +803,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal unsafe VectorManagerResult ElementSimilarity(
+        internal VectorManagerResult ElementSimilarity(
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             int count,
@@ -906,7 +907,11 @@ namespace Garnet.server
                 finally
                 {
                     ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
-                    InlineFilterStatePtr = null;
+
+                    unsafe
+                    {
+                        InlineFilterStatePtr = null;
+                    }
                 }
             }
             else
