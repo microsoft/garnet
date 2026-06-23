@@ -150,8 +150,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Blocks (not busy-spinning) until <paramref name="exceptionType"/> is disabled,
-        /// consuming negligible CPU.
+        /// Blocks until <paramref name="exceptionType"/> is disabled.
         /// </summary>
         /// <param name="exceptionType"></param>
         public static void WaitOnClearWithThreadSleep(ExceptionInjectionType exceptionType)
