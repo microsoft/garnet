@@ -167,6 +167,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + threadsPerShard + " (per shard)",-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
+            Console.WriteLine($"{"Key Length: " + opts.KeyLength,-28}{"Value Length: " + opts.ValueLength,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
@@ -229,6 +230,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + workerCount,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
+            Console.WriteLine($"{"Key Length: " + opts.KeyLength,-28}{"Value Length: " + opts.ValueLength,-28}");
             Console.WriteLine($"{"Runtime: " + opts.RunTime + "s",-28}{"TLS: " + tls,-28}");
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
