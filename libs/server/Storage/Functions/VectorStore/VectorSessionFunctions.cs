@@ -237,7 +237,7 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length + ValueAlignmentBytes };
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref VectorInput input)

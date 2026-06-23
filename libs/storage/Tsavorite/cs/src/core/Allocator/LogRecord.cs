@@ -557,6 +557,7 @@ namespace Tsavorite.core
             if (key.HasNamespace)
             {
                 var namespaceBytes = key.NamespaceBytes;
+
                 namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
 

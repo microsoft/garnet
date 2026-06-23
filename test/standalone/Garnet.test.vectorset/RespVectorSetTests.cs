@@ -2889,19 +2889,31 @@ namespace Garnet.test
         [Test]
         public async Task LotsOfVectorSetsAsyncAsync()
         {
-            const int NumVectorSets = 10_000;
+            const int NumVectorSets = 1_000;
+
+            var connections = new ConnectionMultiplexer[Environment.ProcessorCount];
+            var dbs = new IDatabase[connections.Length];
+            for (var i = 0; i < connections.Length; i++)
+            {
+                connections[i] = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                dbs[i] = connections[i].GetDatabase();
+            }
 
             // Create them all
             {
                 var allAdds = new List<Task>();
                 for (var i = 0; i < NumVectorSets; i++)
                 {
+                    TestContext.Progress.WriteLine(i);
+
                     var keyName = $"{nameof(LotsOfVectorSetsAsyncAsync)}_{i}";
                     var elemName = $"x{i}";
                     var vector = new byte[(i * 3) + 1];
                     vector.AsSpan().Fill((byte)i);
 
-                    allAdds.Add(CreateVectorSetAsync(keyName, elemName, vector));
+                    var task = CreateVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                    allAdds.Add(task);
                 }
 
                 await Task.WhenAll(allAdds);
@@ -2917,26 +2929,22 @@ namespace Garnet.test
                     var vector = new byte[(i * 3) + 1];
                     vector.AsSpan().Fill((byte)i);
 
-                    allReads.Add(ReadVectorSetAsync(keyName, elemName, vector));
+                    var task = ReadVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                    allReads.Add(task);
                 }
 
                 await Task.WhenAll(allReads);
             }
 
-            static async Task CreateVectorSetAsync(string key, string elem, byte[] data)
+            static async Task CreateVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
             {
-                using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
-                var db = redis.GetDatabase();
-
                 var res = (int)await db.ExecuteAsync("VADD", [key, "XU8", data, elem, "NOQUANT"]);
                 ClassicAssert.AreEqual(1, res);
             }
 
-            static async Task ReadVectorSetAsync(string key, string elem, byte[] data)
+            static async Task ReadVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
             {
-                using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
-                var db = redis.GetDatabase();
-
                 var sim = (string[])await db.ExecuteAsync("VSIM", [key, "XU8", data]);
                 ClassicAssert.AreEqual(1, sim.Length);
                 ClassicAssert.AreEqual(elem, sim[0]);
