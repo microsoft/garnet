@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 #if DEBUG
-using System.Diagnostics;
 using Garnet.common;
 #endif
 using Garnet.server;
@@ -2504,9 +2503,7 @@ namespace Garnet.test
         /// <c>TreeEntry.SnapshotUnderClaim</c>) park instead of burning a core each.
         ///
         /// <para>Deterministic: no waiter completes while the holder holds the lock; all complete
-        /// once latency clears. CPU during the wait is logged only (not asserted) to avoid CI
-        /// flakiness — ~0 cores with the semaphore vs ~waiterCount with the old <c>Thread.Yield()</c>
-        /// spin.</para>
+        /// once the latency clears.</para>
         /// </summary>
         [Test]
         public void RIConcurrentSnapshotsTest()
@@ -2534,16 +2531,11 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(SpinWait.SpinUntil(() => entry.IsSnapshotInProgressForTest, TimeSpan.FromSeconds(10)), "holder failed to acquire the snapshot lock");
 
                 // Waiters contend on the SAME tree; they block on the semaphore (no busy-spin).
-                var cpu0 = Process.GetCurrentProcess().TotalProcessorTime;
-                var sw = Stopwatch.StartNew();
                 var waiters = Enumerable.Range(0, waiterCount).Select(i => Task.Run(() => entry.SnapshotUnderClaim(SnapPath($"waiter{i}")))).ToArray();
 
                 // #1: while the holder holds the lock, no waiter can complete.
                 Thread.Sleep(500);
-                var cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - cpu0).TotalMilliseconds;
-                var wallMs = sw.Elapsed.TotalMilliseconds;
                 ClassicAssert.IsFalse(waiters.Any(t => t.IsCompletedSuccessfully), "a waiter completed while the holder held the snapshot lock");
-                TestContext.Progress.WriteLine($"[snapshot-wait] waiters={waiterCount} window={wallMs:F0}ms cpu={cpuMs:F0}ms (~{cpuMs / Math.Max(1, wallMs):F2} cores)");
 
                 // Release the latency; holder + waiters each run a real (~3s) snapshot serially.
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
