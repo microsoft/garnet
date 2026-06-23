@@ -17,7 +17,7 @@ Evaluate the filter predicate *during* graph traversal so that non-matching cand
 
 ---
 
-## 2. Garnet-Side: Attribute Storage Design for Inline Filtering (Current Change)
+## 2. Garnet-Side: Attribute Storage Design for Inline Filtering
 
 ### Existing Attribute Store
 
@@ -31,20 +31,13 @@ However, this store creates a mismatch with how DiskANN's graph traversal operat
 
 With inline filtering, this callback runs on **every candidate the graph traversal considers** (potentially thousands per query). The two store reads and JSON parsing per candidate become the dominant cost on the hot path.
 
-### Solution: Add a second attribute store optimized for query-time filter evaluation
+### Solution: Store binary attributes on the ends of quant vectors (or full precision for unqunatized indexes)
 
-The current change **adds a new attribute store** alongside the existing one. The two stores serve different purposes:
+Instead of storing raw JSON blobs, the attributes will be serialized as an optimized binary blob which is stored immediately after the most used vector data (in an unquantized index, this is the full vector; in an quantized index, this is the quant vector).
 
-| Store | Keyed by | Format | Purpose |
-|-------|----------|--------|---------|
-| Existing | External ID (user key) | Raw JSON | RESP command operations (`VGETATTR`, `VSETATTR`, etc.) |
-| **New** | Internal ID (DiskANN ID) | Binary | Inline filter evaluation at query time |
+### Why store alongside vectors?
 
-The existing external ID keyed JSON store is untouched — it continues to serve all RESP command operations. The new internal ID keyed binary store is a **write-time derived projection** of the same data, optimized purely for the inline filter callback's access pattern.
-
-### Why key by internal ID
-
-DiskANN hands the callback an internal ID; the existing attribute store expects an external key. Bridging this gap requires reading the `ExternalIdMap` — a store read that exists purely because of the keying mismatch. By adding a store keyed by internal ID, the filter callback can look up attributes directly without any ID translation. This eliminates the `ExternalIdMap` read entirely — one fewer store read per candidate.
+By storing after vector data, we can access the attributes at the same time as the vector data saving any extra key accesses. A single read will allow us to compute distance and evaluate the filter. Because vector data is a fixed length, the filter attributes are easy to pick out.
 
 ### Why store in binary format
 
@@ -102,7 +95,7 @@ Co-located (0 extra store reads per candidate):
 
 This would reduce the per-candidate cost to **zero extra store reads** — the only remaining overhead is the binary field scan and expression evaluation.
 
-### Further with attibute index: Pre-built attribute index to replace per-candidate filter evaluation
+### Further with attribute index: Pre-built attribute index to replace per-candidate filter evaluation
 
 If an attribute index is available (e.g., inverted indexes or roaring bitmaps built over attribute values), the filter predicate can be evaluated **at query planning time** rather than per-candidate during graph traversal. The index would produce a pre-computed set of matching internal IDs (e.g., a bitmap), which can be fed directly into DiskANN as a `GarnetFilter::Bitmap`. This replaces the per-candidate FFI callback entirely — DiskANN checks the bitmap with a single bit lookup instead of reading attributes and running the expression evaluator.
 

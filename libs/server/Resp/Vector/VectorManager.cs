@@ -864,7 +864,7 @@ namespace Garnet.server
                         outputDistances.Length = 0;
                         filterBitmap.Length = 0;
                         outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-                        return VectorManagerResult.OK;
+                        return VectorManagerResult.BadParams;
                     }
 
                     var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);

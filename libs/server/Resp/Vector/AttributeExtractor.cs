@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Buffers.Text;
 
 namespace Garnet.server
@@ -565,7 +566,7 @@ namespace Garnet.server
                     output[pos] = 8;
                     output[pos + 1] = 0;
                     pos += 2;
-                    _ = BitConverter.TryWriteBytes(output[pos..], numVal);
+                    BinaryPrimitives.WriteDoubleLittleEndian(output[pos..], numVal);
                     pos += 8;
                 }
                 else if (c == (byte)'t')
@@ -683,7 +684,7 @@ namespace Garnet.server
                         case BinTypeNumber:
                             if (valueLen == 8)
                             {
-                                var numVal = System.BitConverter.ToDouble(binary[pos..]);
+                                var numVal = BinaryPrimitives.ReadDoubleLittleEndian(binary[pos..]);
                                 results[matchIndex] = ExprToken.NewNum(numVal);
                             }
                             break;
