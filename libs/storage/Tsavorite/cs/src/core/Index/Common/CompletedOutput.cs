@@ -20,7 +20,10 @@ namespace Tsavorite.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.OperationState<TInput, TOutput, TContext> operationState,
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingState<TInput, TOutput, TContext> pendingState,
+                Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -28,7 +31,7 @@ namespace Tsavorite.core
             if (maxIndex >= vector.Length - 1)
                 Array.Resize(ref vector, vector.Length * kReallocMultuple);
             ++maxIndex;
-            vector[maxIndex].TransferFrom(ref pendingContext, status);
+            vector[maxIndex].TransferFrom(ref operationState, ref pendingState, status);
         }
 
         /// <summary>
@@ -115,19 +118,22 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.OperationState<TInput, TOutput, TContext> operationState,
+                ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingState<TInput, TOutput, TContext> pendingState,
+                Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
-            keyContainer = pendingContext.requestKey;
-            pendingContext.requestKey = default;
-            inputContainer = pendingContext.input;
-            pendingContext.input = default;
+            // Transfers the containers from the pending pendingState, then nulls them; this is called before pendingState.Dispose().
+            keyContainer = pendingState.requestKey;
+            pendingState.requestKey = default;
+            inputContainer = pendingState.input;
+            pendingState.input = default;
 
-            Output = pendingContext.output;
-            Context = pendingContext.userContext;
-            RecordMetadata = new(pendingContext.logicalAddress);
+            Output = pendingState.output;
+            Context = pendingState.userContext;
+            RecordMetadata = new(operationState.logicalAddress);
             Status = status;
         }
 
