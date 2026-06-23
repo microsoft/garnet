@@ -18,13 +18,13 @@ namespace Tsavorite.core
                 AllocatorBase<TStoreFunctions, TAllocator> allocator,
                 int recordSize,
                 out long logicalAddress,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                ref OperationState<TInput, TOutput, TContext> operationState,
                 out OperationStatus internalStatus)
         {
-            pendingContext.flushEvent = allocator.flushEvent;
+            operationState.flushEvent = allocator.flushEvent;
             if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
             {
-                pendingContext.flushEvent = default;
+                operationState.flushEvent = default;
                 internalStatus = OperationStatus.SUCCESS;
                 return true;
             }
@@ -38,7 +38,7 @@ namespace Tsavorite.core
         /// <summary>Options for TryAllocateRecord.</summary>
         internal struct AllocateOptions
         {
-            /// <summary>If true, use the non-revivification recycling of records that failed to CAS and are carried in PendingContext through RETRY.</summary>
+            /// <summary>If true, use the non-revivification recycling of records that failed to CAS and are carried in OperationState through RETRY.</summary>
             internal bool recycle;
 
             /// <summary>If true, the source record is elidable so we can try to elide from the tag chain (and transfer it to the FreeList if we're doing Revivification).</summary>
@@ -46,22 +46,22 @@ namespace Tsavorite.core
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref OperationState<TInput, TOutput, TContext> operationState,
                                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             status = OperationStatus.SUCCESS;
 
-            // MinRevivAddress is also needed for pendingContext-based record reuse.
+            // MinRevivAddress is also needed for operationState-based record reuse.
             var minRevivAddress = GetMinRevivifiableAddress();
 
             // If are eliding the first record in the tag chain, then there can be no others; we are removing the only record in the chain. Otherwise, the new record must be above hei.Address.
             if ((minRevivAddress <= stackCtx.hei.Address) && (!options.elideSourceRecord || stackCtx.hei.Address != stackCtx.recSrc.LogicalAddress))
                 minRevivAddress = stackCtx.hei.Address;
 
-            if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
+            if (options.recycle && operationState.retryNewLogicalAddress != kInvalidAddress
+                    && GetAllocationForRetry(sessionFunctions, ref operationState, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
             {
                 new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo);
                 return true;
@@ -84,7 +84,7 @@ namespace Tsavorite.core
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
             while (true)
             {
-                if (!TryBlockAllocate(hlogBase, sizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(hlogBase, sizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref operationState, out status))
                     break;
 
                 newPhysicalAddress = hlogBase.GetPhysicalAddress(newLogicalAddress);
@@ -117,7 +117,7 @@ namespace Tsavorite.core
                 {
                     var logRecord = new LogRecord(newPhysicalAddress);
                     logRecord.InitializeForReuse(in sizeInfo);
-                    SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+                    SaveAllocationForRetry(ref operationState, newLogicalAddress, newPhysicalAddress);
                 }
                 else
                     LogRecord.GetInfoRef(newPhysicalAddress).SetInvalid();      // Skip on log scan
@@ -130,13 +130,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
+        bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref OperationState<TInput, TOutput, TContext> operationState, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
                                                        in RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             while (true)
             {
-                if (!TryBlockAllocate(readcacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readcacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref operationState, out status))
                     break;
                 newPhysicalAddress = readcacheBase.GetPhysicalAddress(newLogicalAddress);
 
@@ -162,7 +162,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep CreateNewRecord* lean
-        void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress)
+        void SaveAllocationForRetry<TInput, TOutput, TContext>(ref OperationState<TInput, TOutput, TContext> operationState, long logicalAddress, long physicalAddress)
         {
             ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
 
@@ -172,17 +172,17 @@ namespace Tsavorite.core
             recordInfo.PreviousAddress = kTempInvalidAddress;
             recordInfo.SetInvalid();    // Skip on log scan
 
-            pendingContext.retryNewLogicalAddress = logicalAddress < hlogBase.HeadAddress ? kInvalidAddress : logicalAddress;
+            operationState.retryNewLogicalAddress = logicalAddress < hlogBase.HeadAddress ? kInvalidAddress : logicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep TryAllocateRecord lean
-        bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
+        bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref OperationState<TInput, TOutput, TContext> operationState, long minAddress,
                 in RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Use an earlier allocation from a failed operation, if possible.
-            newLogicalAddress = pendingContext.retryNewLogicalAddress;
-            pendingContext.retryNewLogicalAddress = 0;
+            newLogicalAddress = operationState.retryNewLogicalAddress;
+            operationState.retryNewLogicalAddress = 0;
 
             if (newLogicalAddress <= minAddress || newLogicalAddress < hlogBase.HeadAddress)
             {

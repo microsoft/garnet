@@ -1482,7 +1482,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// For revivification or reuse: the record space has been retrieved from revivification or PendingContext, so prepare it to be passed to initial updaters,
+        /// For revivification or reuse: the record space has been retrieved from revivification or OperationState, so prepare it to be passed to initial updaters,
         /// based upon the sizeInfo's key and value lengths.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>

@@ -22,7 +22,7 @@ namespace Tsavorite.core
         /// <param name="input">input used to update the value.</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
-        /// <param name="pendingContext">pending context created when the operation goes pending.</param>
+        /// <param name="operationState">pending context created when the operation goes pending.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
@@ -50,7 +50,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
-                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                                    ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -58,8 +58,11 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // operationState.keyHash and operationState.logicalAddress are NOT written here on the in-memory hot path:
+            //   - keyHash is only consumed pending-side (ContinuePendingRMW) — set lazily in CreatePendingRMWContext if we go pending.
+            //   - logicalAddress defaults to 0 (== kInvalidAddress) for a fresh operationState; the in-memory IPU/CU paths
+            //     below overwrite it on success, and HandleRetryStatus resets it on retry, so the in-memory path needs no write here.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -83,10 +86,6 @@ namespace Tsavorite.core
                 // Search the entire in-memory region.
                 if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
-
-                // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
-                pendingContext.initialEntryAddress = stackCtx.hei.Address;
-                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
                 // If there is a readcache record, use it as the CopyUpdater source.
                 if (stackCtx.recSrc.HasReadCacheSrc)
@@ -132,7 +131,7 @@ namespace Tsavorite.core
                                 goto Done;
                             }
 
-                            if (TryRevivifyInChain(ref srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref rmwInfo, out status)
+                            if (TryRevivifyInChain(ref srcLogRecord, ref input, ref output, ref operationState, sessionFunctions, ref stackCtx, ref rmwInfo, out status)
                                     || status != OperationStatus.SUCCESS)
                                 goto Done;
                         }
@@ -151,7 +150,7 @@ namespace Tsavorite.core
 
 
                         // status has been set by InPlaceUpdater
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto Done;
                     }
 
@@ -163,7 +162,7 @@ namespace Tsavorite.core
                         if (ipuDelta != 0)
                             sizeTracker.IncrementSize(ipuDelta);
 
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         // Dispose resources and decrement value heap BEFORE setting Tombstone so GetValueHeapMemorySize returns the correct pre-tombstone value.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
@@ -186,7 +185,7 @@ namespace Tsavorite.core
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
                         // status has been set by InPlaceUpdater, and no modification should have been made to the record.
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
                         goto Done;
                     }
@@ -216,7 +215,7 @@ namespace Tsavorite.core
 
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
-                    CreatePendingRMWContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
+                    CreatePendingRMWContext(key, ref input, ref output, userContext, ref operationState, sessionFunctions, ref stackCtx);
                     goto Done;
                 }
 
@@ -226,7 +225,7 @@ namespace Tsavorite.core
             CreateNewRecord:
                 {
                     // Here, the input* data for 'doingCU' is the same as recSrc.
-                    status = CreateNewRecordRMW(key, in srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx,
+                    status = CreateNewRecordRMW(key, in srcLogRecord, ref input, ref output, ref operationState, sessionFunctions, ref stackCtx,
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone, ref rmwInfo);
 
                     // OperationStatus.SUCCESS is OK here even if !OperationStatusUtils.IsAppend(status); it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -252,19 +251,30 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingRMWContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+                ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            pendingContext.type = OperationType.RMW;
-            pendingContext.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
-            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+            // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
+            // fresh op and populate its pendingState. HandleOperationStatus will pick up operationState.pendingOp on RECORD_ON_DISK
+            // to finalize the IO issue.
+            var op = operationState.pendingOp ?? sessionFunctions.Ctx.RentPendingIoContext();
+            ref var pendingState = ref op.pendingState;
+            pendingState.type = OperationType.RMW;
+            pendingState.keyHash = stackCtx.hei.hash;
+            pendingState.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+
+            operationState.pendingOp = op;
+            operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
+
+            operationState.initialEntryAddress = stackCtx.hei.Address;
+            operationState.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref OperationState<TInput, TOutput, TContext> operationState,
                         TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref RMWInfo rmwInfo, out OperationStatus status)
                     where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -292,7 +302,7 @@ namespace Tsavorite.core
                             hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                         // Success
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
                         // OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
@@ -361,7 +371,7 @@ namespace Tsavorite.core
         /// it is in-memory (either too small or is in readonly region, or is in readcache); otherwise it is from disk IO</param>
         /// <param name="input">Input to the ISessionFunctions operation</param>
         /// <param name="output">The result of ISessionFunctions operation</param>
-        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="operationState">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
@@ -370,7 +380,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">RMWInfo</param>
         /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
-                                                                                          ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                                                                                          ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU, ref RMWInfo rmwInfo)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -457,7 +467,7 @@ namespace Tsavorite.core
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -613,7 +623,7 @@ namespace Tsavorite.core
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
 
                                 // Decrement the value-object's heap contribution from the tracker and dispose
-                                // the object BEFORE clearing the slot. This is an internal accounting and
+                                // the object BEFORE clearing the pendingState. This is an internal accounting and
                                 // disposal step — the trigger is NOT involved because CopyUpdated is a
                                 // partial clear (value only, key stays) and expecting trigger implementers
                                 // to know that nuance is error-prone. The remaining key overflow (if any)
@@ -674,7 +684,7 @@ namespace Tsavorite.core
 
             Done:
                 stackCtx.ClearNewRecord();
-                pendingContext.logicalAddress = newLogicalAddress;
+                operationState.logicalAddress = newLogicalAddress;
                 return status;
             }
 
@@ -682,7 +692,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             OnDispose(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+            SaveAllocationForRetry(ref operationState, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 

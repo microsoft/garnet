@@ -65,63 +65,33 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void Set()
-        {
-            Send(set);
-        }
+        public void Set() => Send(set);
 
         [Benchmark]
-        public void SetEx()
-        {
-            Send(setex);
-        }
+        public void SetEx() => Send(setex);
 
         [Benchmark]
-        public void SetNx()
-        {
-            Send(setnx);
-        }
+        public void SetNx() => Send(setnx);
 
         [Benchmark]
-        public void SetXx()
-        {
-            Send(setxx);
-        }
+        public void SetXx() => Send(setxx);
 
         [Benchmark]
-        public void GetFound()
-        {
-            Send(getf);
-        }
+        public void GetFound() => Send(getf);
 
         [Benchmark]
-        public void GetNotFound()
-        {
-            Send(getnf);
-        }
+        public void GetNotFound() => Send(getnf);
 
         [Benchmark]
-        public void Increment()
-        {
-            Send(incr);
-        }
+        public void Increment() => Send(incr);
 
         [Benchmark]
-        public void Decrement()
-        {
-            Send(decr);
-        }
+        public void Decrement() => Send(decr);
 
         [Benchmark]
-        public void IncrementBy()
-        {
-            Send(incrby);
-        }
+        public void IncrementBy() => Send(incrby);
 
         [Benchmark]
-        public void DecrementBy()
-        {
-            Send(decrby);
-        }
+        public void DecrementBy() => Send(decrby);
     }
 }
