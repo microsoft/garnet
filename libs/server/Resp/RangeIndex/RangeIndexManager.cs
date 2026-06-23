@@ -175,14 +175,11 @@ namespace Garnet.server
             internal bool IsSnapshotInProgressForTest => snapshotLock.CurrentCount == 0;
 
             /// <summary>
-            /// Acquire the per-tree snapshot lock (blocking — no busy-spin), take a CPR snapshot of
-            /// the live tree directly into <paramref name="destinationPath"/>, then release the
-            /// lock. The lock serializes against concurrent flush / checkpoint / migration snapshots
-            /// on the same tree — bftree silently no-ops a <c>cpr_snapshot</c> that races its
-            /// internal <c>snapshot_in_progress</c> flag, so each caller must hold the lock while it
-            /// snapshots. bftree takes the destination path as a <c>cpr_snapshot</c> argument and
-            /// writes a fresh self-contained file, so we snapshot straight to
-            /// <paramref name="destinationPath"/>.
+            /// Under the per-tree snapshot lock (blocking, no busy-spin), take a CPR snapshot of the
+            /// live tree straight into <paramref name="destinationPath"/>. The lock serializes
+            /// concurrent flush / checkpoint / migration snapshots so they don't race bftree's
+            /// internal <c>snapshot_in_progress</c> flag (which would silently no-op one). bftree
+            /// writes a fresh self-contained file at the given path.
             /// </summary>
             public void SnapshotUnderClaim(string destinationPath)
             {
