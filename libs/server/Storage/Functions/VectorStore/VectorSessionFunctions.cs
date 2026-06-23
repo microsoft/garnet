@@ -39,7 +39,6 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var value = AlignOrPin(in srcLogRecord, ref input, out var pin);
             try
@@ -128,7 +127,6 @@ namespace Garnet.server
         public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
@@ -156,7 +154,6 @@ namespace Garnet.server
         public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, ReadOnlySpan<byte> newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
@@ -200,11 +197,11 @@ namespace Garnet.server
             // Constant size indicated
             if (needsAlignmentPadding)
             {
-                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes };
+                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
             else
             {
-                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize };
+                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
         }
 
@@ -226,11 +223,11 @@ namespace Garnet.server
 
             if (!needsAlignmentPadding)
             {
-                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize };
+                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
             }
             else
             {
-                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize + ValueAlignmentBytes };
+                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
             }
         }
 
@@ -257,7 +254,7 @@ namespace Garnet.server
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length };
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
         #endregion Variable Length
 
         #region InitialUpdater
@@ -269,9 +266,8 @@ namespace Garnet.server
 #endif
         {
             Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(key.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
-            // Only needed when updating ContextMetadata or InProgressDeletes via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
+            // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
             return input.WriteDesiredSize != 0;
         }
 
@@ -279,7 +275,6 @@ namespace Garnet.server
         public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = logRecord.Key;
             var alignedValue = AlignOrPin(in logRecord, ref input, out var pin);
@@ -342,7 +337,6 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = srcLogRecord.Key;
 
@@ -353,7 +347,7 @@ namespace Garnet.server
             {
                 if (input.Callback == 0)
                 {
-                    // We're doing a Metadata or InProgressDelete update
+                    // We're doing a Metadata update
 
                     Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
                     Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
@@ -417,7 +411,6 @@ namespace Garnet.server
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = logRecord.Key;
 
@@ -426,7 +419,7 @@ namespace Garnet.server
             {
                 if (input.Callback == 0)
                 {
-                    // We're doing a Metadata or InProgressDelete update
+                    // We're doing a Metadata update
 
                     Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
 
@@ -693,6 +686,25 @@ namespace Garnet.server
             Debug.Assert(newNs <= byte.MaxValue, "Namespace too large");
 
             span[sizeof(int)] = (byte)newNs;
+        }
+
+        private static int GetExtendedNamespaceSize<TKey>(in TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        {
+            if (!key.HasNamespace)
+            {
+                return 0;
+            }
+
+            if (key.NamespaceBytes.Length == 1 && key.NamespaceBytes[0] < 128)
+            {
+                return 0;
+            }
+
+            return key.NamespaceBytes.Length;
         }
 
         /// <inheritdoc />

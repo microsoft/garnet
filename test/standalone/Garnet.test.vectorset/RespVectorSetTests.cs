@@ -2886,6 +2886,73 @@ namespace Garnet.test
             ClassicAssert.IsNotEmpty(sim);
         }
 
+        [Test]
+        public async Task LotsOfVectorSetsAsyncAsync()
+        {
+            const int NumVectorSets = 10_000;
+
+            // Create them all
+            {
+                var allAdds = new List<Task>();
+                for (var i = 0; i < NumVectorSets; i++)
+                {
+                    var keyName = $"{nameof(LotsOfVectorSetsAsyncAsync)}_{i}";
+                    var elemName = $"x{i}";
+                    var vector = new byte[(i * 3) + 1];
+                    vector.AsSpan().Fill((byte)i);
+
+                    allAdds.Add(CreateVectorSetAsync(keyName, elemName, vector));
+                }
+
+                await Task.WhenAll(allAdds);
+            }
+
+            // Validate them all
+            {
+                var allReads = new List<Task>();
+                for (var i = 0; i < NumVectorSets; i++)
+                {
+                    var keyName = $"{nameof(LotsOfVectorSetsAsyncAsync)}_{i}";
+                    var elemName = $"x{i}";
+                    var vector = new byte[(i * 3) + 1];
+                    vector.AsSpan().Fill((byte)i);
+
+                    allReads.Add(ReadVectorSetAsync(keyName, elemName, vector));
+                }
+
+                await Task.WhenAll(allReads);
+            }
+
+            static async Task CreateVectorSetAsync(string key, string elem, byte[] data)
+            {
+                using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                var res = (int)await db.ExecuteAsync("VADD", [key, "XU8", data, elem, "NOQUANT"]);
+                ClassicAssert.AreEqual(1, res);
+            }
+
+            static async Task ReadVectorSetAsync(string key, string elem, byte[] data)
+            {
+                using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                var sim = (string[])await db.ExecuteAsync("VSIM", [key, "XU8", data]);
+                ClassicAssert.AreEqual(1, sim.Length);
+                ClassicAssert.AreEqual(elem, sim[0]);
+
+                var emb = (string[])await db.ExecuteAsync("VEMB", [key, elem]);
+                ClassicAssert.AreEqual(data.Length, emb.Length);
+                for (var i = 0; i < data.Length; i++)
+                {
+                    var expected = data[i];
+                    var actual = (byte)float.Parse(emb[i]);
+
+                    ClassicAssert.AreEqual(expected, actual);
+                }
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>

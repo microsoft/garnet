@@ -74,7 +74,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -86,7 +86,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -190,7 +190,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -207,7 +207,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -223,7 +223,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -243,7 +243,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -264,7 +264,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -280,7 +280,7 @@ namespace Garnet.server
             {
                 Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;

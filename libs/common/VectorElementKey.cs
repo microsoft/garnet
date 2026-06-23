@@ -94,8 +94,9 @@ namespace Garnet.common
         /// </summary>
         public VectorElementKey(ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(namespaceBytes.Length == 1, "Variable length namespaces are not supported");
-            Debug.Assert(namespaceBytes[0] != 0, "Namespace must be non-zero");
+            Debug.Assert(namespaceBytes.Length > 0, "Namespace cannot be empty");
+            Debug.Assert((namespaceBytes.Length == 1 && namespaceBytes[0] < 128) || (namespaceBytes.Length % 4 == 0), "Namespace must fit in pre-allocated record space or be 4-byte multiple to preserve data alignment");
+            Debug.Assert(namespaceBytes.Length != 1 || namespaceBytes[0] != 0, "1-byte namespace cannot be zero");
 
 #if NET9_0_OR_GREATER
             KeyBytes = key;

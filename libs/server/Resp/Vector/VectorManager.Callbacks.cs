@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -205,11 +206,21 @@ namespace Garnet.server
             nint dataCallbackContext
         )
         {
-            // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
+            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
+            Span<byte> nsBytes = stackalloc byte[4];
+
+            if (context <= 127)
+            {
+                nsBytes = nsBytes[..1];
+                nsBytes[0] = (byte)context;
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(nsBytes, (uint)context);
+            }
+
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -276,9 +287,19 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
+
+            Span<byte> nsBytes = stackalloc byte[4];
+
+            if (context <= 127)
+            {
+                nsBytes = nsBytes[..1];
+                nsBytes[0] = (byte)context;
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(nsBytes, (uint)context);
+            }
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
@@ -330,9 +351,21 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
+            Debug.Assert(context <= uint.MaxValue, "A maximum of 2^32-1 Vector Set contexts are supported");
+
             // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key
-            Span<byte> nsBytes = new(((byte*)keyData) - 1, 1);
-            nsBytes[0] = (byte)context;
+            Span<byte> nsBytes;
+            if (context <= 127)
+            {
+                // Top bit is reserved, have to jump to 2-byte namespace once we hit 128
+                nsBytes = new(((byte*)keyData) - 1, 1);
+                nsBytes[0] = (byte)context;
+            }
+            else
+            {
+                nsBytes = new(((byte*)keyData) - 4, 4);
+                BinaryPrimitives.WriteUInt32LittleEndian(nsBytes, (uint)context);
+            }
 
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 
