@@ -1048,7 +1048,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public void TsavoriteLogManualCommitTest()
+        public async Task TsavoriteLogManualCommitTest()
         {
             device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "logManualCommitTest.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
@@ -1089,13 +1089,13 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(commitSuccessful);
 
             var recoveredLog = new TsavoriteLog(logSettings);
-            recoveredLog.Recover(1);
+            await recoveredLog.RecoverAsync(1).ConfigureAwait(false);
             ClassicAssert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
             ClassicAssert.AreEqual(commit1Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
 
             recoveredLog = new TsavoriteLog(logSettings);
-            recoveredLog.Recover(2);
+            await recoveredLog.RecoverAsync(2).ConfigureAwait(false);
             ClassicAssert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
             ClassicAssert.AreEqual(commit2Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
@@ -1104,7 +1104,7 @@ namespace Tsavorite.test
             try
             {
                 recoveredLog = new TsavoriteLog(logSettings);
-                recoveredLog.Recover(4);
+                await recoveredLog.RecoverAsync(4).ConfigureAwait(false);
                 Assert.Fail();
             }
             catch (TsavoriteException)

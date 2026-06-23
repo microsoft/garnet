@@ -68,7 +68,7 @@ namespace Tsavorite.test.LargeObjects
                 , StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             {
-                _ = store.Recover(token);
+                _ = await store.RecoverAsync(token).ConfigureAwait(false);
 
                 using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
                     DoRead(session, numObjects, store);
@@ -147,7 +147,7 @@ namespace Tsavorite.test.LargeObjects
                 DoRead(session, numObjects, store);
 
                 _ = store.TryInitiateFullCheckpoint(out token, checkpointType);
-                await store.CompleteCheckpointAsync();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
             }
 
             // Step 1: Create and recover store.
@@ -157,7 +157,7 @@ namespace Tsavorite.test.LargeObjects
                 , StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestMultiListObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             {
-                _ = store.Recover(token);
+                _ = await store.RecoverAsync(token).ConfigureAwait(false);
 
                 using (var session = store.NewSession<TestObjectKey, TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions>(new TestMultiListObjectFunctions()))
                     DoRead(session, numObjects, store);

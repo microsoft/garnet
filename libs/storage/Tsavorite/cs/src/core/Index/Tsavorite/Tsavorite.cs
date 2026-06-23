@@ -210,7 +210,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    Recover();
+                    RecoverAsync().AsTask().GetAwaiter().GetResult();
                 }
                 catch { }
             }
@@ -365,18 +365,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Recover from the latest valid checkpoint (blocking operation)
-        /// </summary>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true)
-        {
-            FindRecoveryInfo(-1, out var recoveredHlcInfo, out var recoveredIcInfo);
-            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion);
-        }
-
-        /// <summary>
         /// Get the version we would recover to if we were to request recovery the specified version
         /// </summary>
         /// <param name="recoverTo">Specified version</param>
@@ -410,16 +398,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Recover from specific token (blocking operation)
-        /// </summary>
-        /// <param name="fullCheckpointToken">Token</param>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion);
-
-        /// <summary>
         /// Asynchronously recover from specific token (blocking operation)
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
@@ -429,17 +407,6 @@ namespace Tsavorite.core
         /// <returns>Version we actually recovered to</returns>
         public ValueTask<long> RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
             => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
-
-        /// <summary>
-        /// Recover from specific index and log token (blocking operation)
-        /// </summary>
-        /// <param name="indexCheckpointToken"></param>
-        /// <param name="hybridLogCheckpointToken"></param>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion);
 
         /// <summary>
         /// Asynchronously recover from specific index and log token (blocking operation)
