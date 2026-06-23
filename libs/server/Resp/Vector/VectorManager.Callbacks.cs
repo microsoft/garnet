@@ -357,7 +357,7 @@ namespace Garnet.server
             Span<byte> nsBytes;
             if (context <= 127)
             {
-                // Top bit is reserved, have to jump to 2-byte namespace once we hit 128
+                // Top bit is reserved, have to jump to multi-byte namespace once we hit 128
                 nsBytes = new(((byte*)keyData) - 1, 1);
                 nsBytes[0] = (byte)context;
             }

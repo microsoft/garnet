@@ -191,6 +191,8 @@ namespace Garnet.server
                         contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
                         contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
 
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
                         needsUpdate = true;
                     }
                 }
@@ -224,6 +226,8 @@ namespace Garnet.server
                     {
                         contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
                         contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
 
                         needsUpdate = true;
                     }

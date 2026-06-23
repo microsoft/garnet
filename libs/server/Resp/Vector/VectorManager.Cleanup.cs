@@ -2,10 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -50,36 +50,13 @@ namespace Garnet.server
                     return true;
                 }
 
-                // TODO: Implement variable length namespace support
-                ulong ns;
-                if (logRecord.Namespace.Length == 1)
-                {
-                    ns = logRecord.Namespace[0];
-                }
-                else if (logRecord.Namespace.Length == 2)
-                {
-                    ns = BinaryPrimitives.ReadUInt16LittleEndian(logRecord.Namespace);
-                }
-                else if (logRecord.Namespace.Length == 4)
-                {
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(logRecord.Namespace);
-                }
-                else
-                {
-                    ns = BinaryPrimitives.ReadUInt64LittleEndian(logRecord.Namespace);
-                }
+                Debug.Assert(logRecord.NamespaceBytes.Length is > 0 and <= sizeof(ulong), "Namespace longer than expected");
 
-                var pairedContext = ns & ~(ContextStep - 1);
-                if (!contexts.Contains(pairedContext))
-                {
-                    // Vector Set, but not one we're scanning for
-                    cursorRecordResult = CursorRecordResult.Skip;
-                    return true;
-                }
+                // TSourceLogRecord bytes aren't necessarily pinned, copy them over
+                Span<byte> nsBytes = stackalloc byte[sizeof(ulong)];
+                logRecord.NamespaceBytes.CopyTo(nsBytes);
+                nsBytes = nsBytes[..logRecord.NamespaceBytes.Length];
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-                ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)ns };
-#pragma warning restore IDE0302
                 VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
 
                 // Delete it
@@ -240,6 +217,8 @@ namespace Garnet.server
                             {
                                 contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
 
+                                _ = dirtyContextMetadatas.Add(contextIndex);
+
                                 needsUpdate = true;
                             }
                         }
@@ -357,6 +336,8 @@ namespace Garnet.server
                         {
                             var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(cleanedUp);
                             contextMetadatas[contextIndex].FinishedCleaningUp(contextIndex != 0, contextValue);
+
+                            _ = dirtyContextMetadatas.Add(contextIndex);
                         }
                     }
 

@@ -39,7 +39,7 @@ namespace Garnet.server
             lock (this)
             {
                 ulong ns;
-                if(namespaceBytes.Length == 1)
+                if (namespaceBytes.Length == 1)
                 {
                     ns = namespaceBytes[0];
                 }
@@ -47,11 +47,11 @@ namespace Garnet.server
                 {
                     ns = BinaryPrimitives.ReadUInt16LittleEndian(namespaceBytes);
                 }
-                else if(namespaceBytes.Length == 4)
+                else if (namespaceBytes.Length == 4)
                 {
                     ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
                 }
-                else if(namespaceBytes.Length == 8)
+                else if (namespaceBytes.Length == 8)
                 {
                     ns = BinaryPrimitives.ReadUInt64LittleEndian(namespaceBytes);
                 }
@@ -166,7 +166,7 @@ namespace Garnet.server
                 var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
 
                 Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
-                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex !=0, contextValue), "Context should be marked migrating if we're moving an index key in");
+                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Context should be marked migrating if we're moving an index key in");
             }
 #endif
 
@@ -255,6 +255,8 @@ namespace Garnet.server
                     lock (this)
                     {
                         contextMetadatas[contextIndex].MarkMigrationComplete(contextIndex != 0, contextValue, hashSlot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorBasicContext);

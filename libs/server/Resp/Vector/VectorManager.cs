@@ -217,36 +217,38 @@ namespace Garnet.server
 
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
-            var metadataContextIndex = 0;
-
+            // Scan for ContextMetadata until we stop finding any
             var allMetadataContexts = new List<ContextMetadata>();
-
-            while (true)
             {
-                BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
+                var metadataContextIndex = 0;
 
-                VectorElementKey key = new(nsBytes, keyBytes);
-
-                VectorOutput data = new(dataSpan);
-
-                ref var ctx = ref session.storageSession.vectorBasicContext;
-
-                var status = ctx.Read(key, ref data);
-
-                if (status.IsPending)
+                while (true)
                 {
-                    VectorOutput ignored = new();
-                    CompletePending(ref status, ref ignored, ref ctx);
+                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
+
+                    VectorElementKey key = new(nsBytes, keyBytes);
+
+                    VectorOutput data = new(dataSpan);
+
+                    ref var ctx = ref session.storageSession.vectorBasicContext;
+
+                    var status = ctx.Read(key, ref data);
+
+                    if (status.IsPending)
+                    {
+                        VectorOutput ignored = new();
+                        CompletePending(ref status, ref ignored, ref ctx);
+                    }
+
+                    if (!status.Found)
+                    {
+                        break;
+                    }
+
+                    allMetadataContexts.Add(MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0]);
+
+                    metadataContextIndex++;
                 }
-
-                if (!status.Found)
-                {
-                    break;
-                }
-
-                allMetadataContexts.Add(MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0]);
-
-                metadataContextIndex++;
             }
 
             // Cleanup the tail of any context metadatas
@@ -254,7 +256,7 @@ namespace Garnet.server
             {
                 if (allMetadataContexts[i].IsEmpty())
                 {
-                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
+                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, i);
 
                     VectorElementKey key = new(nsBytes, keyBytes);
 
@@ -271,6 +273,10 @@ namespace Garnet.server
 
                     allMetadataContexts.RemoveAt(i);
                 }
+                else
+                {
+                    break;
+                }
             }
 
             // Store current context state off for future use
@@ -284,10 +290,10 @@ namespace Garnet.server
                 {
                     contextMetadatas = new ContextMetadata[1];
                 }
-            }
 
-            // Start tracking the dirty state of ContextMetadatas
-            dirtyContextMetadatas = [];
+                // Start tracking the dirty state of ContextMetadatas
+                dirtyContextMetadatas = [];
+            }
 
             // Spin up quantization
             StartQuantizationTasks();
@@ -322,6 +328,8 @@ namespace Garnet.server
                             contextMetadatas[i].MarkCleaningUp(i != 0, abandoned);
                         }
 
+                        _ = dirtyContextMetadatas.Add(i);
+
                         needsUpdated = true;
                     }
                 }
@@ -334,6 +342,9 @@ namespace Garnet.server
                     if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
                         contextMetadatas[contextIndex].ClearIsCleaningUp(contextIndex != 0, contextValue);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
                         needsUpdated = true;
                     }
                 }

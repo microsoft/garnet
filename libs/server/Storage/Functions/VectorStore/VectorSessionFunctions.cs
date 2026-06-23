@@ -189,7 +189,7 @@ namespace Garnet.server
             if (input.WriteDesiredSize < 0)
             {
                 // Add to value, this is a dynamically sized type - which are only used from Garnet, not DiskANN
-                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
 
             var needsAlignmentPadding = input.AlignmentExpected || input.Callback != 0;
@@ -197,11 +197,11 @@ namespace Garnet.server
             // Constant size indicated
             if (needsAlignmentPadding)
             {
-                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
             else
             {
-                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
         }
 

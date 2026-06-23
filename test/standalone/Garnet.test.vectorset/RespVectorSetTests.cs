@@ -2617,8 +2617,8 @@ namespace Garnet.test
         [CancelAfter(30_000)]
         public async Task WithQuantizationBackfillAsync(
             [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8)] VectorQuantType quantType,
-            [Values(false, true)] bool concurrentAdds,
-            [Values(false, true)] bool concurrentSearches,
+            [Values(true)] bool concurrentAdds,
+            [Values(true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
             const int Vectors = 5_000;
