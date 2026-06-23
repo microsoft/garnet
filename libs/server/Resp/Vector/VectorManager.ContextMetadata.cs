@@ -484,6 +484,9 @@ namespace Garnet.server
             {
                 _ = NextVectorSetContext(0);
             }
+
+            using var session = (RespServerSession)getTempSession();
+            UpdateContextMetadata(ref session.storageSession.vectorBasicContext);
         }
 
         /// <summary>

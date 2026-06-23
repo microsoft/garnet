@@ -16,6 +16,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -2222,6 +2223,7 @@ namespace Garnet.test.cluster
             foreach (var server in context.nodes)
             {
                 var wrapper = GetStoreWrapper(server);
+
                 wrapper.DefaultDatabase.VectorManager.AllocateTestContextAllocations(preAllocatedContexts);
             }
 

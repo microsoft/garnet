@@ -234,6 +234,9 @@ namespace Garnet.server
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
+
+            Debug.WriteLine($"write: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
+
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             input.AlignmentExpected = true;
@@ -245,6 +248,8 @@ namespace Garnet.server
             {
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
+
+            *(int*)((byte*)keyData - 4) = (int)keyLength;
 
             return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
@@ -259,6 +264,11 @@ namespace Garnet.server
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
+            unsafe
+            {
+                *(int*)((byte*)keyData - 4) = (int)keyLength;
+            }
+
             return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
         }
 
@@ -266,6 +276,8 @@ namespace Garnet.server
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
+
+            Debug.WriteLine($"rmw: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
@@ -280,6 +292,11 @@ namespace Garnet.server
                 VectorOutput ignored = new();
 
                 CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            unsafe
+            {
+                *(int*)((byte*)keyData - 4) = (int)keyLength;
             }
 
             return status.IsCompletedSuccessfully ? (byte)1 : default;

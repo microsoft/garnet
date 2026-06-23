@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -150,6 +151,22 @@ namespace Garnet.server
                 {
                     RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
                     rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
+                }
+
+                if (logRecord.HasNamespace)
+                {
+                    if (logRecord.Namespace.Length == 4)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"4:{BinaryPrimitives.ReadUInt32LittleEndian(logRecord.Namespace)} @{SpanByte.ToShortString(logRecord.KeyBytes)}");
+                    }
+                    else if(logRecord.Namespace.Length == 1)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"1:{logRecord.Namespace[0]} @{SpanByte.ToShortString(logRecord.KeyBytes)}");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debugger.Break();
+                    }
                 }
 
                 // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
