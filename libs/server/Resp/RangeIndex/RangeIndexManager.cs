@@ -157,20 +157,14 @@ namespace Garnet.server
             public int SnapshotPending;
 
             /// <summary>
-            /// Per-tree snapshot serialization lock (binary semaphore). Held while a CPR snapshot
-            /// of this tree is in flight, so concurrent snapshot producers — <see cref="GarnetRecordTriggers.OnFlush"/>,
-            /// <see cref="SnapshotAllTreesForCheckpoint"/>, and migration — do not race for bftree's
-            /// internal <c>snapshot_in_progress</c> flag (which would silently no-op one of them).
-            ///
-            /// <para>A semaphore (not a spin/CAS) because the critical section is a full CPR
-            /// snapshot, which is multi-second — waiters must block, not busy-spin, to avoid
-            /// burning a core each. A <c>SemaphoreSlim</c> (rather than <c>lock</c>/Monitor) keeps
-            /// the door open to an async snapshot path (<c>WaitAsync</c>) in the future.</para>
-            ///
-            /// <para>Intentionally not disposed: <see cref="TreeEntry"/> has no disposal lifecycle,
-            /// and the semaphore holds no unmanaged handle (its <c>AvailableWaitHandle</c> is never
-            /// used), so the GC reclaims it. This also avoids a dispose-vs-in-flight-snapshot race.
-            /// Mirrors <c>CollectionItemObserver.ResultFoundSemaphore</c>.</para>
+            /// Per-tree snapshot serialization lock. Held while a CPR snapshot of this tree is in
+            /// flight so concurrent producers (<see cref="GarnetRecordTriggers.OnFlush"/>,
+            /// <see cref="SnapshotAllTreesForCheckpoint"/>, migration) don't race bftree's internal
+            /// <c>snapshot_in_progress</c> flag (which would silently no-op one). A blocking lock,
+            /// not a spin, because a CPR snapshot is multi-second; <c>SemaphoreSlim</c> (over
+            /// <c>lock</c>) leaves an async (<c>WaitAsync</c>) path open. Intentionally not disposed
+            /// (no unmanaged handle since <c>AvailableWaitHandle</c> is unused), mirroring
+            /// <c>CollectionItemObserver.ResultFoundSemaphore</c>.
             /// </summary>
             private readonly SemaphoreSlim snapshotLock = new(1, 1);
 
