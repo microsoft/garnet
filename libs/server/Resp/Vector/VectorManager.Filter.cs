@@ -265,13 +265,12 @@ namespace Garnet.server
         /// </summary>
         private static unsafe byte EvaluateCandidateFilter(ulong context, uint internalId)
         {
-
-                Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
-                ref var state
+            Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
+            ref var state
 #if NET9_0_OR_GREATER
                 = ref Unsafe.AsRef<InlineFilterState>(InlineFilterStatePtr);
 #else
-                    = ref *InlineFilterStatePtr;
+                = ref *InlineFilterStatePtr;
 #endif
 
             // 1. Read external ID for this internal_id via ExtMap

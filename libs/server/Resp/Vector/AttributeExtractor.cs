@@ -80,10 +80,10 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return found;
-                if (s[0] == (byte)',') 
-                { 
-                    s = s[1..]; 
-                    continue; 
+                if (s[0] == (byte)',')
+                {
+                    s = s[1..];
+                    continue;
                 }
                 if (s[0] == (byte)'}') return found;
                 return found;
@@ -129,10 +129,10 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (s[0] == (byte)',') 
+                if (s[0] == (byte)',')
                 {
-                    s = s[1..]; 
-                    continue; 
+                    s = s[1..];
+                    continue;
                 }
                 if (s[0] == (byte)'}') return default;
                 return default;
@@ -252,9 +252,9 @@ namespace Garnet.server
             s = TrimWhiteSpace(s);
 
             // Empty array
-            if (!s.IsEmpty && s[0] == (byte)']') 
-            { 
-                s = s[1..]; 
+            if (!s.IsEmpty && s[0] == (byte)']')
+            {
+                s = s[1..];
                 return ExprToken.NewTuple(0, 0);
             }
 
@@ -265,10 +265,10 @@ namespace Garnet.server
             {
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (count >= MaxArrayElements) 
-                { 
-                    _ = SkipBracketed(ref s, (byte)'[', (byte)']'); 
-                    return ExprToken.NewNull(); 
+                if (count >= MaxArrayElements)
+                {
+                    _ = SkipBracketed(ref s, (byte)'[', (byte)']');
+                    return ExprToken.NewNull();
                 }
 
                 var elem = ParseValueToken(json, ref s);
@@ -277,10 +277,10 @@ namespace Garnet.server
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (s[0] == (byte)']') 
-                { 
-                    s = s[1..]; 
-                    break; 
+                if (s[0] == (byte)']')
+                {
+                    s = s[1..];
+                    break;
                 }
                 if (s[0] != (byte)',') return default;
                 s = s[1..];
@@ -334,15 +334,15 @@ namespace Garnet.server
             s = s[1..];
             while (!s.IsEmpty)
             {
-                if (s[0] == (byte)'\\') 
-                { 
-                    s = s[2..]; 
-                    continue; 
+                if (s[0] == (byte)'\\')
+                {
+                    s = s[2..];
+                    continue;
                 }
-                if (s[0] == (byte)'"') 
-                { 
-                    s = s[1..]; 
-                    return true; 
+                if (s[0] == (byte)'"')
+                {
+                    s = s[1..];
+                    return true;
                 }
                 s = s[1..];
             }
@@ -463,9 +463,9 @@ namespace Garnet.server
                 var keyHasEscape = false;
                 for (var ki = 0; ki < keyContent.Length; ki++)
                 {
-                    if (keyContent[ki] == (byte)'\\') 
+                    if (keyContent[ki] == (byte)'\\')
                     {
-                        keyHasEscape = true; 
+                        keyHasEscape = true;
                         break;
                     }
                 }
@@ -496,11 +496,11 @@ namespace Garnet.server
                     var hasEscape = false;
                     while (!s.IsEmpty)
                     {
-                        if (s[0] == (byte)'\\') 
-                        { 
-                            hasEscape = true; 
-                            s = s[2..]; 
-                            continue; 
+                        if (s[0] == (byte)'\\')
+                        {
+                            hasEscape = true;
+                            s = s[2..];
+                            continue;
                         }
                         if (s[0] == (byte)'"') break;
                         s = s[1..];
@@ -606,10 +606,10 @@ namespace Garnet.server
                 // Next field or end
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return -1;
-                if (s[0] == (byte)',') 
-                { 
-                    s = s[1..]; 
-                    continue; 
+                if (s[0] == (byte)',')
+                {
+                    s = s[1..];
+                    continue;
                 }
                 if (s[0] == (byte)'}') break;
                 return -1;
