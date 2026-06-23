@@ -20,12 +20,20 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    [TestFixture(0)]
+    [TestFixture(1_000)]
     public class RespVectorSetTests : TestBase
     {
         private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
 
+        private readonly int preAllocatedContexts;
+
         GarnetServer server;
+
+        public RespVectorSetTests(int preAllocatedContexts)
+        {
+            this.preAllocatedContexts = preAllocatedContexts;
+        }
 
         [SetUp]
         public void Setup()
@@ -34,6 +42,8 @@ namespace Garnet.test
             server = CreateGarnetServer(tryRecover: false);
 
             server.Start();
+
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContextAllocations(preAllocatedContexts);
         }
 
         [TearDown]

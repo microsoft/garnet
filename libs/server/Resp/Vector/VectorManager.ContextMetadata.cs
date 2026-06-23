@@ -159,7 +159,7 @@ namespace Garnet.server
 
                 if (!allowZero)
                 {
-                    inUse |= 1;
+                    availableMask |= 1;
                 }
 
                 var available = BitOperations.PopCount(~availableMask);
@@ -474,6 +474,19 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// For testing purposes, force a number of contexts to be allocated.
+        /// 
+        /// Contexts are not persisted at call time, but may be persisted after future operations.
+        /// </summary>
+        public void AllocateTestContextAllocations(int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                _ = NextVectorSetContext(0);
+            }
+        }
+
+        /// <summary>
         /// During a FLUSHDB (or FLUSHALL) we need to prevent new contexts and other updates to context metadata.
         /// 
         /// This method is called at the start of a flush and returns a guard instance which will block such
@@ -512,7 +525,7 @@ namespace Garnet.server
                         {
                             var offset = ContextMetadata.OffsetForContextMetadata(i);
                             contexts = new(count);
-                            foreach(var item in subContexts)
+                            foreach (var item in subContexts)
                             {
                                 contexts.Add(offset + item);
                             }
@@ -599,7 +612,7 @@ namespace Garnet.server
         /// </summary>
         public HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
         {
-            HashSet<ulong> ret = [];
+            HashSet<ulong> ret = null;
 
             lock (this)
             {
@@ -608,9 +621,14 @@ namespace Garnet.server
                     var offset = (ulong)i * 64UL * ContextStep;
 
                     var sub = contextMetadatas[i].GetNamespacesForHashSlots(hashSlots);
-                    foreach (var item in sub)
+                    if (sub != null)
                     {
-                        _ = ret.Add(offset + item);
+                        ret ??= [];
+
+                        foreach (var item in sub)
+                        {
+                            _ = ret.Add(offset + item);
+                        }
                     }
                 }
             }

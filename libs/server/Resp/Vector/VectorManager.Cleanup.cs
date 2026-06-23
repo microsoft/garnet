@@ -2,10 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -51,9 +51,24 @@ namespace Garnet.server
                 }
 
                 // TODO: Implement variable length namespace support
-                Debug.Assert(logRecord.Namespace.Length == 1, "Variable length namespaces not supported");
+                ulong ns;
+                if (logRecord.Namespace.Length == 1)
+                {
+                    ns = logRecord.Namespace[0];
+                }
+                else if (logRecord.Namespace.Length == 2)
+                {
+                    ns = BinaryPrimitives.ReadUInt16LittleEndian(logRecord.Namespace);
+                }
+                else if (logRecord.Namespace.Length == 4)
+                {
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(logRecord.Namespace);
+                }
+                else
+                {
+                    ns = BinaryPrimitives.ReadUInt64LittleEndian(logRecord.Namespace);
+                }
 
-                ulong ns = logRecord.Namespace[0];
                 var pairedContext = ns & ~(ContextStep - 1);
                 if (!contexts.Contains(pairedContext))
                 {

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -43,9 +44,25 @@ namespace Garnet.cluster
 
             public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
             {
-                Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces note supported");
+                Debug.Assert(namespaceBytes.Length <= sizeof(ulong), "Longer namespaces note supported");
 
-                var ns = (ulong)namespaceBytes[0];
+                ulong ns;
+                if (namespaceBytes.Length == 1)
+                {
+                    ns = namespaceBytes[0];
+                }
+                else if (namespaceBytes.Length == 2)
+                {
+                    ns = BinaryPrimitives.ReadUInt16LittleEndian(namespaceBytes);
+                }
+                else if (namespaceBytes.Length == 4)
+                {
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+                }
+                else
+                {
+                    ns = BinaryPrimitives.ReadUInt64LittleEndian(namespaceBytes);
+                }
 
                 return session._namespaces?.Contains(ns) ?? false;
             }
