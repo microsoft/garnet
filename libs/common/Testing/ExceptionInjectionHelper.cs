@@ -151,12 +151,10 @@ namespace Garnet.common
 
         /// <summary>
         /// Blocks (not busy-spinning) until <paramref name="exceptionType"/> is disabled,
-        /// consuming negligible CPU. Test-only: lets a holder park so any CPU observed during the
-        /// wait is attributable to other (busy-spinning) threads. Polls with short sleeps, so the
-        /// disable is noticed within roughly one OS timer tick (~15 ms on Windows).
+        /// consuming negligible CPU.
         /// </summary>
         /// <param name="exceptionType"></param>
-        public static void WaitOnClearBlocking(ExceptionInjectionType exceptionType)
+        public static void WaitOnClearWithThreadSleep(ExceptionInjectionType exceptionType)
         {
             while (IsEnabled(exceptionType))
                 Thread.Sleep(1);

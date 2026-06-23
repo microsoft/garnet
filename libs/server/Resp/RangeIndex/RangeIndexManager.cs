@@ -186,7 +186,7 @@ namespace Garnet.server
                 snapshotLock.Wait();
                 try
                 {
-                    ExceptionInjectionHelper.WaitOnClearBlocking(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
+                    ExceptionInjectionHelper.WaitOnClearWithThreadSleep(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
                     BfTreeService.CprSnapshotByPtr(Tree.NativePtr, destinationPath);
                 }
                 finally
