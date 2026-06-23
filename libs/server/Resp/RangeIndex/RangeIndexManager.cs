@@ -186,11 +186,6 @@ namespace Garnet.server
                 snapshotLock.Wait();
                 try
                 {
-                    // Test-only latency injection: while enabled, hold the per-tree snapshot lock
-                    // (blocking, negligible CPU) to emulate a slow cpr_snapshot. Concurrent
-                    // SnapshotUnderClaim callers on the same tree (e.g. migration) block on the
-                    // semaphore above rather than busy-spinning. No-op in Release and whenever the
-                    // injection is disabled.
                     ExceptionInjectionHelper.WaitOnClearBlocking(ExceptionInjectionType.RangeIndex_Snapshot_Inject_Latency);
                     BfTreeService.CprSnapshotByPtr(Tree.NativePtr, destinationPath);
                 }
