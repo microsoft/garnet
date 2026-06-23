@@ -734,7 +734,7 @@ namespace Tsavorite.core
             // (after eviction over the full recovered range) is honored. For FoldOver there is no following snapshot phase.
             if (checkpointType != CheckpointType.Snapshot)
             {
-                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, objectLogDevice: null, evictForBudget: true);
+                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, objectLogDevice: null);
                 TrimResidentPagesToBudget(recoveryStatus, untilAddress);
             }
             return recoveryStatus;
@@ -919,12 +919,12 @@ namespace Tsavorite.core
             // Snapshot region (boundary page and above): deserialize resident pages' objects from the snapshot object-log device (the live records
             // still carry their snapshot positions). These pages are now durable on the main log/object-log (RecoverSnapshotPages copied their objects),
             // so evict pages as needed to honor the memory budget; an evicted record is simply read back from the main log/object-log on demand.
-            RecoveryLoadObjectsPass2(recoveryStatus, Math.Max(recoveryStatus.headAddress, boundaryPageStart), untilAddress, recoveryStatus.objectLogRecoveryDevice, evictForBudget: true);
+            RecoveryLoadObjectsPass2(recoveryStatus, Math.Max(recoveryStatus.headAddress, boundaryPageStart), untilAddress, recoveryStatus.objectLogRecoveryDevice);
 
             // Hybrid-log region (below the boundary page): read objects from the main object-log device, evicting pages as needed to honor the
             // memory budget. These pages are durable on the main log/object-log, so an evicted record is simply read back from disk on demand.
             if (recoveryStatus.headAddress < boundaryPageStart)
-                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, boundaryPageStart, objectLogDevice: null, evictForBudget: true);
+                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, boundaryPageStart, objectLogDevice: null);
 
             // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
             // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
@@ -944,13 +944,7 @@ namespace Tsavorite.core
         /// <param name="fromAddress">The lowest address whose objects are to be loaded (the load floor; pages below it are not loaded by this call)</param>
         /// <param name="untilAddress">The end of the range whose objects are to be loaded</param>
         /// <param name="objectLogDevice">The object-log device to read from; null means the main object-log device</param>
-        /// <param name="evictForBudget">
-        /// If true and a size tracker is present, evict pages (advancing <see cref="RecoveryStatus.headAddress"/>) to stay within the memory budget while
-        /// loading; this is only safe for ranges whose records are durable on the main log/object-log (the hybrid-log region, and FoldOver recovery), because
-        /// an evicted record is read back from the main log on demand. It must be false for the snapshot region: those pages were read from the snapshot device
-        /// and their objects are not written to the main object-log until a post-recovery read-only flush, so they must remain resident (load-all, no eviction);
-        /// budget for them is recovered by evicting the hybrid-log region instead.</param>
-        private void RecoveryLoadObjectsPass2(RecoveryStatus recoveryStatus, long fromAddress, long untilAddress, IDevice objectLogDevice, bool evictForBudget)
+        private void RecoveryLoadObjectsPass2(RecoveryStatus recoveryStatus, long fromAddress, long untilAddress, IDevice objectLogDevice)
         {
             if (fromAddress >= untilAddress)
                 return;
@@ -960,9 +954,8 @@ namespace Tsavorite.core
             if (untilAddress > hlogBase.GetFirstValidLogicalAddressOnPage(endPage))
                 endPage++;
 
-            // Load all objects from fromAddress to untilAddress with no eviction when either there is no size tracker, or eviction is not permitted for this
-            // range (the snapshot region, which must remain fully resident). The size tracker's heap accounting is still updated as objects load.
-            if (!evictForBudget || hlogBase.logSizeTracker is null)
+            // Load all objects from fromAddress to untilAddress with no eviction when there is no size tracker.
+            if (hlogBase.logSizeTracker is null)
             {
                 for (var page = startPage; page < endPage; page++)
                 {

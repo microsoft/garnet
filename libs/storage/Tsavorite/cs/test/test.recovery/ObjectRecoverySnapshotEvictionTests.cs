@@ -62,7 +62,7 @@ namespace Tsavorite.test.recovery.objects
                 }
 
                 _ = store.TryInitiateHybridLogCheckpoint(out var token, CheckpointType.Snapshot);
-                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
                 Destroy(log, objlog, store);
 
                 // Recover into a fresh store, optionally under memory pressure so the deferred object load must evict.

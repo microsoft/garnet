@@ -1200,8 +1200,6 @@ namespace Tsavorite.core
                 return;
             }
 
-            var result = (PageAsyncReadResult<TContext>)context;
-
             // If this is Recovery Pass 1 we skip object deserialization (frame reads are in RecoveryPhase.None).
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {

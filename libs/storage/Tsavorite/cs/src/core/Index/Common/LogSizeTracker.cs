@@ -294,15 +294,16 @@ namespace Tsavorite.core
                 // (stale pages left allocated below headAddress), which we must not reach.
                 Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
 
-                var margin = overBudgetAmount - evictableSize;
+                var margin = evictableSize - overBudgetAmount;
                 var isComplete = margin > 0;
                 if (isComplete)
                 {
+                    // We can completely satisfy the over-budget amount, so we can add some pages back to keep more below maxEvictUntilPage.
                     var additionalPagesToKeep = margin / allocator.PageSize;
                     maxEvictUntilPage -= additionalPagesToKeep;
                 }
 
-                // We'll evict the page so start at the first valid logical address on the next page.
+                // We'll evict the maxEvictUntilPage so start at the first valid logical address on the next page.
                 headAddress = allocator.GetFirstValidLogicalAddressOnPage(maxEvictUntilPage);
 
                 allocatedPageCount -= (int)(maxEvictUntilPage - startingHeadPage);
