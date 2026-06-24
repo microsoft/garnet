@@ -205,12 +205,6 @@ namespace Garnet.server
 
             initialized = true;
 
-            using var session = (RespServerSession)getTempSession();
-            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
-            {
-                throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
-            }
-
             // Come up empty, with one ContextMetadata
             lock (this)
             {
