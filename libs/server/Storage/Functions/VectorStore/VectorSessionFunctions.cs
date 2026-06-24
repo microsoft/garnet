@@ -635,15 +635,9 @@ namespace Garnet.server
         {
             Debug.Assert(readInput.IsMigrationRead, "Unexpected input");
 
-            // This should contain the results from the IsMigrationRead block in Reader
-            var span = readOutput.SpanByteAndMemory.Span;
+            DeserializeMigratedElementKey(readOutput.SpanByteAndMemory.Span, out var namespaceBytes, out _, out _);
 
-            var nsLen = BinaryPrimitives.ReadInt32LittleEndian(span);
-            var oldNsBytes = span.Slice(sizeof(int), nsLen);
-
-            // Should always have ended up with 4 bytes of namespace after an IsMigrationRead
-            Debug.Assert(oldNsBytes.Length == 4, "Unexpected namespace length");
-            ulong oldNs = BinaryPrimitives.ReadUInt32LittleEndian(oldNsBytes);
+            ulong oldNs = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
 
             if (!oldToNewNamespaces.TryGetValue(oldNs, out var newNs))
             {
@@ -652,7 +646,7 @@ namespace Garnet.server
 
             Debug.Assert(newNs <= uint.MaxValue, "Shouldn't have reserved such a large context");
 
-            BinaryPrimitives.WriteUInt32LittleEndian(oldNsBytes, (uint)newNs);
+            BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)newNs);
         }
 
         public static int GetMigratedElementKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
@@ -698,7 +692,7 @@ namespace Garnet.server
             alignedValue.CopyTo(writeTo);
         }
 
-        public static void DeserializeMigratedElementKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> namespaceBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> value)
+        public static void DeserializeMigratedElementKey(Span<byte> dataBytes, out Span<byte> namespaceBytes, out Span<byte> keyBytes, out Span<byte> value)
         {
             var readFrom = dataBytes;
 

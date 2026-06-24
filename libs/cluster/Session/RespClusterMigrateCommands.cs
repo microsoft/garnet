@@ -158,7 +158,7 @@ namespace Garnet.cluster
 
                                     // Vector Set elements are Namespace + Key + Value
 
-                                    var payload = payloadRaw.ReadOnlySpan;
+                                    var payload = payloadRaw.Span;
 
                                     VectorSessionFunctions.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
 
