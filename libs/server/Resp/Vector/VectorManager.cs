@@ -5,8 +5,8 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -142,6 +142,7 @@ namespace Garnet.server
         private readonly int dbId;
 
         private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
@@ -182,6 +183,7 @@ namespace Garnet.server
 #endif
 
             recoveredIndexes = new();
+            recoveredMetadata = new();
 
             quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
 
@@ -209,89 +211,10 @@ namespace Garnet.server
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
             }
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
-#pragma warning restore IDE0302 
-
-            Span<byte> keyBytes = stackalloc byte[sizeof(int)];
-
-            Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
-
-            // Scan for ContextMetadata until we stop finding any
-            var allMetadataContexts = new List<ContextMetadata>();
-            {
-                var metadataContextIndex = 0;
-
-                while (true)
-                {
-                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, metadataContextIndex);
-
-                    VectorElementKey key = new(nsBytes, keyBytes);
-
-                    VectorOutput data = new(dataSpan);
-
-                    ref var ctx = ref session.storageSession.vectorBasicContext;
-
-                    var status = ctx.Read(key, ref data);
-
-                    if (status.IsPending)
-                    {
-                        VectorOutput ignored = new();
-                        CompletePending(ref status, ref ignored, ref ctx);
-                    }
-
-                    if (!status.Found)
-                    {
-                        break;
-                    }
-
-                    allMetadataContexts.Add(MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0]);
-
-                    metadataContextIndex++;
-                }
-            }
-
-            // Cleanup the tail of any context metadatas
-            for (var i = allMetadataContexts.Count - 1; i >= 0; i--)
-            {
-                if (allMetadataContexts[i].IsEmpty())
-                {
-                    BinaryPrimitives.WriteInt32LittleEndian(keyBytes, i);
-
-                    VectorElementKey key = new(nsBytes, keyBytes);
-
-                    VectorOutput data = new(dataSpan);
-
-                    ref var ctx = ref session.storageSession.vectorBasicContext;
-
-                    var status = ctx.Delete(key);
-                    if (status.IsPending)
-                    {
-                        VectorOutput ignored = new();
-                        CompletePending(ref status, ref ignored, ref ctx);
-                    }
-
-                    allMetadataContexts.RemoveAt(i);
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            // Store current context state off for future use
+            // Come up empty, with one ContextMetadata
             lock (this)
             {
-                if (allMetadataContexts.Count > 0)
-                {
-                    contextMetadatas = [.. allMetadataContexts];
-                }
-                else
-                {
-                    contextMetadatas = new ContextMetadata[1];
-                }
-
-                // Start tracking the dirty state of ContextMetadatas
+                contextMetadatas = new ContextMetadata[1];
                 dirtyContextMetadatas = [];
             }
 
@@ -314,6 +237,23 @@ namespace Garnet.server
 
             lock (this)
             {
+                // Any ContextMetadatas we found need to be restored
+                if (!recoveredMetadata.IsEmpty)
+                {
+                    var maxContext = recoveredMetadata.Keys.Max();
+                    contextMetadatas = new ContextMetadata[maxContext + 1];
+
+                    for (var i = 0; i < contextMetadatas.Length; i++)
+                    {
+                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]))
+                        {
+                            contextMetadatas[i] = new();
+                        }
+                    }
+                }
+
+                recoveredMetadata = null;
+
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
                 for (var i = 0; i < contextMetadatas.Length; i++)
@@ -361,6 +301,9 @@ namespace Garnet.server
             _ = cleanupTaskChannel.Writer.TryWrite(null);
         }
 
+        /// <summary>
+        /// Called during recovery for each Vector Set index key.
+        /// </summary>
         public void RecoveredVectorSetIndexKey(ref LogRecord record)
         {
             if (record.ValueSpan.Length != IndexSize)
@@ -370,6 +313,33 @@ namespace Garnet.server
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
             recoveredIndexes[context] = 0;
+        }
+
+        /// <summary>
+        /// Called during recovery for each ContextMetadata record.
+        /// </summary>
+        public void RecoveredContextMetadata(ref LogRecord record)
+        {
+            if (record.ValueSpan.Length != ContextMetadata.Size || record.KeyBytes.Length != sizeof(int))
+            {
+                return;
+            }
+
+            var index = BinaryPrimitives.ReadInt32LittleEndian(record.KeyBytes);
+            var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
+
+            // During recovery, we can trim off empty ContextMetadata
+            //
+            // ResumePostRecovery will fill in any gaps this causes
+            if (metadata.IsEmpty())
+            {
+                return;
+            }
+
+            if (!recoveredMetadata.TryAdd(index, metadata))
+            {
+                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+            }
         }
 
         /// <inheritdoc/>

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -153,26 +152,23 @@ namespace Garnet.server
                     rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
                 }
 
-                if (logRecord.HasNamespace)
-                {
-                    if (logRecord.Namespace.Length == 4)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"4:{BinaryPrimitives.ReadUInt32LittleEndian(logRecord.Namespace)} @{SpanByte.ToShortString(logRecord.KeyBytes)}");
-                    }
-                    else if(logRecord.Namespace.Length == 1)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"1:{logRecord.Namespace[0]} @{SpanByte.ToShortString(logRecord.KeyBytes)}");
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debugger.Break();
-                    }
-                }
 
-                // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
-                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.DataHeader.RecordType == VectorManager.RecordType)
+                if (vectorManager is not null && !logRecord.Info.Tombstone)
                 {
-                    vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                    if (logRecord.HasNamespace)
+                    {
+                        var ns = logRecord.NamespaceBytes;
+                        if (ns.Length == 1 && ns[0] == VectorManager.MetadataNamespace)
+                        {
+                            // Context metadata load during recover needs to be saved off
+                            vectorManager.RecoveredContextMetadata(ref logRecord);
+                        }
+                    }
+                    else if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
+                    {
+                        // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
+                        vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                    }
                 }
             }
         }
