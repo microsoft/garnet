@@ -263,7 +263,7 @@ namespace Resp.benchmark
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
             var buffer = requestBuffers[batchIdx];
             var len = requestLengths[batchIdx];
-            var batchSize = opts.BatchSize.First();
+            var numCommands = requestCounts[batchIdx];  // 1 for MGET/MSET, batchSize for others
 
             // Start timing
             var opStart = Stopwatch.GetTimestamp();
@@ -278,7 +278,7 @@ namespace Resp.benchmark
             {
                 fixed (byte* bufPtr = buffer)
                 {
-                    client.Send(bufPtr, len, batchSize);
+                    client.Send(bufPtr, len, numCommands);
                     client.CompletePendingRequests();
                 }
             }
@@ -292,15 +292,15 @@ namespace Resp.benchmark
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                 histogram.RecordValue(elapsed);
 
-            // Update counters
-            Interlocked.Add(ref opsCompleted, batchSize);
+            // Update counters (numCommands already accounts for operation count)
+            Interlocked.Add(ref opsCompleted, numCommands);
             Interlocked.Add(ref bytesSent, len);
 
             // Track per-endpoint metrics
             if (useReplica && replicaLightClient != null)
-                Interlocked.Add(ref replicaOps, batchSize);
+                Interlocked.Add(ref replicaOps, numCommands);
             else
-                Interlocked.Add(ref primaryOps, batchSize);
+                Interlocked.Add(ref primaryOps, numCommands);
         }
 
         /// <summary>
@@ -320,7 +320,7 @@ namespace Resp.benchmark
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
             var buffer = requestBuffers[batchIdx];
             var len = requestLengths[batchIdx];
-            var batchSize = opts.BatchSize.First();
+            var numCommands = requestCounts[batchIdx];  // 1 for MGET/MSET, batchSize for others
 
             // Route batch
             var useReplica = ShouldUseReplica(opts.Op);
@@ -331,13 +331,13 @@ namespace Resp.benchmark
             {
                 fixed (byte* bufPtr = buffer)
                 {
-                    client.Send(bufPtr, len, batchSize);
+                    client.Send(bufPtr, len, numCommands);
                 }
             }
 
             // Record pending state for completion phase
             pendingStartTimestamp = Stopwatch.GetTimestamp();
-            pendingBatchSize = batchSize;
+            pendingBatchSize = numCommands;
             pendingBytesSent = len;
             pendingUsedReplica = useReplica;
         }
