@@ -350,27 +350,6 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
-        /// <summary>
-        /// As <see cref="CompletePending(ref Status, ref VectorOutput, ref VectorBasicContext)"/>, but also propagates the
-        /// completed <paramref name="input"/> back to the caller.
-        ///
-        /// This is required for the unknown-size read path (<see cref="ReadSizeUnknown"/>): the Reader records the actual
-        /// value size on <see cref="VectorInput.ReadDesiredSize"/>, and on the pending (disk) path that update lives on the
-        /// pending context's copy of the input. Without propagating it back the caller keeps its stale value and skips the
-        /// grow-and-retry, returning a truncated/uninitialized buffer.
-        /// </summary>
-        private static void CompletePending(ref Status status, ref VectorInput input, ref VectorOutput output, ref VectorBasicContext ctx)
-        {
-            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            var more = completedOutputs.Next();
-            Debug.Assert(more);
-            status = completedOutputs.Current.Status;
-            output = completedOutputs.Current.Output;
-            input = completedOutputs.Current.Input;
-            Debug.Assert(!completedOutputs.Next());
-            completedOutputs.Dispose();
-        }
-
         private static void CompletePending(ref Status status, ref StringBasicContext ctx)
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -821,7 +800,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
@@ -881,7 +860,7 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (found ? attributeMem.Length : 0);
@@ -948,7 +927,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -964,7 +943,7 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }

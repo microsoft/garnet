@@ -18,6 +18,11 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
+        /// <summary>
+        /// If a call needs a larger output buffer than was provided, it is stored here.
+        /// </summary>
+        public int? UpdatedReadDesiredSize { get; set; }
+
         public VectorOutput() => SpanByteAndMemory = new(null);
 
         public VectorOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;

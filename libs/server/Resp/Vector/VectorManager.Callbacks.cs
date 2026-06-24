@@ -107,6 +107,8 @@ namespace Garnet.server
                 currentLen = *(int*)currentPtr;
                 currentIndex = 0;
 
+                Debug.Assert((currentLen % 4) == 0, "Keys must be 4-byte aligned to preserve value alignment");
+
                 if (i == 0)
                 {
                     return;
@@ -144,10 +146,12 @@ namespace Garnet.server
             {
                 Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
-                input = default;
-                input.CallbackContext = callbackContext;
-                input.Callback = (nint)callback;
-                input.Index = i;
+                input = new()
+                {
+                    CallbackContext = callbackContext,
+                    Callback = (nint)callback,
+                    Index = i,
+                };
             }
 
             /// <inheritdoc/>
@@ -222,10 +226,11 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
-            input.AlignmentExpected = true;
             var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             VectorOutput outputSpan = new();
 
@@ -241,6 +246,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -254,14 +261,18 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
+            Debug.Assert((keyLength % 4) == 0, "Key must be 4-byte aligned to preserve value alignment");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-            VectorInput input = default;
-            input.Callback = dataCallback;
-            input.CallbackContext = dataCallbackContext;
-            input.WriteDesiredSize = (int)writeLength;
+            VectorInput input = new()
+            {
+                Callback = dataCallback,
+                CallbackContext = dataCallbackContext,
+                WriteDesiredSize = (int)writeLength,
+            };
 
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
@@ -274,8 +285,10 @@ namespace Garnet.server
             return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
-        private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
+            // We explicitly DO NOT check alignment here because we're always in managed code which doesn't care
+
 #pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
 #pragma warning restore IDE0302
@@ -286,20 +299,19 @@ namespace Garnet.server
 
             while (true)
             {
-                VectorInput input = new();
-                input.ReadDesiredSize = -1;
+                VectorInput input = new()
+                {
+                    VariableSizedRead = true,
+                };
 
-                // Sometimes we read DiskANN written data from the .NET side
-                // If that's the case, we need to pad for alignment even though .NET doesn't require it
-                input.AlignmentExpected = forceAlignment;
                 fixed (byte* ptr = value.Span)
                 {
-                    VectorOutput asSpanByte = new(ptr, value.Length);
+                    VectorOutput output = new(ptr, value.Length);
 
-                    var status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
+                    var status = ctx.Read(keyWithNamespace, ref input, ref output);
                     if (status.IsPending)
                     {
-                        CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
+                        CompletePending(ref status, ref output, ref ctx);
                     }
 
                     if (!status.Found)
@@ -308,15 +320,16 @@ namespace Garnet.server
                         return false;
                     }
 
-                    if (input.ReadDesiredSize > asSpanByte.SpanByteAndMemory.Length)
+                    var updateReadDesiredSize = output.UpdatedReadDesiredSize.GetValueOrDefault(-1);
+                    if (updateReadDesiredSize > output.SpanByteAndMemory.Length)
                     {
                         value.Memory?.Dispose();
-                        var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
+                        var newAlloc = MemoryPool<byte>.Shared.Rent(updateReadDesiredSize);
                         value = new(newAlloc, newAlloc.Memory.Length);
                         continue;
                     }
 
-                    value.Length = asSpanByte.SpanByteAndMemory.Length;
+                    value.Length = output.SpanByteAndMemory.Length;
                     return true;
                 }
             }

@@ -1389,9 +1389,11 @@ namespace Garnet.test
         {
             // Single key, 4 byte keys
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 64 };
 
@@ -1439,9 +1441,11 @@ namespace Garnet.test
 
             // Multiple keys, 4 byte keys
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 32 };
 
@@ -1493,9 +1497,11 @@ namespace Garnet.test
 
             // Multiple keys, 4 byte keys, random order
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 16 };
 
@@ -1546,9 +1552,11 @@ namespace Garnet.test
 
             // Single key, variable length
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
@@ -1616,9 +1624,11 @@ namespace Garnet.test
 
             // Multiple keys, variable length
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
@@ -1749,20 +1759,22 @@ namespace Garnet.test
 
             // Multiple keys, variable length, random access
             {
-                VectorInput input = default;
-                input.Callback = 5678;
-                input.CallbackContext = 9012;
+                VectorInput input = new()
+                {
+                    Callback = 5678,
+                    CallbackContext = 9012,
+                };
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "buzz"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
                 var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key6 = new byte[] { 2, 3, 4, 5 };
+                var key7 = new byte[] { 6, 7, 8, 9, 10, 11, 12, 13 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()

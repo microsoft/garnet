@@ -48,7 +48,6 @@ namespace Garnet.server
 #endif
 
             VectorInput input = default;
-            input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
             VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
