@@ -160,12 +160,7 @@ namespace Garnet.cluster
 
                                     var payload = payloadRaw.ReadOnlySpan;
 
-                                    var namespaceLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                    var namespaceBytes = payload.Slice(sizeof(int), namespaceLen);
-                                    var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length)..]);
-                                    var keyBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int), keyLen);
-                                    var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length + sizeof(int) + keyBytes.Length)..]);
-                                    var valueBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                    VectorSessionFunctions.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
 
                                     // An error has occurred
                                     if (migrateState > 0)

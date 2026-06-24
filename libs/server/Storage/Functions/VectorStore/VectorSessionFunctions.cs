@@ -50,40 +50,11 @@ namespace Garnet.server
                     // We can't ship the log record over because of alignment shenanigans
                     // TODO: When alignment is handled at the Tsavorite level, we CAN start shipping the log over like everything else
 
-                    var neededSpace =
-                        sizeof(int) + 4 + // Namespace is ALWAYS expanded to 4-bytes so we have space to re-write it
-                        sizeof(int) + srcLogRecord.KeyBytes.Length +
-                        sizeof(int) + value.Length;
-
-                    ulong context;
-                    if (srcLogRecord.NamespaceBytes.Length == 1)
-                    {
-                        context = srcLogRecord.NamespaceBytes[0];
-                    }
-                    else
-                    {
-                        Debug.Assert(srcLogRecord.NamespaceBytes.Length == 4, "Unexpected namespace size");
-                        context = BinaryPrimitives.ReadUInt32LittleEndian(srcLogRecord.NamespaceBytes);
-                    }
+                    var neededSpace = GetMigratedElementKeySerializationSize(srcLogRecord.KeyBytes, value);
 
                     output.SpanByteAndMemory.EnsureHeapMemorySize(neededSpace);
 
-                    var writeTo = output.SpanByteAndMemory.Span;
-
-                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, 4);
-                    writeTo = writeTo[sizeof(int)..];
-                    BinaryPrimitives.WriteUInt32LittleEndian(writeTo, (uint)context);
-                    writeTo = writeTo[sizeof(uint)..];
-
-                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, srcLogRecord.KeyBytes.Length);
-                    writeTo = writeTo[sizeof(int)..];
-                    srcLogRecord.KeyBytes.CopyTo(writeTo);
-                    writeTo = writeTo[srcLogRecord.KeyBytes.Length..];
-
-                    // Move value over _without_ any padding for alignment
-                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, value.Length);
-                    writeTo = writeTo[sizeof(int)..];
-                    value.CopyTo(writeTo);
+                    SerializeMigratedElementKey(output.SpanByteAndMemory.Span, srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes, value);
 
                     return true;
                 }
@@ -682,6 +653,72 @@ namespace Garnet.server
             Debug.Assert(newNs <= uint.MaxValue, "Shouldn't have reserved such a large context");
 
             BinaryPrimitives.WriteUInt32LittleEndian(oldNsBytes, (uint)newNs);
+        }
+
+        public static int GetMigratedElementKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
+        {
+            var neededSpace =
+                sizeof(int) + sizeof(uint) + // Namespace is ALWAYS expanded to 4-bytes so we have space to re-write it
+                sizeof(int) + keyBytes.Length +
+                sizeof(int) + alignedValue.Length;
+
+            return neededSpace;
+        }
+
+        public static void SerializeMigratedElementKey(Span<byte> dataBytes, ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
+        {
+            ulong context;
+            if (namespaceBytes.Length == 1)
+            {
+                context = namespaceBytes[0];
+            }
+            else
+            {
+                Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace size");
+                context = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+            }
+
+            var writeTo = dataBytes;
+
+            // Namespace length, Namespace
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, 4);
+            writeTo = writeTo[sizeof(int)..];
+            BinaryPrimitives.WriteUInt32LittleEndian(writeTo, (uint)context);
+            writeTo = writeTo[sizeof(uint)..];
+
+            // Key length, Key
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, keyBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            keyBytes.CopyTo(writeTo);
+            writeTo = writeTo[keyBytes.Length..];
+
+            // Value length, Value
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, alignedValue.Length);
+            writeTo = writeTo[sizeof(int)..];
+            alignedValue.CopyTo(writeTo);
+        }
+
+        public static void DeserializeMigratedElementKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> namespaceBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> value)
+        {
+            var readFrom = dataBytes;
+
+            // Namespace length, Namespace
+            var nsLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            Debug.Assert(nsLength == sizeof(uint), "Namespace should always be 4-bytes when deserializing");
+            readFrom = readFrom[sizeof(uint)..];
+            namespaceBytes = readFrom[..nsLength];
+            readFrom = readFrom[nsLength..];
+
+            // Key length, Key
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            keyBytes = readFrom[..keyLength];
+            readFrom = readFrom[keyLength..];
+
+            // Value length, Value
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            value = readFrom[..valueLength];
         }
 
         private static int GetExtendedNamespaceSize<TKey>(in TKey key)
