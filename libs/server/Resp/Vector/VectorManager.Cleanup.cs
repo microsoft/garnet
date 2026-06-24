@@ -76,12 +76,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                // TSourceLogRecord bytes aren't necessarily pinned, copy them over
-                Span<byte> nsBytes = stackalloc byte[sizeof(ulong)];
-                logRecord.NamespaceBytes.CopyTo(nsBytes);
-                nsBytes = nsBytes[..logRecord.NamespaceBytes.Length];
-
-                VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
+                VectorElementKey toDeleteKey = new(logRecord.NamespaceBytes, logRecord.KeyBytes);
 
                 // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
@@ -90,6 +85,8 @@ namespace Garnet.server
                     VectorOutput ignored = new();
                     CompletePending(ref status, ref ignored, ref storageSession.vectorBasicContext);
                 }
+
+                Debug.Assert(status.IsCompletedSuccessfully, "Nothing else should be deleting namespaced keys");
 
                 cursorRecordResult = CursorRecordResult.Accept;
                 return true;
