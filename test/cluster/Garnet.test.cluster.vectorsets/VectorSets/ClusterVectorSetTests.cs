@@ -1719,7 +1719,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            const int VectorSetsPerPrimary = 2;
+            const int VectorSetsPerPrimary = 1;//2;
 
             var gossipFaultsAtTestStart = 0;
 

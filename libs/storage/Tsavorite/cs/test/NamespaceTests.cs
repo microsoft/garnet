@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Garnet.test;
@@ -141,9 +142,21 @@ namespace Tsavorite.test
                 AssertCompleted(new(StatusCode.NotFound), readOtherStatus);
             }
 
+            // Reading same key, truncated namespace fails
+            for (var truncatesNamespaceSize = namespaceSize - 1; truncatesNamespaceSize > 0; truncatesNamespaceSize--)
+            {
+                var ns1Other = new byte[truncatesNamespaceSize];
+                ns1.AsSpan()[..ns1Other.Length].CopyTo(ns1Other);
+
+                var key1OtherNs = new KeyWithNamespaceStruct { kfield1 = KeyField1, kfield2 = KeyField2, namespaceArr = ns1Other };
+
+                var readOtherStatus = bContext.Read(key1OtherNs, ref input, ref output, Empty.Default);
+                AssertCompleted(new(StatusCode.NotFound), readOtherStatus);
+            }
+
             // Update same namespace succeeds
             var value2 = new ValueStruct { vfield1 = value1.vfield1 + 1, vfield2 = value1.vfield2 + 1 };
-            var updateStatus = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+            var updateStatus = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value2), Empty.Default);
             AssertCompleted(new(OperationStatus.INPLACE_UPDATED_RECORD), updateStatus);
 
             // Deletes same key, different namespace fail
@@ -267,6 +280,18 @@ namespace Tsavorite.test
                         ns1Other[i] = (byte)~ns1Other[i];
                     }
                 }
+
+                var key1OtherNs = new KeyWithNamespaceStruct { kfield1 = KeyField1, kfield2 = KeyField2, namespaceArr = ns1Other };
+
+                var readOtherStatus = bContext.Read(key1OtherNs, ref input, ref output, Empty.Default);
+                AssertCompleted(new(StatusCode.NotFound), readOtherStatus);
+            }
+
+            // Reading same key, truncated namespace fails
+            for (var truncatesNamespaceSize = namespaceSize - 1; truncatesNamespaceSize > 0; truncatesNamespaceSize--)
+            {
+                var ns1Other = new byte[truncatesNamespaceSize];
+                ns1.AsSpan()[..ns1Other.Length].CopyTo(ns1Other);
 
                 var key1OtherNs = new KeyWithNamespaceStruct { kfield1 = KeyField1, kfield2 = KeyField2, namespaceArr = ns1Other };
 
