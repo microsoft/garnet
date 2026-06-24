@@ -68,10 +68,10 @@ unsafe fn apply_common_config(
 /// For disk-backed trees, `file_path` / `file_path_len` specify the data file.
 /// For memory-only trees, `file_path` is ignored.
 ///
-/// `snapshot_file_path` / `snapshot_file_path_len` configure the CPR snapshot
-/// output path (see bftree 0.5 Config::snapshot_file_path / use_snapshot).
-/// Required for both backends if `cpr_snapshot` will be called later. May be
-/// null/zero-length to disable snapshots (legacy behavior).
+/// `use_snapshot`: non-zero enables CPR snapshots on the tree (required if
+/// `bftree_cpr_snapshot` will be called later). The snapshot destination is
+/// supplied at `cpr_snapshot` call time, so only the on/off toggle is configured
+/// here.
 ///
 /// Returns a pointer to a heap-allocated BfTree, or null on failure.
 ///
@@ -87,8 +87,7 @@ pub unsafe extern "C" fn bftree_create(
     storage_backend: u8,
     file_path: *const u8,
     file_path_len: i32,
-    snapshot_file_path: *const u8,
-    snapshot_file_path_len: i32,
+    use_snapshot: u8,
 ) -> *mut BfTree {
     let mut config = Config::default();
     apply_common_config(
@@ -115,13 +114,7 @@ pub unsafe extern "C" fn bftree_create(
         config.file_path(Path::new(path_str));
     }
 
-    if !snapshot_file_path.is_null() && snapshot_file_path_len > 0 {
-        let snap_bytes = slice::from_raw_parts(snapshot_file_path, snapshot_file_path_len as usize);
-        let snap_str = match std::str::from_utf8(snap_bytes) {
-            Ok(s) => s,
-            Err(_) => return std::ptr::null_mut(),
-        };
-        config.snapshot_file_path(PathBuf::from(snap_str));
+    if use_snapshot != 0 {
         config.use_snapshot(true);
     }
 
@@ -347,30 +340,39 @@ pub unsafe extern "C" fn bftree_scan_drop(handle: *mut ScanHandle<'static>) {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot / Recovery (CPR — bftree 0.5+)
+// Snapshot / Recovery (CPR)
 // ---------------------------------------------------------------------------
 
-/// Take a CPR (Concurrent Prefix Recovery) snapshot of a BfTree.
+/// Take a CPR (Concurrent Prefix Recovery) snapshot of a BfTree, writing it to
+/// `snapshot_path`.
 ///
 /// Synchronous; designed to be non-blocking to concurrent insert/read/delete
-/// callers. Writes the snapshot to the path configured at tree-creation time
-/// via `Config::snapshot_file_path` / `use_snapshot=true`.
+/// callers. The snapshot destination is a call-time argument; the caller passes
+/// the path it configured for this tree.
 ///
 /// Internal `snapshot_in_progress` AtomicBool serializes concurrent calls;
-/// losers no-op silently. To produce snapshots at multiple destination paths,
-/// the caller is expected to `File.Move` / copy the configured snapshot file
-/// to the final destination after each call.
+/// losers no-op silently. Each call writes a fresh, self-contained snapshot file
+/// to the supplied `snapshot_path`; callers that need concurrent snapshots of the
+/// same tree to all succeed must serialize externally.
 ///
-/// Returns 0 on success, -1 on panic.
+/// Returns 0 on success, -1 on panic or invalid/empty path.
 ///
 /// # Safety
-/// `tree` must be a valid BfTree pointer. The tree must have been constructed
-/// with `use_snapshot=true` and a non-empty `snapshot_file_path`.
+/// `tree` must be a valid BfTree pointer constructed with snapshots enabled.
+/// `snapshot_path` must point to valid UTF-8 of `snapshot_path_len` bytes.
 #[no_mangle]
-pub unsafe extern "C" fn bftree_cpr_snapshot(tree: *mut BfTree) -> i32 {
+pub unsafe extern "C" fn bftree_cpr_snapshot(tree: *mut BfTree, snapshot_path: *const u8, snapshot_path_len: i32) -> i32 {
+    if snapshot_path.is_null() || snapshot_path_len <= 0 {
+        return -1;
+    }
+    let snap_bytes = slice::from_raw_parts(snapshot_path, snapshot_path_len as usize);
+    let snap_str = match std::str::from_utf8(snap_bytes) {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
     let tree = &*tree;
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tree.cpr_snapshot();
+        tree.cpr_snapshot(Path::new(snap_str));
     })) {
         Ok(_) => 0,
         Err(_) => -1,
@@ -382,9 +384,9 @@ pub unsafe extern "C" fn bftree_cpr_snapshot(tree: *mut BfTree) -> i32 {
 /// snapshot.
 ///
 /// `recovery_path` / `recovery_path_len`: source CPR snapshot file to recover from.
-/// `new_snapshot_path` / `new_snapshot_path_len`: scratch path for the recovered
-///     tree's future cpr_snapshot calls. Optional (null/zero disables snapshots
-///     on the recovered tree).
+/// `use_snapshot`: non-zero enables CPR snapshots on the recovered tree. The
+///     snapshot destination is supplied at `cpr_snapshot` call time, so only
+///     the on/off toggle is configured here.
 ///
 /// `buffer_ptr` / `buffer_size`: optional pre-allocated buffer for the
 ///     recovered tree's cache. If `buffer_ptr` is null, bftree allocates and
@@ -399,8 +401,7 @@ pub unsafe extern "C" fn bftree_cpr_snapshot(tree: *mut BfTree) -> i32 {
 pub unsafe extern "C" fn bftree_new_from_cpr_snapshot(
     recovery_path: *const u8,
     recovery_path_len: i32,
-    new_snapshot_path: *const u8,
-    new_snapshot_path_len: i32,
+    use_snapshot: u8,
     buffer_ptr: *mut u8,
     buffer_size: usize,
 ) -> *mut BfTree {
@@ -414,25 +415,13 @@ pub unsafe extern "C" fn bftree_new_from_cpr_snapshot(
     };
     let recovery_pathbuf = PathBuf::from(recovery_str);
 
-    let (use_snapshot, new_snapshot_pathbuf) = if !new_snapshot_path.is_null() && new_snapshot_path_len > 0 {
-        let snap_bytes = slice::from_raw_parts(new_snapshot_path, new_snapshot_path_len as usize);
-        let snap_str = match std::str::from_utf8(snap_bytes) {
-            Ok(s) => s,
-            Err(_) => return std::ptr::null_mut(),
-        };
-        (true, Some(PathBuf::from(snap_str)))
-    } else {
-        (false, None)
-    };
-
     let buf_ptr_opt = if buffer_ptr.is_null() { None } else { Some(buffer_ptr) };
     let buf_size_opt = if buffer_ptr.is_null() { None } else { Some(buffer_size) };
 
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         BfTree::new_from_cpr_snapshot(
             recovery_pathbuf,
-            use_snapshot,
-            new_snapshot_pathbuf,
+            use_snapshot != 0,
             buf_ptr_opt,
             buf_size_opt,
             None,
@@ -449,12 +438,12 @@ pub unsafe extern "C" fn bftree_new_from_cpr_snapshot(
 /// correctness because `cpr_snapshot` is synchronous.
 ///
 /// # Safety
-/// `tree` must be a valid BfTree pointer constructed with `use_snapshot=true`.
+/// `tree` must be a valid BfTree pointer constructed with snapshots enabled.
 #[no_mangle]
 pub unsafe extern "C" fn bftree_are_all_threads_in_next_version(tree: *mut BfTree) -> i32 {
     let tree = &*tree;
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tree.are_all_threads_in_next_version()
+        tree.are_all_threads_in_next_snapshot_version()
     })) {
         Ok(true) => 1,
         Ok(false) => 0,

@@ -65,63 +65,33 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public async ValueTask Set()
-        {
-            await Send(set);
-        }
+        public async ValueTask Set() => await Send(set);
 
         [Benchmark]
-        public async ValueTask SetEx()
-        {
-            await Send(setex);
-        }
+        public async ValueTask SetEx() => await Send(setex);
 
         [Benchmark]
-        public async ValueTask SetNx()
-        {
-            await Send(setnx);
-        }
+        public async ValueTask SetNx() => await Send(setnx);
 
         [Benchmark]
-        public async ValueTask SetXx()
-        {
-            await Send(setxx);
-        }
+        public async ValueTask SetXx() => await Send(setxx);
 
         [Benchmark]
-        public async ValueTask GetFound()
-        {
-            await Send(getf);
-        }
+        public async ValueTask GetFound() => await Send(getf);
 
         [Benchmark]
-        public async ValueTask GetNotFound()
-        {
-            await Send(getnf);
-        }
+        public async ValueTask GetNotFound() => await Send(getnf);
 
         [Benchmark]
-        public async ValueTask Increment()
-        {
-            await Send(incr);
-        }
+        public async ValueTask Increment() => await Send(incr);
 
         [Benchmark]
-        public async ValueTask Decrement()
-        {
-            await Send(decr);
-        }
+        public async ValueTask Decrement() => await Send(decr);
 
         [Benchmark]
-        public async ValueTask IncrementBy()
-        {
-            await Send(incrby);
-        }
+        public async ValueTask IncrementBy() => await Send(incrby);
 
         [Benchmark]
-        public async ValueTask DecrementBy()
-        {
-            await Send(decrby);
-        }
+        public async ValueTask DecrementBy() => await Send(decrby);
     }
 }

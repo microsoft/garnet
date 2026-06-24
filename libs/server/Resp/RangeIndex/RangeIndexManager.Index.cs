@@ -231,8 +231,8 @@ namespace Garnet.server
         /// <param name="key">The raw key bytes (used to compute the key hash for lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
         /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete the working
-        /// <c>&lt;hash&gt;.data.bftree</c> file and the CPR scratch <c>&lt;hash&gt;.scratch.cpr</c>
-        /// in the riLogRoot. Per-flush snapshot files (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>)
+        /// <c>&lt;hash&gt;.data.bftree</c> file in the riLogRoot. Per-flush snapshot files
+        /// (<c>&lt;hash&gt;.&lt;addr&gt;.flush.bftree</c>)
         /// are deliberately preserved — they are LOG-tied (lifetime tracks BeginAddress) and may
         /// still be needed to recover an OLDER checkpoint that pre-dates the DEL. They are
         /// reclaimed by <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes
@@ -322,7 +322,6 @@ namespace Garnet.server
             if (hashPrefix != null && !string.IsNullOrEmpty(riLogRoot) && Directory.Exists(riLogRoot))
             {
                 TryDelete(LogDataPath(hashPrefix));
-                TryDelete(LogScratchPath(hashPrefix));
             }
 
             void TryDelete(string p)

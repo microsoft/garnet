@@ -98,7 +98,7 @@ namespace Tsavorite.test.recovery
 
         public async ValueTask RecoveryCheck1(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -168,16 +168,8 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            if (completionSyncMode == CompletionSyncMode.Async)
-            {
-                var (status, token) = await task;
-                _ = await store2.RecoverAsync(default, token);
-            }
-            else
-            {
-                var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                _ = store2.Recover(default, token);
-            }
+            var (_, token) = await task.ConfigureAwait(false);
+            _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
             ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
@@ -218,7 +210,7 @@ namespace Tsavorite.test.recovery
         //[Repeat(3000)]
         public async ValueTask RecoveryCheck2(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -289,16 +281,8 @@ namespace Tsavorite.test.recovery
 
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
-                if (completionSyncMode == CompletionSyncMode.Async)
-                {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
-                }
-                else
-                {
-                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    _ = store2.Recover(default, token);
-                }
+                var (_, token) = await task.ConfigureAwait(false);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
                 ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
@@ -328,7 +312,7 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryCheck2Repeated([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
+        public async Task RecoveryCheck2Repeated([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             Guid token = default;
             const long pageSize = MinKvLogPageSize;
@@ -351,7 +335,7 @@ namespace Tsavorite.test.recovery
                 );
 
                 if (iter > 0)
-                    _ = store.Recover(default, token);
+                    _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var s1 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc1 = s1.BasicContext;
@@ -367,7 +351,7 @@ namespace Tsavorite.test.recovery
 
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
                 bool success;
-                (success, token) = task.AsTask().GetAwaiter().GetResult();
+                (success, token) = await task.ConfigureAwait(false);
                 ClassicAssert.IsTrue(success);
 
                 using var s2 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
@@ -395,7 +379,7 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryRollback([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
+        public async Task RecoveryRollback([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             const long pageSize = MinKvLogPageSize;
             using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -418,7 +402,7 @@ namespace Tsavorite.test.recovery
                 _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
-            (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
+            (bool success, Guid token) = await task.ConfigureAwait(false);
             ClassicAssert.IsTrue(success);
 
             for (long key = 0; key < 1000; key++)
@@ -455,7 +439,7 @@ namespace Tsavorite.test.recovery
             }
 
             // Rollback to previous checkpoint
-            _ = store.Recover(default, token);
+            _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
             for (long key = 0; key < 1000; key++)
             {
@@ -515,7 +499,7 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck3(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -586,16 +570,8 @@ namespace Tsavorite.test.recovery
 
                 var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-                if (completionSyncMode == CompletionSyncMode.Async)
-                {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
-                }
-                else
-                {
-                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    _ = store2.Recover(default, token);
-                }
+                var (_, token) = await task.ConfigureAwait(false);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
                 ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
@@ -637,7 +613,7 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck4(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -710,16 +686,8 @@ namespace Tsavorite.test.recovery
                     _ = store1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
-                if (completionSyncMode == CompletionSyncMode.Async)
-                {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
-                }
-                else
-                {
-                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    _ = store2.Recover(default, token);
-                }
+                var (_, token) = await task.ConfigureAwait(false);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
                 ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
@@ -761,7 +729,7 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck5(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             const long pageSize = MinKvLogPageSize;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -816,7 +784,7 @@ namespace Tsavorite.test.recovery
                 }
             }
 
-            var result = await store1.GrowIndexAsync();
+            var result = await store1.GrowIndexAsync().ConfigureAwait(false);
             ClassicAssert.IsTrue(result);
 
             for (long key = 0; key < 1000; key++)
@@ -852,16 +820,8 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            if (isAsync)
-            {
-                var (status, token) = await task;
-                _ = await store2.RecoverAsync(default, token);
-            }
-            else
-            {
-                var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                _ = store2.Recover(default, token);
-            }
+            var (_, token) = await task.ConfigureAwait(false);
+            _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
             ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
@@ -951,7 +911,7 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask StreamingSnapshotBasicTest([Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode,
+        public async ValueTask StreamingSnapshotBasicTest([Values] ReadCacheMode readCacheMode,
                 [Values] bool reInsert, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
@@ -1049,10 +1009,7 @@ namespace Tsavorite.test.recovery
             // Take a streaming snapshot checkpoint of the old store
             var iterator = new SnapshotIterator(store2, 1000);
             var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
-            if (completionSyncMode == CompletionSyncMode.Async)
-                _ = await task;
-            else
-                _ = task.AsTask().GetAwaiter().GetResult();
+            _ = await task.ConfigureAwait(false);
 
             // Verify that the new store has all the records
             using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions());

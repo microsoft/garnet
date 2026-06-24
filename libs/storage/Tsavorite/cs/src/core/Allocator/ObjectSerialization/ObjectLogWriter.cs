@@ -109,6 +109,43 @@ namespace Tsavorite.core
             return valueObjectBytesWritten;
         }
 
+        /// <summary>
+        /// Copies <paramref name="totalLength"/> bytes of a record's serialized object data verbatim from the snapshot object-log (via
+        /// <paramref name="reader"/>) into this (main) object-log, then signals record completion. Used by the snapshot-region recovery
+        /// flush, which copies a record's object bytes without deserialize/reserialize. The <paramref name="reader"/> must already be
+        /// positioned at the record (via <see cref="CircularDiskReadBuffer.OnBeginRecord"/>).
+        /// </summary>
+        /// <param name="reader">The reader over the snapshot object-log, positioned at the record to copy.</param>
+        /// <param name="totalLength">The total number of object-log bytes for the record (key plus value).</param>
+        public void CopyRecoveredObjectBytes(ObjectLogReader<TStoreFunctions> reader, ulong totalLength)
+        {
+            if (totalLength > 0)
+            {
+                var buffer = flushBuffers.bufferPool.Get(IStreamBuffer.BufferSize);
+                try
+                {
+                    var chunkSpan = buffer.TotalValidSpan;
+                    var remaining = totalLength;
+                    while (remaining > 0)
+                    {
+                        var requestLength = (int)Math.Min(remaining, (ulong)chunkSpan.Length);
+                        var bytesRead = reader.Read(chunkSpan.Slice(0, requestLength));
+                        if (bytesRead == 0)
+                            throw new TsavoriteException("Unexpected end of snapshot object-log data while copying objects during recovery");
+                        Write(chunkSpan.Slice(0, bytesRead));
+                        remaining -= (ulong)bytesRead;
+                    }
+                }
+                finally
+                {
+                    flushBuffers.bufferPool.Return(buffer);
+                }
+            }
+
+            // Signal completion, as WriteRecordObjects does.
+            flushBuffers.OnRecordComplete();
+        }
+
         /// <summary>Start off the write using the full span of the <see cref="OverflowByteArray"/>.</summary>
         /// <param name="overflow">The <see cref="OverflowByteArray"/> to write.</param>
         void WriteDirect(OverflowByteArray overflow) => WriteDirect(overflow, overflow.ReadOnlySpan, refCountedGCHandle: default);

@@ -128,6 +128,9 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
+        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
@@ -136,6 +139,6 @@ namespace Tsavorite.core
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
-        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) { }
     }
 }

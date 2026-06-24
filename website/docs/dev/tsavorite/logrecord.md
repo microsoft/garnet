@@ -162,13 +162,13 @@ As a terminology note, `LogField` (and `RecordSizeInfo` and `LogRecord`) use the
 
 The DiskLogRecord is an `ISourceLogRecord` that is backed by a `LogRecord`. See `DiskLogRecord.cs` for more details. Its main purpose is to act as a container for a `LogRecord` and the `SectorAlignedMemory` buffer and value-object disposer associated with that `LogRecord`.
 
-### PendingContext
+### PendingState
 
-`PendingContext` implements `ISourceLogRecord` because it carries a information through the IO process and provides the source record for RMW copy updates.
+`PendingState` carries information through the IO process and provides the source record (via its `DiskLogRecord`, which is an `ISourceLogRecord`) for RMW copy updates.
 
-Previously `PendingContext` had separate `HeapContainers` for keys and values. However, for operations such as conditional insert for Copy-To-Tail or Compaction, we need to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `LogRecord` in its entirety, including its `SectorAlignedMemory` buffer, in the `DiskLogRecord`. So now PendingContext will also serialize the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. `PendingContext` still carries the `HeapContainer` for Input, and `CompletedOutputs` must still retain the Key's `HeapContainer`. 
+Previously `PendingContext` had separate `HeapContainers` for keys and values. However, for operations such as conditional insert for Copy-To-Tail or Compaction, we need to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `LogRecord` in its entirety, including its `SectorAlignedMemory` buffer, in the `DiskLogRecord`. So now PendingState will also serialize the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. `PendingState` still carries the `HeapContainer` for Input, and `CompletedOutputs` must still retain the Key's `ConditionallyHoistedKey`.
 
-For Compaction or other operations that must carry an in-memory record's data through the pending process, `PendingContext` serializes that in-memory `LogRecord` to its `DiskLogRecord`.
+For Compaction or other operations that must carry an in-memory record's data through the pending process, `PendingState` serializes that in-memory `LogRecord` to its `DiskLogRecord`.
 
 ### ObjectScanIterator
 
