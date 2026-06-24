@@ -432,6 +432,8 @@ namespace Garnet.server
         private ContextMetadata[] contextMetadatas;
         private HashSet<int> dirtyContextMetadatas;
 
+        public Guid debugId = Guid.NewGuid();
+
         /// <summary>
         /// Get a new unique context for a vector set.
         /// 
@@ -456,6 +458,8 @@ namespace Garnet.server
                             var contextToRet = nextFreeInBlock.Value + offset;
 
                             _ = dirtyContextMetadatas.Add(i);
+
+                            Debug.WriteLine($"{debugId}: allocated {contextToRet}");
 
                             return contextToRet;
                         }
@@ -531,6 +535,7 @@ namespace Garnet.server
                             foreach (var item in subContexts)
                             {
                                 contexts.Add(offset + item);
+                                Debug.WriteLine($"{debugId}: reserved {offset + item}");
                             }
 
                             _ = dirtyContextMetadatas.Add(i);
@@ -621,7 +626,7 @@ namespace Garnet.server
             {
                 for (var i = 0; i < contextMetadatas.Length; i++)
                 {
-                    var offset = (ulong)i * 64UL * ContextStep;
+                    var offset = ContextMetadata.OffsetForContextMetadata(i);
 
                     var sub = contextMetadatas[i].GetNamespacesForHashSlots(hashSlots);
                     if (sub != null)

@@ -37,6 +37,8 @@ namespace Garnet.server
             Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace length");
             var ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
 
+            Debug.WriteLine($"{debugId}: migrated element {ns}");
+
 #if DEBUG
             // Do some extra sanity checking in DEBUG builds
             lock (this)
@@ -157,6 +159,8 @@ namespace Garnet.server
             input.arg1 = RecreateIndexArg;
 
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr);
+
+            Debug.WriteLine($"{debugId}: migrated index {context}");
 
             Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
@@ -360,6 +364,7 @@ namespace Garnet.server
                     ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
                     for (var i = 0UL; i < ContextStep; i++)
                     {
+                        Debug.WriteLine($"{debugId}: found to migrate {context}");
                         _ = namespaces.Add(context + i);
                     }
 

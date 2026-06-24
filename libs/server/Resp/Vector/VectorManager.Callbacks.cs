@@ -235,7 +235,7 @@ namespace Garnet.server
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            Debug.WriteLine($"write: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
+            //Debug.WriteLine($"write: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
@@ -277,7 +277,7 @@ namespace Garnet.server
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            Debug.WriteLine($"rmw: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
+            //Debug.WriteLine($"rmw: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
@@ -50,7 +51,30 @@ namespace Garnet.server
                     return true;
                 }
 
-                Debug.Assert(logRecord.NamespaceBytes.Length is > 0 and <= sizeof(ulong), "Namespace longer than expected");
+                if (logRecord.NamespaceBytes.Length is not (1 or sizeof(uint)))
+                {
+                    // Not Vector Set, ignore
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
+
+                ulong ns;
+                if (logRecord.NamespaceBytes.Length == 1)
+                {
+                    ns = logRecord.NamespaceBytes[0];
+                }
+                else
+                {
+                    Debug.Assert(logRecord.NamespaceBytes.Length == sizeof(uint), "Unexpected namespace size");
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(logRecord.NamespaceBytes);
+                }
+
+                if (!contexts.Contains(ns))
+                {
+                    // Not a target vector set, ignore
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
 
                 // TSourceLogRecord bytes aren't necessarily pinned, copy them over
                 Span<byte> nsBytes = stackalloc byte[sizeof(ulong)];
@@ -215,6 +239,8 @@ namespace Garnet.server
                             var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
                             if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
+                                Debug.WriteLine($"{debugId}: marked for cleanup: {contextValue}");
+
                                 contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
 
                                 _ = dirtyContextMetadatas.Add(contextIndex);

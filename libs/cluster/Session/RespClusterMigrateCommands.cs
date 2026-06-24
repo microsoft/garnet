@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -108,11 +107,7 @@ namespace Garnet.cluster
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
-                                // Vector Set indexes are Key + Value
-                                var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                var keyBytes = payload.Slice(sizeof(int), keyLen);
-                                var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + keyBytes.Length)..]);
-                                var valueBytes = payload.Slice(sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                VectorSessionFunctions.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
 
                                 // An error has occurred
                                 if (migrateState > 0)

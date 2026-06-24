@@ -715,6 +715,47 @@ namespace Garnet.server
             value = readFrom[..valueLength];
         }
 
+        public static int GetMigratedIndexKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
+        {
+            var neededSpace = sizeof(int) + keyBytes.Length + sizeof(int) + valueBytes.Length;
+
+            return neededSpace;
+        }
+
+        public static void SerializeMigratedIndexKey(Span<byte> dataBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
+        {
+            Debug.Assert(valueBytes.Length == VectorManager.IndexSize, "Should only ever serialize index");
+
+            var writeTo = dataBytes;
+
+            // Key length, Key
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, keyBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            keyBytes.CopyTo(writeTo);
+            writeTo = writeTo[keyBytes.Length..];
+
+            // Value length, Value
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, valueBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            valueBytes.CopyTo(writeTo);
+        }
+
+        public static void DeserializeMigratedIndexKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> valueBytes)
+        {
+            var readFrom = dataBytes;
+
+            // Key length, Key
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            keyBytes = readFrom[..keyLength];
+            readFrom = readFrom[keyLength..];
+
+            // Value length, Value
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            valueBytes = readFrom[..valueLength];
+        }
+
         private static int GetExtendedNamespaceSize<TKey>(in TKey key)
             where TKey : IKey
 #if NET9_0_OR_GREATER
