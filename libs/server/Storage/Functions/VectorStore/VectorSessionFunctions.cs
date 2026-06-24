@@ -51,18 +51,29 @@ namespace Garnet.server
                     // TODO: When alignment is handled at the Tsavorite level, we CAN start shipping the log over like everything else
 
                     var neededSpace =
-                        sizeof(int) + srcLogRecord.NamespaceBytes.Length +
+                        sizeof(int) + 4 + // Namespace is ALWAYS expanded to 4-bytes so we have space to re-write it
                         sizeof(int) + srcLogRecord.KeyBytes.Length +
                         sizeof(int) + value.Length;
+
+                    ulong context;
+                    if (srcLogRecord.NamespaceBytes.Length == 1)
+                    {
+                        context = srcLogRecord.NamespaceBytes[0];
+                    }
+                    else
+                    {
+                        Debug.Assert(srcLogRecord.NamespaceBytes.Length == 4, "Unexpected namespace size");
+                        context = BinaryPrimitives.ReadUInt32LittleEndian(srcLogRecord.NamespaceBytes);
+                    }
 
                     output.SpanByteAndMemory.EnsureHeapMemorySize(neededSpace);
 
                     var writeTo = output.SpanByteAndMemory.Span;
 
-                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, srcLogRecord.NamespaceBytes.Length);
+                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, 4);
                     writeTo = writeTo[sizeof(int)..];
-                    srcLogRecord.NamespaceBytes.CopyTo(writeTo);
-                    writeTo = writeTo[srcLogRecord.NamespaceBytes.Length..];
+                    BinaryPrimitives.WriteUInt32LittleEndian(writeTo, (uint)context);
+                    writeTo = writeTo[sizeof(uint)..];
 
                     BinaryPrimitives.WriteInt32LittleEndian(writeTo, srcLogRecord.KeyBytes.Length);
                     writeTo = writeTo[sizeof(int)..];
@@ -659,33 +670,18 @@ namespace Garnet.server
             var nsLen = BinaryPrimitives.ReadInt32LittleEndian(span);
             var oldNsBytes = span.Slice(sizeof(int), nsLen);
 
-            ulong oldNs;
-            if (oldNsBytes.Length == 1)
-            {
-                oldNs = (ulong)oldNsBytes[0];
-            }
-            else if (oldNsBytes.Length == 2)
-            {
-                oldNs = BinaryPrimitives.ReadUInt16LittleEndian(oldNsBytes);
-            }
-            else if (oldNsBytes.Length == 4)
-            {
-                oldNs = BinaryPrimitives.ReadUInt32LittleEndian(oldNsBytes);
-            }
-            else
-            {
-                Debug.Assert(oldNsBytes.Length == 8, "Unexpected namespace length");
-                oldNs = BinaryPrimitives.ReadUInt64LittleEndian(oldNsBytes);
-            }
+            // Should always have ended up with 4 bytes of namespace after an IsMigrationRead
+            Debug.Assert(oldNsBytes.Length == 4, "Unexpected namespace length");
+            ulong oldNs = BinaryPrimitives.ReadUInt32LittleEndian(oldNsBytes);
 
             if (!oldToNewNamespaces.TryGetValue(oldNs, out var newNs))
             {
                 return;
             }
 
-            Debug.Assert(newNs <= byte.MaxValue, "Namespace too large");
+            Debug.Assert(newNs <= uint.MaxValue, "Shouldn't have reserved such a large context");
 
-            span[sizeof(int)] = (byte)newNs;
+            BinaryPrimitives.WriteUInt32LittleEndian(oldNsBytes, (uint)newNs);
         }
 
         private static int GetExtendedNamespaceSize<TKey>(in TKey key)

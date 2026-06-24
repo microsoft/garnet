@@ -161,25 +161,9 @@ namespace Garnet.server
 
                 var value = input.parseState.GetArgSliceByRef(1);
 
-                ulong ns;
-                if (elementNsBytes.Length == 1)
-                {
-                    ns = elementNsBytes[0];
-                }
-                else if (elementNsBytes.Length == 2)
-                {
-                    ns = BinaryPrimitives.ReadUInt16LittleEndian(elementNsBytes);
-                }
-                else if (elementNsBytes.Length == 4)
-                {
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
-                }
-                else
-                {
-                    Debug.Assert(elementNsBytes.Length == 8, "Unexpected namespace length");
-                    ns = BinaryPrimitives.ReadUInt64LittleEndian(elementNsBytes);
-                }
-
+                Debug.Assert(elementNsLen == 4, "Should always receive a 4-byte namespace");
+                ulong ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
+                
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
                 var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(ns & ~(ContextStep - 1));
 

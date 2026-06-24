@@ -48,27 +48,19 @@ namespace Garnet.cluster
 
         public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(ns.Length <= 8, "Longer namespaces not yet supported");
+            Debug.Assert(ns.Length <= sizeof(uint), "Longer namespaces not yet supported");
 
             if (!argSliceVector.TryAddItem(ns, key))
                 return false;
 
             ulong nsRaw;
-            if(ns.Length == 1)
+            if (ns.Length == 1)
             {
                 nsRaw = ns[0];
             }
-            else if(ns.Length == 2)
-            {
-                nsRaw = BinaryPrimitives.ReadUInt16LittleEndian(ns);
-            }
-            else if(ns.Length == 4)
-            {
-                nsRaw = BinaryPrimitives.ReadUInt32LittleEndian(ns);
-            }
             else
             {
-                nsRaw = BinaryPrimitives.ReadUInt64LittleEndian(ns);
+                nsRaw = BinaryPrimitives.ReadUInt32LittleEndian(ns);
             }
 
             var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw) & (size - 1);

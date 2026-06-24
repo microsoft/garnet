@@ -44,24 +44,17 @@ namespace Garnet.cluster
 
             public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
             {
-                Debug.Assert(namespaceBytes.Length <= sizeof(ulong), "Longer namespaces note supported");
+                Debug.Assert(namespaceBytes.Length <= sizeof(uint), "Longer namespaces not supported");
 
                 ulong ns;
                 if (namespaceBytes.Length == 1)
                 {
                     ns = namespaceBytes[0];
                 }
-                else if (namespaceBytes.Length == 2)
-                {
-                    ns = BinaryPrimitives.ReadUInt16LittleEndian(namespaceBytes);
-                }
-                else if (namespaceBytes.Length == 4)
-                {
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
-                }
                 else
                 {
-                    ns = BinaryPrimitives.ReadUInt64LittleEndian(namespaceBytes);
+                    Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace length");
+                    ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
                 }
 
                 return session._namespaces?.Contains(ns) ?? false;

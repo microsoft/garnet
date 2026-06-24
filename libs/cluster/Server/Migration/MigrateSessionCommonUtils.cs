@@ -21,7 +21,7 @@ namespace Garnet.cluster
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
 
             // Read the value for the key. This will populate output with the entire serialized record.
-            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan[0..1], key.ReadOnlySpan), ref input, ref output);
+            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output);
 
             if (storeStatus.IsPending)
             {
