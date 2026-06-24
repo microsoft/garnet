@@ -69,7 +69,10 @@ namespace Garnet.server
                     ns = BinaryPrimitives.ReadUInt32LittleEndian(logRecord.NamespaceBytes);
                 }
 
-                if (!contexts.Contains(ns))
+                // We only store the _first_ context in a batch of related contexts to delete
+                // so mask it down to just the first context
+                var pairedContext = ns & ~(ContextStep - 1);
+                if (!contexts.Contains(pairedContext))
                 {
                     // Not a target vector set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
