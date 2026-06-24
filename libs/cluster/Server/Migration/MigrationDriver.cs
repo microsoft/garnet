@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -163,10 +162,6 @@ namespace Garnet.cluster
 
                 // Acquire namespaces at this point, after slots have been switch to migration
                 _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForHashSlots(_sslots);
-                foreach (var ns in _namespaces)
-                {
-                    Debug.WriteLine($"{clusterProvider.storeWrapper.DefaultDatabase.VectorManager.debugId}: found to migrate {ns}");
-                }
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side

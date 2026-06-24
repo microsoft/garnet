@@ -649,6 +649,9 @@ namespace Garnet.server
             BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)newNs);
         }
 
+        /// <summary>
+        /// Calculate needed storage for migrating a Vector Set element key.
+        /// </summary>
         public static int GetMigratedElementKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
         {
             var neededSpace =
@@ -659,6 +662,9 @@ namespace Garnet.server
             return neededSpace;
         }
 
+        /// <summary>
+        /// Serialize a record for migrating a Vector Set element key.
+        /// </summary>
         public static void SerializeMigratedElementKey(Span<byte> dataBytes, ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
         {
             ulong context;
@@ -692,6 +698,9 @@ namespace Garnet.server
             alignedValue.CopyTo(writeTo);
         }
 
+        /// <summary>
+        /// Reverse <see cref="SerializeMigratedElementKey"/>.
+        /// </summary>
         public static void DeserializeMigratedElementKey(Span<byte> dataBytes, out Span<byte> namespaceBytes, out Span<byte> keyBytes, out Span<byte> value)
         {
             var readFrom = dataBytes;
@@ -715,6 +724,9 @@ namespace Garnet.server
             value = readFrom[..valueLength];
         }
 
+        /// <summary>
+        /// Calculate needed storage for migrating a Vector Set index key.
+        /// </summary>
         public static int GetMigratedIndexKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
         {
             var neededSpace = sizeof(int) + keyBytes.Length + sizeof(int) + valueBytes.Length;
@@ -722,6 +734,9 @@ namespace Garnet.server
             return neededSpace;
         }
 
+        /// <summary>
+        /// Serialize a record for migrating a Vector Set index key.
+        /// </summary>
         public static void SerializeMigratedIndexKey(Span<byte> dataBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
         {
             Debug.Assert(valueBytes.Length == VectorManager.IndexSize, "Should only ever serialize index");
@@ -740,6 +755,9 @@ namespace Garnet.server
             valueBytes.CopyTo(writeTo);
         }
 
+        /// <summary>
+        /// Reverse <see cref="SerializeMigratedIndexKey"/>.
+        /// </summary>
         public static void DeserializeMigratedIndexKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> valueBytes)
         {
             var readFrom = dataBytes;

@@ -239,8 +239,6 @@ namespace Garnet.server
                             var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
                             if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
-                                Debug.WriteLine($"{debugId}: marked for cleanup: {contextValue}");
-
                                 contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
 
                                 _ = dirtyContextMetadatas.Add(contextIndex);

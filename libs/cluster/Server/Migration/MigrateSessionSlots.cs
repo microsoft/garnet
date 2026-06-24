@@ -74,10 +74,6 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> MigrateSlotsDriverInlineAsync()
         {
-            // DEBUG just to force different log lines
-            await Task.Delay(1_000);
-            Debug.WriteLine($"{clusterProvider.storeWrapper.DefaultDatabase.VectorManager.debugId}: start MigrateSlotsDriverInlineAsync");
-
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
             var storePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
@@ -201,10 +197,6 @@ namespace Garnet.cluster
                     await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
-
-                // DEBUG just to force different log lines
-                await Task.Delay(1_000);
-                Debug.WriteLine($"{clusterProvider.storeWrapper.DefaultDatabase.VectorManager.debugId}: finish MigrateSlotsDriverInlineAsync");
 
                 return true;
             }

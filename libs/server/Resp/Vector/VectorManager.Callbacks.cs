@@ -235,8 +235,6 @@ namespace Garnet.server
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            //Debug.WriteLine($"write: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
-
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             input.AlignmentExpected = true;
@@ -276,8 +274,6 @@ namespace Garnet.server
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
-
-            //Debug.WriteLine($"rmw: 4:{context} @{SpanByte.ToShortString(keyWithNamespace.KeyBytes)}");
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 

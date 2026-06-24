@@ -1719,7 +1719,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            const int VectorSetsPerPrimary = 1;//2;
+            const int VectorSetsPerPrimary = 2;
 
             var gossipFaultsAtTestStart = 0;
 
@@ -1728,15 +1728,6 @@ namespace Garnet.test.cluster
             try
             {
                 _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
-
-                GetStoreWrapper(context.nodes[Primary0Index]).DefaultDatabase.VectorManager.debugId = new Guid(01, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00);
-                Debug.WriteLine($"Primary #0: {GetStoreWrapper(context.nodes[Primary0Index]).DefaultDatabase.VectorManager.debugId}");
-                GetStoreWrapper(context.nodes[Primary1Index]).DefaultDatabase.VectorManager.debugId = new Guid(02, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00);
-                Debug.WriteLine($"Primary #1: {GetStoreWrapper(context.nodes[Primary1Index]).DefaultDatabase.VectorManager.debugId}");
-                GetStoreWrapper(context.nodes[Secondary0Index]).DefaultDatabase.VectorManager.debugId = new Guid(00, 03, 00, 00, 00, 00, 00, 00, 00, 00, 00);
-                Debug.WriteLine($"Secondary #0: {GetStoreWrapper(context.nodes[Secondary0Index]).DefaultDatabase.VectorManager.debugId}");
-                GetStoreWrapper(context.nodes[Secondary1Index]).DefaultDatabase.VectorManager.debugId = new Guid(00, 04, 00, 00, 00, 00, 00, 00, 00, 00, 00);
-                Debug.WriteLine($"Secondary #1: {GetStoreWrapper(context.nodes[Secondary1Index]).DefaultDatabase.VectorManager.debugId}");
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -2034,13 +2025,9 @@ namespace Garnet.test.cluster
                                     {
                                         migrateToken.CancelAfter(30_000);
 
-                                        //Debug.WriteLine("migration start");
-
                                         context.clusterTestUtils.MigrateSlots(primary0, primary1, hashSlotsOnP0);
                                         context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
                                         context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
-
-                                        //Debug.WriteLine("migration end");
                                     }
 
                                     var nodePropSuccess = false;
