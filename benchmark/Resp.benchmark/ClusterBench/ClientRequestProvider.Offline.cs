@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Numerics;
 using System.Text;
+using Garnet.client;
 using Garnet.common;
+using StackExchange.Redis;
 
 namespace Resp.benchmark
 {
@@ -125,11 +127,33 @@ namespace Resp.benchmark
         /// </summary>
         public void RunOffline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
-            if (requestBuffers == null)
+            if (requestBuffers == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareOfflineBuffers() before RunOffline()");
 
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
             var replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
+
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    RunOfflineLightClient(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    break;
+                case ClientType.GarnetClientSession:
+                    RunOfflineGarnetClientSession(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    break;
+                case ClientType.GarnetClient:
+                    RunOfflineGarnetClient(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    break;
+                case ClientType.SERedis:
+                    RunOfflineSERedis(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    break;
+                default:
+                    throw new NotSupportedException($"Client type {opts.Client} not supported in offline mode.");
+            }
+        }
+
+        private void RunOfflineLightClient(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
             // Buffer size must be large enough to hold the largest pre-generated request buffer
@@ -217,6 +241,324 @@ namespace Resp.benchmark
             finally
             {
                 replicaClient?.Dispose();
+            }
+        }
+
+        private void RunOfflineGarnetClientSession(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
+            using var primaryClient = new GarnetClientSession(
+                primaryEndpoint,
+                new(),
+                tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+
+            primaryClient.Connect();
+            if (opts.Auth != null)
+            {
+                primaryClient.Execute("AUTH", opts.Auth);
+                primaryClient.CompletePending();
+            }
+
+            GarnetClientSession replicaClient = null;
+            if (replicaEndpoint != null)
+            {
+                replicaClient = new GarnetClientSession(
+                    replicaEndpoint,
+                    new(),
+                    tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+
+                replicaClient.Connect();
+                if (opts.Auth != null)
+                {
+                    replicaClient.Execute("AUTH", opts.Auth);
+                    replicaClient.CompletePending();
+                }
+            }
+
+            try
+            {
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var batchSize = opts.BatchSize.First();
+                var dbSizePerShard = opts.DbSize;
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+                var numCommands = isMCommand ? 1 : batchSize;
+
+                while (!done && sw.Elapsed < runTime)
+                {
+                    var opStart = Stopwatch.GetTimestamp();
+                    var useReplica = ShouldUseReplica(opts.Op);
+                    var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                    if (isMCommand)
+                    {
+                        var args = new List<string>();
+                        if (opts.Op == OpType.MGET)
+                        {
+                            args.Add("MGET");
+                            for (int i = 0; i < batchSize; i++)
+                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                        }
+                        else if (opts.Op == OpType.MSET)
+                        {
+                            args.Add("MSET");
+                            for (int i = 0; i < batchSize; i++)
+                            {
+                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                args.Add(GenerateValue());
+                            }
+                        }
+                        client.Execute(args.ToArray());
+                    }
+                    else
+                    {
+                        for (int i = 0; i < batchSize; i++)
+                        {
+                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            if (opts.Op == OpType.GET)
+                                client.Execute("GET", key);
+                            else if (opts.Op == OpType.SET)
+                                client.Execute("SET", key, GenerateValue());
+                            else
+                                client.Execute("GET", key);
+                        }
+                    }
+
+                    client.CompletePending();
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    Interlocked.Add(ref opsCompleted, numCommands);
+
+                    // Track bytes (approximate RESP protocol overhead)
+                    var keysInBatch = isMCommand ? batchSize : batchSize;  // MGET/MSET has batchSize keys, GET/SET has batchSize commands (1 key each)
+                    var sentBytes = isMCommand
+                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                    var rcvdBytes = isMCommand
+                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+                    Interlocked.Add(ref bytesSent, sentBytes);
+                    Interlocked.Add(ref bytesReceived, rcvdBytes);
+
+                    if (useReplica && replicaClient != null)
+                        Interlocked.Add(ref replicaOps, numCommands);
+                    else
+                        Interlocked.Add(ref primaryOps, numCommands);
+                }
+            }
+            finally
+            {
+                replicaClient?.Dispose();
+            }
+        }
+
+        private void RunOfflineGarnetClient(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
+            var primaryClient = new GarnetClient(
+                primaryEndpoint,
+                opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
+                recordLatency: opts.ClientHistogram);
+
+            primaryClient.Connect();
+            if (opts.Auth != null)
+                primaryClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+
+            GarnetClient replicaClient = null;
+            if (replicaEndpoint != null)
+            {
+                replicaClient = new GarnetClient(
+                    replicaEndpoint,
+                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
+                    recordLatency: opts.ClientHistogram);
+
+                replicaClient.Connect();
+                if (opts.Auth != null)
+                    replicaClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+            }
+
+            try
+            {
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var batchSize = opts.BatchSize.First();
+                var dbSizePerShard = opts.DbSize;
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+                var numCommands = isMCommand ? 1 : batchSize;
+
+                while (!done && sw.Elapsed < runTime)
+                {
+                    var opStart = Stopwatch.GetTimestamp();
+                    var useReplica = ShouldUseReplica(opts.Op);
+                    var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                    if (isMCommand)
+                    {
+                        if (opts.Op == OpType.MGET)
+                        {
+                            var keys = new string[batchSize];
+                            for (int i = 0; i < batchSize; i++)
+                                keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            client.StringGetAsync(keys).GetAwaiter().GetResult();
+                        }
+                        else if (opts.Op == OpType.MSET)
+                        {
+                            var args = new List<string>();
+                            for (int i = 0; i < batchSize; i++)
+                            {
+                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                args.Add(GenerateValue());
+                            }
+                            client.ExecuteForStringResultAsync("MSET", args.ToArray()).GetAwaiter().GetResult();
+                        }
+                    }
+                    else
+                    {
+                        var tasks = new Task[batchSize];
+                        for (int i = 0; i < batchSize; i++)
+                        {
+                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            if (opts.Op == OpType.GET)
+                                tasks[i] = client.StringGetAsMemoryAsync(key);
+                            else if (opts.Op == OpType.SET)
+                                tasks[i] = client.StringSetAsync(key, GenerateValue());
+                            else
+                                tasks[i] = client.StringGetAsMemoryAsync(key);
+                        }
+                        Task.WaitAll(tasks);
+                    }
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    Interlocked.Add(ref opsCompleted, numCommands);
+
+                    // Track bytes (approximate RESP protocol overhead)
+                    var sentBytes = isMCommand
+                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                    var rcvdBytes = isMCommand
+                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+                    Interlocked.Add(ref bytesSent, sentBytes);
+                    Interlocked.Add(ref bytesReceived, rcvdBytes);
+
+                    if (useReplica && replicaClient != null)
+                        Interlocked.Add(ref replicaOps, numCommands);
+                    else
+                        Interlocked.Add(ref primaryOps, numCommands);
+                }
+            }
+            finally
+            {
+                primaryClient.Dispose();
+                replicaClient?.Dispose();
+            }
+        }
+
+        private void RunOfflineSERedis(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
+            var primaryConfig = BenchUtils.GetConfig(primaryEndpoint.Address.ToString(), primaryEndpoint.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost);
+            if (!string.IsNullOrEmpty(opts.Auth))
+                primaryConfig.Password = opts.Auth;
+            var primaryRedis = ConnectionMultiplexer.Connect(primaryConfig);
+            var primaryDb = primaryRedis.GetDatabase(0);
+
+            ConnectionMultiplexer replicaRedis = null;
+            IDatabase replicaDb = null;
+            if (replicaEndpoint != null)
+            {
+                var replicaConfig = BenchUtils.GetConfig(replicaEndpoint.Address.ToString(), replicaEndpoint.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost);
+                if (!string.IsNullOrEmpty(opts.Auth))
+                    replicaConfig.Password = opts.Auth;
+                replicaRedis = ConnectionMultiplexer.Connect(replicaConfig);
+                replicaDb = replicaRedis.GetDatabase(0);
+            }
+
+            try
+            {
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var batchSize = opts.BatchSize.First();
+                var dbSizePerShard = opts.DbSize;
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+                var numCommands = isMCommand ? 1 : batchSize;
+
+                while (!done && sw.Elapsed < runTime)
+                {
+                    var opStart = Stopwatch.GetTimestamp();
+                    var useReplica = ShouldUseReplica(opts.Op);
+                    var db = (useReplica && replicaDb != null) ? replicaDb : primaryDb;
+
+                    if (isMCommand)
+                    {
+                        if (opts.Op == OpType.MGET)
+                        {
+                            var keys = new RedisKey[batchSize];
+                            for (int i = 0; i < batchSize; i++)
+                                keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            db.StringGet(keys);
+                        }
+                        else if (opts.Op == OpType.MSET)
+                        {
+                            var pairs = new KeyValuePair<RedisKey, RedisValue>[batchSize];
+                            for (int i = 0; i < batchSize; i++)
+                            {
+                                var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                                var value = GenerateValue();
+                                pairs[i] = new KeyValuePair<RedisKey, RedisValue>(key, value);
+                            }
+                            db.StringSet(pairs);
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < batchSize; i++)
+                        {
+                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            if (opts.Op == OpType.GET)
+                                db.StringGet(key);
+                            else if (opts.Op == OpType.SET)
+                                db.StringSet(key, GenerateValue());
+                            else
+                                db.StringGet(key);
+                        }
+                    }
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    Interlocked.Add(ref opsCompleted, numCommands);
+
+                    // Track bytes (approximate RESP protocol overhead)
+                    var sentBytes = isMCommand
+                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                    var rcvdBytes = isMCommand
+                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+                    Interlocked.Add(ref bytesSent, sentBytes);
+                    Interlocked.Add(ref bytesReceived, rcvdBytes);
+
+                    if (useReplica && replicaDb != null)
+                        Interlocked.Add(ref replicaOps, numCommands);
+                    else
+                        Interlocked.Add(ref primaryOps, numCommands);
+                }
+            }
+            finally
+            {
+                primaryRedis?.Dispose();
+                replicaRedis?.Dispose();
             }
         }
 

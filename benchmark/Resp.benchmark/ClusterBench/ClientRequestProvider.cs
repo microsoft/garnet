@@ -236,6 +236,53 @@ namespace Resp.benchmark
             return new string('v', opts.ValueLength == 0 ? 8 : opts.ValueLength);
         }
 
+        /// <summary>
+        /// Calculate approximate RESP protocol bytes for a command (sent bytes).
+        /// For MGET: *N+1\r\n$4\r\nMGET\r\n$KLen\r\nK\r\n... (N keys)
+        /// For MSET: *N*2+1\r\n$4\r\nMSET\r\n$KLen\r\nK\r\n$VLen\r\nV\r\n... (N pairs)
+        /// For GET: *2\r\n$3\r\nGET\r\n$KLen\r\nK\r\n
+        /// For SET: *3\r\n$3\r\nSET\r\n$KLen\r\nK\r\n$VLen\r\nV\r\n
+        /// </summary>
+        private int CalculateRespSentBytes(OpType op, int keyCount)
+        {
+            var keyLen = Math.Max(opts.KeyLength, 8);  // SlotKeyGenerator minimum
+            var valLen = Math.Max(opts.ValueLength, 8);  // GenerateValue minimum
+
+            return op switch
+            {
+                OpType.GET => 3 + 2 + 1 + 2 + 3 + 2 + keyLen.ToString().Length + 2 + keyLen + 2,  // *2\r\n$3\r\nGET\r\n$KLen\r\nK\r\n
+                OpType.SET => 3 + 2 + 1 + 2 + 3 + 2 + keyLen.ToString().Length + 2 + keyLen + 2 + valLen.ToString().Length + 2 + valLen + 2,  // *3\r\n$3\r\nSET\r\n$KLen\r\nK\r\n$VLen\r\nV\r\n
+                OpType.MGET => (keyCount + 1).ToString().Length + 2 + 2 + 4 + 2 + 4 + 2 + keyCount * (keyLen.ToString().Length + 2 + keyLen + 2),  // *N+1\r\n$4\r\nMGET\r\n + N × ($KLen\r\nK\r\n)
+                OpType.MSET => (keyCount * 2 + 1).ToString().Length + 2 + 2 + 4 + 2 + 4 + 2 + keyCount * (keyLen.ToString().Length + 2 + keyLen + 2 + valLen.ToString().Length + 2 + valLen + 2),  // *N*2+1\r\n$4\r\nMSET\r\n + N × ($KLen\r\nK\r\n$VLen\r\nV\r\n)
+                OpType.INCR => 3 + 2 + 1 + 2 + 4 + 2 + keyLen.ToString().Length + 2 + keyLen + 2,  // *2\r\n$4\r\nINCR\r\n$KLen\r\nK\r\n
+                OpType.DEL => 3 + 2 + 1 + 2 + 3 + 2 + keyLen.ToString().Length + 2 + keyLen + 2,  // *2\r\n$3\r\nDEL\r\n$KLen\r\nK\r\n
+                _ => 3 + 2 + 1 + 2 + 3 + 2 + keyLen.ToString().Length + 2 + keyLen + 2,  // Default to GET
+            };
+        }
+
+        /// <summary>
+        /// Calculate approximate RESP protocol bytes for a response (received bytes).
+        /// For MGET: *N\r\n$VLen\r\nV\r\n... (N values) - approximate as N × ($VLen\r\nV\r\n) + array header
+        /// For MSET: +OK\r\n
+        /// For GET: $VLen\r\nV\r\n
+        /// For SET: +OK\r\n
+        /// </summary>
+        private int CalculateRespReceivedBytes(OpType op, int keyCount)
+        {
+            var valLen = Math.Max(opts.ValueLength, 8);
+
+            return op switch
+            {
+                OpType.GET => valLen.ToString().Length + 2 + 1 + valLen + 2,  // $VLen\r\nV\r\n
+                OpType.SET => 5,  // +OK\r\n
+                OpType.MGET => keyCount.ToString().Length + 2 + 1 + keyCount * (valLen.ToString().Length + 2 + 1 + valLen + 2),  // *N\r\n + N × ($VLen\r\nV\r\n)
+                OpType.MSET => 5,  // +OK\r\n
+                OpType.INCR => 1 + 2 + 2,  // :1\r\n (approximate)
+                OpType.DEL => 1 + 2 + 2,  // :1\r\n (approximate)
+                _ => valLen.ToString().Length + 2 + 1 + valLen + 2,  // Default to GET
+            };
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (int, int) OnResponse(byte* buf, int bytesRead, int opType)
         {

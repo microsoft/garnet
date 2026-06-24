@@ -177,12 +177,6 @@ namespace Resp.benchmark
                     Console.WriteLine("--client InProc is not supported with --cluster-bench");
                     return true;
                 }
-
-                if (opts.Client == ClientType.SERedis)
-                {
-                    Console.WriteLine("--client SERedis is not yet supported with --cluster-bench. Use LightClient, GarnetClientSession, or GarnetClient.");
-                    return true;
-                }
             }
 
             return false;

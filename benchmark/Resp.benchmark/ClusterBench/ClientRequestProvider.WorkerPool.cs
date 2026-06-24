@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.client;
 using Garnet.common;
+using StackExchange.Redis;
 
 namespace Resp.benchmark
 {
@@ -19,6 +20,10 @@ namespace Resp.benchmark
         private GarnetClientSession replicaGarnetSession;
         private GarnetClient primaryGarnetClient;
         private GarnetClient replicaGarnetClient;
+        private ConnectionMultiplexer primarySERedis;
+        private ConnectionMultiplexer replicaSERedis;
+        private IDatabase primarySERedisDb;
+        private IDatabase replicaSERedisDb;
         private bool connectionsInitialized = false;
 
         // Batch counter for offline mode (cycles through pre-generated batches)
@@ -124,6 +129,23 @@ namespace Resp.benchmark
                         replicaGarnetClient.Connect();
                         if (!string.IsNullOrEmpty(opts.Auth))
                             replicaGarnetClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+                    }
+                    break;
+
+                case ClientType.SERedis:
+                    var primaryConfig = BenchUtils.GetConfig(primaryAddress, primaryPort, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost);
+                    if (!string.IsNullOrEmpty(opts.Auth))
+                        primaryConfig.Password = opts.Auth;
+                    primarySERedis = ConnectionMultiplexer.Connect(primaryConfig);
+                    primarySERedisDb = primarySERedis.GetDatabase(0);
+
+                    if (replicaEndpoint != null)
+                    {
+                        var replicaConfig = BenchUtils.GetConfig(replicaAddress, replicaPort, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost);
+                        if (!string.IsNullOrEmpty(opts.Auth))
+                            replicaConfig.Password = opts.Auth;
+                        replicaSERedis = ConnectionMultiplexer.Connect(replicaConfig);
+                        replicaSERedisDb = replicaSERedis.GetDatabase(0);
                     }
                     break;
 
@@ -252,28 +274,61 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ExecuteSingleOfflineBatch()
         {
-            if (requestBuffers == null)
+            if (requestBuffers == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before ExecuteSingleOfflineBatch()");
 
             // Ensure connections are initialized
-            if (primaryLightClient == null)
+            if (!connectionsInitialized)
                 InitializeConnections();
 
+            var opStart = Stopwatch.GetTimestamp();
+            var useReplica = ShouldUseReplica(opts.Op);
+            var batchSize = opts.BatchSize.First();
+            var dbSizePerShard = opts.DbSize;
+            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+            var numCommands = isMCommand ? 1 : batchSize;
+
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    ExecuteOfflineBatchLightClient(useReplica, batchSize, numCommands);
+                    break;
+                case ClientType.GarnetClientSession:
+                    ExecuteOfflineBatchGarnetSession(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    break;
+                case ClientType.GarnetClient:
+                    ExecuteOfflineBatchGarnetClient(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    break;
+                case ClientType.SERedis:
+                    ExecuteOfflineBatchSERedis(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    break;
+            }
+
+            // Record latency
+            var elapsed = Stopwatch.GetTimestamp() - opStart;
+            if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                histogram.RecordValue(elapsed);
+
+            // Update counters
+            Interlocked.Add(ref opsCompleted, numCommands);
+
+            // Track per-endpoint metrics
+            if (useReplica && hasReplica)
+                Interlocked.Add(ref replicaOps, numCommands);
+            else
+                Interlocked.Add(ref primaryOps, numCommands);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ExecuteOfflineBatchLightClient(bool useReplica, int batchSize, int numCommands)
+        {
             // Select batch index (cycle through pre-generated batches)
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
             var buffer = requestBuffers[batchIdx];
             var len = requestLengths[batchIdx];
-            var numCommands = requestCounts[batchIdx];  // 1 for MGET/MSET, batchSize for others
 
-            // Start timing
-            var opStart = Stopwatch.GetTimestamp();
-
-            // Route entire batch based on operation type
-            // For offline mode, we route per-batch (all ops in batch are same type)
-            var useReplica = ShouldUseReplica(opts.Op);
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
-            // Execute batch
             unsafe
             {
                 fixed (byte* bufPtr = buffer)
@@ -283,24 +338,173 @@ namespace Resp.benchmark
                 }
             }
 
-            // Track bytes received
             var bytesRcvd = client.TotalBytesReceived;
             Interlocked.Exchange(ref bytesReceived, bytesRcvd);
-
-            // Record latency
-            var elapsed = Stopwatch.GetTimestamp() - opStart;
-            if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
-                histogram.RecordValue(elapsed);
-
-            // Update counters (numCommands already accounts for operation count)
-            Interlocked.Add(ref opsCompleted, numCommands);
             Interlocked.Add(ref bytesSent, len);
+        }
 
-            // Track per-endpoint metrics
-            if (useReplica && replicaLightClient != null)
-                Interlocked.Add(ref replicaOps, numCommands);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ExecuteOfflineBatchGarnetSession(bool useReplica, int batchSize, int dbSizePerShard, bool isMCommand)
+        {
+            var session = (useReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys
+                var args = new List<string>();
+                if (opts.Op == OpType.MGET)
+                {
+                    args.Add("MGET");
+                    for (int i = 0; i < batchSize; i++)
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    args.Add("MSET");
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                        args.Add(GenerateValue());
+                    }
+                }
+                session.Execute(args.ToArray());
+            }
             else
-                Interlocked.Add(ref primaryOps, numCommands);
+            {
+                // Execute batch of individual commands
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        session.Execute("GET", key);
+                    else if (opts.Op == OpType.SET)
+                        session.Execute("SET", key, GenerateValue());
+                    else
+                        session.Execute("GET", key);
+                }
+            }
+
+            session.CompletePending();
+
+            // Track bytes (approximate RESP protocol overhead)
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+            Interlocked.Add(ref bytesSent, sentBytes);
+            Interlocked.Add(ref bytesReceived, rcvdBytes);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ExecuteOfflineBatchGarnetClient(bool useReplica, int batchSize, int dbSizePerShard, bool isMCommand)
+        {
+            var client = (useReplica && replicaGarnetClient != null) ? replicaGarnetClient : primaryGarnetClient;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys
+                if (opts.Op == OpType.MGET)
+                {
+                    var keys = new string[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                        keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    client.StringGetAsync(keys).GetAwaiter().GetResult();
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    var args = new List<string>();
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                        args.Add(GenerateValue());
+                    }
+                    client.ExecuteForStringResultAsync("MSET", args.ToArray()).GetAwaiter().GetResult();
+                }
+            }
+            else
+            {
+                // Execute batch of individual commands
+                var tasks = new Task[batchSize];
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        tasks[i] = client.StringGetAsMemoryAsync(key);
+                    else if (opts.Op == OpType.SET)
+                        tasks[i] = client.StringSetAsync(key, GenerateValue());
+                    else
+                        tasks[i] = client.StringGetAsMemoryAsync(key);
+                }
+                Task.WaitAll(tasks);
+            }
+
+            // Track bytes (approximate RESP protocol overhead)
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+            Interlocked.Add(ref bytesSent, sentBytes);
+            Interlocked.Add(ref bytesReceived, rcvdBytes);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ExecuteOfflineBatchSERedis(bool useReplica, int batchSize, int dbSizePerShard, bool isMCommand)
+        {
+            var db = (useReplica && replicaSERedisDb != null) ? replicaSERedisDb : primarySERedisDb;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys
+                if (opts.Op == OpType.MGET)
+                {
+                    var keys = new RedisKey[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                        keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    db.StringGet(keys);
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    var pairs = new KeyValuePair<RedisKey, RedisValue>[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        var value = GenerateValue();
+                        pairs[i] = new KeyValuePair<RedisKey, RedisValue>(key, value);
+                    }
+                    db.StringSet(pairs);
+                }
+            }
+            else
+            {
+                // Execute batch of individual commands
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        db.StringGet(key);
+                    else if (opts.Op == OpType.SET)
+                        db.StringSet(key, GenerateValue());
+                    else
+                        db.StringGet(key);
+                }
+            }
+
+            // Track bytes (approximate RESP protocol overhead)
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+
+            Interlocked.Add(ref bytesSent, sentBytes);
+            Interlocked.Add(ref bytesReceived, rcvdBytes);
         }
 
         /// <summary>
@@ -478,6 +682,8 @@ namespace Resp.benchmark
             replicaGarnetSession?.Dispose();
             primaryGarnetClient?.Dispose();
             replicaGarnetClient?.Dispose();
+            primarySERedis?.Dispose();
+            replicaSERedis?.Dispose();
         }
     }
 }

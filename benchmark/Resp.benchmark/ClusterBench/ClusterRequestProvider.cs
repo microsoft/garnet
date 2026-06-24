@@ -34,21 +34,21 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Discover cluster topology and initialize providers based on architecture mode.
-        /// 
+        ///
         /// Sharded architecture (default):
         ///   - Creates (threads-per-shard × shard-count) providers
         ///   - Each provider serves one shard with primary + replica connections
-        ///   
+        ///
         /// Worker pool architecture (--worker-pool):
         ///   - Creates (thread-count) workers
         ///   - Each worker maintains providers for ALL shards
         ///   - Workers randomly distribute operations across shards
-        /// 
+        ///
         /// Round-robin assignment example:
         ///   - Shard with 2 replicas and 6 clients:
         ///     Client 0 → Replica 0, Client 1 → Replica 1, Client 2 → Replica 0,
         ///     Client 3 → Replica 1, Client 4 → Replica 0, Client 5 → Replica 1
-        ///   
+        ///
         ///   - Each client knows which replica endpoint to use for routing read operations
         ///   - The --replica-read-percent percentage determines how often reads go to replicas
         ///   - Across all clients for a shard, approximately X% of read operations go to replicas
@@ -408,9 +408,13 @@ namespace Resp.benchmark
 
         private void RunOffline()
         {
-            Console.WriteLine("Preparing offline buffers...");
-            foreach (var provider in providers)
-                provider.PrepareBuffers();
+            // Prepare offline buffers for LightClient (other clients generate on-the-fly)
+            if (opts.Client == ClientType.LightClient)
+            {
+                Console.WriteLine("Preparing offline buffers...");
+                foreach (var provider in providers)
+                    provider.PrepareBuffers();
+            }
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);
@@ -460,15 +464,18 @@ namespace Resp.benchmark
 
         private void RunWorkerPoolOffline()
         {
-            // Prepare offline buffers for all providers
-            Console.WriteLine("Preparing offline buffers...");
-            foreach (var worker in workers)
+            // Prepare offline buffers for LightClient (other clients generate on-the-fly)
+            if (opts.Client == ClientType.LightClient)
             {
-                // Each worker prepares buffers for all its providers
-                for (var shardIdx = 0; shardIdx < shards.Length; shardIdx++)
+                Console.WriteLine("Preparing offline buffers...");
+                foreach (var worker in workers)
                 {
-                    var provider = worker.GetProvider(shardIdx);
-                    provider.PrepareBuffers();
+                    // Each worker prepares buffers for all its providers
+                    for (var shardIdx = 0; shardIdx < shards.Length; shardIdx++)
+                    {
+                        var provider = worker.GetProvider(shardIdx);
+                        provider.PrepareBuffers();
+                    }
                 }
             }
 
@@ -939,6 +946,10 @@ namespace Resp.benchmark
             long totalBytesSent = 0;
             long totalBytesReceived = 0;
 
+            // Determine keysPerOp first for table display
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
+
             // Per-worker summary
             Console.WriteLine($"{"Worker",-10}{"Providers",-12}{"Total Ops",-15}{"Primary Ops",-15}{"Replica Ops",-15}");
             Console.WriteLine(new string('-', 67));
@@ -958,11 +969,13 @@ namespace Resp.benchmark
                     totalBytesReceived += provider.BytesReceived;
                 }
 
-                Console.WriteLine($"{metrics.WorkerId,-10}{worker.ProviderCount,-12}{metrics.TotalOperations,-15}{metrics.PrimaryOperations,-15}{metrics.ReplicaOperations,-15}");
+                // Display key counts (multiply by keysPerOp for MGET/MSET)
+                Console.WriteLine($"{metrics.WorkerId,-10}{worker.ProviderCount,-12}{metrics.TotalOperations * keysPerOp,-15}{metrics.PrimaryOperations * keysPerOp,-15}{metrics.ReplicaOperations * keysPerOp,-15}");
             }
 
             Console.WriteLine(new string('-', 67));
-            Console.WriteLine($"{"Total",-10}{workers.Length * shards.Length,-12}{totalOps,-15}{totalPrimaryOps,-15}{totalReplicaOps,-15}");
+            // Multiply by keysPerOp before displaying totals
+            Console.WriteLine($"{"Total",-10}{workers.Length * shards.Length,-12}{totalOps * keysPerOp,-15}{totalPrimaryOps * keysPerOp,-15}{totalReplicaOps * keysPerOp,-15}");
 
             // Latency summary
             if (summary.TotalCount > 0)
@@ -976,16 +989,11 @@ namespace Resp.benchmark
                 Console.WriteLine($"Latency (us): p50={p50:F1}  p95={p95:F1}  p99={p99:F1}  p99.9={p999:F1}  avg={avg:F1}");
             }
 
-            // Throughput summary
-            var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
-            var batchSize = opts.BatchSize.First();
-            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
-
-            // Multiply totalOps by keysPerOp to get total keys
+            // Throughput summary - multiply totalOps by keysPerOp to get total keys
             totalOps *= keysPerOp;
             totalPrimaryOps *= keysPerOp;
             totalReplicaOps *= keysPerOp;
-            totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
+            var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
 
             var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
             var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
