@@ -33,8 +33,11 @@ namespace Resp.benchmark
         private long pendingStartTimestamp;
         private int pendingBatchSize;
         private long pendingBytesSent;
+        private long pendingBytesReceived;  // For non-LightClient tracking
         private bool pendingUsedReplica;
         private Task pendingGarnetClientTask;
+        private Task[] pendingGarnetClientTasks;  // For batched async operations
+        private Task[] pendingSERedisTasks;  // For SERedis async operations
 
         /// <summary>
         /// Initialize connections for worker pool mode.
@@ -514,20 +517,50 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SendSingleOfflineBatch()
         {
-            if (requestBuffers == null)
+            if (requestBuffers == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before SendSingleOfflineBatch()");
 
-            if (primaryLightClient == null)
+            if (!connectionsInitialized)
                 InitializeConnections();
 
+            var batchSize = opts.BatchSize.First();
+            var dbSizePerShard = opts.DbSize;
+            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+            var numCommands = isMCommand ? 1 : batchSize;
+
+            // Route batch
+            var useReplica = ShouldUseReplica(opts.Op);
+
+            // Record start timestamp for all clients
+            pendingStartTimestamp = Stopwatch.GetTimestamp();
+            pendingBatchSize = numCommands;
+            pendingUsedReplica = useReplica;
+
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    SendOfflineBatchLightClient(batchSize, numCommands, useReplica);
+                    break;
+                case ClientType.GarnetClientSession:
+                    SendOfflineBatchGarnetSession(batchSize, dbSizePerShard, isMCommand, numCommands, useReplica);
+                    break;
+                case ClientType.GarnetClient:
+                    SendOfflineBatchGarnetClient(batchSize, dbSizePerShard, isMCommand, useReplica);
+                    break;
+                case ClientType.SERedis:
+                    SendOfflineBatchSERedis(batchSize, dbSizePerShard, isMCommand, useReplica);
+                    break;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendOfflineBatchLightClient(int batchSize, int numCommands, bool useReplica)
+        {
             // Select batch
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
             var buffer = requestBuffers[batchIdx];
             var len = requestLengths[batchIdx];
-            var numCommands = requestCounts[batchIdx];  // 1 for MGET/MSET, batchSize for others
 
-            // Route batch
-            var useReplica = ShouldUseReplica(opts.Op);
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
             // Send without waiting for response
@@ -539,11 +572,169 @@ namespace Resp.benchmark
                 }
             }
 
-            // Record pending state for completion phase
-            pendingStartTimestamp = Stopwatch.GetTimestamp();
-            pendingBatchSize = numCommands;
             pendingBytesSent = len;
-            pendingUsedReplica = useReplica;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendOfflineBatchGarnetSession(int batchSize, int dbSizePerShard, bool isMCommand, int numCommands, bool useReplica)
+        {
+            var session = (useReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys
+                var args = new List<string>();
+                if (opts.Op == OpType.MGET)
+                {
+                    args.Add("MGET");
+                    for (int i = 0; i < batchSize; i++)
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    args.Add("MSET");
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                        args.Add(GenerateValue());
+                    }
+                }
+                session.Execute(args.ToArray());  // Queue command, don't wait
+            }
+            else
+            {
+                // Execute batch of individual commands
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        session.Execute("GET", key);
+                    else if (opts.Op == OpType.SET)
+                        session.Execute("SET", key, GenerateValue());
+                    else
+                        session.Execute("GET", key);
+                }
+            }
+
+            // Track bytes for completion phase
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;
+
+            pendingBytesSent = sentBytes;
+            pendingBytesReceived = rcvdBytes;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendOfflineBatchGarnetClient(int batchSize, int dbSizePerShard, bool isMCommand, bool useReplica)
+        {
+            var client = (useReplica && replicaGarnetClient != null) ? replicaGarnetClient : primaryGarnetClient;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys - start task but don't await
+                if (opts.Op == OpType.MGET)
+                {
+                    var keys = new string[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                        keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    pendingGarnetClientTask = client.StringGetAsync(keys);
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    var args = new List<string>();
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                        args.Add(GenerateValue());
+                    }
+                    pendingGarnetClientTask = client.ExecuteForStringResultAsync("MSET", args.ToArray());
+                }
+            }
+            else
+            {
+                // Execute batch of individual commands - start all tasks
+                pendingGarnetClientTasks = new Task[batchSize];
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        pendingGarnetClientTasks[i] = client.StringGetAsMemoryAsync(key);
+                    else if (opts.Op == OpType.SET)
+                        pendingGarnetClientTasks[i] = client.StringSetAsync(key, GenerateValue());
+                    else
+                        pendingGarnetClientTasks[i] = client.StringGetAsMemoryAsync(key);
+                }
+            }
+
+            // Track bytes for completion phase
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;
+
+            pendingBytesSent = sentBytes;
+            pendingBytesReceived = rcvdBytes;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendOfflineBatchSERedis(int batchSize, int dbSizePerShard, bool isMCommand, bool useReplica)
+        {
+            var db = (useReplica && replicaSERedisDb != null) ? replicaSERedisDb : primarySERedisDb;
+
+            if (isMCommand)
+            {
+                // Execute MGET/MSET with batchSize keys - start task but don't await
+                if (opts.Op == OpType.MGET)
+                {
+                    var keys = new RedisKey[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                        keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    pendingGarnetClientTask = db.StringGetAsync(keys);
+                }
+                else if (opts.Op == OpType.MSET)
+                {
+                    var pairs = new KeyValuePair<RedisKey, RedisValue>[batchSize];
+                    for (int i = 0; i < batchSize; i++)
+                    {
+                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        var value = GenerateValue();
+                        pairs[i] = new KeyValuePair<RedisKey, RedisValue>(key, value);
+                    }
+                    pendingGarnetClientTask = db.StringSetAsync(pairs);
+                }
+            }
+            else
+            {
+                // Execute batch of individual commands - start all tasks
+                pendingSERedisTasks = new Task[batchSize];
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    if (opts.Op == OpType.GET)
+                        pendingSERedisTasks[i] = db.StringGetAsync(key);
+                    else if (opts.Op == OpType.SET)
+                        pendingSERedisTasks[i] = db.StringSetAsync(key, GenerateValue());
+                    else
+                        pendingSERedisTasks[i] = db.StringGetAsync(key);
+                }
+            }
+
+            // Track bytes for completion phase
+            var sentBytes = isMCommand
+                ? CalculateRespSentBytes(opts.Op, batchSize)
+                : CalculateRespSentBytes(opts.Op, 1) * batchSize;
+            var rcvdBytes = isMCommand
+                ? CalculateRespReceivedBytes(opts.Op, batchSize)
+                : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;
+
+            pendingBytesSent = sentBytes;
+            pendingBytesReceived = rcvdBytes;
         }
 
         /// <summary>
@@ -553,12 +744,24 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CompletePendingAndRecordOfflineMetrics()
         {
-            // Complete pending on the client that was used
-            var client = (pendingUsedReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
-            client.CompletePendingRequests();
-            var completedTimestamp = Stopwatch.GetTimestamp();
+            switch (opts.Client)
+            {
+                case ClientType.LightClient:
+                    CompletePendingLightClient();
+                    break;
+                case ClientType.GarnetClientSession:
+                    CompletePendingGarnetSession();
+                    break;
+                case ClientType.GarnetClient:
+                    CompletePendingGarnetClient();
+                    break;
+                case ClientType.SERedis:
+                    CompletePendingSERedis();
+                    break;
+            }
 
-            // Record latency
+            // Record latency (common for all clients)
+            var completedTimestamp = Stopwatch.GetTimestamp();
             var elapsed = completedTimestamp - pendingStartTimestamp;
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                 histogram.RecordValue(elapsed);
@@ -567,10 +770,70 @@ namespace Resp.benchmark
             Interlocked.Add(ref opsCompleted, pendingBatchSize);
             Interlocked.Add(ref bytesSent, pendingBytesSent);
 
+            // LightClient uses TotalBytesReceived, others track via calculation
+            if (opts.Client == ClientType.LightClient)
+            {
+                var client = (pendingUsedReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+                var bytesRcvd = client.TotalBytesReceived;
+                Interlocked.Exchange(ref bytesReceived, bytesRcvd);
+            }
+            else
+            {
+                Interlocked.Add(ref bytesReceived, pendingBytesReceived);
+            }
+
             if (pendingUsedReplica && hasReplica)
                 Interlocked.Add(ref replicaOps, pendingBatchSize);
             else
                 Interlocked.Add(ref primaryOps, pendingBatchSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CompletePendingLightClient()
+        {
+            var client = (pendingUsedReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+            client.CompletePendingRequests();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CompletePendingGarnetSession()
+        {
+            var session = (pendingUsedReplica && replicaGarnetSession != null) ? replicaGarnetSession : primaryGarnetSession;
+            session.CompletePending();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CompletePendingGarnetClient()
+        {
+            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+
+            if (isMCommand)
+            {
+                // Wait for the single MGET/MSET task
+                pendingGarnetClientTask.GetAwaiter().GetResult();
+            }
+            else
+            {
+                // Wait for all individual command tasks
+                Task.WaitAll(pendingGarnetClientTasks);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CompletePendingSERedis()
+        {
+            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+
+            if (isMCommand)
+            {
+                // Wait for the single MGET/MSET task
+                pendingGarnetClientTask.GetAwaiter().GetResult();
+            }
+            else
+            {
+                // Wait for all individual command tasks
+                Task.WaitAll(pendingSERedisTasks);
+            }
         }
 
         /// <summary>

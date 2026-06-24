@@ -29,17 +29,39 @@ namespace Resp.benchmark
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
 
+            // For LightClient, ensure batch size doesn't exceed 128KB buffer limit
+            // Calculate max batch size based on value size (use 120KB for safety margin)
+            var keyLen = Math.Max(opts.KeyLength, 8);
+            var valLen = Math.Max(opts.ValueLength, 8);
+
+            int effectiveBatchSize;
+            if (opts.Op is OpType.MGET or OpType.MSET)
+            {
+                // For MGET/MSET: estimate bytes for single multi-key command
+                // MSET: *N*2+1\r\n$4\r\nMSET\r\n + N × ($KLen\r\nK\r\n$VLen\r\nV\r\n)
+                var bytesPerPair = keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length + 10;  // 10 for delimiters
+                var maxKeysPerCommand = Math.Max(1, (120 * 1024) / bytesPerPair);  // 120KB safety margin
+                effectiveBatchSize = (int)Math.Min(batchSize, maxKeysPerCommand);
+            }
+            else
+            {
+                // For GET/SET: estimate bytes for batch of individual commands
+                var bytesPerCommand = 20 + keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length;
+                var maxCommandsPerBatch = Math.Max(1, (120 * 1024) / bytesPerCommand);  // 120KB safety margin
+                effectiveBatchSize = (int)Math.Min(batchSize, maxCommandsPerBatch);
+            }
+
             // For MGET/MSET, batchSize is keys per command, so adjust batch count
             if (opts.Op is OpType.MGET or OpType.MSET)
             {
                 // Generate enough MGET/MSET commands to cover the DB
-                // Each MGET/MSET covers batchSize keys, so we need dbSize/batchSize commands
-                batchCount = Math.Max(1, dbSizePerShard / batchSize);
+                // Each MGET/MSET covers effectiveBatchSize keys, so we need dbSize/effectiveBatchSize commands
+                batchCount = Math.Max(1, dbSizePerShard / effectiveBatchSize);
             }
             else
             {
-                // For regular ops, batchSize is number of commands
-                batchCount = Math.Max(1, dbSizePerShard / batchSize);
+                // For regular ops, effectiveBatchSize is number of commands
+                batchCount = Math.Max(1, dbSizePerShard / effectiveBatchSize);
             }
 
             requestBuffers = new byte[batchCount][];
@@ -48,12 +70,12 @@ namespace Resp.benchmark
 
             for (var b = 0; b < batchCount; b++)
             {
-                var buffer = GenerateRandomBatch(batchSize, dbSizePerShard);
+                var buffer = GenerateRandomBatch(effectiveBatchSize, dbSizePerShard);
                 requestBuffers[b] = buffer;
                 requestLengths[b] = buffer.Length;
 
                 // Track number of commands (responses to expect)
-                requestCounts[b] = opts.Op is OpType.MGET or OpType.MSET ? 1 : batchSize;
+                requestCounts[b] = opts.Op is OpType.MGET or OpType.MSET ? 1 : effectiveBatchSize;
             }
         }
 
@@ -88,7 +110,13 @@ namespace Resp.benchmark
                 keyOffset = shardThreadIndex * keysToLoad;
             }
 
-            var batchSize = Math.Min(256, keysToLoad);
+            // Calculate max batch size to stay under LightClient's 128KB buffer limit
+            // Each SET command: *3\r\n$3\r\nSET\r\n$KLen\r\nK\r\n$VLen\r\nV\r\n (~20 + keyLen + valueLen bytes)
+            var keyLen = Math.Max(opts.KeyLength, 8);
+            var valLen = Math.Max(opts.ValueLength, 8);
+            var bytesPerSet = 20 + keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length;
+            var maxBatchSize = Math.Max(1, (120 * 1024) / bytesPerSet);  // Stay under 120KB (safety margin)
+            var batchSize = (int)Math.Min(maxBatchSize, Math.Min(256, keysToLoad));
 
             // IMPORTANT: Always use primary endpoint for loading (replicas are read-only)
             var endpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
@@ -98,7 +126,7 @@ namespace Resp.benchmark
                 endpoint,
                 (int)OpType.SET,
                 onResponse,
-                1 << 17, // Buffer size in bytes for the network buffer
+                1 << 17, // Buffer size in bytes for the network buffer (128KB)
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();
