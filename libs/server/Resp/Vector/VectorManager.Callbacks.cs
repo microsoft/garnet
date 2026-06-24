@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         public unsafe
 #if NET9_0_OR_GREATER
-            ref 
+            ref
 #endif
             struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
@@ -186,6 +186,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, uint, byte> InlineFilterCallbackPtr { get; } = &FilterCallbackUnmanaged;
 
         /// <summary>
         /// Used to thread the active <see cref="StorageSession"/> across p/invoke and reverse p/invoke boundaries into DiskANN.
@@ -272,6 +273,12 @@ namespace Garnet.server
             }
 
             return status.IsCompletedSuccessfully ? (byte)1 : default;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static byte FilterCallbackUnmanaged(ulong context, uint internalId)
+        {
+            return EvaluateCandidateFilter(context, internalId);
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
