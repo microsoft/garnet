@@ -26,16 +26,16 @@ namespace Resp.benchmark
         [Option("totalops", Required = false, Default = 1 << 25, HelpText = "Total ops")]
         public int TotalOps { get; set; }
 
-        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, MGET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
+        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, SET, MGET, MSET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
         public OpType Op { get; set; }
 
-        [Option("keylength", Required = false, Default = 1, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
+        [Option("keylength", Required = false, Default = 8, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
         public int KeyLength { get; set; }
 
         [Option("valuelength", Required = false, Default = 8, HelpText = "Value length (bytes) - 0 indicates use key as value")]
         public int ValueLength { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size, number of requests (comma separated)")]
+        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size (for GET/SET: number of commands, for MGET/MSET: number of keys per command)")]
         public IEnumerable<int> BatchSize { get; set; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]

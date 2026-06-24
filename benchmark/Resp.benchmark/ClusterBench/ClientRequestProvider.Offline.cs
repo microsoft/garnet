@@ -14,27 +14,44 @@ namespace Resp.benchmark
         // Pre-generated buffers for offline mode
         byte[][] requestBuffers;
         int[] requestLengths;
+        int[] requestCounts;  // Number of commands in each buffer (1 for MGET/MSET, batchSize for others)
         int batchCount;
 
         /// <summary>
         /// Pre-generate request buffers for offline mode.
-        /// Each buffer contains a batch of commands with keys randomly sampled
-        /// from the shared key space (enabling overlap across threads on the same shard).
+        /// For GET/SET/etc: Each buffer contains batchSize commands.
+        /// For MGET/MSET: Each buffer contains 1 command with batchSize keys.
         /// </summary>
         public void PrepareBuffers()
         {
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
-            batchCount = Math.Max(1, dbSizePerShard / batchSize);
+
+            // For MGET/MSET, batchSize is keys per command, so adjust batch count
+            if (opts.Op is OpType.MGET or OpType.MSET)
+            {
+                // Generate enough MGET/MSET commands to cover the DB
+                // Each MGET/MSET covers batchSize keys, so we need dbSize/batchSize commands
+                batchCount = Math.Max(1, dbSizePerShard / batchSize);
+            }
+            else
+            {
+                // For regular ops, batchSize is number of commands
+                batchCount = Math.Max(1, dbSizePerShard / batchSize);
+            }
 
             requestBuffers = new byte[batchCount][];
             requestLengths = new int[batchCount];
+            requestCounts = new int[batchCount];
 
             for (var b = 0; b < batchCount; b++)
             {
                 var buffer = GenerateRandomBatch(batchSize, dbSizePerShard);
                 requestBuffers[b] = buffer;
                 requestLengths[b] = buffer.Length;
+
+                // Track number of commands (responses to expect)
+                requestCounts[b] = opts.Op is OpType.MGET or OpType.MSET ? 1 : batchSize;
             }
         }
 
@@ -112,7 +129,7 @@ namespace Resp.benchmark
                 throw new InvalidOperationException("Must call PrepareOfflineBuffers() before RunOffline()");
 
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
-            IPEndPoint replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
+            var replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
             // Buffer size must be large enough to hold the largest pre-generated request buffer
@@ -162,6 +179,7 @@ namespace Resp.benchmark
                 {
                     var buffer = requestBuffers[batchIdx % batchCount];
                     var len = requestLengths[batchIdx % batchCount];
+                    var numCommands = requestCounts[batchIdx % batchCount];
                     var opStart = Stopwatch.GetTimestamp();
 
                     // Route entire batch based on operation type
@@ -171,7 +189,7 @@ namespace Resp.benchmark
 
                     fixed (byte* bufPtr = buffer)
                     {
-                        client.Send(bufPtr, len, batchSize);
+                        client.Send(bufPtr, len, numCommands);
                         client.CompletePendingRequests();
                     }
 
@@ -184,14 +202,14 @@ namespace Resp.benchmark
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                         histogram.RecordValue(elapsed);
 
-                    Interlocked.Add(ref opsCompleted, batchSize);
+                    Interlocked.Add(ref opsCompleted, numCommands);
                     Interlocked.Add(ref bytesSent, len);
 
                     // Track per-endpoint metrics
                     if (useReplica && replicaClient != null)
-                        Interlocked.Add(ref replicaOps, batchSize);
+                        Interlocked.Add(ref replicaOps, numCommands);
                     else
-                        Interlocked.Add(ref primaryOps, batchSize);
+                        Interlocked.Add(ref primaryOps, numCommands);
 
                     batchIdx++;
                 }
@@ -215,19 +233,42 @@ namespace Resp.benchmark
             return Encoding.ASCII.GetBytes(sb.ToString());
         }
 
+        /// <summary>
+        /// Generate a batch of random keys for benchmarking.
+        /// For GET/SET/etc: batchSize = number of commands, each with 1 key.
+        /// For MGET/MSET: batchSize = number of keys per single MGET/MSET command.
+        /// </summary>
         private byte[] GenerateRandomBatch(int batchSize, int dbSize)
         {
             var sb = new StringBuilder();
 
-            for (var i = 0; i < batchSize; i++)
+            if (opts.Op is OpType.MGET or OpType.MSET)
             {
-                var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
-                AppendCommand(sb, opts.Op, key);
+                // For MGET/MSET: generate ONE command with batchSize keys
+                var keys = new string[batchSize];
+                for (var k = 0; k < batchSize; k++)
+                {
+                    keys[k] = keyGen.GenerateKey(rng, rng.Next(dbSize));
+                }
+                AppendMCommand(sb, opts.Op, keys);
+            }
+            else
+            {
+                // For other ops: generate batchSize commands, each with 1 key
+                for (var i = 0; i < batchSize; i++)
+                {
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
+                    AppendCommand(sb, opts.Op, key);
+                }
             }
 
             return Encoding.ASCII.GetBytes(sb.ToString());
         }
 
+        /// <summary>
+        /// Generate a batch of sequential keys for loading data.
+        /// Always generates SET commands (one key-value pair per operation).
+        /// </summary>
         private byte[] GenerateLoadBatch(int batchSize, int startKeyIndex)
         {
             var sb = new StringBuilder();

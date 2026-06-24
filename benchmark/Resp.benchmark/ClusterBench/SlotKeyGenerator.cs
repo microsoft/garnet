@@ -42,7 +42,10 @@ namespace Resp.benchmark
 
         public SlotKeyGenerator(PrimaryInfo shard, int keyLen)
         {
-            this.keyLen = Math.Max(keyLen, 8);
+            if (keyLen < 8)
+                throw new ArgumentException($"Key length must be at least 8 bytes (got {keyLen}). This is required for slot routing and base-62 encoding.", nameof(keyLen));
+
+            this.keyLen = keyLen;
             this.tag = FindTagForShard(shard);
             this.keyPrefix = $"{{{tag}}}";
             this.suffixLen = this.keyLen - keyPrefix.Length;

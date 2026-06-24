@@ -515,20 +515,23 @@ namespace Resp.benchmark
             long lastTotalOps = 0;
             long lastTotalBytes = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
-            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
 
             while (sw.Elapsed < runTime)
             {
                 Thread.Sleep(reportInterval);
 
                 // Aggregate operations and bytes from all workers' providers
+                // For MGET/MSET, multiply opsCompleted by keysPerOp to get total keys
                 long currentTotalOps = 0;
                 long currentTotalBytes = 0;
                 foreach (var worker in workers)
                 {
                     foreach (var provider in worker.Providers)
                     {
-                        currentTotalOps += provider.OpsCompleted;
+                        currentTotalOps += provider.OpsCompleted * keysPerOp;
                         currentTotalBytes += provider.BytesSent;
                     }
                 }
@@ -574,6 +577,8 @@ namespace Resp.benchmark
             long lastTotalOps = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
             var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
 
             while (sw.Elapsed < runTime)
             {
@@ -585,7 +590,7 @@ namespace Resp.benchmark
                 foreach (var provider in providers)
                 {
                     summary.Add(provider.Histogram);
-                    currentTotalOps += provider.OpsCompleted;
+                    currentTotalOps += provider.OpsCompleted * keysPerOp;
                 }
 
                 long iterOps = currentTotalOps - lastTotalOps;
@@ -612,6 +617,8 @@ namespace Resp.benchmark
             long lastTotalOps = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
             var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
 
             while (sw.Elapsed < runTime)
             {
@@ -625,7 +632,7 @@ namespace Resp.benchmark
                     foreach (var provider in worker.Providers)
                     {
                         summary.Add(provider.Histogram);
-                        currentTotalOps += provider.OpsCompleted;
+                        currentTotalOps += provider.OpsCompleted * keysPerOp;
                     }
                 }
 
@@ -654,7 +661,9 @@ namespace Resp.benchmark
             long lastTotalOps = 0;
             long lastTotalBytes = 0;
             var reportInterval = TimeSpan.FromSeconds(2);
-            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
 
             while (sw.Elapsed < runTime)
             {
@@ -664,15 +673,15 @@ namespace Resp.benchmark
                 long currentTotalBytes = 0;
                 foreach (var provider in providers)
                 {
-                    currentTotalOps += provider.OpsCompleted;
+                    currentTotalOps += provider.OpsCompleted * keysPerOp;
                     currentTotalBytes += provider.BytesSent;
                 }
 
-                long iterOps = currentTotalOps - lastTotalOps;
-                long iterBytes = currentTotalBytes - lastTotalBytes;
-                double tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
-                double dataGBps = (iterOps * logicalBytesPerOp) / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
-                double wireGBps = iterBytes / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
+                var iterOps = currentTotalOps - lastTotalOps;
+                var iterBytes = currentTotalBytes - lastTotalBytes;
+                var tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
+                var dataGBps = (iterOps * logicalBytesPerOp) / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
+                var wireGBps = iterBytes / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
 
                 ReportOfflineIteration(currentTotalOps, iterOps, tptKops, dataGBps, wireGBps);
                 lastTotalOps = currentTotalOps;
@@ -858,17 +867,19 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shard",-8}{"Endpoint",-25}{"Threads",-10}{"Ops",-15}{"Ops/sec",-15}");
             Console.WriteLine(new string('-', 73));
 
-            int threadsPerShard = opts.NumThreads.First();
+            var threadsPerShard = opts.NumThreads.First();
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
 
-            for (int s = 0; s < shards.Length; s++)
+            for (var s = 0; s < shards.Length; s++)
             {
                 long shardOps = 0;
                 long shardBytesSent = 0;
                 long shardBytesRcvd = 0;
-                for (int t = 0; t < threadsPerShard; t++)
+                for (var t = 0; t < threadsPerShard; t++)
                 {
                     var provider = providers[s * threadsPerShard + t];
-                    shardOps += provider.OpsCompleted;
+                    shardOps += provider.OpsCompleted * keysPerOp;  // Multiply by keysPerOp for MGET/MSET
                     shardBytesSent += provider.BytesSent;
                     shardBytesRcvd += provider.BytesReceived;
                     summary.Add(provider.Histogram);
@@ -877,12 +888,12 @@ namespace Resp.benchmark
                 totalBytesSent += shardBytesSent;
                 totalBytesReceived += shardBytesRcvd;
 
-                double shardOpsPerSec = shardOps / totalElapsed.TotalSeconds;
+                var shardOpsPerSec = shardOps / totalElapsed.TotalSeconds;
                 Console.WriteLine($"{s,-8}{shards[s].Address + ":" + shards[s].Port,-25}{threadsPerShard,-10}{shardOps,-15}{shardOpsPerSec,-15:N0}");
             }
 
             Console.WriteLine(new string('-', 73));
-            double totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
+            var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
             Console.WriteLine($"{"Total",-8}{"",-25}{providers.Length,-10}{totalOps,-15}{totalOpsPerSec,-15:N0}");
 
             // Latency summary
@@ -898,10 +909,10 @@ namespace Resp.benchmark
             }
 
             // Throughput summary
-            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
-            double dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
+            var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
             var totalWireBytes = totalBytesSent + totalBytesReceived;
-            double wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
+            var wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
 
             Console.WriteLine();
             Console.WriteLine($"Duration: {totalElapsed.TotalSeconds:F1}s");
@@ -967,7 +978,16 @@ namespace Resp.benchmark
 
             // Throughput summary
             var totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
-            var logicalBytesPerOp = opts.KeyLength + opts.ValueLength;
+            var batchSize = opts.BatchSize.First();
+            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
+
+            // Multiply totalOps by keysPerOp to get total keys
+            totalOps *= keysPerOp;
+            totalPrimaryOps *= keysPerOp;
+            totalReplicaOps *= keysPerOp;
+            totalOpsPerSec = totalOps / totalElapsed.TotalSeconds;
+
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
             var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
             var totalWireBytes = totalBytesSent + totalBytesReceived;
             var wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);

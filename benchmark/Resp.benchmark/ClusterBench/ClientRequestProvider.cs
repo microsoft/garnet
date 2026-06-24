@@ -143,6 +143,7 @@ namespace Resp.benchmark
         {
             requestBuffers = null;
             requestLengths = null;
+            requestCounts = null;
             DisposeWorkerPoolConnections();
         }
 
@@ -154,10 +155,22 @@ namespace Resp.benchmark
                 OpType.SET => Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n${opts.ValueLength}\r\n{GenerateValue()}\r\n"),
                 OpType.INCR => Encoding.ASCII.GetBytes($"*2\r\n$4\r\nINCR\r\n${key.Length}\r\n{key}\r\n"),
                 OpType.DEL => Encoding.ASCII.GetBytes($"*2\r\n$3\r\nDEL\r\n${key.Length}\r\n{key}\r\n"),
+                OpType.MGET or OpType.MSET => throw new InvalidOperationException($"{op} requires multiple keys - use FormatMRequest"),
                 _ => Encoding.ASCII.GetBytes($"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n"),
             };
         }
 
+        /// <summary>
+        /// Format MGET or MSET request with multiple keys.
+        /// </summary>
+        private byte[] FormatMRequest(OpType op, string[] keys)
+        {
+            var sb = new StringBuilder(256);
+            AppendMCommand(sb, op, keys);
+            return Encoding.UTF8.GetBytes(sb.ToString());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AppendCommand(StringBuilder sb, OpType op, string key)
         {
             switch (op)
@@ -175,9 +188,46 @@ namespace Resp.benchmark
                 case OpType.DEL:
                     sb.Append($"*2\r\n$3\r\nDEL\r\n${key.Length}\r\n{key}\r\n");
                     break;
+                case OpType.MGET:
+                case OpType.MSET:
+                    throw new InvalidOperationException($"{op} requires multiple keys - use AppendMCommand");
                 default:
                     sb.Append($"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n");
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Append MGET or MSET command with multiple keys to the string builder.
+        /// For MGET: *N\r\n$4\r\nMGET\r\n$K1Len\r\nK1\r\n$K2Len\r\nK2\r\n...
+        /// For MSET: *N\r\n$4\r\nMSET\r\n$K1Len\r\nK1\r\n$V1Len\r\nV1\r\n$K2Len\r\nK2\r\n$V2Len\r\nV2\r\n...
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AppendMCommand(StringBuilder sb, OpType op, string[] keys)
+        {
+            switch (op)
+            {
+                case OpType.MGET:
+                    // *N\r\n$4\r\nMGET\r\n$K1Len\r\nK1\r\n...
+                    sb.Append($"*{keys.Length + 1}\r\n$4\r\nMGET\r\n");
+                    foreach (var key in keys)
+                    {
+                        sb.Append($"${key.Length}\r\n{key}\r\n");
+                    }
+                    break;
+
+                case OpType.MSET:
+                    // *N\r\n$4\r\nMSET\r\n$K1Len\r\nK1\r\n$V1Len\r\nV1\r\n...
+                    sb.Append($"*{keys.Length * 2 + 1}\r\n$4\r\nMSET\r\n");
+                    foreach (var key in keys)
+                    {
+                        var value = GenerateValue();
+                        sb.Append($"${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n");
+                    }
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"AppendMCommand only supports MGET and MSET, not {op}");
             }
         }
 
@@ -186,6 +236,7 @@ namespace Resp.benchmark
             return new string('v', opts.ValueLength == 0 ? 8 : opts.ValueLength);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (int, int) OnResponse(byte* buf, int bytesRead, int opType)
         {
             var count = 0;
@@ -199,6 +250,17 @@ namespace Resp.benchmark
                     for (var i = 0; i < bytesRead; i++)
                         if (buf[i] == '+') count++;
                     break;
+                case OpType.MGET:
+                    // MGET returns array: *N\r\n$Len\r\nVal\r\n...\r\n
+                    // Count '*' to count responses (each MGET command returns one array)
+                    for (var i = 0; i < bytesRead; i++)
+                        if (buf[i] == '*') count++;
+                    break;
+                case OpType.MSET:
+                    // MSET returns simple string: +OK\r\n
+                    for (var i = 0; i < bytesRead; i++)
+                        if (buf[i] == '+') count++;
+                    break;
                 case OpType.DEL:
                 case OpType.INCR:
                     for (var i = 0; i < bytesRead; i++)
@@ -206,7 +268,7 @@ namespace Resp.benchmark
                     break;
                 default:
                     for (var i = 0; i < bytesRead; i++)
-                        if (buf[i] is (byte)'+' or (byte)'$' or (byte)':') count++;
+                        if (buf[i] is (byte)'+' or (byte)'$' or (byte)':' or (byte)'*') count++;
                     break;
             }
             return (bytesRead, count);

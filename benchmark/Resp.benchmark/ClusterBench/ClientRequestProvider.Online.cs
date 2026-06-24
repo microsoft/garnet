@@ -69,11 +69,29 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
+                var batchSize = opts.BatchSize.First();
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+                var numCommands = isMCommand ? 1 : 1;  // MGET/MSET: 1 command, others: 1 command
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-                    var request = FormatRequest(opts.Op, key);
+                    byte[] request;
+
+                    if (isMCommand)
+                    {
+                        // Generate multiple keys for MGET/MSET
+                        var keys = new string[batchSize];
+                        for (var i = 0; i < batchSize; i++)
+                            keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                        request = FormatMRequest(opts.Op, keys);
+                    }
+                    else
+                    {
+                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        request = FormatRequest(opts.Op, key);
+                    }
+
                     var opStart = Stopwatch.GetTimestamp();
 
                     // Route based on operation type
@@ -82,7 +100,7 @@ namespace Resp.benchmark
 
                     fixed (byte* bufPtr = request)
                     {
-                        client.Send(bufPtr, request.Length, 1);
+                        client.Send(bufPtr, request.Length, numCommands);
                         _ = client.CompletePendingRequests();
                     }
 
@@ -146,6 +164,8 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
                 var itp = opts.IntraThreadParallelism;
+                var batchSize = opts.BatchSize.First();
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
                 while (!done && sw.Elapsed < runTime)
                 {
@@ -155,18 +175,43 @@ namespace Resp.benchmark
 
                     for (var p = 0; p < itp; p++)
                     {
-                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-
                         // Route based on operation type
                         var useReplica = ShouldUseReplica(opts.Op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
 
-                        if (opts.Op == OpType.GET)
-                            client.Execute("GET", key);
-                        else if (opts.Op == OpType.SET)
-                            client.Execute("SET", key, GenerateValue());
+                        if (isMCommand)
+                        {
+                            // Generate multiple keys for MGET/MSET
+                            var args = new List<string>();
+                            if (opts.Op == OpType.MGET)
+                            {
+                                args.Add("MGET");
+                                for (var i = 0; i < batchSize; i++)
+                                    args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                            }
+                            else if (opts.Op == OpType.MSET)
+                            {
+                                args.Add("MSET");
+                                for (var i = 0; i < batchSize; i++)
+                                {
+                                    args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                    args.Add(GenerateValue());
+                                }
+                            }
+
+                            client.Execute(args.ToArray());
+                        }
                         else
-                            client.Execute("GET", key);
+                        {
+                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                            if (opts.Op == OpType.GET)
+                                client.Execute("GET", key);
+                            else if (opts.Op == OpType.SET)
+                                client.Execute("SET", key, GenerateValue());
+                            else
+                                client.Execute("GET", key);
+                        }
 
                         // Track routing
                         if (useReplica && replicaClient != null)
@@ -228,6 +273,8 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
                 var itp = opts.IntraThreadParallelism;
+                var batchSize = opts.BatchSize.First();
+                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
                 while (!done && sw.Elapsed < runTime)
                 {
@@ -238,18 +285,43 @@ namespace Resp.benchmark
 
                     for (var p = 0; p < itp; p++)
                     {
-                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-
                         // Route based on operation type
                         var useReplica = ShouldUseReplica(opts.Op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
 
-                        if (opts.Op == OpType.GET)
-                            tasks[p] = client.StringGetAsMemoryAsync(key);
-                        else if (opts.Op == OpType.SET)
-                            tasks[p] = client.StringSetAsync(key, GenerateValue());
+                        if (isMCommand)
+                        {
+                            // Generate multiple keys for MGET/MSET
+                            if (opts.Op == OpType.MGET)
+                            {
+                                var keys = new string[batchSize];
+                                for (var i = 0; i < batchSize; i++)
+                                    keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                                tasks[p] = client.StringGetAsync(keys);
+                            }
+                            else if (opts.Op == OpType.MSET)
+                            {
+                                var args = new List<string>();
+                                for (var i = 0; i < batchSize; i++)
+                                {
+                                    args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                    args.Add(GenerateValue());
+                                }
+                                tasks[p] = client.ExecuteForStringResultAsync("MSET", args.ToArray());
+                            }
+                        }
                         else
-                            tasks[p] = client.StringGetAsMemoryAsync(key);
+                        {
+                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                            if (opts.Op == OpType.GET)
+                                tasks[p] = client.StringGetAsMemoryAsync(key);
+                            else if (opts.Op == OpType.SET)
+                                tasks[p] = client.StringSetAsync(key, GenerateValue());
+                            else
+                                tasks[p] = client.StringGetAsMemoryAsync(key);
+                        }
 
                         // Track routing
                         if (useReplica && replicaClient != null)
