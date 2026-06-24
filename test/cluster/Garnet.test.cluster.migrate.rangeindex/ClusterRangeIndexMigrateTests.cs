@@ -22,7 +22,7 @@ using StackExchange.Redis;
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
-    public class ClusterRangeIndexMigrateTests : TestBase
+    public partial class ClusterRangeIndexMigrateTests : TestBase
     {
         ClusterTestContext context;
         readonly int defaultShards = 3;
