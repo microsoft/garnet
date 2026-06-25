@@ -65,33 +65,43 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public void Set() => Send(set);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public void SetEx() => Send(setex);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void SetNx() => Send(setnx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void SetXx() => Send(setxx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public void GetFound() => Send(getf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public void GetNotFound() => Send(getnf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void Increment() => Send(incr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void Decrement() => Send(decr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void IncrementBy() => Send(incrby);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void DecrementBy() => Send(decrby);
     }
 }
