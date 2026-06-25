@@ -107,7 +107,7 @@ namespace Garnet.cluster
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
-                                VectorSessionFunctions.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
+                                VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
 
                                 // An error has occurred
                                 if (migrateState > 0)
@@ -155,7 +155,7 @@ namespace Garnet.cluster
 
                                     var payload = payloadRaw.Span;
 
-                                    VectorSessionFunctions.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
+                                    VectorManager.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
 
                                     // An error has occurred
                                     if (migrateState > 0)

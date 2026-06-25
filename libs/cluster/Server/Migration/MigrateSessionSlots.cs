@@ -143,7 +143,7 @@ namespace Garnet.cluster
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
 
-                                var neededSpace = VectorSessionFunctions.GetMigratedIndexKeySerializationSize(key, value);
+                                var neededSpace = VectorManager.GetMigratedIndexKeySerializationSize(key, value);
 
                                 if (neededSpace > serializeBufferArr.Length)
                                 {
@@ -151,7 +151,7 @@ namespace Garnet.cluster
                                     serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                                 }
 
-                                VectorSessionFunctions.SerializeMigratedIndexKey(serializeBufferArr, key, value);
+                                VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value);
 
                                 if (gcs.NeedsInitialization)
                                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);

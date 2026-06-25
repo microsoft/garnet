@@ -48,7 +48,7 @@ namespace Garnet.cluster
             }
 
             // Map up any namespaces as needed
-            VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
+            VectorManager.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
 
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
             {
