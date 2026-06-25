@@ -239,10 +239,19 @@ namespace Tsavorite.core
                         try
                         {
                             // Lock to ensure no value tearing while copying to temp storage.
-                            if (currentAddress >= headAddress && store is not null)
+                            if (store is not null)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
                                 store.LockForScan(ref stackCtx, logRecord);
+
+                                // LockForScan may spin via epoch.ProtectAndDrain(), which advances this thread's localCurrentEpoch and may synchronously fire a
+                                // previously-queued OnPagesClosed action (from a concurrent ShiftHeadAddress). If HeadAddress now exceeds currentAddress, the page
+                                // our physicalAddress points to has been freed and may have been reused; retry this address through the disk-buffering path.
+                                if (currentAddress < hlogBase.HeadAddress)
+                                {
+                                    nextAddress = currentAddress;
+                                    continue;
+                                }
                             }
 
                             if (recordBuffer == null)

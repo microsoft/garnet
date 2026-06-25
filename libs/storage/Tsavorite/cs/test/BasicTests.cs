@@ -36,12 +36,12 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings kvSettings, TestDeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings kvSettings, TestDeviceType deviceType, int latencyUs = DefaultLocalMemoryDeviceLatencyUs)
         {
             kvSettings.IndexSize = 1L << 13;
 
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
-            log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
+            log = CreateTestDevice(deviceType, filename, latencyUs: latencyUs);
             kvSettings.LogDevice = log;
 
             store = new(kvSettings
@@ -83,7 +83,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = MinKvLogPageSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -104,7 +104,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = MinKvLogPageSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -248,8 +248,8 @@ namespace Tsavorite.test
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType, latencyMs: latencyMs);
+            var latencyUs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyUs;
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType, latencyUs: latencyUs);
 
             for (var c = 0; c < NumRecs; c++)
             {
@@ -325,7 +325,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -389,7 +389,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -411,7 +411,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -435,7 +435,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadWithoutInput([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             OutputStruct output = default;
 
@@ -459,7 +459,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadBareMinParams([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -603,7 +603,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void UpsertDefaultsTest([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;

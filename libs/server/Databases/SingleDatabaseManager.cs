@@ -54,7 +54,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
+        public override async ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = 0;
             try
@@ -64,7 +64,9 @@ namespace Garnet.server
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
                     if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)
                     {
-                        storeVersion = !recoverFromToken ? Store.Recover() : Store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
+                        storeVersion = !recoverFromToken
+                            ? await Store.RecoverAsync().ConfigureAwait(false)
+                            : await Store.RecoverAsync(metadata.storeIndexToken, metadata.storeHlogToken).ConfigureAwait(false);
                     }
 
                     if (storeVersion > 0)
@@ -72,7 +74,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    RecoverDatabaseCheckpoint(defaultDatabase, out storeVersion);
+                    storeVersion = await RecoverDatabaseCheckpointAsync(defaultDatabase).ConfigureAwait(false);
                 }
             }
             catch (TsavoriteNoHybridLogException ex)
@@ -239,7 +241,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverAOF() => RecoverDatabaseAOF(defaultDatabase);
+        public override ValueTask RecoverAOFAsync() => RecoverDatabaseAOFAsync(defaultDatabase);
 
         /// <inheritdoc/>
         public override AofAddress ReplayAOF(AofAddress untilAddress)
@@ -390,6 +392,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void RecoverVectorSets()
         {
+            // Guarantee initialize has happened before we attempt to recover
+            defaultDatabase.VectorManager.Initialize();
+
             defaultDatabase.VectorManager.ResumePostRecovery();
         }
 

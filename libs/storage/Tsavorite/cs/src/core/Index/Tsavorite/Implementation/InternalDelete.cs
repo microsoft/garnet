@@ -6,8 +6,6 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    using static LogAddress;
-
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -19,7 +17,7 @@ namespace Tsavorite.core
         /// <param name="key">Key of the record to be deleted.</param>
         /// <param name="keyHash"></param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
-        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="operationState">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
@@ -43,7 +41,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TContext userContext,
-                            ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                            ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -51,8 +49,10 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // operationState.keyHash is NOT written here: Delete never goes pending, so keyHash (a pending-only field) is dead.
+            // operationState.logicalAddress is NOT written here: it defaults to 0 (== kInvalidAddress) for a fresh operationState;
+            //   the in-memory IPDelete and CreateNewRecordDelete paths overwrite it on success, and HandleRetryStatus resets it on retry.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -76,7 +76,7 @@ namespace Tsavorite.core
                 if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
-                // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete
+                // Note: Delete does not track operationState.InitialAddress because we don't have an InternalContinuePendingDelete
 
                 deleteInfo.Address = stackCtx.recSrc.LogicalAddress;
                 deleteInfo.KeyHash = stackCtx.hei.hash;
@@ -110,7 +110,7 @@ namespace Tsavorite.core
                 {
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
-                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                     // If we already have a deleted record, there's nothing to do.
                     if (srcLogRecord.Info.Tombstone)
@@ -160,7 +160,7 @@ namespace Tsavorite.core
 
             CreateNewRecord:
                 // Immutable region or new record
-                status = CreateNewRecordDelete(key, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx, ref deleteInfo);
+                status = CreateNewRecordDelete(key, ref srcLogRecord, ref operationState, sessionFunctions, ref stackCtx, ref deleteInfo);
 
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
@@ -195,12 +195,12 @@ namespace Tsavorite.core
         /// <param name="key">The record Key</param>
         /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
         /// it is either too small or is in readonly region, or is in raadcache</param>
-        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="operationState">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="deleteInfo">DeleteInfo</param>
-        private OperationStatus CreateNewRecordDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private OperationStatus CreateNewRecordDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref LogRecord srcLogRecord, ref OperationState<TInput, TOutput, TContext> operationState,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref DeleteInfo deleteInfo)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -218,7 +218,7 @@ namespace Tsavorite.core
             };
 
             // We know the existing record cannot be elided; it must point to a valid record; otherwise InternalDelete would have returned NOTFOUND.
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -243,15 +243,13 @@ namespace Tsavorite.core
 
             newLogRecord.InfoRef.SetTombstone();
 
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
                 // Track key overflow internally — session functions only track value heap.
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
-
-                PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
@@ -266,7 +264,7 @@ namespace Tsavorite.core
                 }
 
                 stackCtx.ClearNewRecord();
-                pendingContext.logicalAddress = newLogicalAddress;
+                operationState.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 
@@ -274,7 +272,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             OnDispose(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+            SaveAllocationForRetry(ref operationState, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
     }

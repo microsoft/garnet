@@ -122,7 +122,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 9,
+                PageSize = MinKvLogPageSize,
                 SegmentSize = 1L << 18,
                 ObjectLogSegmentSize = 1L << 22
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())

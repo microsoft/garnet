@@ -118,7 +118,7 @@ namespace Garnet.test
                 aclFile,
                 [
                     "user default on nopass +@all",
-                    "user deny on nopass +@all -get -acl"
+                    "user deny on nopass +@all -get -acl -cluster|myid"
                 ]
             );
 
@@ -1809,11 +1809,46 @@ return retArray";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            foreach (var (cmd, _) in allCommands.Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript)))
+            var fullCommands = allCommands.Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript));
+
+            foreach (var (cmd, _) in fullCommands)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
             }
+
+            var subCommands = allCommands.Where(static kv => (kv.Value.SubCommands?.Length ?? 0) > 0).SelectMany(static kv => kv.Value.SubCommands.Where(static t => t.Flags.HasFlag(RespCommandFlags.NoScript)).Select(t => (kv.Key, t.Name.Split('|')[1])));
+            foreach (var (cmd, subCmd) in subCommands)
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')"));
+                ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}|{subCmd}");
+            }
+        }
+
+        [Test]
+        public void PermissionsEnforced()
+        {
+            using var allowRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var allowDb = allowRedis.GetDatabase();
+
+            using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
+            var denyDb = denyRedis.GetDatabase();
+
+            ClassicAssert.True(allowDb.StringSet("foo", "bar"));
+
+            var allowRes = (string[])allowDb.ScriptEvaluate("return redis.call('GET', 'foo')");
+            ClassicAssert.AreEqual(1, allowRes.Length);
+            ClassicAssert.AreEqual("bar", allowRes[0]);
+
+            // Not a lot of sub commands a non-admin can run, so use CLUSTER|MYID and check the exception
+            var allowSubExc = ClassicAssert.Throws<RedisServerException>(() => allowDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            ClassicAssert.False(allowSubExc.Message.Contains("NOAUTH"));
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
+            ClassicAssert.IsTrue(exc.Message.Contains("NOAUTH"));
+
+            var excSub = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            ClassicAssert.IsTrue(excSub.Message.Contains("NOAUTH"));
         }
 
         [Test]

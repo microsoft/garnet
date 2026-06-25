@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -307,23 +308,24 @@ namespace Garnet.test.Resp.ACL
             //    Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
             //}
 
-            // Test None rejected
+            // Test None rejected by strict mode
             {
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users3.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +none");
 
-                // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Ensure Garnet refuses to start and surfaces the strict-mode diagnostic
+                var ex = Assert.Throws<GarnetException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                StringAssert.Contains("ACL strict mode", ex.Message);
             }
 
-
-            // Test Invalid rejected
+            // Test Invalid rejected by strict mode
             {
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users4.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +invalid");
 
-                // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Ensure Garnet refuses to start and surfaces the strict-mode diagnostic
+                var ex = Assert.Throws<GarnetException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                StringAssert.Contains("ACL strict mode", ex.Message);
             }
         }
 

@@ -16,7 +16,7 @@ namespace Tsavorite.test
     [TestFixture]
     public class DeviceTests : TestBase
     {
-        const int entryLength = 1024;
+        const int entryLength = IDevice.MinDeviceSectorSize * 2;
         SectorAlignedBufferPool bufferPool;
         readonly byte[] entry = new byte[entryLength];
         SemaphoreSlim semaphore;
@@ -967,6 +967,432 @@ namespace Tsavorite.test
                 _ = chmod(dir, 0x1ED);
                 GC.KeepAlive(buf);
             }
+        }
+
+        // ===================================================================================
+        // Phase 8 — submit-path / backend / sharding / throttle / late-entry-point coverage.
+        //
+        // Targets the code paths added or rewritten for the high-concurrency hang fix, which the
+        // Phase-7 suite above does not exercise:
+        //   - the io_uring submission backend (io_uring_submit count handling, get_sqe/submit
+        //     unwind) — previously NOT covered by any unit test;
+        //   - multiple completion threads / io_contexts (pick_context / pick_ring sharding);
+        //   - multiple devices interleaved across threads (the pick_context/pick_ring owner+bounds
+        //     thread-local guard, whose absence is an out-of-bounds shard index);
+        //   - ThrottleLimit -> submission-ring depth sizing, including the clamp above MaxThrottle;
+        //   - the late P/Invoke entry points GetFileSize / RemoveSegment / Reset / TryComplete.
+        //
+        // io_uring cases self-skip when the loaded native library / kernel lacks a working io_uring.
+        // ===================================================================================
+
+        public enum NativeBackend { Default, Libaio, Uring }
+
+        // One-time probe: does the loaded native library AND the host kernel support a real io_uring
+        // submission? (GetAvailableBackends reports only library capability, not kernel support, so
+        // we also drive one real submit.) Cached so the probe runs at most once per test process.
+        static readonly bool s_uringWorks = ProbeUringWorks();
+
+        static unsafe bool ProbeUringWorks()
+        {
+            if (!OperatingSystem.IsLinux())
+                return false;
+            try
+            {
+                if (!NativeStorageDevice.GetAvailableBackends().uringAvailable)
+                    return false;
+                var path = Path.Combine(Path.GetTempPath(), $"uring_probe_{Guid.NewGuid():N}.log");
+                using var d = new NativeStorageDevice(path, deleteOnClose: true, ioBackend: NativeStorageDevice.IoBackend.Uring);
+                d.Initialize(1L << 30);
+                const int sz = 4096;
+                var buf = GC.AllocateArray<byte>(sz + sz, pinned: true);
+                var ptr = (IntPtr)(((long)Unsafe.AsPointer(ref buf[0]) + (sz - 1)) & ~(sz - 1));
+                using var sem = new SemaphoreSlim(0);
+                uint err = 0;
+                d.WriteAsync(ptr, 0, 0, sz, (e, _, _) => { err = e; sem.Release(); }, null);
+                bool ok = sem.Wait(TimeSpan.FromSeconds(5)) && err == 0;
+                GC.KeepAlive(buf);
+                return ok;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Build + Initialize a Native device on the requested backend, completion-thread count and
+        /// throttle limit. Self-skips on non-Linux, or when io_uring is requested but unavailable.
+        /// </summary>
+        static NativeStorageDevice CreateNativeForTest(string path, long segmentSize, NativeBackend backend,
+                                                       int completionThreads = 1, int throttleLimit = 0, bool omitSegmentId = false)
+        {
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("NativeStorageDevice is Linux-only.");
+            if (backend == NativeBackend.Uring && !s_uringWorks)
+                Assert.Ignore("io_uring backend is not available/working on this host.");
+
+            var io = backend switch
+            {
+                NativeBackend.Libaio => NativeStorageDevice.IoBackend.Libaio,
+                NativeBackend.Uring => NativeStorageDevice.IoBackend.Uring,
+                _ => NativeStorageDevice.IoBackend.Default,
+            };
+            var d = new NativeStorageDevice(path, deleteOnClose: true, numCompletionThreads: completionThreads, ioBackend: io);
+            if (throttleLimit > 0)
+                d.ThrottleLimit = throttleLimit;
+            d.Initialize(segmentSize, omitSegmentIdFromFilename: omitSegmentId && segmentSize == -1L);
+            return d;
+        }
+
+        // ----- backend round-trip / parallel (covers the io_uring submit path) -------------
+
+        [Test]
+        [TestCase(NativeBackend.Default)]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_Backend_RoundTrip(NativeBackend backend)
+        {
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend);
+            const int size = 8 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, j => (byte)((j * 7 + 3) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            device.ReadAsync(0, 0, rptr, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            AssertBufferContents(rptr, size, j => (byte)((j * 7 + 3) & 0xFF), $"{backend} round-trip");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_Backend_Parallel_64Reads(NativeBackend backend)
+        {
+            const int N = 64, size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 31 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 31 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        // ----- multiple completion threads / io_contexts (pick_context / pick_ring sharding) -----
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_MultiCompletionThreads_ParallelMixed(NativeBackend backend)
+        {
+            const int N = 48, size = 4 * 1024;
+            const ulong readBase = 0, writeBase = 1UL << 20;
+            // 4 completion threads => 4 io_contexts/rings => exercises pick_context/pick_ring sharding.
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend, completionThreads: 4);
+
+            var (prewbuf, prewptr) = AllocateAlignedBuffer(N * size, j => (byte)((j * 5) & 0xFF));
+            device.WriteAsync(prewptr, 0, readBase, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rroots = new byte[N][];
+            var rptrs = new IntPtr[N];
+            var wroots = new byte[N][];
+            for (int i = 0; i < N; i++)
+            {
+                int id = i;
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rroots[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, readBase + (ulong)(id * size), rp, (uint)size, IOCallback, null);
+
+                var (wb, wp) = AllocateAlignedBuffer(size, j => (byte)((j + id) & 0xFF));
+                wroots[i] = wb;
+                device.WriteAsync(wp, 0, writeBase + (ulong)(id * size), (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < 2 * N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int baseIdx = i * size;
+                AssertBufferContents(rptrs[i], size, off => (byte)(((baseIdx + off) * 5) & 0xFF), $"{backend} read {i}");
+            }
+            GC.KeepAlive(prewbuf); GC.KeepAlive(rroots); GC.KeepAlive(wroots);
+        }
+
+        // ----- multiple devices with DIFFERENT shard counts, driven from many threads -----------
+        // Regression test for the pick_context / pick_ring thread-local owner+bounds guard: a thread
+        // that was assigned a high shard index on a device with many contexts must NOT reuse that
+        // index against a different device with fewer contexts (which would be an out-of-bounds read
+        // of that device's ring/context array -> crash/corruption).
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_MultipleDevices_MultiThread_NoCrossShardIndexReuse(NativeBackend backend)
+        {
+            const int threads = 8, perThread = 24, size = 4 * 1024;
+            // Device A has 4 shards, device B has 2. Threads land on A-shards 0..3; those on shard
+            // 2 or 3 then submit to B, exercising the per-device shard reassignment.
+            using var a = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "a.log"), 64 * Mib, backend, completionThreads: 4);
+            using var b = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "b.log"), 64 * Mib, backend, completionThreads: 2);
+
+            var (wa, wpa) = AllocateAlignedBuffer(size, j => (byte)(j & 0xFF));
+            var (wb, wpb) = AllocateAlignedBuffer(size, j => (byte)((j ^ 0x5A) & 0xFF));
+            using var done = new SemaphoreSlim(0);
+            int errors = 0;
+            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+
+            var ts = new Thread[threads];
+            for (int t = 0; t < threads; t++)
+            {
+                int tid = t;
+                ts[t] = new Thread(() =>
+                {
+                    for (int i = 0; i < perThread; i++)
+                    {
+                        ulong addr = (ulong)((tid * perThread + i) * size);
+                        a.WriteAsync(wpa, 0, addr, (uint)size, Cb, null);
+                        b.WriteAsync(wpb, 0, addr, (uint)size, Cb, null);
+                    }
+                });
+                ts[t].Start();
+            }
+            foreach (var th in ts) th.Join();
+            for (int i = 0; i < threads * perThread * 2; i++)
+                Assert.That(done.Wait(TimeSpan.FromSeconds(30)), Is.True, $"{backend}: completion timed out (possible OOB/hang in shard selection).");
+            ClassicAssert.AreEqual(0, errors, $"{backend}: write completions reported errors.");
+
+            // Spot-check correctness on both devices.
+            var (ra, rpa) = AllocateAlignedBuffer(size, _ => 0);
+            a.ReadAsync(0, (ulong)(10 * size), rpa, (uint)size, IOCallback, null); semaphore.Wait();
+            AssertBufferContents(rpa, size, j => (byte)(j & 0xFF), $"{backend} device A");
+            var (rb, rpb) = AllocateAlignedBuffer(size, _ => 0);
+            b.ReadAsync(0, (ulong)(10 * size), rpb, (uint)size, IOCallback, null); semaphore.Wait();
+            AssertBufferContents(rpb, size, j => (byte)((j ^ 0x5A) & 0xFF), $"{backend} device B");
+            GC.KeepAlive(wa); GC.KeepAlive(wb); GC.KeepAlive(ra); GC.KeepAlive(rb);
+        }
+
+        // ----- ThrottleLimit -> submission-ring sizing ----------------------------------------
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_HighThrottle_HighInFlight(NativeBackend backend)
+        {
+            // ThrottleLimit 512 sizes the kernel submission ring to 512 (vs the 128 default), and we
+            // fire 256 concurrent reads (well past 128) to drive the throttle-sized ring + submit path.
+            const int N = 256, size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend, completionThreads: 2, throttleLimit: 512);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [Category("IDevice")]
+        public unsafe void Native_ThrottleAboveMax_IsClampedAndStillWorks(NativeBackend backend)
+        {
+            // A throttle far above the kernel-safe ceiling (MaxThrottle=4096) is clamped (and warned);
+            // the device must still round-trip correctly.
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend, throttleLimit: 100_000);
+            const int size = 4 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, j => (byte)((j + 9) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            device.ReadAsync(0, 0, rptr, (uint)size, IOCallback, null);
+            semaphore.Wait();
+            AssertBufferContents(rptr, size, j => (byte)((j + 9) & 0xFF), $"{backend} clamped-throttle round-trip");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
+        // ----- high submitter concurrency (direct regression for the original production hang) -----
+        // The reported failure: a Garnet server's growing thread pool produced enough concurrent
+        // submitters (each holding a FASTER epoch + thread-id slot while spinning on a full kernel
+        // ring) to exhaust the slot table, which then threw across the P/Invoke boundary and wedged
+        // the server. This test drives many concurrent submitter threads against a throttle-sized
+        // ring so that: (a) slot acquire/release churns far more than the table has slots, exercising
+        // the never-throw yield-spin reuse; (b) throttle == ring (512) means submits never EAGAIN-spin
+        // in-epoch. A regression (slot exhaustion or an in-epoch full-ring spin) reappears as a hang,
+        // which the per-operation completion timeout converts into a deterministic test failure.
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_HighConcurrency_ManyThreads_NoHang(NativeBackend backend)
+        {
+            const int threads = 64, perThread = 32, size = 4 * 1024;
+            const int total = threads * perThread;     // 2048 blocks * 4 KiB = 8 MiB (fits one segment)
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend, completionThreads: 4, throttleLimit: 512);
+
+            // Seed a contiguous, position-derived region so every read targets verifiable data.
+            var (wbuf, wptr) = AllocateAlignedBuffer(total * size, j => (byte)(((j / size) * 13 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(total * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rroots = new byte[total][];
+            var rptrs = new IntPtr[total];
+            for (int i = 0; i < total; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rroots[i] = rb; rptrs[i] = rp;
+            }
+
+            using var done = new SemaphoreSlim(0);
+            int errors = 0;
+            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+
+            var ts = new Thread[threads];
+            for (int t = 0; t < threads; t++)
+            {
+                int tid = t;
+                ts[t] = new Thread(() =>
+                {
+                    for (int i = 0; i < perThread; i++)
+                    {
+                        int idx = tid * perThread + i;
+                        device.ReadAsync(0, (ulong)(idx * size), rptrs[idx], (uint)size, Cb, null);
+                    }
+                });
+                ts[t].Start();
+            }
+            foreach (var th in ts) th.Join();
+
+            for (int i = 0; i < total; i++)
+                Assert.That(done.Wait(TimeSpan.FromSeconds(30)), Is.True,
+                    $"{backend}: completion {i}/{total} timed out — possible slot-exhaustion/in-epoch-spin hang regression.");
+            ClassicAssert.AreEqual(0, errors, $"{backend}: reads reported errors under high concurrency.");
+
+            // Verify a representative sample (every 37th block) for correctness.
+            for (int i = 0; i < total; i += 37)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 13 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rroots);
+        }
+
+        // ----- late P/Invoke entry points (GetFileSize / Reset / TryComplete / RemoveSegment) -----
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_GetFileSize_ReflectsWrites()
+        {
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, NativeBackend.Default);
+            // No data written yet: segment 0 reports size 0 (file not yet created).
+            ClassicAssert.AreEqual(0L, device.GetFileSize(0));
+
+            const int size = 16 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0xCD);
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            ClassicAssert.GreaterOrEqual(device.GetFileSize(0), (long)size, "GetFileSize should reflect the written segment.");
+            GC.KeepAlive(wbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_Reset_ClosesSegments_DeviceRemainsUsable()
+        {
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, NativeBackend.Default);
+            const int size = 4 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0xEE);
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            // Reset closes the open segment handles; the device must lazily reopen on the next IO.
+            ClassicAssert.DoesNotThrow(() => device.Reset());
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(size, _ => 0);
+            device.ReadAsync(0, 0, rptr, (uint)size, IOCallback, null);
+            semaphore.Wait();
+            AssertBufferContents(rptr, size, _ => 0xEE, "post-Reset read");
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_TryComplete_DoesNotThrow_BeforeAndAfterIO()
+        {
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, NativeBackend.Default);
+            // Before the native handle is even created.
+            ClassicAssert.DoesNotThrow(() => device.TryComplete());
+
+            const int size = 4 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0x11);
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            ClassicAssert.DoesNotThrow(() => device.TryComplete());
+            GC.KeepAlive(wbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_RemoveSegment_RemovesPersistedData()
+        {
+            // Multi-segment device (segment files <base>.<id>); write segment 1, remove it, confirm gone.
+            const long segmentSize = 64 * Mib;
+            const int size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize, NativeBackend.Default);
+
+            // Write into segment 1 (segmentId selects the <base>.1 file; the address is the
+            // within-segment offset).
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0x7C);
+            device.WriteAsync(wptr, 1, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+            ClassicAssert.GreaterOrEqual(device.GetFileSize(1), (long)size, "segment 1 should exist after write.");
+
+            // RemoveSegment truncates the segment (its on-disk delete is deferred to the epoch
+            // drain list). Querying it afterwards must not crash and must report empty — this is the
+            // exact path (size() -> OpenSegment bundle-expand -> BumpCurrentEpoch) that faulted when
+            // GetFileSize ran without epoch protection.
+            device.RemoveSegment(1);
+            ClassicAssert.AreEqual(0L, device.GetFileSize(1), "segment 1 should report empty after RemoveSegment.");
+            GC.KeepAlive(wbuf);
         }
 
         [System.Runtime.InteropServices.DllImport("libc", SetLastError = true, EntryPoint = "chmod")]

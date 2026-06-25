@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 #if !NET9_0_OR_GREATER
 using System.Runtime.InteropServices;
@@ -28,10 +27,11 @@ namespace Garnet.common
 #if !NET9_0_OR_GREATER
         private readonly unsafe void* ptr;
         private readonly int len;
+
+        private readonly unsafe void* nsPtr;
+        private readonly int nsLen;
 #endif
 
-        // TODO: When variable length namespaces are supported, this will need to change
-        private readonly byte namespaceByte;
 
         /// <inheritdoc/>
         public readonly bool IsPinned
@@ -71,38 +71,47 @@ namespace Garnet.common
         }
 
         /// <inheritdoc/>
-        [UnscopedRef]
         public readonly ReadOnlySpan<byte> NamespaceBytes
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#if NET9_0_OR_GREATER
+            get; 
+#else
             get
             {
-                return new(in namespaceByte);
+                unsafe
+                {
+                    return new(nsPtr, nsLen);
+                }
             }
+#endif
         }
 
         /// <summary>
         /// Construct a new <see cref="VectorElementKey"/>.
         /// 
-        /// Note that <paramref name="namespaceByte"/> cannot be 0.
+        /// Note that <paramref name="namespaceBytes"/> cannot be 0.
         /// </summary>
-        public VectorElementKey(byte namespaceByte, ReadOnlySpan<byte> key)
+        public VectorElementKey(ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(namespaceByte != 0, "Namespace must be non-zero");
-
-            this.namespaceByte = namespaceByte;
+            Debug.Assert(namespaceBytes.Length == 1, "Variable length namespaces are not supported");
+            Debug.Assert(namespaceBytes[0] != 0, "Namespace must be non-zero");
 
 #if NET9_0_OR_GREATER
             KeyBytes = key;
+            NamespaceBytes = namespaceBytes;
 #else
             unsafe
             {
+                nsPtr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(namespaceBytes));
                 ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
             }
             len = key.Length;
+            nsLen = namespaceBytes.Length;
 #endif
         }
 
         /// <inheritdoc/>
-        public override readonly string ToString() => $"ns: {namespaceByte}, {SpanByte.ToShortString(KeyBytes)}";
+        public override readonly string ToString() => $"ns: {SpanByte.ToShortString(NamespaceBytes)}, {SpanByte.ToShortString(KeyBytes)}";
     }
 }

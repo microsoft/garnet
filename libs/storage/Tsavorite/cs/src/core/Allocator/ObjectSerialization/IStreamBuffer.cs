@@ -20,16 +20,16 @@ namespace Tsavorite.core
         /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
         internal const int BufferSize = 1 << LogSettings.kMinObjectLogSegmentSizeBits;
 
-        /// <summary>Initial IO size to read. Sized to comfortably cover a typical small record (header + small key + small value)
+        /// <summary>Default Initial IO size to read; may be overridden by operation-level, session-level, or store-level specification.
+        /// Sized to comfortably cover a typical small record (header + small key + small value)
         /// in one device-sector IO. The previous default of one OS system page (4 KB on Linux x64) caused most reads of small
         /// records to span 4 KB NAND-page boundaries on NVMe, doubling per-IO device latency (~0.92 ms vs ~0.67 ms for sector-aligned
         /// 4 KB reads). With a 128-byte speculative read, the sector-aligned IO is typically 1 sector (and up to 2 sectors when the
         /// record begins near the end of a sector), and usually captures a full small record with no re-read.
         /// Records larger than what fits in the speculative read trigger a precise re-read via VerifyRecordFromDiskCallback with the
-        /// Records larger than what fits in the speculative read trigger a precise re-read via VerifyRecordFromDiskCallback with the
         /// now-known recordLength, same as before — the cost is one extra IO per multi-sector record, which is a fair trade against
         /// avoiding the NAND-crossing penalty on every small-record IO.</summary>
-        internal const int InitialIOSize = 128;
+        public const int DefaultInitialIORecordSize = 128;
 
         /// <summary>
         /// We use these buffers for only read or only write operations, never both at the same time.

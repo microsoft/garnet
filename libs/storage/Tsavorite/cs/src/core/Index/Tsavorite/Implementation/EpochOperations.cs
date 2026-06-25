@@ -14,7 +14,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext,
+            ref OperationState<TInput, TOutput, TContext> operationState,
             TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

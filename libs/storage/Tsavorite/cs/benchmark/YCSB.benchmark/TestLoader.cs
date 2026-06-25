@@ -386,7 +386,7 @@ namespace Tsavorite.benchmark
                 try
                 {
                     var sw = Stopwatch.StartNew();
-                    store.Recover();
+                    store.RecoverAsync().AsTask().GetAwaiter().GetResult();
                     sw.Stop();
                     Console.WriteLine($"  Completed recovery in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
                     return true;

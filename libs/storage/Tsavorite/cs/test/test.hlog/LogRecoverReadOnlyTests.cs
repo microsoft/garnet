@@ -10,7 +10,7 @@ using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
@@ -50,15 +50,15 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
+        public async Task RecoverReadOnlyCheck1()
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, TryRecoverLatest = false };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
+            var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = MinKvLogMemorySizeBits, PageSizeBits = MinKvLogPageSizeBits, MutableFraction = 0.5, SegmentSizeBits = MinKvLogPageSizeBits + 1, TryRecoverLatest = false };
+            using var log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             await Task.WhenAll(ProducerAsync(log, cts),
                                CommitterAsync(log, cts.Token),
-                               ReadOnlyConsumerAsync(deviceName, isAsync, cts.Token)).ConfigureAwait(false);
+                               ReadOnlyConsumerAsync(deviceName, cts.Token)).ConfigureAwait(false);
         }
 
         private async Task ProducerAsync(TsavoriteLog log, CancellationTokenSource cts)
@@ -86,17 +86,17 @@ namespace Tsavorite.test.recovery
             catch (OperationCanceledException) { }
         }
 
-        // This creates a separate TsavoriteLog over the same log file, using RecoverReadOnly to continuously update
+        // This creates a separate TsavoriteLog over the same log file, using RecoverReadOnlyAsync to continuously update
         // to the primary TsavoriteLog's commits.
-        private async Task ReadOnlyConsumerAsync(string deviceName, bool isAsync, CancellationToken cancellationToken)
+        private async Task ReadOnlyConsumerAsync(string deviceName, CancellationToken cancellationToken)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false) : new TsavoriteLog(logSettings);
+            var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = MinKvLogPageSizeBits, SegmentSizeBits = MinKvLogPageSizeBits + 1 };
+            using var log = await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false);
 
             var _ = BeginRecoverAsyncLoop();
 
-            // This enumerator waits asynchronously when we have reached the committed tail of the duplicate TsavoriteLog. When RecoverReadOnly
+            // This enumerator waits asynchronously when we have reached the committed tail of the duplicate TsavoriteLog. When RecoverReadOnlyAsync
             // reads new data committed by the primary TsavoriteLog, it signals commit completion to let iter continue to the new tail.
             using var iter = log.Scan(log.BeginAddress, long.MaxValue);
             var prevValue = -1L;
@@ -127,12 +127,7 @@ namespace Tsavorite.test.recovery
                     {
                         try
                         {
-                            if (isAsync)
-                            {
-                                await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
-                            }
-                            else
-                                log.RecoverReadOnly();
+                            await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
                             break;
                         }
                         catch
@@ -140,7 +135,7 @@ namespace Tsavorite.test.recovery
                         Thread.Yield();
                         // retry until timeout
                         if (DateTimeOffset.UtcNow.Ticks - startTime > TimeSpan.FromSeconds(5).Ticks)
-                            throw new Exception("Timed out retrying RecoverReadOnly");
+                            throw new Exception("Timed out retrying RecoverReadOnlyAsync");
                     }
                 }
             }

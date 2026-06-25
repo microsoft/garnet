@@ -173,6 +173,10 @@ namespace Garnet
         [Option("acl-file", Required = false, HelpText = "External ACL user file.")]
         public string AclFile { get; set; }
 
+        [OptionValidation]
+        [Option("acl-strict-custom-commands", Required = false, HelpText = "If true (default), the server refuses to start when an ACL rule references a custom (extension) command name that no loaded module has registered. Set to false to load unresolved names as-is and log warnings.")]
+        public bool? AclStrictCustomCommands { get; set; }
+
         [Option("aad-authority", Required = false, HelpText = "The authority of AAD authentication.")]
         public string AadAuthority { get; set; }
 
@@ -402,7 +406,7 @@ namespace Garnet
         public int NetworkSendThrottleMax { get; set; }
 
         [OptionValidation]
-        [Option("sg-get", Required = false, HelpText = "Whether we use scatter gather IO for MGET or a batch of contiguous GET operations - useful to saturate disk random read IO.")]
+        [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
         public bool? EnableScatterGatherGet { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
@@ -492,7 +496,7 @@ namespace Garnet
         public int? DeviceCompletionThreads { get; set; }
 
         [IntRangeValidation(0, 65536)]
-        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends.")]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends. For DeviceType=LocalMemory (which has no device-wide throttle) this instead sets the per-ring in-flight capacity, rounded up to a power of two.")]
         public int? DeviceThrottleLimit { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
@@ -580,6 +584,10 @@ namespace Garnet
         [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
         public string ValueOverflowThreshold { get; set; }
 
+        [MemorySizeValidation(isRequired: false)]
+        [Option("initial-io-record-size", Required = false, HelpText = "Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes.")]
+        public string InitialIORecordSize { get; set; }
+
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
@@ -656,6 +664,10 @@ namespace Garnet
 
         [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableRangeIndexPreview { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count)")]
+        public int VectorSetQuantizationTaskCount { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -854,6 +866,7 @@ namespace Garnet
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
+                AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
@@ -911,7 +924,7 @@ namespace Garnet
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
-                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
+                EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 FastAofTruncate = GetFastAofTruncate(logger),
@@ -943,6 +956,7 @@ namespace Garnet
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
                 ValueOverflowThreshold = ValueOverflowThreshold,
+                InitialIORecordSize = InitialIORecordSize,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
@@ -954,6 +968,7 @@ namespace Garnet
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
                 VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
                 EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }

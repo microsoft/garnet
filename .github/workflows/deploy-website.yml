@@ -27,16 +27,16 @@ jobs:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: main
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: continuousbenchmark
           sparse-checkout: |
             website/static/charts
           path: continuousbenchmark
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: continuousbenchmark_net80
           sparse-checkout: |
@@ -51,7 +51,7 @@ jobs:
       - name: DEBUG Show triggering workflow name
         run: echo ${{ github.event.workflow_run.name }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: yarn
@@ -65,7 +65,7 @@ jobs:
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e    #v4 - for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453    #v4 - for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Build output to publish to the `gh-pages` branch:

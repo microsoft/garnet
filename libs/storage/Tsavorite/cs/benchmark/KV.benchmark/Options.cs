@@ -55,6 +55,12 @@ namespace Tsavorite.kvbench
             HelpText = "Warmup duration in seconds, discarded from results. 0 disables warmup.")]
         public int WarmupSec { get; set; }
 
+        // ===== Pipelining =====
+
+        [Option('b', "batch-size", Required = false, Default = 1024,
+            HelpText = "Run-phase batch depth: ops issued per chunk before an opportunistic drain. Mirrors Resp.benchmark -b.")]
+        public int BatchSize { get; set; }
+
         // ===== Reproducibility =====
 
         [Option('s', "seed", Required = false, Default = 211UL,
@@ -94,11 +100,15 @@ namespace Tsavorite.kvbench
         // ===== Device =====
 
         [Option("device", Required = false, Default = "default",
-            HelpText = "Device backend: native, randomaccess, filestream, null, default.")]
+            HelpText = "Device backend: native, randomaccess, filestream, null, localmemory, default.")]
         public string Device { get; set; }
 
         [Option("device-throttle", Required = false, Default = 0,
-            HelpText = "Max in-flight IOs. 0 = device default (120 for every Tsavorite device).")]
+            HelpText = "Max in-flight IOs (device queue depth). 0 = device default (120 for Native; maps to " +
+                       "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
+                       "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
+                       "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
+                       "caps IOPS below the device's large-span ceiling).")]
         public int DeviceThrottle { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
@@ -106,12 +116,21 @@ namespace Tsavorite.kvbench
         public string DeviceIoBackend { get; set; }
 
         [Option("device-completion-threads", Required = false, Default = 0,
-            HelpText = "Number of background drainer threads for the Linux Native IO backend's " +
-                       "completion queue. Each drainer is bound 1:1 to its own kernel io_context " +
-                       "(libaio) or io_uring ring; submitters distribute across rings via per-thread " +
-                       "affinity. Throughput scales with this value up to the available submitter " +
-                       "concurrency. 0 = Garnet default (1).")]
+            HelpText = "Number of background drainer threads for the device's IO completion queue. " +
+                       "For DeviceType.Native on Linux: each drainer is bound 1:1 to its own kernel " +
+                       "io_context (libaio) or io_uring ring; submitters distribute across rings via " +
+                       "per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC " +
+                       "ring fed by one submitter (per-thread routing). Throughput scales with this " +
+                       "value up to the available submitter concurrency. 0 = default (1 for Native; " +
+                       "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
+
+        [Option("device-inline-completion", Required = false, Default = false,
+            HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
+                       "completion threads or rings; copy + callback run synchronously). Isolates the " +
+                       "per-op work from the cross-thread run-thread->completion-thread handoff. " +
+                       "Overrides --device-completion-threads.")]
+        public bool DeviceInlineCompletion { get; set; }
 
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
@@ -238,7 +257,7 @@ namespace Tsavorite.kvbench
 
             ResolvedDeviceType = ParseDeviceType(Device);
             if (ResolvedDeviceType == Tsavorite.core.DeviceType.Default && !IsKnownDeviceName(Device))
-                return $"--device must be one of: native, randomaccess, filestream, null, default (got: {Device})";
+                return $"--device must be one of: native, randomaccess, filestream, null, localmemory, default (got: {Device})";
             ResolvedIoBackend = ParseIoBackend(DeviceIoBackend);
             if (ResolvedIoBackend == Tsavorite.core.NativeStorageDevice.IoBackend.Default && !IsKnownIoBackendName(DeviceIoBackend))
                 return $"--device-io-backend must be one of: libaio, uring, default (got: {DeviceIoBackend})";
@@ -339,6 +358,7 @@ namespace Tsavorite.kvbench
                 "randomaccess" => Tsavorite.core.DeviceType.RandomAccess,
                 "filestream" => Tsavorite.core.DeviceType.FileStream,
                 "null" => Tsavorite.core.DeviceType.Null,
+                "localmemory" or "localmem" => Tsavorite.core.DeviceType.LocalMemory,
                 "default" => Tsavorite.core.DeviceType.Default,
                 _ => Tsavorite.core.DeviceType.Default,
             };
@@ -359,7 +379,7 @@ namespace Tsavorite.kvbench
         static bool IsKnownDeviceName(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return true;
-            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default";
+            return s.ToLowerInvariant() is "native" or "randomaccess" or "filestream" or "null" or "default" or "localmemory" or "localmem";
         }
 
         static bool IsKnownIoBackendName(string s)

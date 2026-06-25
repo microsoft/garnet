@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -123,7 +122,9 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
 
-            if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+            // The 260-char MAX_PATH limit does not apply to extended-length paths (those prefixed with
+            // "\\?\"), which CreateFileW accepts up to ~32,767 chars; only enforce it for normal paths.
+            if (!Native32.IsExtendedLengthPath(filename) && filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new TsavoriteException($"Path {filename} is too long");
 
             ThrottleLimit = 120;
@@ -522,29 +523,8 @@ namespace Tsavorite.core
 
         private static uint GetSectorSize(string filename)
         {
-            if (sectorSize > 0) return sectorSize;
-
-            /* Get true physical sector size if we want to use it - commented for now as we prefer to use logical sector size (smaller) */
-
-            /*
-            SafeFileHandle safeFileHandle = CreateHandle(0, true, true, false, 0, filename + ".tmp");
-            if (!safeFileHandle.IsInvalid)
-            {
-                if (Native32.GetFileInformationByHandleEx(safeFileHandle, Native32.FILE_INFO_BY_HANDLE_CLASS.FileStorageInfo, out Native32.FILE_STORAGE_INFO info, (uint)sizeof(Native32.FILE_STORAGE_INFO)))
-                {
-                    sectorSize = info.PhysicalBytesPerSectorForAtomicity;
-                }
-                safeFileHandle.Dispose();
-            }
-            if (sectorSize > 0) return sectorSize;
-            Debug.WriteLine($"Unable to retrieve sector size information for temporary handle {filename + ".tmp"}, trying disk level information");
-            */
-
-            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3), out _, out sectorSize, out _, out _))
-            {
-                Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
-                sectorSize = 512;
-            }
+            if (sectorSize <= 0)
+                sectorSize = Native32.GetDeviceSectorSize(filename);
             return sectorSize;
         }
 

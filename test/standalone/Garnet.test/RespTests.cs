@@ -3985,8 +3985,8 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                var keyCount = 5;
-                var valLen = 256;
+                var keyCount = 50;
+                var valLen = 1024;
                 var keyLen = 8;
 
                 List<Tuple<string, string>> data = [];

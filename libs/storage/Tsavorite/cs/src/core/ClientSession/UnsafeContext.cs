@@ -318,7 +318,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
+            => RMW(key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, rmwOptions.InitialIORecordSize, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -328,7 +328,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, rmwOptions.InitialIORecordSize, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -336,6 +336,17 @@ namespace Tsavorite.core
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
             return clientSession.store.ContextRMW(key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+        }
+
+        /// <summary>
+        /// RMW path that carries a per-operation <c>initialIORecordSize</c> override (from <see cref="RMWOptions.InitialIORecordSize"/>).
+        /// The no-options overloads call the variant without this parameter to keep the hot path free of any RMWOptions handling.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Status RMW(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
+            return clientSession.store.ContextRMW(key, keyHash, ref input, ref output, initialIORecordSize, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

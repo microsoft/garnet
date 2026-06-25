@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -10,6 +11,14 @@ namespace Garnet.server.ACL
     class ACLParser
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
+        // Allowed characters for custom command names. First char must be alphanumeric;
+        // subsequent chars additionally permit '.', '_', '-', and '|'.
+        // '|' is permitted so custom names can mirror built-in subcommand notation (e.g. CLIENT|GETNAME).
+        private static readonly SearchValues<char> LegalFirstChars = SearchValues.Create(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+        private static readonly SearchValues<char> LegalRestChars = SearchValues.Create(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-|");
 
         private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>(StringComparer.OrdinalIgnoreCase)
         {
@@ -216,23 +225,41 @@ namespace Garnet.server.ACL
                 // Individual commands or command|subcommand pairs
                 string commandName = op.Substring(1);
 
-                if (!TryParseCommandForAcl(commandName, out RespCommand command))
+                if (TryParseCommandForAcl(commandName, out RespCommand command))
                 {
-                    throw new AclCommandDoesNotExistException(commandName);
+                    if (op[0] == '-')
+                    {
+                        user.RemoveCommand(command);
+                    }
+                    else
+                    {
+                        user.AddCommand(command);
+                    }
                 }
-
-                if (op[0] == '-')
+                else if (IsValidCustomCommandName(commandName))
                 {
-                    user.RemoveCommand(command);
+                    // Modules may not be loaded yet (ACL file is parsed before LoadModules), so we
+                    // store the name on the user and resolve it later (startup pass, SETUSER, dispatch).
+                    if (op[0] == '-')
+                    {
+                        user.RemoveCustomCommand(commandName);
+                    }
+                    else
+                    {
+                        user.AddCustomCommand(commandName);
+                    }
                 }
                 else
                 {
-                    user.AddCommand(command);
+                    throw new AclCommandDoesNotExistException(commandName);
                 }
             }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
-                // NOTE: No-op, because only wildcard key patterns are currently supported
+                // NOTE: No-op, because only wildcard key patterns are currently supported. If per-key key
+                // patterns are ever added, the GET scatter-gather fast path (NetworkGET_SG) must re-check
+                // ACL per key: it serves GETs past the first without returning through the per-command ACL
+                // check in ProcessMessages, which is only safe while key access is all-or-nothing.
             }
             else if (op.Equals("RESETKEYS", StringComparison.OrdinalIgnoreCase))
             {
@@ -302,6 +329,23 @@ namespace Garnet.server.ACL
             // Some commands aren't really commands, so ACLs shouldn't accept their names
             static bool IsInvalidCommandToAcl(RespCommand command)
             => command == RespCommand.INVALID || command == RespCommand.NONE || command.NormalizeForACLs() != command;
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="name"/> is a syntactically valid custom command name.
+        /// Strict validation prevents the unknown-name fallback from accepting RESP-meta bytes
+        /// or whitespace-bearing junk. Allowed: ASCII letters/digits and '.', '_', '-', '|';
+        /// first character must be alphanumeric.
+        /// </summary>
+        internal static bool IsValidCustomCommandName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            var nameSpan = name.AsSpan();
+            return LegalFirstChars.Contains(nameSpan[0]) && !nameSpan[1..].ContainsAnyExcept(LegalRestChars);
         }
 
         /// <summary>

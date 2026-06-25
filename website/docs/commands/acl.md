@@ -141,6 +141,12 @@ Create an ACL user with the specified rules or modify the rules of an existing u
 
 Manipulate Garnet ACL users interactively. If the username does not exist, the command creates the username without any privilege. It then reads from left to right all the rules provided as successive arguments, setting the user ACL rules as specified. If the user already exists, the provided ACL rules are simply applied in addition to the rules already set.
 
+#### Custom (extension) command rules
+
+In addition to built-in commands and `@category` rules, individual custom command names can be used directly as rules. For example, `+json.set` grants access to `JSON.SET` and `-json.get` denies access to `JSON.GET`. An explicit per-name deny takes precedence over a category-level allow, so `+@custom -json.set` allows every custom command except `JSON.SET`. Name matching is case-insensitive. Built-in command names take precedence: if a name is recognized as a built-in command (or `command|subcommand`), the rule applies to that built-in, even when a module registers a custom command with the same name.
+
+`ACL SETUSER` is strict at runtime: a `+name`/`-name` rule whose name is not registered with any loaded module is rejected. Names that already exist on the user (for example, names loose-loaded from an ACL file before modules registered) may be toggled between allow and deny without re-validation. ACL file load is strict by default - startup fails when the file references a custom command name no loaded module has registered. Set `acl-strict-custom-commands` to `false` if you need lenient load order (unresolved names are kept and logged as warnings).
+
 #### Resp Reply
 
 Returns +OK on success, otherwise --ERR message if any.

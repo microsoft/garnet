@@ -100,6 +100,9 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
         ObjectIdMap TransientObjectIdMap { get; }
 
+        /// <summary>Return the <see cref="ObjectIdMap"/> for a specific page number (not index)</summary>
+        ObjectIdMap GetPageObjectIdMap(long pageNumber);
+
         /// <summary>Dispose an in-memory log record</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
@@ -116,6 +119,9 @@ namespace Tsavorite.core
         /// <param name="startAddress">Start logical address of the range.</param>
         /// <param name="endAddress">End logical address of the range (exclusive).</param>
         /// <param name="source">Identifies whether this eviction is from the main log or the read cache.</param>
-        void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source);
+        /// <param name="isRecovery">True when called during recovery, where a page's object load may have been deferred — such a page has an empty
+        /// ObjectIdMap and per-record object/overflow slots that still hold raw on-disk values (not valid ObjectIdMap ids) and is skipped. False for
+        /// normal eviction, where an empty map simply means an object-free page whose inline records must still be visited.</param>
+        void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery);
     }
 }

@@ -8,11 +8,11 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
-        /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
+        /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (detaching any read-cache prefix).
         /// </summary>
         /// <param name="inputLogRecord">The source record, either from readonly region of the in-memory log, or from disk</param>
         /// <param name="sessionFunctions"></param>
-        /// <param name="pendingContext"></param>
+        /// <param name="operationState"></param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <returns>
@@ -22,7 +22,7 @@ namespace Tsavorite.core
         ///     </list>
         /// </returns>
         internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord inputLogRecord,
-                                    TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                    TSessionFunctionsWrapper sessionFunctions, ref OperationState<TInput, TOutput, TContext> operationState,
                                     ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
@@ -31,14 +31,14 @@ namespace Tsavorite.core
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
             var allocOptions = new AllocateOptions() { recycle = true };
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
 
             stackCtx.SetNewRecord(newLogicalAddress);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
@@ -52,13 +52,13 @@ namespace Tsavorite.core
                 {
                     var srcLogicalAddress = stackCtx.recSrc.HasMainLogSrc
                         ? stackCtx.recSrc.LogicalAddress
-                        : pendingContext.originalAddress;
+                        : operationState.originalAddress;
                     storeFunctions.PostCopyToTail(in inputLogRecord, srcLogicalAddress, ref newLogRecord, newLogicalAddress);
                 }
 
                 newLogRecord.InfoRef.UnsealAndValidate();
 
-                pendingContext.logicalAddress = newLogicalAddress;
+                operationState.logicalAddress = newLogicalAddress;
                 stackCtx.ClearNewRecord();
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
             }
@@ -67,7 +67,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+            SaveAllocationForRetry(ref operationState, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
     }

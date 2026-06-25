@@ -52,6 +52,7 @@ namespace Garnet.server
             serverInfo =
             [
                 new("garnet_version", storeWrapper.version),
+                new("server_name", "garnet"),
                 new("os", Environment.OSVersion.ToString()),
                 new("processor_count", Environment.ProcessorCount.ToString()),
                 new("arch_bits", Environment.Is64BitProcess ? "64" : "32"),

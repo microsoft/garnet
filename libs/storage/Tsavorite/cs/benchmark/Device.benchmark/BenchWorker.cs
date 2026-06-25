@@ -43,6 +43,15 @@ namespace Device.benchmark
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
         readonly ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
 
+        // Per-worker (single-writer-from-processor-thread) counters. Avoid the cache-line
+        // ping-pong of incrementing Program.totalCompletedOk on every callback when many
+        // processor threads are active. Each worker's ops are routed to a stable single
+        // processor by the device (per-thread SPSC routing), so the processor that writes
+        // these counters is unique per worker.
+        internal long localCompletedOk;
+        internal long localErrors;
+        internal readonly long[] localErrorCounts = new long[256];
+
         public BenchWorker(int batchSize, int threadId, int sectorSize, long fileSize, byte[] expectedData, IDevice device, ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {
             this.batchSize = batchSize;
@@ -77,17 +86,17 @@ namespace Device.benchmark
 #endif
             if (errorCode != 0)
             {
-                // Hot-path: NEVER Console.WriteLine here. 100K+ errors/sec serial console
-                // writes both falsify throughput numbers (errors get counted as "completed
-                // fast") and slow the real path enough to compound the failure rate.
-                // Aggregate per-code counts; Program prints them once after the run.
-                Interlocked.Increment(ref Program.totalErrors);
-                if (errorCode < (uint)Program.ErrorCounts.Length)
-                    Interlocked.Increment(ref Program.ErrorCounts[errorCode]);
+                // Per-worker counters: single processor thread writes these, so no
+                // synchronization is needed during the run. Cross-thread visibility is
+                // established when the submitter sets doneEvent (full memory barrier) and
+                // the main thread reads after doneEvent.Wait().
+                localErrors++;
+                if (errorCode < (uint)localErrorCounts.Length)
+                    localErrorCounts[errorCode]++;
             }
             else
             {
-                Interlocked.Increment(ref Program.totalCompletedOk);
+                localCompletedOk++;
             }
             _benchmarkPool.Enqueue((BenchmarkOperation)ctx);
         }

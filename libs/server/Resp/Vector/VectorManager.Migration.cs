@@ -51,7 +51,7 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            VectorElementKey key = new((byte)namespaceBytes[0], keyWithoutNamespace);
+            VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
@@ -173,9 +173,10 @@ namespace Garnet.server
                 var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
                 nint newlyAllocatedIndex;
+                bool requestQuantization;
                 unsafe
                 {
-                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
                 }
 
                 var ctxArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
@@ -189,8 +190,26 @@ namespace Garnet.server
 
                 // Exclusive lock to prevent other modification of this key
 
+                var needsWaitForDrop = false;
+            waitForDrop:
+                if (needsWaitForDrop)
+                {
+                    WaitForDiskANNIndexDrop(key);
+                    needsWaitForDrop = false;
+                }
+
                 using (AcquireExclusiveLocks(ActiveThreadSession, key))
                 {
+                    // If we're racing with a drop to the same key, we need to drop the lock and wait for index drop.
+                    //
+                    // This should be extremely rare (it basically requires a delete followed by an immediate migrate into the same key)
+                    // but if we don't handle it future inserts will corrupt the DiskANN index.
+                    if (DropRequested(key))
+                    {
+                        needsWaitForDrop = true;
+                        goto waitForDrop;
+                    }
+
                     // Perform the write
                     var writeRes = ActiveThreadSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref ActiveThreadSession.stringBasicContext);
                     if (writeRes != GarnetStatus.OK)
@@ -211,6 +230,12 @@ namespace Garnet.server
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorBasicContext);
+
+                    // Post recreation the index might already need quantization - if so, queue it up
+                    if (requestQuantization)
+                    {
+                        _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    }
 
                     // For REPLICAs which are following, we need to fake up a write
                     ReplicateMigratedIndexKey(ref ActiveThreadSession.stringBasicContext, key, value, context, logger);
@@ -277,7 +302,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<byte[]> keys, Dictionary<byte[], byte[]> vectorSetKeys)
+        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], byte[]> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -288,31 +313,26 @@ namespace Garnet.server
 
             foreach (var key in keys)
             {
-                fixed (byte* keyPtr = key)
+                // Dummy command, we just need something Vector Set-y
+                StringInput input = default;
+                input.header.cmd = RespCommand.VSIM;
+
+                using (ReadVectorIndex(storageSession, key.ReadOnlySpan, ref input, indexSpan, out var status))
                 {
-                    var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-
-                    // Dummy command, we just need something Vector Set-y
-                    StringInput input = default;
-                    input.header.cmd = RespCommand.VSIM;
-
-                    using (ReadVectorIndex(storageSession, keySpan, ref input, indexSpan, out var status))
+                    if (status != GarnetStatus.OK)
                     {
-                        if (status != GarnetStatus.OK)
-                        {
-                            continue;
-                        }
-
-                        namespaces ??= [];
-
-                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
-                        for (var i = 0UL; i < ContextStep; i++)
-                        {
-                            _ = namespaces.Add(context + i);
-                        }
-
-                        vectorSetKeys[key] = indexSpan.ToArray();
+                        continue;
                     }
+
+                    namespaces ??= [];
+
+                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                    for (var i = 0UL; i < ContextStep; i++)
+                    {
+                        _ = namespaces.Add(context + i);
+                    }
+
+                    vectorSetKeys[key.ToArray()] = indexSpan.ToArray();
                 }
             }
 

@@ -36,8 +36,8 @@ serviceAccount:
   # -- The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
-  # -- Creates the token object
-  token: false
+  # -- Automatically mount the service account token
+  automount: false
 
 config:
   # -- Garnet secret (if you want to use an existing secret).
@@ -58,10 +58,12 @@ containers:
   args: []
   # -- Containers port
   port: 6379
-  # -- Containers livenessProbe
-  livenessProbe: {}
-  # -- Containers livenessProbe
-  readinessProbe: {}
+
+# -- Containers livenessProbe
+livenessProbe: {}
+
+# -- Containers livenessProbe
+readinessProbe: {}
 
 # -- Init containers
 initContainers: []
@@ -113,6 +115,11 @@ service:
   type: ClusterIP
   # -- Service port
   port: 6379
+  # -- Service ipFamilies
+  ipFamilies:
+  - IPv4
+  # -- Service ipFamilyPolicy SingleStack|PreferDualStack|RequireDualStack
+  ipFamilyPolicy: SingleStack
 
 # -- Resources
 resources: {}

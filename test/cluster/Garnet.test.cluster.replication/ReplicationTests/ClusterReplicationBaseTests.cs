@@ -240,6 +240,8 @@ namespace Garnet.test.cluster
 
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
             var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Populate Primary
@@ -354,8 +356,9 @@ namespace Garnet.test.cluster
                     context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
 
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Restart secondary
@@ -606,6 +609,8 @@ namespace Garnet.test.cluster
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryIndex);
                 context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
@@ -679,6 +684,7 @@ namespace Garnet.test.cluster
             if (takePrimaryCheckpoint)
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(0, primaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(0, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
             }
@@ -705,6 +711,7 @@ namespace Garnet.test.cluster
             if (takeNewPrimaryCheckpoint)
             {
                 var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(1, newPrimaryLastSaveTime);
                 context.clusterTestUtils.Checkpoint(1, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(1, newPrimaryLastSaveTime, logger: context.logger);
             }
@@ -900,6 +907,9 @@ namespace Garnet.test.cluster
                 var oldPrimaryLastSaveTime = context.clusterTestUtils.LastSave(oldPrimaryIndex, logger: context.logger);
                 var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(newPrimaryIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(oldPrimaryIndex, oldPrimaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(newPrimaryIndex, newPrimaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(oldPrimaryIndex, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(oldPrimaryIndex, oldPrimaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(newPrimaryIndex, newPrimaryLastSaveTime, logger: context.logger);
@@ -1035,6 +1045,8 @@ namespace Garnet.test.cluster
             {
                 var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryNodeIndex, logger: context.logger);
                 var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaNodeIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNextSecond(primaryNodeIndex, primaryLastSaveTime);
+                context.clusterTestUtils.WaitUntilNextSecond(replicaNodeIndex, replicaLastSaveTime);
                 context.clusterTestUtils.Checkpoint(primaryNodeIndex);
                 context.clusterTestUtils.WaitCheckpoint(primaryNodeIndex, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(replicaNodeIndex, replicaLastSaveTime, logger: context.logger);

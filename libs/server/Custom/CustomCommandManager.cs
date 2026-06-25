@@ -39,6 +39,10 @@ namespace Garnet.server
         private readonly ConcurrentDictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, RespCommandDocs> customCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
 
+        // Tracks every registered custom command name, independent of whether RespCommandsInfo
+        // was supplied (customCommandsInfo only includes commands registered WITH explicit info).
+        private readonly ConcurrentDictionary<string, byte> customCommandNames = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// Offset from which custom type IDs start in the GarnetObjectType enum
         /// </summary>
@@ -86,6 +90,7 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, arity, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
+            customCommandNames.TryAdd(name, 0);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null)
@@ -113,6 +118,7 @@ namespace Garnet.server
             var newCmd = new CustomTransaction(name, (byte)cmdId, arity, proc);
             var setSuccessful = transactionProcMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
+            customCommandNames.TryAdd(name, 0);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null)
@@ -166,6 +172,7 @@ namespace Garnet.server
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, newSubCmd);
             Debug.Assert(scSetSuccessful);
 
+            customCommandNames.TryAdd(name, 0);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null)
@@ -195,6 +202,7 @@ namespace Garnet.server
             var setSuccessful = customProcedureMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
 
+            customCommandNames.TryAdd(name, 0);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null)
@@ -340,6 +348,14 @@ namespace Garnet.server
         /// <returns>True if command info was found</returns>
         internal bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
             => this.customCommandsInfo.TryGetValue(cmdName, out respCommandsInfo);
+
+        /// <summary>
+        /// Returns true if a custom command with the given name is registered (case-insensitive).
+        /// Backed by an info-independent name set so commands registered without explicit
+        /// RespCommandsInfo are still recognized.
+        /// </summary>
+        public bool IsCustomCommandRegistered(string cmdName)
+            => cmdName != null && this.customCommandNames.ContainsKey(cmdName);
 
         /// <summary>
         /// Get custom command docs by name

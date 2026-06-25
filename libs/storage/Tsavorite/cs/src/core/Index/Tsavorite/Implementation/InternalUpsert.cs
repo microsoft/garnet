@@ -7,8 +7,6 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    using static LogAddress;
-
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -23,7 +21,7 @@ namespace Tsavorite.core
         /// <param name="srcObjectValue">String value to be updated to (or inserted if key does not exist); exclusive with <paramref name="srcStringValue"/>.</param>
         /// <param name="output">output where the result of the update can be placed</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
-        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="operationState">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
@@ -48,7 +46,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                             ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output,
-                            ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+                            ref TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -58,8 +56,10 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
-            pendingContext.keyHash = keyHash;
-            pendingContext.logicalAddress = kInvalidAddress;
+
+            // operationState.keyHash is NOT written here: Upsert never goes pending, so keyHash (a pending-only field) is dead.
+            // operationState.logicalAddress is NOT written here: it defaults to 0 (== kInvalidAddress) for a fresh operationState;
+            //   the in-memory write paths below overwrite it on success, and HandleRetryStatus resets it on retry.
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -84,7 +84,7 @@ namespace Tsavorite.core
                 if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.ReadOnlyAddress, out status))
                     return status;
 
-                // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
+                // Note: Upsert does not track operationState.InitialAddress because we don't have an InternalContinuePendingUpsert
 
                 // If there is a readcache record, use it as the CopyUpdater source.
                 if (stackCtx.recSrc.HasReadCacheSrc)
@@ -125,7 +125,7 @@ namespace Tsavorite.core
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
                             if (TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                                        ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
+                                        ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref operationState, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
                                     || status != OperationStatus.SUCCESS)
                                 goto Done;
                         }
@@ -143,7 +143,7 @@ namespace Tsavorite.core
                         if (ipwDelta != 0)
                             sizeTracker.IncrementSize(ipwDelta);
 
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto Done;
@@ -174,7 +174,7 @@ namespace Tsavorite.core
 
             CreateNewRecord:
                 status = CreateNewRecordUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                        key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo);
+                        key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref operationState, sessionFunctions, ref stackCtx, ref upsertInfo);
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                 goto Done;
@@ -198,7 +198,7 @@ namespace Tsavorite.core
         }
 
         private bool TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref LogRecord logRecord, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref OperationState<TInput, TOutput, TContext> operationState,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo, out OperationStatus status)
             where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -233,7 +233,7 @@ namespace Tsavorite.core
                         hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                     // Success
-                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    operationState.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                     // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
@@ -292,13 +292,13 @@ namespace Tsavorite.core
         /// <param name="srcObjectValue">String value to be set to; exclusive with <paramref name="srcStringValue"/> and <paramref name="inputLogRecord"/>.</param>
         /// <param name="inputLogRecord">Log record to be copied from; exclusive with <paramref name="srcObjectValue"/> and <paramref name="srcStringValue"/>.</param>
         /// <param name="output">The result of ISessionFunctions operation</param>
-        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="operationState">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="upsertInfo">UpsertInfo</param>
         private OperationStatus CreateNewRecordUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, ref LogRecord srcLogRecord, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref OperationState<TInput, TOutput, TContext> operationState,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -315,7 +315,7 @@ namespace Tsavorite.core
                 elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
             };
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -341,7 +341,7 @@ namespace Tsavorite.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // Insert the new record by CAS'ing it into the hash entry (this also detaches/drops any read-cache prefix).
             // If the current record can be elided then we can freelist it; detach it by swapping its .PreviousAddress into newRecordInfo.
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
@@ -349,8 +349,6 @@ namespace Tsavorite.core
                 // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
-
-                PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Type arg specification is needed because we don't pass TContext
                 TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -383,7 +381,7 @@ namespace Tsavorite.core
                 }
 
                 stackCtx.ClearNewRecord();
-                pendingContext.logicalAddress = newLogicalAddress;
+                operationState.logicalAddress = newLogicalAddress;
 
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
@@ -392,7 +390,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+            SaveAllocationForRetry(ref operationState, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
     }

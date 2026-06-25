@@ -47,6 +47,13 @@ namespace Garnet.server
         public IAuthenticationSettings AuthSettings = null;
 
         /// <summary>
+        /// If true (default), the server refuses to start when an ACL rule references a custom command
+        /// name that no loaded module has registered. Set to false to load unresolved names as-is and
+        /// log warnings.
+        /// </summary>
+        public bool AclStrictCustomCommands = true;
+
+        /// <summary>
         /// Enable append-only file (write ahead log)
         /// </summary>
         public bool EnableAOF = false;
@@ -126,6 +133,12 @@ namespace Garnet.server
         /// Valid range: 64 bytes to 256m. Rounds down to previous power of 2 by Tsavorite.
         /// </summary>
         public string ValueOverflowThreshold = "16k";
+
+        /// <summary>
+        /// Initial IO read size for records on disk. Accepts bytes or k/m/g suffixes (e.g. "4k", "8k").
+        /// null means use the default (<see cref="IStreamBuffer.DefaultInitialIORecordSize"/> bytes).
+        /// </summary>
+        public string InitialIORecordSize = null;
 
         /// <summary>
         /// Wait for AOF to commit before returning results to client.
@@ -308,9 +321,10 @@ namespace Garnet.server
         public int NetworkSendThrottleMax = 8;
 
         /// <summary>
-        /// Whether we use scatter gather IO for MGET operations - useful to saturate disk random read IO
+        /// Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate
+        /// disk random read IO. MGET always uses scatter-gather regardless of this setting.
         /// </summary>
-        public bool EnableScatterGatherGet = false;
+        public bool EnableScatterGatherGet = true;
 
         /// <summary>
         /// Whether and by how much should we throttle replica sync frequency (default = 5ms)
@@ -553,6 +567,11 @@ namespace Garnet.server
         public bool EnableRangeIndexPreview = false;
 
         /// <summary>
+        /// Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count).
+        /// </summary>
+        public int VectorSetQuantizationTaskCount = 0;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
@@ -628,6 +647,7 @@ namespace Garnet.server
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
                 MaxInlineValueSize = ValueOverflowThresholdBytes(),
+                InitialIORecordSize = GetInitialIORecordSizeBytes(),
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -867,6 +887,29 @@ namespace Garnet.server
                     nameof(ValueOverflowThreshold), ValueOverflowThreshold, 1L << valueBits, clampedBytes, PageSize, 1L << pageBits);
                 return (int)clampedBytes;
             }
+
+            return (int)sizeInBytes;
+        }
+
+        /// <summary>
+        /// Parse <see cref="InitialIORecordSize"/> as a byte count.
+        /// Returns <see cref="KVSettings.UseDefaultInitialIORecordSize"/> if the value is null or empty (use default).
+        /// </summary>
+        /// <returns>The byte value used for <c>KVSettings.InitialIORecordSize</c>, or <see cref="KVSettings.UseDefaultInitialIORecordSize"/> if unset.</returns>
+        /// <exception cref="Exception">Thrown when the value cannot be parsed.</exception>
+        public int GetInitialIORecordSizeBytes()
+        {
+            if (string.IsNullOrEmpty(InitialIORecordSize))
+                return KVSettings.UseDefaultInitialIORecordSize;
+
+            if (!TryParseSize(InitialIORecordSize, out var sizeInBytes))
+                throw new Exception($"Unable to parse {nameof(InitialIORecordSize)} value '{InitialIORecordSize}'. Expected a memory size string (e.g. '4k', '8k').");
+
+            if (sizeInBytes <= 0)
+                throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) must be positive.");
+
+            if (sizeInBytes > 1L << PageSizeBits())
+                throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) exceeds the page size ({1L << PageSizeBits()} bytes).");
 
             return (int)sizeInBytes;
         }

@@ -80,7 +80,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = MinKvLogPageSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -109,7 +109,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] TestDeviceType deviceType)
         {
-            Setup(new() { PageSize = 1L << 10, LogMemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = MinKvLogPageSize, LogMemorySize = 1L << 14, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -267,7 +267,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressUC([Values] TestDeviceType deviceType, [Values] CompletionSyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -277,7 +277,7 @@ namespace Tsavorite.test.UnsafeContext
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -307,16 +307,9 @@ namespace Tsavorite.test.UnsafeContext
                         ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = uContext.CompletePending(true);
-                }
-                else
-                {
-                    uContext.EndUnsafe();
-                    await uContext.CompletePendingAsync().ConfigureAwait(false);
-                    uContext.BeginUnsafe();
-                }
+                uContext.EndUnsafe();
+                await uContext.CompletePendingAsync().ConfigureAwait(false);
+                uContext.BeginUnsafe();
 
                 // Shift head and retry - should not find in main memory now
                 store.Log.FlushAndEvict(true);
@@ -333,17 +326,9 @@ namespace Tsavorite.test.UnsafeContext
                     ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
-                CompletedOutputIterator<InputStruct, OutputStruct, Empty> outputs;
-                if (syncMode == CompletionSyncMode.Sync)
-                {
-                    _ = uContext.CompletePendingWithOutputs(out outputs, wait: true);
-                }
-                else
-                {
-                    uContext.EndUnsafe();
-                    outputs = await uContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
-                    uContext.BeginUnsafe();
-                }
+                uContext.EndUnsafe();
+                var outputs = await uContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
+                uContext.BeginUnsafe();
 
                 int count = 0;
                 while (outputs.Next())
@@ -369,7 +354,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -439,7 +424,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -503,7 +488,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -533,7 +518,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -565,7 +550,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadWithoutInput([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -597,7 +582,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadBareMinParams([Values] TestDeviceType deviceType)
         {
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = MinKvLogPageSize }, deviceType);
             uContext.BeginUnsafe();
 
             try

@@ -92,7 +92,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(IntKeyComparer.Instance, new TrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
@@ -318,7 +318,7 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = 1L << 10
+                PageSize = MinKvLogPageSize
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
                     new ObjTrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));

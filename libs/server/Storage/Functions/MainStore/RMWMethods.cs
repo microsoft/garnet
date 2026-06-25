@@ -429,9 +429,9 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            var shouldCheckExpiration = true;
-
-            RecordSizeInfo sizeInfo2 = new();
+            // sizeInfo is declared lazily inside each switch case that needs it (the non-inline / growing branches).
+            // INCR / DECR / INCRBY / DECRBY / INCRBYFLOAT and the inline forks of SET / SETKEEPTTL / SETBIT / BITFIELD
+            // never need it; the AssertOptionalsIfSet check (DEBUG-only) is hoisted into the branches that populate sizeInfo.
 
             switch (cmd)
             {
@@ -472,10 +472,11 @@ namespace Garnet.server
                     else
                     {
                         // Create local sizeInfo
-                        sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
-                        functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                        if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0), in sizeInfo2))
+                        var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                        functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                        if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0), in sizeInfo))
                             return IPUResult.Failed;
+                        sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                     }
 
                     // Update expiration
@@ -513,10 +514,11 @@ namespace Garnet.server
                     else
                     {
                         // Create local sizeInfo
-                        sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
-                        functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                        if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo2))
+                        var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                        functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                        if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
                             return IPUResult.Failed;
+                        sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                     }
 
                     setValue.CopyTo(logRecord.ValueSpan);
@@ -570,11 +572,12 @@ namespace Garnet.server
                         else
                         {
                             // Create local sizeInfo
-                            sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
-                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                            if (!logRecord.TrySetContentLengths(newLength, in sizeInfo2, zeroInit: true))
+                            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                            if (!logRecord.TrySetContentLengths(newLength, in sizeInfo, zeroInit: true))
                                 return IPUResult.Failed;
                             _ = logRecord.RemoveExpiration();
+                            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                         }
                     }
 
@@ -609,11 +612,12 @@ namespace Garnet.server
                         else
                         {
                             // Create local sizeInfo
-                            sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
-                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                            if (!logRecord.TrySetContentLengths(newLength, in sizeInfo2, zeroInit: true))
+                            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                            if (!logRecord.TrySetContentLengths(newLength, in sizeInfo, zeroInit: true))
                                 return IPUResult.Failed;
                             _ = logRecord.RemoveExpiration();
+                            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                         }
                     }
 
@@ -728,10 +732,11 @@ namespace Garnet.server
                         else
                         {
                             // Create local sizeInfo
-                            sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
-                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                            if (!logRecord.TrySetContentLengths(totalLength, in sizeInfo2))
+                            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                            if (!logRecord.TrySetContentLengths(totalLength, in sizeInfo))
                                 return IPUResult.Failed;
+                            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                         }
                     }
 
@@ -795,10 +800,11 @@ namespace Garnet.server
                         else
                         {
                             // Create local sizeInfo
-                            sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
-                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                            if (!logRecord.TrySetContentLengths(totalLength, in sizeInfo2))
+                            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                            if (!logRecord.TrySetContentLengths(totalLength, in sizeInfo))
                                 return IPUResult.Failed;
+                            sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
                         }
 
                         // Append the new value with the client input at the end of the old data
@@ -852,7 +858,6 @@ namespace Garnet.server
                             if (!logRecord.TrySetExpiration(expirationInTicks))
                                 return IPUResult.Failed;
                         }
-                        shouldCheckExpiration = false;
 
                         var value = logRecord.ValueSpan;
                         var newLength = value.Length;
@@ -873,9 +878,11 @@ namespace Garnet.server
                                 else
                                 {
                                     // Create local sizeInfo
-                                    sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
-                                    functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
-                                    _ = logRecord.TrySetContentLengths(newLength, in sizeInfo2);
+                                    var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                                    functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                                    _ = logRecord.TrySetContentLengths(newLength, in sizeInfo);
+                                    // Skip AssertOptionalsIfSet: custom-command path is allowed to drive its own expiration state
+                                    // through TrySetExpiration above, which can mutate HasExpiration in ways FieldInfo did not anticipate.
                                 }
                             }
                             return ret ? IPUResult.Succeeded : IPUResult.Failed;
@@ -900,7 +907,6 @@ namespace Garnet.server
                     return IPUResult.NotUpdated;
             }
 
-            sizeInfo2.AssertOptionalsIfSet(logRecord.DataHeader, checkExpiration: shouldCheckExpiration);
             return IPUResult.Succeeded;
         }
 
@@ -1453,6 +1459,11 @@ namespace Garnet.server
                 }
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);
+            }
+            else if (cmd == RespCommand.VADD)
+            {
+                // Similar to RIPROMOTE, after a CU we want to clear the source records index pointer so we don't drop it on eviction
+                VectorManager.ClearIndexPointer(srcLogRecord.ValueSpan);
             }
 
             return true;

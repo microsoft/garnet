@@ -106,9 +106,6 @@ namespace Tsavorite.core
                 {
                     _ = Interlocked.Decrement(ref waiterCount);
                 }
-
-                if (queue.TryDequeue(out T item))
-                    return item;
             }
         }
 
@@ -143,15 +140,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public Task WaitForEntryAsync(CancellationToken token = default)
+        public ValueTask WaitForEntryAsync(CancellationToken token = default)
         {
             if (queue.Count > 0)
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
 
             return WaitForEntryAsyncSlow(token);
         }
 
-        private async Task WaitForEntryAsyncSlow(CancellationToken token)
+        private async ValueTask WaitForEntryAsyncSlow(CancellationToken token)
         {
             _ = Interlocked.Increment(ref waiterCount);
             try

@@ -481,6 +481,26 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
+        /// <summary>
+        /// Computes the expected allocated record size from component lengths and optional-field expectations, without requiring
+        /// an actual record in memory. This uses the same layout math as <see cref="RecordSizeInfo.CalculateSizes"/>.
+        /// </summary>
+        /// <param name="keyDataLength">Length of the key data in bytes.</param>
+        /// <param name="valueDataLength">Length of the value data in bytes. For object values, use <see cref="ObjectIdMap.ObjectIdSize"/>.</param>
+        /// <param name="extendedNamespaceLength">Length of any extended namespace data preceding the key (0 if none).</param>
+        /// <param name="expectETag">Whether the record is expected to have an ETag optional field.</param>
+        /// <param name="expectExpiration">Whether the record is expected to have an Expiration optional field.</param>
+        /// <param name="expectObject">Whether the record is expected to have an object (key overflow, value overflow, or value object),
+        ///     which requires an <see cref="ObjectLogPositionSize"/>-byte object-log position field.</param>
+        /// <returns>The expected allocated (record-aligned) size in bytes, including <see cref="RecordInfo"/> header.</returns>
+        public static int GetExpectedIORecordSize(int keyDataLength, int valueDataLength, int extendedNamespaceLength = 0,
+            bool expectETag = false, bool expectExpiration = false, bool expectObject = false)
+        {
+            var optionalSize = (expectETag ? ETagSize : 0) + (expectExpiration ? ExpirationSize : 0) + (expectObject ? ObjectLogPositionSize : 0);
+            var actualSize = Constants.FixedHeaderSize + extendedNamespaceLength + keyDataLength + valueDataLength + optionalSize;
+            return Utility.RoundUp(actualSize, Constants.kRecordAlignment);
+        }
+
         /// <summary>Set the filler length on the RDH for a record. Used only by <see cref="DiskLogRecord.DirectCopyInlinePortionOfRecord"/>
         /// when constructing a LogRecord over a transient output buffer (NOT a live log record), so no concurrent scanner exists.
         /// <see cref="RecordDataHeader.SetFiller"/> performs its own atomic word update.</summary>
@@ -1462,7 +1482,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// For revivification or reuse: the record space has been retrieved from revivification or PendingContext, so prepare it to be passed to initial updaters,
+        /// For revivification or reuse: the record space has been retrieved from revivification or OperationState, so prepare it to be passed to initial updaters,
         /// based upon the sizeInfo's key and value lengths.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
@@ -1527,6 +1547,32 @@ namespace Tsavorite.core
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
+        }
+
+        /// <summary>
+        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the R11-encoded
+        /// key/value lengths (in the RDH fields and the int* slots at keyAddress/valueAddress) or the <see cref="ObjectIdMap"/>.
+        /// </summary>
+        /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
+        /// <remarks>
+        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log and must
+        /// repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point (objectIdMap is empty and the
+        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> and
+        /// <see cref="SetRecoveredObjectLogRecordStartPosition"/> this must not read the lengths from objectIdMap. The existing R11 length encoding
+        /// is preserved as-is, since the copied lengths are unchanged.
+        /// <para>IMPORTANT: Like the other position setters, this is only safe to call on the disk-image copy of the record (srcBuffer).</para>
+        /// </remarks>
+        internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
+        {
+            if (DataHeader.RecordIsInline)
+            {
+                Debug.Fail("Cannot call RepointObjectLogPosition for an inline record");
+                return;
+            }
+
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            *objectLogPositionPtr = objectLogFilePosition.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
         }
 
         /// <summary>
