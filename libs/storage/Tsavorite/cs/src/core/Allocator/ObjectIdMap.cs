@@ -35,6 +35,8 @@ namespace Tsavorite.core
 
         internal int Count => objectArray.Count;
 
+        internal bool IsEmpty => objectArray.Count == 0;
+
         /// <summary>Reserve a slot and return its ID.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Allocate()

@@ -3,7 +3,12 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Diagnostics;
+#if NET9_0_OR_GREATER
+using System.Runtime.CompilerServices;
+#endif
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -135,9 +140,7 @@ namespace Garnet.server
                 var program = new ExprProgram
                 {
                     Instructions = instrBuf[..instrCount],
-                    Length = instrCount,
                     TuplePool = tuplePoolBuf[..tupleCount],
-                    TuplePoolLength = tupleCount,
                     RuntimePool = runtimePoolBuf,
                     RuntimePoolLength = 0,
                 };
@@ -146,7 +149,7 @@ namespace Garnet.server
                 filterBitmap.Clear();
 
                 // ── Collect unique selectors ──────────────────────────────
-                var selectorCount = GetSelectorRanges(program.Instructions, program.Length, filter, selectorBuf);
+                var selectorCount = GetSelectorRanges(program.Instructions, program.Instructions.Length, filter, selectorBuf);
                 var selectorRanges = selectorBuf[..selectorCount];
 
                 // Slice extractedFields to actual selector count
@@ -215,5 +218,108 @@ namespace Garnet.server
             }
             return count;
         }
+
+        // ── Inline filter callback infrastructure ─────
+        //
+        // These types allow the Rust DiskANN pipeline to call
+        // back into C# for per-candidate filter evaluation, avoiding the need
+        // to over-fetch candidates and filter them afterwards.
+        //
+        // The compiled filter program and scratch buffers are stored in
+        // [ThreadStatic] fields before the FFI call. The callback runs on the
+        // same thread, so it reads the pre-compiled state directly — no need
+        // to marshal pointers through the FFI boundary.
+
+        /// <summary>
+        /// Thread-static state for the inline filter callback.
+        /// Set before the FFI call into Rust, read by <see cref="FilterCallbackUnmanaged"/>.
+        /// </summary>
+        [ThreadStatic]
+#pragma warning disable CS8500 // InlineFilterState only contains unmanaged types or spans of pinned arrays, this is safe
+        internal static unsafe InlineFilterState* InlineFilterStatePtr;
+#pragma warning restore CS8500
+
+        /// <summary>
+        /// Per-query filter state maintained on the C# side.
+        /// Populated before calling into Rust; the callback reads it from thread-static storage.
+        /// All Span/pointer fields reference pinned scratch-buffer memory that remains
+        /// valid for the duration of the FFI call.
+        /// </summary>
+        internal ref struct InlineFilterState
+        {
+            // Pointers into scratch buffer (pinned for FFI duration):
+            public Span<ExprToken> InstrBuf;
+            public Span<ExprToken> TuplePoolBuf;
+            public Span<ExprToken> RuntimePoolBuf;
+            public Span<ExprToken> ExtractedFields;
+            public Span<ExprToken> StackBuf;
+            public Span<(int Start, int Length)> SelectorRanges;
+
+            /// <summary>Pointer to the filter expression bytes.</summary>
+            public ReadOnlySpan<byte> FilterBytes;
+        }
+
+        /// <summary>
+        /// Shared filter evaluation logic for both single and batch callbacks.
+        /// Reads the candidate's external ID and attributes, then evaluates the compiled filter.
+        /// </summary>
+        private static unsafe byte EvaluateCandidateFilter(ulong context, uint internalId)
+        {
+            Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
+            ref var state
+#if NET9_0_OR_GREATER
+                = ref Unsafe.AsRef<InlineFilterState>(InlineFilterStatePtr);
+#else
+                = ref *InlineFilterStatePtr;
+#endif
+
+            // 1. Read external ID for this internal_id via ExtMap
+            Span<byte> iidKey = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(iidKey, internalId);
+
+            Span<byte> eidBuf = stackalloc byte[128];
+            var eidMem = SpanByteAndMemory.FromPinnedSpan(eidBuf);
+            try
+            {
+                if (!ReadSizeUnknown(context | DiskANNService.ExternalIdMap, true, iidKey, ref eidMem))
+                    return 0; // can't find external ID → exclude
+
+                // 2. Read attributes by external ID
+                Span<byte> attrBuf = stackalloc byte[256];
+                var attrMem = SpanByteAndMemory.FromPinnedSpan(attrBuf);
+                try
+                {
+                    if (!ReadSizeUnknown(context | DiskANNService.Attributes, true, eidMem.ReadOnlySpan, ref attrMem))
+                        return 0; // no attributes → exclude
+
+                    // 3. Rebuild ExprProgram from thread-static state pointers
+                    var program = new ExprProgram
+                    {
+                        Instructions = state.InstrBuf,
+                        TuplePool = state.TuplePoolBuf,
+                        RuntimePool = state.RuntimePoolBuf,
+                        RuntimePoolLength = 0,
+                    };
+
+                    program.ResetRuntimePool();
+
+                    AttributeExtractor.ExtractFields(attrMem.ReadOnlySpan, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref program);
+
+                    var stack = new ExprStack(state.StackBuf);
+                    var pass = ExprRunner.Run(ref program, attrMem.ReadOnlySpan, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref stack);
+
+                    return pass ? (byte)1 : (byte)0;
+                }
+                finally
+                {
+                    attrMem.Memory?.Dispose();
+                }
+            }
+            finally
+            {
+                eidMem.Memory?.Dispose();
+            }
+        }
+
     }
 }

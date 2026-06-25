@@ -354,17 +354,11 @@ namespace Garnet.server
         /// <summary>The compiled postfix instruction sequence.</summary>
         public Span<ExprToken> Instructions;
 
-        /// <summary>Number of instructions in the program.</summary>
-        public int Length;
-
         /// <summary>
         /// Flat pool of tuple element tokens. Tuple tokens in <see cref="Instructions"/>
         /// store (StartIndex, Count) into this span.
         /// </summary>
         public Span<ExprToken> TuplePool;
-
-        /// <summary>Number of elements used in <see cref="TuplePool"/>.</summary>
-        public int TuplePoolLength;
 
         /// <summary>
         /// Runtime tuple pool for extracted JSON array elements.

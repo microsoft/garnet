@@ -878,6 +878,236 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSIMBadFilters()
+        {
+            const string VectorSet = "vs";
+            const string CompileErr = "ERR Compiling filter failed";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete(VectorSet);
+
+            // Seed:
+            //   ids 0..2  -> valid JSON attributes (year + genre)
+            //   id  3     -> malformed JSON attribute
+            //   id  4     -> no SETATTR at all
+            var add0 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT", "SETATTR", "{\"year\":1980,\"genre\":\"action\"}"]);
+            ClassicAssert.AreEqual(1, (int)add0);
+            var add1 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.1", "2.1", "3.1", new byte[] { 0, 0, 0, 1 }, "NOQUANT", "SETATTR", "{\"year\":1990,\"genre\":\"drama\"}"]);
+            ClassicAssert.AreEqual(1, (int)add1);
+            var add2 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.2", "2.2", "3.2", new byte[] { 0, 0, 0, 2 }, "NOQUANT", "SETATTR", "{\"year\":2000,\"genre\":\"sci-fi\"}"]);
+            ClassicAssert.AreEqual(1, (int)add2);
+            var add3 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.3", "2.3", "3.3", new byte[] { 0, 0, 0, 3 }, "NOQUANT", "SETATTR", "{not-valid-json"]);
+            ClassicAssert.AreEqual(1, (int)add3);
+            var add4 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.4", "2.4", "3.4", new byte[] { 0, 0, 0, 4 }, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)add4);
+
+            // ── Section A: compile-time errors ─────────────────────────────────
+            // Every entry below must surface as "ERR Compiling filter failed".
+            (string Filter, string Why)[] badFilters =
+            [
+                ("   ", "whitespace-only filter (compiler sees zero tokens)"),
+                ("(.year > 1980", "unclosed opening paren"),
+                (".year > 1980)", "extra closing paren"),
+                ("()", "empty parens with no expression"),
+                (".genre == \"action", "unterminated double-quoted string"),
+                (".genre == 'action", "unterminated single-quoted string"),
+                (". > 1", "bare-dot selector with no field name"),
+                ("> 1980", "binary operator with no left operand"),
+                (".year >", "binary operator with no right operand"),
+                (".year > > 1980", "two consecutive binary operators"),
+                (".year 1980", "two consecutive operands with no operator"),
+                (".year > 1.2.3", "malformed number literal"),
+                ("foobar", "unknown identifier"),
+                ("@ > 1", "character not allowed in any token"),
+                (".x in [1, 2", "unterminated tuple literal"),
+                (".x in [1 2]", "tuple elements without a comma separator"),
+                ("not", "unary 'not' with no operand"),
+                ("in [1, 2]", "'in' operator with no left operand"),
+                (".x in", "'in' operator with no right operand"),
+                (">", "naked binary operator"),
+            ];
+
+            foreach (var (filter, why) in badFilters)
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(
+                    () => db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", filter, "COUNT", "10"]),
+                    $"Expected compile failure for filter '{filter}' ({why})");
+                ClassicAssert.AreEqual(CompileErr, exc.Message, $"Wrong error message for filter '{filter}' ({why})");
+            }
+
+            // ── Section B: documented "skip silently" behavior ─────────────────
+            // Per the filter-expressions docs: "If a field is missing or invalid,
+            // the element is skipped without error." None of the queries below
+            // should raise an exception.
+
+            // Empty FILTER string is treated as no filter at all by the VSIM
+            // parser (length-0 check before compile), so it returns all elements.
+            var emptyFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "", "COUNT", "10"]);
+            ClassicAssert.AreEqual(5, emptyFilter.Length, "Empty FILTER string should behave as no filter");
+
+            // Filter referencing a field no element has -> 0 results, no error.
+            var missingField = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".nonexistent > 5", "COUNT", "10"]);
+            ClassicAssert.AreEqual(0, missingField.Length, "Filter on a non-existent field should return zero results, not an error");
+
+            // Type-mismatched comparisons must not raise. Exact result count
+            // depends on whether the runner skips or coerces, which the spec
+            // leaves unspecified, so we only assert "no error" and that the
+            // result stays within the seeded population.
+            var numCmpString = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".genre > 5", "COUNT", "10"]);
+            ClassicAssert.IsNotNull(numCmpString, "Numeric comparison against a string field must not raise");
+            ClassicAssert.LessOrEqual(numCmpString.Length, 5);
+
+            var stringEqOnNum = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year == \"hello\"", "COUNT", "10"]);
+            ClassicAssert.IsNotNull(stringEqOnNum, "Comparing a numeric field to a string literal must not raise");
+            ClassicAssert.LessOrEqual(stringEqOnNum.Length, 5);
+
+            // A permissive valid filter should match the 3 well-formed elements
+            // and silently skip the malformed-JSON (id 3) and no-attr (id 4)
+            // elements, demonstrating both documented skip cases at once.
+            var validFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year >= 1980", "COUNT", "10"]);
+            ClassicAssert.AreEqual(3, validFilter.Length, "Only the 3 well-formed elements should match; malformed-JSON and no-attr elements must be skipped silently");
+            var matchedIds = new HashSet<byte[]>(validFilter, ByteArrayComparer.Instance);
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 0]), "id 0 (valid attrs) should be in results");
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 1]), "id 1 (valid attrs) should be in results");
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 2]), "id 2 (valid attrs) should be in results");
+            ClassicAssert.IsFalse(matchedIds.Contains([0, 0, 0, 3]), "id 3 (malformed JSON) should be silently skipped");
+            ClassicAssert.IsFalse(matchedIds.Contains([0, 0, 0, 4]), "id 4 (no SETATTR) should be silently skipped");
+        }
+
+        [Test]
+        public void VSIMComplexJsonAttributes()
+        {
+            const string VectorSet = "vs";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete(VectorSet);
+
+            // Seed 11 elements covering nested objects, booleans, null, arrays,
+            // non-object top-level JSON, empty objects, dash-in-field-name, and
+            // same-named top-level vs nested fields.
+            //
+            //   id 0  -> top-level year + nested meta.director
+            //   id 1  -> year only exists at nested depth
+            //   id 2  -> top-level boolean true
+            //   id 3  -> top-level boolean false
+            //   id 4  -> top-level null
+            //   id 5  -> top-level number array
+            //   id 6  -> non-object top-level JSON (whole attr is an array)
+            //   id 7  -> empty object
+            //   id 8  -> field name contains a dash
+            //   id 9  -> same-named field both top-level (1980) and nested (2020)
+            //   id 10 -> top-level string array + nested object value
+            (byte[] Id, string Attr)[] seed =
+            [
+                ([0, 0, 0, 0],  "{\"year\":1980,\"meta\":{\"director\":\"Spielberg\"}}"),
+                ([0, 0, 0, 1],  "{\"meta\":{\"year\":1980}}"),
+                ([0, 0, 0, 2],  "{\"active\":true}"),
+                ([0, 0, 0, 3],  "{\"active\":false}"),
+                ([0, 0, 0, 4],  "{\"year\":null}"),
+                ([0, 0, 0, 5],  "{\"scores\":[1,2,3]}"),
+                ([0, 0, 0, 6],  "[1,2,3]"),
+                ([0, 0, 0, 7],  "{}"),
+                ([0, 0, 0, 8],  "{\"year-old\":1980}"),
+                ([0, 0, 0, 9],  "{\"year\":1980,\"nested\":{\"year\":2020}}"),
+                ([0, 0, 0, 10], "{\"tags\":[\"classic\"],\"director\":{\"name\":\"Spielberg\"}}"),
+            ];
+
+            for (var i = 0; i < seed.Length; i++)
+            {
+                var (id, attr) = seed[i];
+                // Spread the vectors slightly so cosine/L2 doesn't collapse them on top of each other.
+                var v0 = (1.0f + i * 0.1f).ToString();
+                var v1 = (2.0f + i * 0.1f).ToString();
+                var v2 = (3.0f + i * 0.1f).ToString();
+                var res = db.Execute("VADD", [VectorSet, "VALUES", "3", v0, v1, v2, id, "NOQUANT", "SETATTR", attr]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD for id {i} should succeed even with unusual attribute shape");
+            }
+
+            // Sanity: all 11 elements made it into the set.
+            var info = (RedisValue[])db.Execute("VINFO", [VectorSet]);
+            var infoMap = new Dictionary<string, string>();
+            for (var i = 0; i < info.Length; i += 2)
+                infoMap[info[i]] = info[i + 1];
+            ClassicAssert.AreEqual("11", infoMap["size"], "All 11 elements must be present");
+
+            // ── Case 1 + 9: top-level .year is visible; nested .year is not ───
+            // Filter .year > 1900 should match id 0 and id 9 (both have top-level
+            // year 1980). It must NOT match id 1 (nested-only) or id 4 (null).
+            var byYear = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1900", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), byYear, "Top-level .year > 1900 should match only ids 0 and 9");
+
+            // ── Case 9 specifically: nested .year=2020 must be invisible ──────
+            var byYear2000 = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 2000", "COUNT", "20"]));
+            ClassicAssert.AreEqual(0, byYear2000.Count, ".year > 2000 must not see the nested year=2020 in id 9");
+
+            var byYearRange = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1900 and .year < 2000", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), byYearRange, "Range filter should still see only top-level .year for ids 0 and 9");
+
+            // ── Case 1 sub: top-level field whose value is an object is unusable
+            // id 0's .meta and id 1's .meta are objects. Comparing to a string
+            // must yield 0 matches without raising.
+            var metaEq = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".meta == \"Spielberg\"", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, metaEq.Length, "Equality against an object-valued top-level field must yield 0 results");
+
+            // Same idea for case 10: .director is an object on id 10.
+            var directorEq = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".director == \"Spielberg\"", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, directorEq.Length, "Equality against object-valued .director must yield 0 results");
+
+            // ── Case 3: top-level booleans coerce to 1 / 0 ────────────────────
+            var activeTrue = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".active == 1", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 2]), activeTrue, ".active == 1 should match only the element whose JSON value is true");
+
+            var activeFalse = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".active == 0", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 3]), activeFalse, ".active == 0 should match only the element whose JSON value is false");
+
+            // ── Case 4: top-level null does not match numeric > comparisons ───
+            // (.year > 5 with year=null: id 4 must NOT appear; ids 0 and 9 do.)
+            var yearGt5 = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 5", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), yearGt5, ".year > 5 must skip the null-valued id 4");
+
+            // ── Case 5: top-level number array works with `in`, fails > silently
+            var inHit = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "2 in .scores", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 5]), inHit, "2 in .scores should match only id 5");
+
+            var inMiss = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "99 in .scores", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, inMiss.Length, "99 in .scores should match nothing");
+
+            var arrAsNum = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".scores > 5", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, arrAsNum.Length, "Numeric comparison against an array-valued field must yield 0 results without raising");
+
+            // ── Case 8: selector greedily includes '-' so .year-old is one name
+            // The filter must NOT be interpreted as `.year - old > 1900`.
+            var yearOld = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year-old > 1900", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 8]), yearOld, ".year-old must be treated as a single selector and match only id 8");
+
+            // ── Case 10: top-level string array still works with `in` ─────────
+            var classicInTags = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "\"classic\" in .tags", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 10]), classicInTags, "\"classic\" in .tags should match only id 10");
+
+            // ── Case 6 + 7 (implicit): the above filters together demonstrate
+            // that ids 6 (non-object top-level JSON) and 7 (empty object) never
+            // appear in any field-based result and never cause an error.
+            ClassicAssert.IsFalse(yearOld.Contains([0, 0, 0, 6], ByteArrayComparer.Instance), "Non-object top-level JSON (id 6) must be silently skipped, not error");
+            ClassicAssert.IsFalse(yearOld.Contains([0, 0, 0, 7], ByteArrayComparer.Instance), "Empty-object JSON (id 7) must be silently skipped, not error");
+
+            static HashSet<byte[]> MatchedIds(RedisResult res)
+                => new((byte[][])res, ByteArrayComparer.Instance);
+
+            static HashSet<byte[]> ExpectIds(params byte[][] ids)
+                => new(ids, ByteArrayComparer.Instance);
+
+            static void AssertSameIds(HashSet<byte[]> expected, HashSet<byte[]> actual, string message)
+                => ClassicAssert.IsTrue(expected.SetEquals(actual), $"{message} (expected {Format(expected)}, got {Format(actual)})");
+
+            static string Format(HashSet<byte[]> set)
+                => "{" + string.Join(", ", set.Select(static b => "[" + string.Join(",", b) + "]")) + "}";
+        }
+
+        [Test]
         public void VSIMErrors()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -889,9 +1119,9 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            // FILTER-EF exceeding MaxRetrieveCount must be rejected
+            // FILTER-EF exceeding MaxFilteringScaleFactor must be rejected
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
-            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 0 and 100000000", exc1.Message);
+            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 4 and 256", exc1.Message);
 
             // COUNT exceeding MaxRetrieveCount must be rejected
             var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
@@ -904,32 +1134,6 @@ namespace Garnet.test
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
             var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
-        }
-
-        [Test]
-        public void VSIMWithDefaultFilterEFOverflowDoesNotCrash()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            _ = db.KeyDelete("foo");
-
-            // Add a vector with attributes so FILTER can be used
-            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
-            ClassicAssert.AreEqual(1, (int)res1);
-
-            // Verify that a moderate COUNT with FILTER (no explicit FILTER-EF) works correctly.
-            // The default maxFilteringEffort = count*200. With count=1000, that's 200,000 which is safe.
-            // This validates the code path through the (long) cast fix without hitting resource limits.
-            var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "1000", "WITHATTRIBS"]);
-            ClassicAssert.AreEqual(2, res.Length, "Should return 1 result (1 pair of id+attribute) for year > 1950");
-
-            // Verify that COUNT values which would overflow count*200 in int32 are rejected.
-            // 10,737,419 * 200 = 2,147,483,800 > int32.MaxValue.
-            // Our (long) cast prevents the overflow, but MaxRetrieveCount caps COUNT itself.
-            // Any COUNT above MaxRetrieveCount (~178M) is rejected at parse time.
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "999999999", "WITHATTRIBS"]));
-            ClassicAssert.IsTrue(ex.Message.Contains("COUNT must be an integer between"), $"Expected COUNT validation error, got: {ex.Message}");
         }
 
         private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)

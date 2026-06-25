@@ -90,8 +90,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Log-tied root directory (without trailing separator). Holds the working file
-        /// (<c>&lt;hash&gt;.data.bftree</c>), CPR scratch files (<c>&lt;hash&gt;.scratch.cpr</c>),
-        /// and immutable per-flush snapshots (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
+        /// (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+        /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
         private readonly string riLogRoot;
 
@@ -167,11 +167,28 @@ namespace Garnet.server
             public void ReleaseSnapshot()
                 => Volatile.Write(ref SnapshotInProgress, 0);
 
-            /// <summary>Spin-wait until the per-tree snapshot atomic is released.</summary>
-            public void WaitForSnapshot()
+            /// <summary>
+            /// Spin to claim the per-tree snapshot atomic, take a CPR snapshot of the live tree
+            /// directly into <paramref name="destinationPath"/>, then release the claim. The
+            /// claim serializes against concurrent flush / checkpoint / migration snapshots on
+            /// the same tree — bftree silently no-ops a <c>cpr_snapshot</c> that races its
+            /// internal <c>snapshot_in_progress</c> flag, so each caller must hold the claim
+            /// while it snapshots. bftree takes the destination path as a <c>cpr_snapshot</c>
+            /// argument and writes a fresh self-contained file, so we snapshot straight to
+            /// <paramref name="destinationPath"/>.
+            /// </summary>
+            public void SnapshotUnderClaim(string destinationPath)
             {
-                while (Volatile.Read(ref SnapshotInProgress) != 0)
+                while (!TryClaimSnapshot())
                     Thread.Yield();
+                try
+                {
+                    BfTreeService.CprSnapshotByPtr(Tree.NativePtr, destinationPath);
+                }
+                finally
+                {
+                    ReleaseSnapshot();
+                }
             }
 
             public TreeEntry(BfTreeService tree, long keyHash, string hashPrefix)
@@ -279,10 +296,6 @@ namespace Garnet.server
         internal string LogDataPath(string hashPrefix)
             => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".data.bftree");
 
-        /// <summary>{logRoot}/&lt;hash&gt;.scratch.cpr — bftree CPR snapshot scratch file (overwritten each cpr_snapshot).</summary>
-        internal string LogScratchPath(string hashPrefix)
-            => Path.Combine(riLogRoot ?? string.Empty, hashPrefix + ".scratch.cpr");
-
         /// <summary>{logRoot}/&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</summary>
         public string LogFlushPath(string hashPrefix, long logicalAddress)
             => Path.Combine(riLogRoot ?? string.Empty, $"{hashPrefix}.{logicalAddress:x16}{FlushSuffix}");
@@ -297,7 +310,6 @@ namespace Garnet.server
 
         // -- Convenience helpers used outside this class (RangeIndexOps via raw key) --
         internal string LogDataPathFor(ReadOnlySpan<byte> keyBytes) => LogDataPath(HashKeyToPrefix(keyBytes));
-        internal string LogScratchPathFor(ReadOnlySpan<byte> keyBytes) => LogScratchPath(HashKeyToPrefix(keyBytes));
 
         /// <summary>
         /// Creates a new BfTree instance via the native interop layer.
@@ -314,26 +326,22 @@ namespace Garnet.server
         {
             var hashPrefix = HashKeyToPrefix(keyBytes);
             string filePath = null;
-            string snapshotFilePath = null;
 
             if (storageBackend == StorageBackendType.Disk)
             {
                 filePath = LogDataPath(hashPrefix);
             }
 
-            // Configure the bftree's CPR snapshot scratch path. cpr_snapshot writes here;
-            // OnFlush / SnapshotAllTreesForCheckpoint File.Move scratch -> final destination.
-            // Required for both backends; leave null only if riLogRoot is unset (test scenarios).
-            // riLogRoot itself was already created in the constructor.
-            if (!string.IsNullOrEmpty(riLogRoot))
-            {
-                snapshotFilePath = LogScratchPath(hashPrefix);
-            }
+            // Enable CPR snapshots whenever a log root is configured. The destination path is
+            // supplied per call by OnFlush / SnapshotAllTreesForCheckpoint / migration, so only
+            // the on/off toggle is needed here. Leave disabled only if riLogRoot is unset (test
+            // scenarios). riLogRoot itself was already created in the constructor.
+            bool enableSnapshots = !string.IsNullOrEmpty(riLogRoot);
 
             return new BfTreeService(
                 storageBackend: storageBackend,
                 filePath: filePath,
-                snapshotFilePath: snapshotFilePath,
+                enableSnapshots: enableSnapshots,
                 cbSizeByte: cacheSize,
                 cbMinRecordSize: minRecordSize,
                 cbMaxRecordSize: maxRecordSize,
@@ -681,7 +689,6 @@ namespace Garnet.server
 
             var hashPrefix = HashKeyToPrefix(key);
             var dataPath = LogDataPath(hashPrefix);
-            var scratchPath = LogScratchPath(hashPrefix);
             var flushPath = LogFlushPath(hashPrefix, logicalAddress);
             var keyId = KeyId(key);
 
@@ -695,42 +702,12 @@ namespace Garnet.server
                     SnapshotForFlushCold(key, hashPrefix, dataPath, flushPath, valueSpan, logicalAddress);
                     return;
                 }
-                SnapshotForFlushViaCpr(entry, scratchPath, flushPath);
+                entry.SnapshotUnderClaim(flushPath);
                 SetFlushedFlag(valueSpan);
             }
             else
             {
                 SnapshotForFlushCold(key, hashPrefix, dataPath, flushPath, valueSpan, logicalAddress);
-            }
-        }
-
-        /// <summary>
-        /// Take a CPR snapshot via the live tree's native handle and copy the produced scratch
-        /// file to the addr-tagged per-flush destination. We <b>copy</b> rather than move because
-        /// bftree's internal VFS keeps a file descriptor for the configured snapshot path; a move
-        /// would not invalidate the descriptor and the next cpr_snapshot would write through the
-        /// stale FD into the moved-away file (overwriting our finalized flush snapshot).
-        /// Per-tree atomic serializes against concurrent
-        /// <see cref="SnapshotAllTreesForCheckpoint"/> on the same tree.
-        /// </summary>
-        private void SnapshotForFlushViaCpr(TreeEntry entry, string scratchPath, string flushPath)
-        {
-            if (!entry.TryClaimSnapshot())
-            {
-                // Concurrent SnapshotAllTreesForCheckpoint owns the snapshot. Wait for it,
-                // then copy the produced scratch file to our addr-tagged location.
-                entry.WaitForSnapshot();
-                File.Copy(scratchPath, flushPath, overwrite: false);
-                return;
-            }
-            try
-            {
-                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
-                File.Copy(scratchPath, flushPath, overwrite: false);
-            }
-            finally
-            {
-                entry.ReleaseSnapshot();
             }
         }
 
@@ -754,8 +731,7 @@ namespace Garnet.server
                 // (RestoreTree completed before we acquired the shared lock).
                 if (liveIndexes.TryGetValue(KeyId(key), out var entry) && entry?.Tree != null)
                 {
-                    var scratchPath = LogScratchPath(hashPrefix);
-                    SnapshotForFlushViaCpr(entry, scratchPath, flushPath);
+                    entry.SnapshotUnderClaim(flushPath);
                     SetFlushedFlag(valueSpan);
                     return;
                 }
@@ -802,8 +778,8 @@ namespace Garnet.server
         ///
         /// <para>For each entry with <see cref="TreeEntry.SnapshotPending"/> set:
         /// <list type="bullet">
-        /// <item>Activated entries (Tree != null) → take CPR snapshot via the tree handle and
-        /// <c>File.Move</c> the produced scratch file to the checkpoint destination.</item>
+        /// <item>Activated entries (Tree != null) → take a CPR snapshot via the tree handle
+        /// straight to the checkpoint destination (<see cref="TreeEntry.SnapshotUnderClaim"/>).</item>
         /// <item>Pending entries (Tree == null) → <c>File.Copy(data.bftree)</c> (no live tree
         /// to snapshot from; data.bftree was pre-staged by PreStage).</item>
         /// </list></para>
@@ -813,7 +789,7 @@ namespace Garnet.server
         /// X-lock is NOT taken here — that lock would deadlock if any deferred OnFlush fired
         /// on the checkpoint thread while it held S-locks on hot-path readers' shards.</para>
         ///
-        /// <para>Memory-backed trees are also captured via CPR snapshot (bftree 0.5.0 supports
+        /// <para>Memory-backed trees are also captured via CPR snapshot (bftree supports
         /// CPR for memory-backed trees uniformly with disk-backed).</para>
         ///
         /// <para>Failure is fatal — the exception propagates to the state machine driver.</para>
@@ -838,26 +814,13 @@ namespace Garnet.server
                     {
                         Directory.CreateDirectory(snapshotDir);
                         var checkpointPath = CheckpointSnapshotPath(entry.HashPrefix, checkpointToken);
-                        var scratchPath = LogScratchPath(entry.HashPrefix);
 
                         if (entry.Tree is not null)
                         {
-                            // Per-tree atomic serializes against concurrent OnFlush on the same
-                            // tree (which would also call cpr_snapshot via the same handle —
-                            // bftree's internal snapshot_in_progress would otherwise no-op one).
-                            while (!entry.TryClaimSnapshot()) Thread.Yield();
-                            try
-                            {
-                                BfTreeService.CprSnapshotByPtr(entry.Tree.NativePtr);
-                                // Copy scratch -> token-tagged checkpoint destination. Copy rather
-                                // than move because bftree's internal VFS keeps a file descriptor
-                                // for the scratch path (see SnapshotForFlushViaCpr docs).
-                                File.Copy(scratchPath, checkpointPath, overwrite: true);
-                            }
-                            finally
-                            {
-                                entry.ReleaseSnapshot();
-                            }
+                            // Snapshot straight to the token-tagged checkpoint destination under
+                            // the per-tree claim (serializes against concurrent OnFlush / migration
+                            // on the same tree).
+                            entry.SnapshotUnderClaim(checkpointPath);
                         }
                         else
                         {

@@ -388,62 +388,74 @@ namespace Garnet.server
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
             // Check if the current value in the logRecord contains a valid number and if so, add the input to it.
-            try
+            if (logRecord.IsPinnedValue)
             {
-                if (logRecord.IsPinnedValue)
+                // Using the pinned pointer directly is faster than pinning 'value'.
+                var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
+                if (!IsValidNumber(valueLength, (byte*)valueAddress, ref output, out var val))
+                    return true;
+
+                // Branchless signed overflow detection: overflow iff both operands have the same sign AND the result
+                // has the opposite sign. Avoids `checked` + try/catch (the try block previously inhibited inlining
+                // and OverflowException is very expensive on the hot path).
+                var newVal = unchecked(val + input);
+                if (((val ^ newVal) & (input ^ newVal)) < 0)
                 {
-                    // Using the pinned pointer directly is faster than pinning 'value'.
-                    var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
-                    if (!IsValidNumber(valueLength, (byte*)valueAddress, ref output, out var val))
+                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                    return true;
+                }
+                val = newVal;
+
+                var ndigits = NumUtils.CountDigits(val, out var isNegative);
+
+                // Set the logRecord's length to the full length of the new value, including negative sign, and get the updated valueLength
+                if (!logRecord.TrySetPinnedValueLength(ndigits + (isNegative ? 1 : 0), valueAddress, ref valueLength))
+                    return false;
+
+                // Call the pinned form of the number-writer. Don't include space for the negative sign; that's added in the callee.
+                {
+                    var valuePtr = (byte*)valueAddress; // Use ONLY here; it is updated by WriteInt64, so do not use as the pointer for the subsequent copy
+                    NumUtils.WriteInt64(val, ndigits, ref valuePtr);
+                }
+
+                new ReadOnlySpan<byte>((byte*)valueAddress, valueLength).CopyTo(output.SpanByteAndMemory.SpanByte.Span);
+                output.SpanByteAndMemory.SpanByte.Length = valueLength;
+            }
+            else
+            {
+                // The value is not inline, so LogRecord will probably change it to inline because the update is to a very short (# chars in number) length.
+                var value = logRecord.ValueSpan;
+
+                // TODO: Create sizeInfo
+                RecordSizeInfo sizeInfo = default;
+
+                fixed (byte* valuePtr = value)
+                {
+                    if (!IsValidNumber(value.Length, valuePtr, ref output, out var val))
                         return true;
 
-                    checked { val += input; }
+                    // Branchless signed overflow detection (see above).
+                    var newVal = unchecked(val + input);
+                    if (((val ^ newVal) & (input ^ newVal)) < 0)
+                    {
+                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                        return true;
+                    }
+                    val = newVal;
+
                     var ndigits = NumUtils.CountDigits(val, out var isNegative);
 
-                    // Set the logRecord's length to the full length of the new value, including negative sign, and get the updated valueLength
-                    if (!logRecord.TrySetPinnedValueLength(ndigits + (isNegative ? 1 : 0), valueAddress, ref valueLength))
+                    // Set the logRecord's length to the full length of the new value, including negative sign.
+                    if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                         return false;
+                    value = logRecord.ValueSpan;    // Re-get since length (and possibly inline-ness) has changed
 
-                    // Call the pinned form of the number-writer. Don't include space for the negative sign; that's added in the callee.
-                    {
-                        var valuePtr = (byte*)valueAddress; // Use ONLY here; it is updated by WriteInt64, so do not use as the pointer for the subsequent copy
-                        NumUtils.WriteInt64(val, ndigits, ref valuePtr);
-                    }
+                    // This call will pin the destination.
+                    _ = NumUtils.WriteInt64(val, value);
 
-                    new ReadOnlySpan<byte>((byte*)valueAddress, valueLength).CopyTo(output.SpanByteAndMemory.SpanByte.Span);
-                    output.SpanByteAndMemory.SpanByte.Length = valueLength;
+                    value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);
+                    output.SpanByteAndMemory.SpanByte.Length = value.Length;
                 }
-                else
-                {
-                    // The value is not inline, so LogRecord will probably change it to inline because the update is to a very short (# chars in number) length.
-                    var value = logRecord.ValueSpan;
-
-                    // TODO: Create sizeInfo
-                    RecordSizeInfo sizeInfo = default;
-
-                    fixed (byte* valuePtr = value)
-                    {
-                        if (!IsValidNumber(value.Length, valuePtr, ref output, out var val))
-                            return true;
-                        checked { val += input; }
-                        var ndigits = NumUtils.CountDigits(val, out var isNegative);
-
-                        // Set the logRecord's length to the full length of the new value, including negative sign.
-                        if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
-                            return false;
-                        value = logRecord.ValueSpan;    // Re-get since length (and possibly inline-ness) has changed
-
-                        // This call will pin the destination.
-                        _ = NumUtils.WriteInt64(val, value);
-
-                        value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);
-                        output.SpanByteAndMemory.SpanByte.Length = value.Length;
-                    }
-                }
-            }
-            catch
-            {
-                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
             }
             return true;
         }

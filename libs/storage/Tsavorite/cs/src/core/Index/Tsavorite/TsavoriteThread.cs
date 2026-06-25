@@ -98,7 +98,7 @@ namespace Tsavorite.core
                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // The op carries its PendingContext directly (no ioPendingRequests dictionary). Async pending ops
+            // The op carries its OperationState directly (no ioPendingRequests dictionary). Async pending ops
             // are always PendingIoContext; completion-event / sync-scan ops are signaled in place and never
             // reach this per-session ready queue.
             var op = (PendingIoContext<TInput, TOutput, TContext>)request;
@@ -117,27 +117,23 @@ namespace Tsavorite.core
                     return;
                 }
 
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref op.pendingContext, out var newRequest);
+                var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref op.baseOperationState, ref op.pendingState, out var newRequest);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
-                    // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref op.pendingContext, status);
+                    // Transfer things to outputs from the pendingState before we dispose it.
+                    completedOutputs.TransferFrom(ref op.baseOperationState, ref op.pendingState, status);
                 }
                 if (status.IsPending)
                 {
-                    // Re-pended: a FRESH op (newRequest) was issued for the next hop carrying a moved copy of
-                    // pendingContext (diskLogRecord cleared for non-conditional ops). The record just read is
-                    // stale; dispose it so its buffer isn't leaked (conditional ops keep it as the new op's
-                    // copy/push source, so only dispose for non-conditional). The input/requestKey ownership has
-                    // moved to newRequest, so clear this op's context WITHOUT disposing it.
+                    // Re-pended: a FRESH op (newRequest) was issued for the next hop. The ContinuePending* helper
+                    // has already MOVED the pendingState's heap-owning fields (requestKey, input, diskLogRecord) into the
+                    // new op via struct copy and cleared this pendingState. So this old op's pendingState is already default; the
+                    // drain just clears the base context. The disk record just read was either moved as part of
+                    // the pendingState transfer (CONDITIONAL_*) or already disposed via TransferFrom in
+                    // InternalCompletePendingRequestFromContext (non-conditional).
                     repended = true;
                     Debug.Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct op");
-                    if (!op.pendingContext.IsConditionalOp && op.pendingContext.diskLogRecord.IsSet)
-                    {
-                        OnDisposeDiskRecord(ref op.pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
-                        op.pendingContext.diskLogRecord.Dispose();
-                    }
-                    op.pendingContext = default;
+                    op.baseOperationState = default;
                 }
             }
             finally
@@ -147,15 +143,15 @@ namespace Tsavorite.core
                 {
                     if (!repended)
                     {
-                        // Terminal completion OR an exception during completion processing: dispose this op's context
+                        // Terminal completion OR an exception during completion processing: dispose this op's pendingState
                         // exactly once (returns the input container and disposes the disk record).
-                        OnDisposeDiskRecord(ref op.pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
-                        op.pendingContext.Dispose();
+                        OnDisposeDiskRecord(ref op.pendingState.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
+                        op.pendingState.Dispose();
                     }
                     // DisposeRecord is idempotent (record is nulled after the first call), so this safely frees the op's
                     // raw read buffer on the exception path where InternalCompletePendingRequestFromContext did not reach it.
                     op.DisposeRecord();
-                    sessionFunctions.Ctx.ReturnAsyncIOContext(op);
+                    sessionFunctions.Ctx.ReturnPendingIoContext(op);
                     // Decrement AFTER any re-pend has incremented its fresh op, so the count is never transiently
                     // zero across a hop and is decremented exactly once even if completion processing threw.
                     sessionFunctions.Ctx.pendingCount--;
@@ -164,51 +160,55 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Caller is expected to dispose pendingContext after this method completes
+        /// Caller is expected to dispose the pendingState after this method completes
         /// </summary>
         internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref AsyncIOContext request,
-                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
+                                                                    ref OperationState<TInput, TOutput, TContext> operationState,
+                                                                    ref PendingState<TInput, TOutput, TContext> pendingState,
+                                                                    out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
             newRequest = null;
 
-            // If this was an operation that was trying to retrieve a target record, copy it into the pendingContext.
+            // If this was an operation that was trying to retrieve a target record, copy it into the pendingState.
             // CONDITIONAL_* operations do not care about the retrieved data; they only care whether a record was found.
-            if (request.diskLogRecord.IsSet && !pendingContext.IsConditionalOp)
-                pendingContext.TransferFrom(ref request.diskLogRecord, hlogBase.bufferPool);
+            if (request.diskLogRecord.IsSet && !pendingState.IsConditionalOp)
+                pendingState.TransferFrom(ref request.diskLogRecord, hlogBase.bufferPool);
 
-            var internalStatus = pendingContext.type switch
+            var internalStatus = pendingState.type switch
             {
-                OperationType.READ => ContinuePendingRead(request, ref pendingContext, sessionFunctions),
-                OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, sessionFunctions),
-                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref pendingContext, sessionFunctions),
-                OperationType.CONDITIONAL_SCAN_PUSH => ContinuePendingConditionalScanPush(request, ref pendingContext, sessionFunctions),
+                OperationType.READ => ContinuePendingRead(request, ref operationState, ref pendingState, sessionFunctions),
+                OperationType.RMW => ContinuePendingRMW(request, ref operationState, ref pendingState, sessionFunctions),
+                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref operationState, ref pendingState, sessionFunctions),
+                OperationType.CONDITIONAL_SCAN_PUSH => ContinuePendingConditionalScanPush(request, ref operationState, ref pendingState, sessionFunctions),
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus, out newRequest);
 
-            // If done, callback user code
+            // If done, callback user code. Note: a re-pend may have moved the pendingState to a new op (then-cleared this pendingState);
+            // the type check below uses the pendingState type captured BEFORE re-pend would have cleared it. Completion callbacks
+            // only fire on terminal status (IsCompletedSuccessfully && !IsPending), where the pendingState is still intact.
             if (status.IsCompletedSuccessfully)
             {
-                if (pendingContext.type == OperationType.READ)
+                if (pendingState.type == OperationType.READ)
                 {
-                    sessionFunctions.ReadCompletionCallback(ref pendingContext.diskLogRecord,
-                                                     ref pendingContext.input.Get(),
-                                                     ref pendingContext.output,
-                                                     pendingContext.userContext,
+                    sessionFunctions.ReadCompletionCallback(ref pendingState.diskLogRecord,
+                                                     ref pendingState.input.Get(),
+                                                     ref pendingState.output,
+                                                     pendingState.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress));
+                                                     new RecordMetadata(operationState.logicalAddress));
                 }
-                else if (pendingContext.type == OperationType.RMW)
+                else if (pendingState.type == OperationType.RMW)
                 {
-                    sessionFunctions.RMWCompletionCallback(ref pendingContext.diskLogRecord,
-                                                     ref pendingContext.input.Get(),
-                                                     ref pendingContext.output,
-                                                     pendingContext.userContext,
+                    sessionFunctions.RMWCompletionCallback(ref pendingState.diskLogRecord,
+                                                     ref pendingState.input.Get(),
+                                                     ref pendingState.output,
+                                                     pendingState.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress));
+                                                     new RecordMetadata(operationState.logicalAddress));
                 }
             }
 
