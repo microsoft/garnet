@@ -62,8 +62,8 @@ namespace Resp.benchmark
         [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
         public bool Pool { get; set; }
 
-        [Option("pipeline", Required = false, Default = false, HelpText = "Enable pipelining in worker pool mode (--pool). Issues requests without waiting for responses; completes pending only when revisiting a provider with an outstanding request.")]
-        public bool Pipeline { get; set; }
+        [Option("broadcast", Required = false, Default = false, HelpText = "Enable broadcast mode in worker pool (--pool). Sends a request to every shard in parallel, then completes all pending responses.")]
+        public bool Broadcast { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]
         public bool EnableTLS { get; set; }

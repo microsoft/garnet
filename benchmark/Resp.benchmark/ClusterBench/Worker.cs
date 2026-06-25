@@ -86,9 +86,9 @@ namespace Resp.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            if (opts.Pipeline)
+            if (opts.Broadcast)
             {
-                // Pipeline mode: broadcast a request to every provider (shard),
+                // Broadcast mode: send a request to every provider (shard),
                 // then complete pending on all of them.
                 while (sw.Elapsed < runTime)
                 {
@@ -114,14 +114,14 @@ namespace Resp.benchmark
         /// <summary>
         /// Offline mode: execute pre-generated batches until completion.
         /// Batches are distributed randomly across all shards.
-        /// In pipeline mode, broadcasts a batch to every provider then completes all.
+        /// In broadcast mode, sends a batch to every provider then completes all.
         /// </summary>
         /// <param name="token">Cancellation token</param>
         public void RunOffline(CancellationToken token)
         {
-            if (opts.Pipeline)
+            if (opts.Broadcast)
             {
-                // Pipeline mode: broadcast a batch to every provider (shard),
+                // Broadcast mode: send a batch to every provider (shard),
                 // then complete pending on all of them.
                 while (!token.IsCancellationRequested)
                 {

@@ -172,7 +172,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Pipeline: " + (opts.Pipeline ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -235,7 +235,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"Workers: " + workerCount,-28}{"Pipeline: " + (opts.Pipeline ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workers: " + workerCount,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
