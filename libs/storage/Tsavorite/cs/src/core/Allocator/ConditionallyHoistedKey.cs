@@ -39,7 +39,7 @@ namespace Tsavorite.core
         /// Maximum total bytes (key + namespace) that will be stored inline inside
         /// this struct without renting a <see cref="SectorAlignedMemory"/>. Sized to
         /// cover typical Garnet RESP small-key workloads (≤ 32 B) while keeping the
-        /// containing <c>PendingContext</c> struct compact enough that its per-op struct copy
+        /// containing <c>OperationState</c> struct compact enough that its per-op struct copy
         /// (Buffer.BulkMoveWithWriteBarrier) does not regress the hot path.
         /// </summary>
         internal const int InlineCapacity = 32;

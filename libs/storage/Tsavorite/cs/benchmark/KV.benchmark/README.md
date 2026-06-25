@@ -67,7 +67,7 @@ device's `fio` ceiling (`--rw=randread --bs=4k --direct=1 --ioengine=libaio
 ### 3. Memory-device-bound — reads hit the in-RAM device
 
 Same as (2) but `--device localmemory`, a syscall-free RAM-backed `IDevice`. Reads
-still go through the full pending-read path (hash walk, `PendingContext`, completion
+still go through the full pending-read path (hash walk, `OperationState`, completion
 dispatch) but with **zero disk latency**, isolating engine per-op CPU/GC. Sits
 between (1) and (2), and below the
 [Device.benchmark LocalMemory ceiling](../Device.benchmark/README.md#memory-device-bound-localmemory)

@@ -1482,7 +1482,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// For revivification or reuse: the record space has been retrieved from revivification or PendingContext, so prepare it to be passed to initial updaters,
+        /// For revivification or reuse: the record space has been retrieved from revivification or OperationState, so prepare it to be passed to initial updaters,
         /// based upon the sizeInfo's key and value lengths.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
@@ -1547,6 +1547,32 @@ namespace Tsavorite.core
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
+        }
+
+        /// <summary>
+        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the R11-encoded
+        /// key/value lengths (in the RDH fields and the int* slots at keyAddress/valueAddress) or the <see cref="ObjectIdMap"/>.
+        /// </summary>
+        /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
+        /// <remarks>
+        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log and must
+        /// repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point (objectIdMap is empty and the
+        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> and
+        /// <see cref="SetRecoveredObjectLogRecordStartPosition"/> this must not read the lengths from objectIdMap. The existing R11 length encoding
+        /// is preserved as-is, since the copied lengths are unchanged.
+        /// <para>IMPORTANT: Like the other position setters, this is only safe to call on the disk-image copy of the record (srcBuffer).</para>
+        /// </remarks>
+        internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
+        {
+            if (DataHeader.RecordIsInline)
+            {
+                Debug.Fail("Cannot call RepointObjectLogPosition for an inline record");
+                return;
+            }
+
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            *objectLogPositionPtr = objectLogFilePosition.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
         }
 
         /// <summary>

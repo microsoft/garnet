@@ -10,7 +10,7 @@ slug: vector-sets
 Vector Sets are a Garnet data type backed by the [DiskANN](https://github.com/microsoft/DiskANN) algorithm — Microsoft's
 graph-based approximate nearest-neighbor (ANN) index — coupled with the scalable storage performance of Tsavorite,
 Garnet's storage engine for holding the state. They let you insert high-dimensional vector embeddings under a Garnet
-key and perform fast similarity search over them, with optional JSON attributes for post-filtering.
+key and perform fast similarity search over them, with optional JSON attributes for filtering.
 
 The command surface is inspired by Redis' `V*` Vector Set commands but is implemented natively on top of Garnet's
 storage stack and DiskANN. Some commands are Garnet-specific extensions (prefixed `X*`).
@@ -381,8 +381,8 @@ The query's effective dimension must match the index's `input-vector-dimensions`
 | `COUNT n` | `10` | Maximum number of results to return. Must be in `[0, 100000000]`. |
 | `EPSILON delta` | `2.0` | DiskANN `L_search` epsilon — controls how aggressively the graph is explored beyond the current best. |
 | `EF n` | `100` | Search-time exploration factor (`L_search` candidate-list size). Must be in `[1, 1000000]`. |
-| `FILTER expr` | _none_ | Post-filter results by an attribute expression (see [Filter Expressions](#filter-expressions)). |
-| `FILTER-EF n` | `min(COUNT * 200, 100000000)` | Maximum number of nearest neighbors to **inspect** before filtering. Must be in `[0, 100000000]`. |
+| `FILTER expr` | _none_ | Filter results by an attribute expression (see [Filter Expressions](#filter-expressions)). |
+| `FILTER-EF n` | `16` | Scale factor for adaptive inline filter search. Must be in `[4, 256]`. This controls how high the EF will scale based on selectivity. |
 | `TRUTH` | _off_ | Accepted for compatibility; exact / brute-force search is not yet wired up. |
 | `NOTHREAD` | _off_ | Accepted for compatibility; currently ignored (search always runs on the calling thread). |
 
@@ -423,7 +423,7 @@ VSIM movies VALUES 3 0.0 0.0 0.0 \
 
 ### Filter Expressions
 
-`VSIM ... FILTER <expr>` post-filters candidates by their JSON attribute. The expression is compiled once and
+`VSIM ... FILTER <expr>` filters candidates by their JSON attribute. The expression is compiled once and
 evaluated against each candidate's attribute.
 
 #### Syntax
@@ -634,7 +634,8 @@ Or in `garnet.conf`:
 |-------|-------|--------|
 | Maximum vector dimensions | 65,536 | `VectorManager.MaxVectorDimensions` |
 | Maximum build / search EF | 1,000,000 | `VectorManager.MaxExplorationFactor` |
-| Maximum `COUNT` / `FILTER-EF` | 100,000,000 | `VectorManager.MaxRetrieveCount` |
+| Maximum `COUNT` | 100,000,000 | `VectorManager.MaxRetrieveCount` |
+| Maximum `FILTER-EF` | 256 | `VectorManager.MaxFilteringScaleFactor` |
 | Maximum elements per Vector Set | 2³² − 1 | DiskANN limit |
 | Concurrent Vector Sets per instance | ~15 | Internal context metadata limit |
 | Empty Vector Set keys | not allowed | Returns `ERR Vector Set key cannot be empty` (preview restriction) |

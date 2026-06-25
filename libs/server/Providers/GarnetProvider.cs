@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
@@ -43,8 +44,8 @@ namespace Garnet.server
         /// <summary>
         /// Recover
         /// </summary>
-        public void Recover()
-            => storeWrapper.Recover();
+        public ValueTask RecoverAsync()
+            => storeWrapper.RecoverAsync();
 
         /// <summary>
         /// Dispose

@@ -811,9 +811,9 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var maxFilteringEffortNonNull) || maxFilteringEffortNonNull < 0 || maxFilteringEffortNonNull > VectorManager.MaxRetrieveCount)
+                        if (!parseState.TryGetInt(curIx, out var maxFilteringEffortNonNull) || maxFilteringEffortNonNull < 4 || maxFilteringEffortNonNull > VectorManager.MaxFilteringScaleFactor)
                         {
-                            return AbortWithErrorMessage($"ERR FILTER-EF must be an integer between 0 and {VectorManager.MaxRetrieveCount}");
+                            return AbortWithErrorMessage($"ERR FILTER-EF must be an integer between 4 and {VectorManager.MaxFilteringScaleFactor}");
                         }
 
                         maxFilteringEffort = maxFilteringEffortNonNull;
@@ -860,7 +860,7 @@ namespace Garnet.server
                 delta ??= 2f;
                 searchExplorationFactor ??= 100;
                 filter ??= default;
-                maxFilteringEffort ??= (int)Math.Min((long)count.Value * 200, VectorManager.MaxRetrieveCount);
+                maxFilteringEffort ??= 16;
 
                 // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];

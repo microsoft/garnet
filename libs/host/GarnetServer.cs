@@ -485,7 +485,9 @@ namespace Garnet
         /// </summary>
         public void Start()
         {
-            Provider.Recover();
+#pragma warning disable VSTHRD002 // Server startup is synchronous and must complete recovery before accepting connections.
+            Provider.RecoverAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
             for (var i = 0; i < servers.Length; i++)
                 servers[i].Start();
             Provider.Start();

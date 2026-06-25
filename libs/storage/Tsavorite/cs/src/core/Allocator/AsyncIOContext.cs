@@ -25,7 +25,7 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key; this is a shallow copy of the key in pendingContext, pointing to its requestKey.
+        /// Key; this is a shallow copy of the key in operationState, pointing to its requestKey.
         /// </summary>
         public ConditionallyHoistedKey requestKey;
 
@@ -91,7 +91,7 @@ namespace Tsavorite.core
         /// </summary>
         public void DisposeRecord()
         {
-            // Do not dispose requestKey as it is a shallow copy of the key in pendingContext
+            // Do not dispose requestKey as it is a shallow copy of the key in operationState
             diskLogRecord.Dispose();
             diskLogRecord = default;
             record?.Return();

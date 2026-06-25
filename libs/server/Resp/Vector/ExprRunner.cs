@@ -51,7 +51,7 @@ namespace Garnet.server
         {
             stack.Clear();
 
-            for (var i = 0; i < program.Length; i++)
+            for (var i = 0; i < program.Instructions.Length; i++)
             {
                 var inst = program.Instructions[i];
 
