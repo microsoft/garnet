@@ -41,14 +41,16 @@ namespace Garnet.server
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
                 {
+                    // Single thread-static read; the struct copy (3 ints) is cheaper than re-reading TLS per branch.
+                    var geometry = ActiveReadGeometry;
                     switch (NamespaceBytes[0] & 7)
                     {
                         case DiskANNService.FullVector:
-                            return ActiveFullVectorIOSize > 0 ? ActiveFullVectorIOSize : KVSettings.UseDefaultInitialIORecordSize;
+                            return geometry.FullVectorIOSize > 0 ? geometry.FullVectorIOSize : KVSettings.UseDefaultInitialIORecordSize;
                         case DiskANNService.NeighborList:
-                            return ActiveNeighborListIOSize > 0 ? ActiveNeighborListIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                            return geometry.NeighborListIOSize > 0 ? geometry.NeighborListIOSize : IStreamBuffer.DefaultInitialIORecordSize;
                         case DiskANNService.QuantizedVector:
-                            return ActiveQuantizedVectorIOSize > 0 ? ActiveQuantizedVectorIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                            return geometry.QuantizedVectorIOSize > 0 ? geometry.QuantizedVectorIOSize : IStreamBuffer.DefaultInitialIORecordSize;
                         default:
                             return IStreamBuffer.DefaultInitialIORecordSize;
                     }
@@ -226,23 +228,32 @@ namespace Garnet.server
 
         /// <summary>
         /// Per-term initial disk-read sizes (in bytes) for the vector set currently being operated on, so each
-        /// record is fetched in a single IO sized to its actual geometry. Thread-static for the same reason as
-        /// <see cref="ActiveThreadSession"/> (DiskANN runs single-threaded per operation): they are set on entry
-        /// to a search/add once the index's dimensions / links are known (<see cref="SetActiveReadGeometry"/>) and
-        /// reset when the index context is exited (<see cref="VectorSetLock.Dispose"/>). A value of 0 means "not set"
-        /// and the read falls back to the normal default. Because they are derived per-index, two vector sets with
-        /// different dimensions or M get different (each optimal) sizes within the same Garnet instance.
+        /// record is fetched in a single IO sized to its actual geometry. A field value of 0 means "not set" and
+        /// the read falls back to the normal default.
+        /// </summary>
+        internal struct VectorReadGeometry
+        {
+            /// <summary>Initial disk-read size for the FullVector record (term 0).</summary>
+            public int FullVectorIOSize;
+
+            /// <summary>Initial disk-read size for the adjacency NeighborList record (term 1).</summary>
+            public int NeighborListIOSize;
+
+            /// <summary>Initial disk-read size for the QuantizedVector record (term 2).</summary>
+            public int QuantizedVectorIOSize;
+        }
+
+        /// <summary>
+        /// Per-term initial disk-read sizes for the vector set currently being operated on. Thread-static for the
+        /// same reason as <see cref="ActiveThreadSession"/> (DiskANN runs single-threaded per operation): set on
+        /// entry to a search/add once the index's dimensions / links are known (<see cref="SetActiveReadGeometry"/>)
+        /// and reset to <c>default</c> when the index context is exited (<see cref="VectorSetLock.Dispose"/>) so a
+        /// subsequent operation on a different set does not inherit stale sizes. Because the sizes are derived
+        /// per-index, two vector sets with different dimensions or M get different (each optimal) sizes within the
+        /// same Garnet instance.
         /// </summary>
         [ThreadStatic]
-        internal static int ActiveFullVectorIOSize;
-
-        /// <inheritdoc cref="ActiveFullVectorIOSize"/>
-        [ThreadStatic]
-        internal static int ActiveNeighborListIOSize;
-
-        /// <inheritdoc cref="ActiveFullVectorIOSize"/>
-        [ThreadStatic]
-        internal static int ActiveQuantizedVectorIOSize;
+        internal static VectorReadGeometry ActiveReadGeometry;
 
         /// <summary>
         /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
@@ -268,8 +279,6 @@ namespace Garnet.server
                 or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8
                 ? 1
                 : sizeof(float);
-            ActiveFullVectorIOSize = checked((int)dimensions * fullVectorElementBytes) + VectorRecordReadOverheadBytes;
-            ActiveNeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes;
 
             // QuantizedVector reads (term 2, used for the approximate-distance pass on quantized sets) are sized to
             // the quantized width, which is much smaller than the full vector and differs by quantizer: the byte
@@ -279,7 +288,13 @@ namespace Garnet.server
             // corrects with a second IO.
             var quantizedDims = reduceDims != 0 ? reduceDims : dimensions;
             var quantizedValueBytes = isBinaryQuant ? checked((int)quantizedDims + 7) / 8 : checked((int)quantizedDims);
-            ActiveQuantizedVectorIOSize = quantizedValueBytes + VectorRecordReadOverheadBytes;
+
+            ActiveReadGeometry = new VectorReadGeometry
+            {
+                FullVectorIOSize = checked((int)dimensions * fullVectorElementBytes) + VectorRecordReadOverheadBytes,
+                NeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes,
+                QuantizedVectorIOSize = quantizedValueBytes + VectorRecordReadOverheadBytes,
+            };
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

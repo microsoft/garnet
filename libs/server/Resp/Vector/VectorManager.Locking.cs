@@ -41,9 +41,7 @@ namespace Garnet.server
 
                 // Clear the per-index read geometry so a subsequent operation on a different vector set
                 // (possibly with different dimensions / M) does not inherit stale sizes.
-                ActiveFullVectorIOSize = 0;
-                ActiveNeighborListIOSize = 0;
-                ActiveQuantizedVectorIOSize = 0;
+                ActiveReadGeometry = default;
 
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
