@@ -529,6 +529,10 @@ namespace Garnet.server
         /// </summary>
         public List<ulong> ReserveContextsForMigration(ref VectorBasicContext ctx, int count)
         {
+            // At most 64 contexts can fit in a single ContextMetadata (though only 63 in the first one).
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(count, 64);
+
             List<ulong> contexts;
 
             lock (this)

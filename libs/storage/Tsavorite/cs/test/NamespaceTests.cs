@@ -324,11 +324,18 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue((value1.vfield1 + input.ifield1) == output.value.vfield1 && (value1.vfield2 + input.ifield2) == output.value.vfield2);
         }
 
-        private void AssertCompleted(Status expected, Status actual)
+        private void AssertCompleted(Status expectedSubset, Status actual)
         {
             if (actual.IsPending)
                 (actual, _) = CompletePendingResult();
-            ClassicAssert.AreEqual(expected, actual);
+
+            var expectedStatusCode = expectedSubset.statusCode;
+            var actualStatusCode = actual.statusCode;
+
+            // Depending on storage we might have extra bits in the actual status.
+            //
+            // Just check for the bits we actually care about.
+            ClassicAssert.AreEqual(expectedStatusCode, actualStatusCode & expectedStatusCode);
         }
 
         private (Status status, OutputStruct output) CompletePendingResult()
