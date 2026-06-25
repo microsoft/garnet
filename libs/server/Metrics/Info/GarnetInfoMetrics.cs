@@ -299,7 +299,6 @@ namespace Garnet.server
             new($"IndexBucketSizeBytes", db.Store.IndexBucketSizeBytes.ToString()),
             new($"IndexMemorySizeBytes", db.Store.IndexSizeBytes.ToString()),
             new($"IndexOverflowBucketCount", db.Store.OverflowBucketCount.ToString()),
-            new($"IndexOverflowBucketSizeBytes", db.Store.IndexOverflowBucketSizeBytes.ToString()),
             new($"IndexOverflowMemorySizeBytes", db.Store.IndexOverflowSizeBytes.ToString()),
             new($"IndexTotalMemorySizeBytes", db.Store.IndexTotalSizeBytes.ToString()),
             new($"LogDir", storeWrapper.serverOptions.LogDir),

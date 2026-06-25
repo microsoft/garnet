@@ -61,7 +61,8 @@ namespace Tsavorite.core
         public long IndexSizeBytes => state[resizeInfo.version].size * Constants.kCacheLineBytes;
 
         /// <summary>
-        /// Size of a single hash bucket (one cache line), in bytes.
+        /// Size of a single hash bucket (one cache line), in bytes. Applies to both main and overflow buckets,
+        /// which share the same layout.
         /// </summary>
         public long IndexBucketSizeBytes => Constants.kCacheLineBytes;
 
@@ -71,12 +72,7 @@ namespace Tsavorite.core
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
 
         /// <summary>
-        /// Size of a single overflow hash bucket (one cache line), in bytes. Same layout as a main bucket.
-        /// </summary>
-        public long IndexOverflowBucketSizeBytes => Constants.kCacheLineBytes;
-
-        /// <summary>
-        /// Size of the in-use overflow buckets in bytes (#overflow buckets * 64).
+        /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
         /// </summary>
         public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
 
