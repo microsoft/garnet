@@ -84,7 +84,7 @@ namespace Garnet.server
 
             foreach (var db in databases)
             {
-                store_index_size += db.Store.IndexSize * 64;
+                store_index_size += db.Store.IndexTotalSizeBytes;
                 aof_log_memory_size += db.AppendOnlyFile != null ? db.AppendOnlyFile.Log.MemorySizeBytes.AggregateDiff(0) : 0;
 
                 if (db.SizeTracker?.mainLogTracker is null)
@@ -295,10 +295,13 @@ namespace Garnet.server
             new($"CurrentVersion", db.Store.CurrentVersion.ToString()),
             new($"LastCheckpointedVersion", db.Store.LastCheckpointedVersion.ToString()),
             new($"SystemState", db.Store.SystemState.ToString()),
-            new($"IndexBucketSizeBytes", db.Store.IndexBucketSizeBytes.ToString()),
             new($"IndexBucketCount", db.Store.IndexSize.ToString()),
-            new($"IndexOverflowBucketCount", db.Store.OverflowBucketCount.ToString()),
+            new($"IndexBucketSizeBytes", db.Store.IndexBucketSizeBytes.ToString()),
             new($"IndexMemorySizeBytes", db.Store.IndexSizeBytes.ToString()),
+            new($"IndexOverflowBucketCount", db.Store.OverflowBucketCount.ToString()),
+            new($"IndexOverflowBucketSizeBytes", db.Store.IndexOverflowBucketSizeBytes.ToString()),
+            new($"IndexOverflowMemorySizeBytes", db.Store.IndexOverflowSizeBytes.ToString()),
+            new($"IndexTotalMemorySizeBytes", db.Store.IndexTotalSizeBytes.ToString()),
             new($"LogDir", storeWrapper.serverOptions.LogDir),
             new($"Log.PageSizeBytes", db.Store.Log.PageSizeBytes.ToString()),
             new($"Log.MaxPageCount", db.Store.Log.BufferSize.ToString()),

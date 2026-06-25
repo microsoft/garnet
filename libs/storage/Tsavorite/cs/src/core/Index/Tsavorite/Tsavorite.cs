@@ -70,6 +70,22 @@ namespace Tsavorite.core
         /// </summary>
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
 
+        /// <summary>
+        /// Size of a single overflow hash bucket (one cache line), in bytes. Same layout as a main bucket.
+        /// </summary>
+        public long IndexOverflowBucketSizeBytes => Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Size of the in-use overflow buckets in bytes (#overflow buckets * 64).
+        /// </summary>
+        public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
+        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>).
+        /// </summary>
+        public long IndexTotalSizeBytes => IndexSizeBytes + IndexOverflowSizeBytes;
+
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
