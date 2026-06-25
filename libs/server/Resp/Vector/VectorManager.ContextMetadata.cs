@@ -554,6 +554,20 @@ namespace Garnet.server
                         }
                     }
 
+                    // Today we limit ourselves to uint.MaxValue _contexts_ (ContextStep per Vector Set).
+                    //
+                    // If a new ContextMetadata would allow us to exceed that limit, fail.
+                    //
+                    // This is unlikely (~8.3M Vector Sets), so treated as an error.
+                    //
+                    // We could raise this to ulong.MaxValue by increasing reserved space on the DiskANN size, in which case
+                    // the cause of failure would be the GC refusing to allocate a large enough contextMetadatas array.
+                    var limitOfNewAllocation = ContextMetadata.OffsetForContextMetadata(contextMetadatas.Length) + (64 * ContextStep);
+                    if (limitOfNewAllocation > uint.MaxValue)
+                    {
+                        throw new GarnetException("Maximum Vector Set allocations exceeded, cannot issue new context");
+                    }
+
                     // All allocated contexts are full, allocate more space
                     var newContextMetadatas = new ContextMetadata[contextMetadatas.Length + 1];
                     contextMetadatas.AsSpan().CopyTo(newContextMetadatas);

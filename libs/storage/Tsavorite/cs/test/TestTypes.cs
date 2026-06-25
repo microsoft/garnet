@@ -82,7 +82,7 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> NamespaceBytes => namespaceArr;
 
-        public override readonly string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}, ns {Convert.ToHexString(namespaceArr)}";
+        public override readonly string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}, ns {(namespaceArr == null ? "-" : Convert.ToHexString(namespaceArr))}";
 
         public struct Comparer : IKeyComparer
         {

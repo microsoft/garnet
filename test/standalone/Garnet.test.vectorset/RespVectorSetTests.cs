@@ -3101,54 +3101,67 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task LotsOfVectorSetsAsyncAsync()
+        public async Task LotsOfVectorSetsAsync()
         {
             const int NumVectorSets = 1_000;
 
             var connections = new ConnectionMultiplexer[Environment.ProcessorCount];
-            var dbs = new IDatabase[connections.Length];
-            for (var i = 0; i < connections.Length; i++)
+            try
             {
-                connections[i] = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
-                dbs[i] = connections[i].GetDatabase();
-            }
-
-            // Create them all
-            {
-                var allAdds = new List<Task>();
-                for (var i = 0; i < NumVectorSets; i++)
+                var dbs = new IDatabase[connections.Length];
+                for (var i = 0; i < connections.Length; i++)
                 {
-                    TestContext.Progress.WriteLine(i);
-
-                    var keyName = $"{nameof(LotsOfVectorSetsAsyncAsync)}_{i}";
-                    var elemName = $"x{i}";
-                    var vector = new byte[(i * 3) + 1];
-                    vector.AsSpan().Fill((byte)i);
-
-                    var task = CreateVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
-
-                    allAdds.Add(task);
+                    connections[i] = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                    dbs[i] = connections[i].GetDatabase();
                 }
 
-                await Task.WhenAll(allAdds);
-            }
-
-            // Validate them all
-            {
-                var allReads = new List<Task>();
-                for (var i = 0; i < NumVectorSets; i++)
+                // Create them all
                 {
-                    var keyName = $"{nameof(LotsOfVectorSetsAsyncAsync)}_{i}";
-                    var elemName = $"x{i}";
-                    var vector = new byte[(i * 3) + 1];
-                    vector.AsSpan().Fill((byte)i);
+                    var allAdds = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        TestContext.Progress.WriteLine(i);
 
-                    var task = ReadVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
 
-                    allReads.Add(task);
+                        var task = CreateVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allAdds.Add(task);
+                    }
+
+                    await Task.WhenAll(allAdds);
                 }
 
-                await Task.WhenAll(allReads);
+                // Validate them all
+                {
+                    var allReads = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
+
+                        var task = ReadVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allReads.Add(task);
+                    }
+
+                    await Task.WhenAll(allReads);
+                }
+            }
+            finally
+            {
+                foreach (var con in connections)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync();
+                    }
+                }
             }
 
             static async Task CreateVectorSetAsync(IDatabase db, string key, string elem, byte[] data)

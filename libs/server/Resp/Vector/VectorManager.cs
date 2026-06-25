@@ -246,7 +246,12 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
+            // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
             using var session = (RespServerSession)getTempSession();
+            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            {
+                throw new GarnetException($"Could not switch VectorManager resume session to {dbId}, initialization failed");
+            }
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
