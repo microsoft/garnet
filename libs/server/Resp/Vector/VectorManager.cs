@@ -431,6 +431,9 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
 
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks);
+
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
                 errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
@@ -633,7 +636,10 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 

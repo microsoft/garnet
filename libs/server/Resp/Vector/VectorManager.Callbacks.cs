@@ -27,6 +27,32 @@ namespace Garnet.server
             public readonly ReadOnlySpan<PinnedSpanByte> Parameters
                 => default;
 
+            /// <summary>
+            /// Per-term initial disk read size. The big, fixed-size records (FullVector, and the adjacency
+            /// NeighborList) are sized to the active vector set's geometry (<see cref="SetActiveReadGeometry"/>)
+            /// so each lands in a single IO regardless of dimension / M — and different vector sets get different
+            /// optimal sizes. When the geometry isn't set (paths that don't call SetActiveReadGeometry) we fall
+            /// back to the previous behavior: FullVector defers to the configured store/session size
+            /// (<c>--initial-io-record-size</c>); everything else uses the small default to avoid over-reading a
+            /// full vector-sized block for a tiny record.
+            /// </summary>
+            public readonly int InitialIORecordSize
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (NamespaceBytes[0] & 7)
+                    {
+                        case DiskANNService.FullVector:
+                            return ActiveFullVectorIOSize > 0 ? ActiveFullVectorIOSize : KVSettings.UseDefaultInitialIORecordSize;
+                        case DiskANNService.NeighborList:
+                            return ActiveNeighborListIOSize > 0 ? ActiveNeighborListIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                        default:
+                            return IStreamBuffer.DefaultInitialIORecordSize;
+                    }
+                }
+            }
+
             private readonly ReadOnlySpan<byte> NamespaceBytes
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -195,6 +221,40 @@ namespace Garnet.server
         /// </summary>
         [ThreadStatic]
         internal static StorageSession ActiveThreadSession;
+
+        /// <summary>
+        /// Per-term initial disk-read sizes (in bytes) for the vector set currently being operated on, so each
+        /// record is fetched in a single IO sized to its actual geometry. Thread-static for the same reason as
+        /// <see cref="ActiveThreadSession"/> (DiskANN runs single-threaded per operation): they are set on entry
+        /// to a search/add once the index's dimensions / links are known (<see cref="SetActiveReadGeometry"/>) and
+        /// reset when the index context is exited (<see cref="VectorSetLock.Dispose"/>). A value of 0 means "not set"
+        /// and the read falls back to the normal default. Because they are derived per-index, two vector sets with
+        /// different dimensions or M get different (each optimal) sizes within the same Garnet instance.
+        /// </summary>
+        [ThreadStatic]
+        internal static int ActiveFullVectorIOSize;
+
+        /// <inheritdoc cref="ActiveFullVectorIOSize"/>
+        [ThreadStatic]
+        internal static int ActiveNeighborListIOSize;
+
+        /// <summary>
+        /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
+        /// initial disk-read size, so the whole record lands in one IO. Generous; the read is sector-aligned downstream.
+        /// </summary>
+        private const int VectorRecordReadOverheadBytes = 64;
+
+        /// <summary>
+        /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
+        /// <see cref="VectorReadBatch.InitialIORecordSize"/> can size each read to the record it is fetching.
+        /// FullVector value = <paramref name="dimensions"/> * sizeof(float); NeighborList value = <paramref name="numLinks"/> * sizeof(int).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks)
+        {
+            ActiveFullVectorIOSize = checked((int)dimensions * sizeof(float)) + VectorRecordReadOverheadBytes;
+            ActiveNeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes;
+        }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void ReadCallbackUnmanaged(

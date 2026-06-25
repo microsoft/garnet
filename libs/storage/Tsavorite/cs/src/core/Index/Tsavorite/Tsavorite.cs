@@ -490,6 +490,7 @@ namespace Tsavorite.core
                 var hash = storeFunctions.GetKeyHashCode64(key);
 
                 var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                operationState.initialIORecordSize = batch.InitialIORecordSize;
                 OperationStatus internalStatus;
 
                 do
@@ -555,6 +556,7 @@ namespace Tsavorite.core
                             var hash = hashes[i];
 
                             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                            operationState.initialIORecordSize = batch.InitialIORecordSize;
                             OperationStatus internalStatus;
 
                             do

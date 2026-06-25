@@ -28,6 +28,15 @@ namespace Tsavorite.core
         ReadOnlySpan<PinnedSpanByte> Parameters { get; }
 
         /// <summary>
+        /// Initial IO size (in bytes) used when reading records in this batch from disk.
+        /// <see cref="KVSettings.UseDefaultInitialIORecordSize"/> (the default) resolves through the
+        /// session/store hierarchy. Implementations may return a per-batch size — e.g. a large size for
+        /// batches of large fixed-size records (vectors) to avoid the header-read round-trip, or a small
+        /// size for batches of tiny records to avoid over-reading.
+        /// </summary>
+        int InitialIORecordSize => KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <summary>
         /// Get <paramref name="i"/>th key.
         /// </summary>
         void GetKey(int i, out TKey key);
