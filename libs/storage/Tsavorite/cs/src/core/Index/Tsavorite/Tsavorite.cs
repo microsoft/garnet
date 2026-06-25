@@ -807,7 +807,6 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
-            Free();
             hlogBase.Dispose();
             readcacheBase?.Dispose();
             LockTable.Dispose();
@@ -815,6 +814,9 @@ namespace Tsavorite.core
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
             pauseRevivEvent?.Dispose();
+            
+            // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
+            Free();
         }
 
         /// <summary>
