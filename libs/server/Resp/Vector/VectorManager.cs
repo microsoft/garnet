@@ -432,7 +432,7 @@ namespace Garnet.server
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
 
             // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks);
+            SetActiveReadGeometry(dimensions, numLinks, quantType);
 
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
@@ -639,7 +639,7 @@ namespace Garnet.server
             ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out var numLinks, out _, out var indexPtr);
 
             // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks);
+            SetActiveReadGeometry(dimensions, numLinks, quantType);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -827,7 +827,10 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks, quantType);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 

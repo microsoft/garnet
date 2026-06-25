@@ -247,12 +247,21 @@ namespace Garnet.server
         /// <summary>
         /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
         /// <see cref="VectorReadBatch.InitialIORecordSize"/> can size each read to the record it is fetching.
-        /// FullVector value = <paramref name="dimensions"/> * sizeof(float); NeighborList value = <paramref name="numLinks"/> * sizeof(int).
+        /// FullVector value = <paramref name="dimensions"/> * (bytes-per-element for <paramref name="quantType"/>);
+        /// NeighborList value = <paramref name="numLinks"/> * sizeof(int).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks)
+        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks, VectorQuantType quantType)
         {
-            ActiveFullVectorIOSize = checked((int)dimensions * sizeof(float)) + VectorRecordReadOverheadBytes;
+            // The stored FullVector element size depends on the quantizer: the Redis quantizers (NoQuant/Bin/Q8)
+            // store F32 (4 bytes/dim), while the extended X* quantizers store 1 byte/dim. See the format mapping in
+            // VectorManager.TryGetEmbedding. Over-estimating only wastes bandwidth; under-estimating would force a
+            // second IO, so this must match the actual stored size.
+            var fullVectorElementBytes = quantType is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8
+                or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8
+                ? 1
+                : sizeof(float);
+            ActiveFullVectorIOSize = checked((int)dimensions * fullVectorElementBytes) + VectorRecordReadOverheadBytes;
             ActiveNeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes;
         }
 
