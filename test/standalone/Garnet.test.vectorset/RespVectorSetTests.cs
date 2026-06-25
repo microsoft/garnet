@@ -43,7 +43,7 @@ namespace Garnet.test
 
             server.Start();
 
-            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContextAllocations(preAllocatedContexts);
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
         }
 
         [TearDown]

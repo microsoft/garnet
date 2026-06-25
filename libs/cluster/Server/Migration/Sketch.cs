@@ -47,7 +47,7 @@ namespace Garnet.cluster
 
         public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(ns.Length <= sizeof(uint), "Longer namespaces not yet supported");
+            Debug.Assert(ns.Length is (sizeof(byte) or sizeof(uint)), "Longer namespaces not yet supported");
 
             if (!argSliceVector.TryAddItem(ns, key))
                 return false;

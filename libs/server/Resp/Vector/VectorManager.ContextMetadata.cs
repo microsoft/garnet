@@ -56,7 +56,7 @@ namespace Garnet.server
             private HashSlots slots;
 
 
-            public readonly bool IsEmpty()
+            public readonly bool IsEmpty
             => inUse == 0 && migrating == 0 && cleaningUp == 0;
 
             public readonly bool IsInUse(bool allowZero, ushort context)
@@ -142,16 +142,16 @@ namespace Garnet.server
                     ignoringUnusuable |= 1;
                 }
 
-                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)~ignoringUnusuable);
+                var bit = BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)~ignoringUnusuable);
 
                 if (bit == 64)
                 {
                     return null;
                 }
 
-                var ret = bit * ContextStep;
+                var ret = (ushort)(bit * (int)ContextStep);
 
-                return (ushort)ret;
+                return ret;
             }
 
             public bool TryReserveForMigration(bool allowZero, int count, out List<ushort> reserved)
@@ -308,9 +308,9 @@ namespace Garnet.server
                 var remaining = cleaningUp;
                 while (remaining != 0UL)
                 {
-                    var ix = (ulong)BitOperations.TrailingZeroCount(remaining);
+                    var ix = BitOperations.TrailingZeroCount(remaining);
 
-                    _ = ret.Add((ushort)(ix * ContextStep));
+                    _ = ret.Add((ushort)(ix * (int)ContextStep));
 
                     remaining &= ~(1UL << (byte)ix);
                 }
@@ -330,9 +330,9 @@ namespace Garnet.server
                 var remaining = migrating;
                 while (remaining != 0UL)
                 {
-                    var ix = (ulong)BitOperations.TrailingZeroCount(remaining);
+                    var ix = BitOperations.TrailingZeroCount(remaining);
 
-                    _ = ret.Add((ushort)(ix * ContextStep));
+                    _ = ret.Add((ushort)(ix * (int)ContextStep));
 
                     remaining &= ~(1UL << (byte)ix);
                 }
@@ -453,13 +453,27 @@ namespace Garnet.server
                         {
                             contextMetadatas[i].MarkInUse(i != 0, nextFreeInBlock.Value, hashSlot);
 
-                            var offset = (ulong)i * 64UL * ContextStep;
+                            var offset = ContextMetadata.OffsetForContextMetadata(i);
                             var contextToRet = nextFreeInBlock.Value + offset;
 
                             _ = dirtyContextMetadatas.Add(i);
 
                             return contextToRet;
                         }
+                    }
+
+                    // Today we limit ourselves to uint.MaxValue _contexts_ (ContextStep per Vector Set).
+                    //
+                    // If a new ContextMetadata would allow us to exceed that limit, fail.
+                    //
+                    // This is unlikely (~8.3M Vector Sets), so treated as an error.
+                    //
+                    // We could raise this to ulong.MaxValue by increasing reserved space on the DiskANN size, in which case
+                    // the cause of failure would be the GC refusing to allocate a large enough contextMetadatas array.
+                    var limitOfNewAllocation = ContextMetadata.OffsetForContextMetadata(contextMetadatas.Length) + (64 * ContextStep);
+                    if (limitOfNewAllocation > uint.MaxValue)
+                    {
+                        throw new GarnetException("Maximum Vector Set allocations exceeded, cannot issue new context");
                     }
 
                     // All allocated contexts are full, allocate more space
@@ -479,7 +493,7 @@ namespace Garnet.server
         /// 
         /// Contexts are not persisted at call time, but may be persisted after future operations.
         /// </summary>
-        public void AllocateTestContextAllocations(int count)
+        public void AllocateTestContexts(int count)
         {
             for (var i = 0; i < count; i++)
             {

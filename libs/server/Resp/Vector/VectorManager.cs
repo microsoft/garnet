@@ -283,6 +283,39 @@ namespace Garnet.server
                     }
                 }
 
+                // Any indexes still marked in use that we _didn't_ recover should be marked for cleanup
+                for (var i = 0; i < contextMetadatas.Length; i++)
+                {
+                    var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                    for (ulong j = 0; j < 64; j++)
+                    {
+                        var context = offset + (j * ContextStep);
+
+                        // Skip context 0, it's illegal to use
+                        if (context == 0)
+                        {
+
+                            continue;
+                        }
+
+                        // Index was recovered, nothing to do
+                        if (recoveredIndexes.ContainsKey(context))
+                        {
+                            continue;
+                        }
+
+                        var (_, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                        // In use, but not recovered, cleanup any data and get the context back
+                        if (contextMetadatas[i].IsInUse(i != 0, contextValue) && !contextMetadatas[i].IsCleaningUp(i != 0, contextValue))
+                        {
+                            contextMetadatas[i].MarkCleaningUp(i != 0, contextValue);
+                            _ = dirtyContextMetadatas.Add(i);
+                        }
+                    }
+                }
+
                 recoveredIndexes = null;
             }
 
@@ -325,7 +358,7 @@ namespace Garnet.server
             // During recovery, we can trim off empty ContextMetadata
             //
             // ResumePostRecovery will fill in any gaps this causes
-            if (metadata.IsEmpty())
+            if (metadata.IsEmpty)
             {
                 return;
             }

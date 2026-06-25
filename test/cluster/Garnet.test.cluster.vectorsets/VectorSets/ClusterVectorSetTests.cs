@@ -2223,7 +2223,7 @@ namespace Garnet.test.cluster
             {
                 var wrapper = GetStoreWrapper(server);
 
-                wrapper.DefaultDatabase.VectorManager.AllocateTestContextAllocations(preAllocatedContexts);
+                wrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
             }
 
             return ret;
