@@ -35,8 +35,11 @@ namespace Resp.benchmark
         [Option("valuelength", Required = false, Default = 8, HelpText = "Value length (bytes) - 0 indicates use key as value")]
         public int ValueLength { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size (for GET/SET: number of commands, for MGET/MSET: number of keys per command)")]
+        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size / pipeline depth (for GET/SET: number of commands, for MGET/MSET: number of keys per command)")]
         public IEnumerable<int> BatchSize { get; set; }
+
+        [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
+        public IEnumerable<int> Pipeline { set => BatchSize = value; get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
         public int RunTime { get; set; }
