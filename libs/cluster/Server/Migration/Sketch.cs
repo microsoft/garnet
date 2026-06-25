@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
@@ -53,15 +52,7 @@ namespace Garnet.cluster
             if (!argSliceVector.TryAddItem(ns, key))
                 return false;
 
-            ulong nsRaw;
-            if (ns.Length == 1)
-            {
-                nsRaw = ns[0];
-            }
-            else
-            {
-                nsRaw = BinaryPrimitives.ReadUInt32LittleEndian(ns);
-            }
+            var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
 
             var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw) & (size - 1);
             var byteOffset = slot >> 3;

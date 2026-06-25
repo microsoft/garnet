@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
@@ -51,23 +50,15 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (logRecord.NamespaceBytes.Length is not (1 or sizeof(uint)))
+                var namespaceBytes = logRecord.NamespaceBytes;
+                if (namespaceBytes.Length is not (sizeof(byte) or sizeof(uint)))
                 {
                     // Not Vector Set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
                     return true;
                 }
 
-                ulong ns;
-                if (logRecord.NamespaceBytes.Length == 1)
-                {
-                    ns = logRecord.NamespaceBytes[0];
-                }
-                else
-                {
-                    Debug.Assert(logRecord.NamespaceBytes.Length == sizeof(uint), "Unexpected namespace size");
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(logRecord.NamespaceBytes);
-                }
+                var ns = ExtractContextFromNamespaces(namespaceBytes);
 
                 // We only store the _first_ context in a batch of related contexts to delete
                 // so mask it down to just the first context
@@ -79,7 +70,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                VectorElementKey toDeleteKey = new(logRecord.NamespaceBytes, logRecord.KeyBytes);
+                VectorElementKey toDeleteKey = new(namespaceBytes, logRecord.KeyBytes);
 
                 // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);

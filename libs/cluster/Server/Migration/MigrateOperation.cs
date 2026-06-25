@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -46,16 +45,7 @@ namespace Garnet.cluster
             {
                 Debug.Assert(namespaceBytes.Length <= sizeof(uint), "Longer namespaces not supported");
 
-                ulong ns;
-                if (namespaceBytes.Length == 1)
-                {
-                    ns = namespaceBytes[0];
-                }
-                else
-                {
-                    Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace length");
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
-                }
+                var ns = VectorManager.ExtractContextFromNamespaces(namespaceBytes);
 
                 return session._namespaces?.Contains(ns) ?? false;
             }

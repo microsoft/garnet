@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -637,6 +638,52 @@ namespace Garnet.server
             }
 
             return ret;
+        }
+
+        /// <summary>
+        /// Given a namespace that contains a serialized context, extract the context.
+        /// 
+        /// Inverse of <see cref="StoreContextInNamespace"/>.
+        /// </summary>
+        public static ulong ExtractContextFromNamespaces(ReadOnlySpan<byte> namespaceBytes)
+        {
+            Debug.Assert(namespaceBytes.Length is (sizeof(byte) or sizeof(uint)), "Namespace size unexpected");
+
+            ulong ns;
+            if (namespaceBytes.Length == 1)
+            {
+                ns = namespaceBytes[0];
+            }
+            else
+            {
+                ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+            }
+
+            return ns;
+        }
+
+        /// <summary>
+        /// Given a context, store it in a span of bytes.
+        /// 
+        /// This handles rules about byte maximum single byte namespace and record value alignment.
+        /// 
+        /// Inverse of <see cref="ExtractContextFromNamespaces"/>.
+        /// </summary>
+        public static void StoreContextInNamespace(ulong context, ref Span<byte> namespaceBytes)
+        {
+            Debug.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
+            Debug.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
+
+            if (context <= RecordDataHeader.MaximumSingleByteNamespaceValue)
+            {
+                namespaceBytes = namespaceBytes[..1];
+                namespaceBytes[0] = (byte)context;
+            }
+            else
+            {
+                namespaceBytes = namespaceBytes[0..sizeof(uint)];
+                BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)context);
+            }
         }
     }
 }

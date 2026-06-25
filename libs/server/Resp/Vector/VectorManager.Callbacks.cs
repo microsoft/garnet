@@ -206,20 +206,10 @@ namespace Garnet.server
             nint dataCallbackContext
         )
         {
-            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
-
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-            Span<byte> nsBytes = stackalloc byte[4];
 
-            if (context <= 127)
-            {
-                nsBytes = nsBytes[..1];
-                nsBytes[0] = (byte)context;
-            }
-            else
-            {
-                BinaryPrimitives.WriteUInt32LittleEndian(nsBytes, (uint)context);
-            }
+            Span<byte> nsBytes = stackalloc byte[4];
+            StoreContextInNamespace(context, ref nsBytes);
 
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes);
 
@@ -247,8 +237,6 @@ namespace Garnet.server
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
 
-            *(int*)((byte*)keyData - 4) = (int)keyLength;
-
             return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
@@ -261,11 +249,6 @@ namespace Garnet.server
 
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
-
-            unsafe
-            {
-                *(int*)((byte*)keyData - 4) = (int)keyLength;
-            }
 
             return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
         }
@@ -288,11 +271,6 @@ namespace Garnet.server
                 VectorOutput ignored = new();
 
                 CompletePending(ref status, ref ignored, ref ctx);
-            }
-
-            unsafe
-            {
-                *(int*)((byte*)keyData - 4) = (int)keyLength;
             }
 
             return status.IsCompletedSuccessfully ? (byte)1 : default;
@@ -364,21 +342,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
-            Debug.Assert(context <= uint.MaxValue, "A maximum of 2^32-1 Vector Set contexts are supported");
-
             // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key
-            Span<byte> nsBytes;
-            if (context <= 127)
-            {
-                // Top bit is reserved, have to jump to multi-byte namespace once we hit 128
-                nsBytes = new(((byte*)keyData) - 1, 1);
-                nsBytes[0] = (byte)context;
-            }
-            else
-            {
-                nsBytes = new(((byte*)keyData) - 4, 4);
-                BinaryPrimitives.WriteUInt32LittleEndian(nsBytes, (uint)context);
-            }
+            Span<byte> nsBytes = new(((byte*)keyData) - 4, 4);
+            StoreContextInNamespace(context, ref nsBytes);
 
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 

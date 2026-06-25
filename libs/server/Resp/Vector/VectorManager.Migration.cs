@@ -35,8 +35,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> value
         )
         {
-            Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace length");
-            var ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+            var ns = ExtractContextFromNamespaces(namespaceBytes);
 
 #if DEBUG
             // Do some extra sanity checking in DEBUG builds
@@ -56,15 +55,14 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            // Context is logically just a number, but storage is optimized if <= 127
-            // So we need to shrink storage if context is small
-            if (ns <= 127)
-            {
-                Debug.Assert(BitConverter.IsLittleEndian, "Only implemented for little-endian architectures");
-                namespaceBytes = namespaceBytes[0..1];
-            }
+            // When we migrate a record we expand the namespace to always occupy 4-bytes
+            // in order to have space for updating to the destination namespace.
+            //
+            // Shrink it back down if able post-migration.
+            Span<byte> nsCopy = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(ns, ref nsCopy);
 
-            VectorElementKey key = new(namespaceBytes, keyWithoutNamespace);
+            VectorElementKey key = new(nsCopy, keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
@@ -88,17 +86,7 @@ namespace Garnet.server
                 Span<byte> serializedKeyBytes = stackalloc byte[sizeof(int) + sizeof(uint) + sizeof(int) + key.KeyBytes.Length];
                 BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes, 4);
 
-                ulong ns;
-                if(key.NamespaceBytes.Length == 1)
-                {
-                    ns = key.NamespaceBytes[0];
-                }
-                else
-                {
-                    Debug.Assert(key.NamespaceBytes.Length == 4, "Unexpected namespace length");
-                    ns = BinaryPrimitives.ReadUInt32LittleEndian(key.NamespaceBytes);
-                }
-
+                var ns = ExtractContextFromNamespaces(key.NamespaceBytes);
                 BinaryPrimitives.WriteUInt32LittleEndian(serializedKeyBytes[sizeof(int)..], (uint)ns);
 
                 BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes[(sizeof(int) + sizeof(uint))..], key.KeyBytes.Length);
@@ -413,16 +401,7 @@ namespace Garnet.server
         /// </summary>
         public static void SerializeMigratedElementKey(Span<byte> dataBytes, ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
         {
-            ulong context;
-            if (namespaceBytes.Length == 1)
-            {
-                context = namespaceBytes[0];
-            }
-            else
-            {
-                Debug.Assert(namespaceBytes.Length == 4, "Unexpected namespace size");
-                context = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
-            }
+            var context = ExtractContextFromNamespaces(namespaceBytes);
 
             var writeTo = dataBytes;
 
