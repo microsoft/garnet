@@ -47,6 +47,8 @@ namespace Garnet.server
                             return ActiveFullVectorIOSize > 0 ? ActiveFullVectorIOSize : KVSettings.UseDefaultInitialIORecordSize;
                         case DiskANNService.NeighborList:
                             return ActiveNeighborListIOSize > 0 ? ActiveNeighborListIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                        case DiskANNService.QuantizedVector:
+                            return ActiveQuantizedVectorIOSize > 0 ? ActiveQuantizedVectorIOSize : IStreamBuffer.DefaultInitialIORecordSize;
                         default:
                             return IStreamBuffer.DefaultInitialIORecordSize;
                     }
@@ -238,6 +240,10 @@ namespace Garnet.server
         [ThreadStatic]
         internal static int ActiveNeighborListIOSize;
 
+        /// <inheritdoc cref="ActiveFullVectorIOSize"/>
+        [ThreadStatic]
+        internal static int ActiveQuantizedVectorIOSize;
+
         /// <summary>
         /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
         /// initial disk-read size, so the whole record lands in one IO. Generous; the read is sector-aligned downstream.
@@ -247,22 +253,33 @@ namespace Garnet.server
         /// <summary>
         /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
         /// <see cref="VectorReadBatch.InitialIORecordSize"/> can size each read to the record it is fetching.
-        /// FullVector value = <paramref name="dimensions"/> * (bytes-per-element for <paramref name="quantType"/>);
-        /// NeighborList value = <paramref name="numLinks"/> * sizeof(int).
+        /// FullVector value = <paramref name="dimensions"/> * (full bytes-per-element for <paramref name="quantType"/>);
+        /// QuantizedVector value = effective-dims * (quantized bits-per-element / 8); NeighborList value = <paramref name="numLinks"/> * sizeof(int).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks, VectorQuantType quantType)
+        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks, VectorQuantType quantType, uint reduceDims)
         {
             // The stored FullVector element size depends on the quantizer: the Redis quantizers (NoQuant/Bin/Q8)
             // store F32 (4 bytes/dim), while the extended X* quantizers store 1 byte/dim. See the format mapping in
             // VectorManager.TryGetEmbedding. Over-estimating only wastes bandwidth; under-estimating would force a
             // second IO, so this must match the actual stored size.
+            var isBinaryQuant = quantType is VectorQuantType.Bin or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8;
             var fullVectorElementBytes = quantType is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8
                 or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8
                 ? 1
                 : sizeof(float);
             ActiveFullVectorIOSize = checked((int)dimensions * fullVectorElementBytes) + VectorRecordReadOverheadBytes;
             ActiveNeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes;
+
+            // QuantizedVector reads (term 2, used for the approximate-distance pass on quantized sets) are sized to
+            // the quantized width, which is much smaller than the full vector and differs by quantizer: the byte
+            // quantizers (Q8) store 1 byte/dim, while the binary quantizers (Bin) pack 1 bit/dim. Quantization is
+            // applied to the (optionally reduced) dimensions. Sizing per-quantizer avoids over-reading whole sectors
+            // for the tiny binary records; the overhead covers any per-vector scale, and an under-read just self-
+            // corrects with a second IO.
+            var quantizedDims = reduceDims != 0 ? reduceDims : dimensions;
+            var quantizedValueBytes = isBinaryQuant ? checked((int)quantizedDims + 7) / 8 : checked((int)quantizedDims);
+            ActiveQuantizedVectorIOSize = quantizedValueBytes + VectorRecordReadOverheadBytes;
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

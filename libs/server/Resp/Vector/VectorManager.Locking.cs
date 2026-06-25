@@ -43,6 +43,7 @@ namespace Garnet.server
                 // (possibly with different dimensions / M) does not inherit stale sizes.
                 ActiveFullVectorIOSize = 0;
                 ActiveNeighborListIOSize = 0;
+                ActiveQuantizedVectorIOSize = 0;
 
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
