@@ -56,6 +56,11 @@ namespace Tsavorite.core
         public long IndexSize => state[resizeInfo.version].size;
 
         /// <summary>
+        /// Size of index in bytes (#cache lines * 64)
+        /// </summary>
+        public long IndexSizeBytes => state[resizeInfo.version].size * Constants.kCacheLineBytes;
+
+        /// <summary>
         /// Number of overflow buckets in use (64 bytes each)
         /// </summary>
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();

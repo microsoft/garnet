@@ -70,6 +70,11 @@ namespace Tsavorite.core
         public int BufferSize => allocatorBase.BufferSize;
 
         /// <summary>
+        /// Size of a single log page, in bytes
+        /// </summary>
+        public long PageSizeBytes => 1L << allocatorBase.LogPageSizeBits;
+
+        /// <summary>
         /// The log size tracker (currently used only by test)
         /// </summary>
         public LogSizeTracker<TStoreFunctions, TAllocator> LogSizeTracker => allocatorBase.logSizeTracker;
@@ -77,12 +82,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects)
         /// </summary>
-        public long MemorySizeBytes => allocatorBase.AllocatedPageCount << allocatorBase.LogPageSizeBits;
+        // (long) cast required: AllocatedPageCount and LogPageSizeBits are both int, so the shift
+        // would otherwise be evaluated in 32-bit and overflow once allocated memory exceeds 2 GiB.
+        public long MemorySizeBytes => (long)allocatorBase.AllocatedPageCount << allocatorBase.LogPageSizeBits;
 
         /// <summary>
         /// Actual memory used by log (not including heap objects), including overflow pages
         /// </summary>
-        public long MemorySizeBytesIncludingOverflowPages => (allocatorBase.AllocatedPageCount + allocator.OverflowPageCount) << allocatorBase.LogPageSizeBits;
+        public long MemorySizeBytesIncludingOverflowPages => (long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount) << allocatorBase.LogPageSizeBits;
 
         /// <summary>
         /// Heap memory used
