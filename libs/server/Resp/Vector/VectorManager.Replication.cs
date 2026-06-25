@@ -163,7 +163,7 @@ namespace Garnet.server
 
                 Debug.Assert(elementNsLen == 4, "Should always receive a 4-byte namespace");
                 ulong ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
-                
+
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
                 var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(ns & ~(ContextStep - 1));
 
