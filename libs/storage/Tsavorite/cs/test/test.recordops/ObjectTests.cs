@@ -573,5 +573,64 @@ namespace Tsavorite.test.Objects
                 }
             }
         }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void MaxInlineValueSizeZeroTest()
+        {
+            // Recreate the store with MaxInlineValueSize == 0 (now allowed because LogSettings.MinMaxInlineSize == 0)
+            // so every value -- even a single byte -- is stored as overflow rather than inline.
+            store?.Dispose();
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = LogMemorySize,
+                PageSize = PageSize,
+                MaxInlineValueSize = 0
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            // Value lengths 1, 2, 4, ..., 128 (8 records); each byte of the value is set to the value's length.
+            Span<byte> valueBuf = stackalloc byte[256];
+            for (var len = 1; len <= 255; len *= 2)
+            {
+                var key = new TestObjectKey { key = len };
+                var value = valueBuf[..len];
+                value.Fill((byte)len);
+                _ = bContext.Upsert(key, value, Empty.Default);
+            }
+
+            // With MaxInlineValueSize == 0 every value is overflow; verify the round-trip both in memory and from disk.
+            DoReads(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoReads(onDisk: true);
+
+            void DoReads(bool onDisk)
+            {
+                for (var len = 1; len <= 255; len *= 2)
+                {
+                    var key = new TestObjectKey { key = len };
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = len };
+                    TestLargeObjectOutput output = new();
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"len {len}, onDisk {onDisk}");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"len {len}, onDisk {onDisk}");
+
+                    Assert.That(output.valueArray.Length, Is.EqualTo(len), $"len {len}, onDisk {onDisk}");
+                    var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)len);
+                    if (badIndex != -1)
+                        Assert.Fail($"len {len}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
+                }
+            }
+        }
     }
 }
