@@ -84,6 +84,7 @@ namespace Resp.benchmark
                             opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                         replicaLightClient.Connect();
                         replicaLightClient.Authenticate(opts.Auth);
+                        replicaLightClient.ReadOnly();
                     }
                     break;
 
@@ -111,6 +112,8 @@ namespace Resp.benchmark
                             replicaGarnetSession.Execute("AUTH", opts.Auth);
                             replicaGarnetSession.CompletePending();
                         }
+                        replicaGarnetSession.Execute("READONLY");
+                        replicaGarnetSession.CompletePending();
                     }
                     break;
 
@@ -132,6 +135,7 @@ namespace Resp.benchmark
                         replicaGarnetClient.Connect();
                         if (!string.IsNullOrEmpty(opts.Auth))
                             replicaGarnetClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+                        replicaGarnetClient.ExecuteForStringResultAsync("READONLY").GetAwaiter().GetResult();
                     }
                     break;
 

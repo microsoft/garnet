@@ -216,6 +216,7 @@ namespace Resp.benchmark
 
                 replicaClient.Connect();
                 replicaClient.Authenticate(opts.Auth);
+                replicaClient.ReadOnly();
             }
 
             try
@@ -300,6 +301,8 @@ namespace Resp.benchmark
                     replicaClient.Execute("AUTH", opts.Auth);
                     replicaClient.CompletePending();
                 }
+                replicaClient.Execute("READONLY");
+                replicaClient.CompletePending();
             }
 
             try
@@ -406,6 +409,7 @@ namespace Resp.benchmark
                 replicaClient.Connect();
                 if (opts.Auth != null)
                     replicaClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+                replicaClient.ExecuteForStringResultAsync("READONLY").GetAwaiter().GetResult();
             }
 
             try

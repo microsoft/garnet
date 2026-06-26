@@ -39,7 +39,7 @@ namespace Resp.benchmark
         public IEnumerable<int> BatchSize { get; set; }
 
         [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
-        public IEnumerable<int> Pipeline { set => BatchSize = value; get => BatchSize; }
+        public IEnumerable<int> Pipeline { set { if (value != null && value.Any()) BatchSize = value; } get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
         public int RunTime { get; set; }
