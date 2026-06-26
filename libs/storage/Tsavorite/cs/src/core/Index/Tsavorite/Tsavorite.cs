@@ -814,7 +814,7 @@ namespace Tsavorite.core
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
             pauseRevivEvent?.Dispose();
-            
+
             // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
             Free();
         }
