@@ -171,6 +171,11 @@ namespace Garnet.server
 
             IsEnabled = serverOptions.EnableVectorSetPreview;
 
+            // Destination for copying the small graph "stub" records back into memory on disk read (see
+            // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log
+            // clean), otherwise the main-log tail (still memory-resident, but occupies writable log space).
+            StubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
+
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
 

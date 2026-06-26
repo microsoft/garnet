@@ -60,9 +60,13 @@ namespace Garnet.server
             /// <summary>
             /// Per-term read-copy policy. The small per-element records that form the serial read-barrier chain
             /// (the NeighborList graph adjacency, the QuantizedVector approximate-distance vectors, and the
-            /// internal/external id maps) are copied back to the main-log tail when read from disk, so subsequent
-            /// hops and queries serve them from memory. The large raw FullVector (and Attributes/Metadata) are left
-            /// on disk (CopyTo=None) so they don't refill memory — only the raw vectors are served from disk.
+            /// internal/external id maps) are copied back into memory when read from disk, so subsequent hops and
+            /// queries serve them from memory. The destination is <see cref="StubReadCopyTo"/>: the <b>read cache</b>
+            /// when it is enabled (<c>--readcache</c>) — a separate, never-flushed, LRU region, so these read-only
+            /// graph records don't pollute the writable main log (which would otherwise have to flush them back to
+            /// disk when it fills) — otherwise the main-log tail (still memory-resident). The large raw FullVector
+            /// (and Attributes/Metadata) are left on disk (CopyTo=None) so they don't refill memory — only the raw
+            /// vectors are served from disk.
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
@@ -75,7 +79,7 @@ namespace Garnet.server
                         case DiskANNService.QuantizedVector:
                         case DiskANNService.InternalIdMap:
                         case DiskANNService.ExternalIdMap:
-                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog };
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = StubReadCopyTo };
                         default:
                             return new ReadCopyOptions { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None };
                     }
@@ -279,6 +283,16 @@ namespace Garnet.server
         /// </summary>
         [ThreadStatic]
         internal static VectorReadGeometry ActiveReadGeometry;
+
+        /// <summary>
+        /// Destination for copying the small graph "stub" records (NeighborList adjacency, internal/external id
+        /// maps, quantized vectors) back into memory when they are read from disk (see
+        /// <see cref="VectorReadBatch.ReadCopyOptions"/>). Set once from <see cref="GarnetServerOptions.EnableReadCache"/>
+        /// at <see cref="VectorManager"/> construction: the read cache when it is enabled (the natural home for hot
+        /// read-only data — separate, never flushed, LRU — so it doesn't pollute the writable main log), otherwise
+        /// the main-log tail (still memory-resident). Server-wide, so a static is appropriate.
+        /// </summary>
+        internal static ReadCopyTo StubReadCopyTo = ReadCopyTo.MainLog;
 
         /// <summary>
         /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
