@@ -378,7 +378,7 @@ namespace Tsavorite.test.ModifiedBit
 
         [Test]
         [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
-        public void CopyToTailTest()
+        public void CopyToTailAndVerifyResetTest()
         {
             Populate();
             store.Log.FlushAndEvict(wait: true);

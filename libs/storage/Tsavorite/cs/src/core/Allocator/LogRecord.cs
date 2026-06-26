@@ -395,7 +395,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                 if (!DataHeader.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    ThrowTsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
+                    ThrowTsavoriteException("set_ValueOverflow should only be called when transferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
 
                 // Restore ValueLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
@@ -450,11 +450,13 @@ namespace Tsavorite.core
             var dataHeader = DataHeader;
             return new()
             {
-                KeySize = dataHeader.KeyLength,
-                ValueSize = dataHeader.ValueLength,
+                KeySize = DataHeader.KeyIsInline ? dataHeader.GetKeyLengthRaw() : KeyOverflow.Length,
+                ValueSize = DataHeader.ValueIsInline ? dataHeader.GetValueLengthRaw() : (dataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueOverflow.Length),
+                ExtendedNamespaceSize = dataHeader.ExtendedNamespaceLength,
                 ValueIsObject = dataHeader.ValueIsObject,
                 HasETag = dataHeader.HasETag,
-                HasExpiration = dataHeader.HasExpiration
+                HasExpiration = dataHeader.HasExpiration,
+                RecordType = dataHeader.RecordType,
             };
         }
 
@@ -1527,7 +1529,7 @@ namespace Tsavorite.core
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
                 var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthValueMask);
+                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
                 *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
             }
 
@@ -1536,12 +1538,12 @@ namespace Tsavorite.core
             {
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
                 var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
             }
             else if (dataHeader.ValueIsObject)
             {
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
             }
 
@@ -1653,7 +1655,7 @@ namespace Tsavorite.core
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
                 objectLengths += (uint)overflow.Length;
                 var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthValueMask);
+                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
                 *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
             }
 
@@ -1662,13 +1664,13 @@ namespace Tsavorite.core
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
                 objectLengths += (uint)overflow.Length;
                 var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
             }
             else if (dataHeader.ValueIsObject)
             {
                 objectLengths += valueObjectLength;
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
             }
 
