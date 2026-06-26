@@ -64,9 +64,17 @@ namespace Garnet.server
             /// queries serve them from memory. The destination is <see cref="StubReadCopyTo"/>: the <b>read cache</b>
             /// when it is enabled (<c>--readcache</c>) — a separate, never-flushed, LRU region, so these read-only
             /// graph records don't pollute the writable main log (which would otherwise have to flush them back to
-            /// disk when it fills) — otherwise the main-log tail (still memory-resident). The large raw FullVector
-            /// (and Attributes/Metadata) are left on disk (CopyTo=None) so they don't refill memory — only the raw
-            /// vectors are served from disk.
+            /// disk when it fills) — otherwise the main-log tail (still memory-resident).
+            ///
+            /// <para>The large raw FullVector (and Attributes/Metadata) are left on disk (CopyTo=None) in <b>both</b>
+            /// quant and noquant modes. In quant mode the raw vector is cold — the small QuantizedVector drives the
+            /// distance computation and the raw vector is read only for final reranking — so serving it from disk is
+            /// ideal. In noquant mode the raw vector <i>is</i> the hot distance source (read for every neighbor
+            /// evaluated), yet it is still deliberately not cached: it is ~tens of times larger than the NeighborList
+            /// at roughly the same access frequency, so admitting it into the shared read-cache LRU would evict the
+            /// small, far-higher-reuse-per-byte stubs (adjacency / id-maps) that traversal needs on every hop — a net
+            /// loss under cache pressure. Caching raw safely would need a separate or protected budget rather than the
+            /// shared stub cache; quantization is the intended path for a compact, cacheable hot distance source.</para>
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
