@@ -597,8 +597,9 @@ namespace Tsavorite.test.Objects
             var bContext = session.BasicContext;
 
             // Value lengths 1, 2, 4, ..., 128 (8 records); each byte of the value is set to the value's length.
-            Span<byte> valueBuf = stackalloc byte[256];
-            for (var len = 1; len <= 255; len *= 2)
+            const int MaxValueLength = 128;
+            Span<byte> valueBuf = stackalloc byte[MaxValueLength];
+            for (var len = 1; len <= MaxValueLength; len *= 2)
             {
                 var key = new TestObjectKey { key = len };
                 var value = valueBuf[..len];
@@ -613,7 +614,7 @@ namespace Tsavorite.test.Objects
 
             void DoReads(bool onDisk)
             {
-                for (var len = 1; len <= 255; len *= 2)
+                for (var len = 1; len <= MaxValueLength; len *= 2)
                 {
                     var key = new TestObjectKey { key = len };
                     TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = len };
