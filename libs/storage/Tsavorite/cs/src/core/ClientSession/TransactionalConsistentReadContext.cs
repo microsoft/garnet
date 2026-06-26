@@ -120,9 +120,10 @@ namespace Tsavorite.core
         public Status Read(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
-            var status = TransactionalContext.Read(key, ref input, ref output, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PreSingleKeyConsistentRead(hash);
+            var readOptions = new ReadOptions() { KeyHash = hash };
+            var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, userContext);
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -169,10 +170,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            var hash = GetKeyHash(key);
-            Session.functions.BeforeConsistentReadCallback(hash);
+            var hash = readOptions.KeyHash ?? GetKeyHash(key);
+            Session.functions.PreSingleKeyConsistentRead(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
-            Session.functions.AfterConsistentReadKeyCallback();
+            Session.functions.PostSingleKeyConsistentReadCallback();
             return status;
         }
 
@@ -197,9 +198,9 @@ namespace Tsavorite.core
             do
             {
                 Thread.Yield();
-                Session.functions.BeforeConsistentReadKeyBatchCallback(batch.Parameters);
+                Session.functions.PreBatchKeyConsistentReadCallback(batch.Parameters);
                 TransactionalContext.ReadWithPrefetch(ref batch, userContext);
-            } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
+            } while (!Session.functions.PostBatchKeyConsistentReadCallback(batch.Count));
         }
 
         #endregion Read Methods (To be overridden with custom logic)
@@ -214,19 +215,34 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => TransactionalContext.CompletePending(wait, spinWaitForCommit);
+        {
+            var status = TransactionalContext.CompletePending(wait, spinWaitForCommit);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => TransactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+        {
+            var status = TransactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => TransactionalContext.CompletePendingAsync(waitForCommit, token);
+        public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            await TransactionalContext.CompletePendingAsync(waitForCommit, token).ConfigureAwait(false);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+        }
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => TransactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+        public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            var status = await TransactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token).ConfigureAwait(false);
+            Session.functions.PostSingleKeyConsistentReadCallback();
+            return status;
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
