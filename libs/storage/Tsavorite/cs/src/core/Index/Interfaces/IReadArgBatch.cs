@@ -37,6 +37,14 @@ namespace Tsavorite.core
         int InitialIORecordSize => KVSettings.UseDefaultInitialIORecordSize;
 
         /// <summary>
+        /// Read-copy options for records in this batch. The default (<see cref="ReadCopyTo.Inherit"/>) resolves
+        /// through the session/store hierarchy. Implementations may return per-batch options — e.g. copy small,
+        /// frequently-read records back to the main-log tail so subsequent reads serve them from memory, while
+        /// leaving large records (raw vectors) on disk.
+        /// </summary>
+        ReadCopyOptions ReadCopyOptions => default;
+
+        /// <summary>
         /// Get <paramref name="i"/>th key.
         /// </summary>
         void GetKey(int i, out TKey key);

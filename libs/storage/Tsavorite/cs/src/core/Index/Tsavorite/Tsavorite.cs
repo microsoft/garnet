@@ -501,6 +501,13 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
+            // Per-batch read-copy options: a batch may request that its records be copied back to the main-log
+            // tail when read from disk (e.g. small, frequently-read vector-index records) while leaving others on
+            // disk. Resolve Inherit to the session/store default so batches that don't override keep prior behavior.
+            var batchReadCopyOptions = batch.ReadCopyOptions;
+            if (batchReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
+                batchReadCopyOptions = sessionFunctions.Ctx.ReadCopyOptions;
+
             if (batch.Count == 1)
             {
                 // Not actually a batch, no point prefetching
@@ -511,7 +518,7 @@ namespace Tsavorite.core
 
                 var hash = storeFunctions.GetKeyHashCode64(key);
 
-                var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
                 operationState.initialIORecordSize = batch.InitialIORecordSize;
                 OperationStatus internalStatus;
 
@@ -577,7 +584,7 @@ namespace Tsavorite.core
 
                             var hash = hashes[i];
 
-                            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                            var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
                             operationState.initialIORecordSize = batch.InitialIORecordSize;
                             OperationStatus internalStatus;
 
@@ -603,7 +610,7 @@ namespace Tsavorite.core
 
                         var hash = storeFunctions.GetKeyHashCode64(key);
 
-                        var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                        var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
                         operationState.initialIORecordSize = batch.InitialIORecordSize;
                         OperationStatus internalStatus;
 

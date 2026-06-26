@@ -57,6 +57,31 @@ namespace Garnet.server
                 }
             }
 
+            /// <summary>
+            /// Per-term read-copy policy. The small per-element records that form the serial read-barrier chain
+            /// (the NeighborList graph adjacency, the QuantizedVector approximate-distance vectors, and the
+            /// internal/external id maps) are copied back to the main-log tail when read from disk, so subsequent
+            /// hops and queries serve them from memory. The large raw FullVector (and Attributes/Metadata) are left
+            /// on disk (CopyTo=None) so they don't refill memory — only the raw vectors are served from disk.
+            /// </summary>
+            public readonly ReadCopyOptions ReadCopyOptions
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (NamespaceBytes[0] & 7)
+                    {
+                        case DiskANNService.NeighborList:
+                        case DiskANNService.QuantizedVector:
+                        case DiskANNService.InternalIdMap:
+                        case DiskANNService.ExternalIdMap:
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog };
+                        default:
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None };
+                    }
+                }
+            }
+
             private readonly ReadOnlySpan<byte> NamespaceBytes
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
