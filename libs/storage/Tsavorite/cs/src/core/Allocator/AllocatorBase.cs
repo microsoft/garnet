@@ -811,9 +811,11 @@ namespace Tsavorite.core
         public int HighWaterAllocatedPageCount;
 
         /// <summary>Maximum memory size in bytes</summary>
-        // (long) cast required: BufferSize and PageSize are both int, so the multiply would
+        // (long) cast required: MaxAllocatedPageCount and PageSize are both int, so the multiply would
         // otherwise be evaluated in 32-bit and overflow (e.g. 2048 pages * 64 MiB = 128 GiB).
-        public long MaxMemorySizeBytes => (long)BufferSize * PageSize;
+        // Use MaxAllocatedPageCount (the actual page-count cap) rather than BufferSize, which is rounded
+        // up to the next power of 2 and so overestimates the real maximum.
+        public long MaxMemorySizeBytes => (long)MaxAllocatedPageCount * PageSize;
 
         /// <summary>Increments AllocatedPageCount. Updates MaxAllocatedPageCount if a higher number of pages have been allocated.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
