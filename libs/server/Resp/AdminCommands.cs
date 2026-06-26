@@ -788,6 +788,27 @@ namespace Garnet.server
                 return true;
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FLUSHANDEVICT))
+            {
+                if (parseState.Count != 1)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                // Flush all dirty pages of the main store's hybrid log to the disk device and evict them from memory
+                // (shifts HeadAddress up to TailAddress). After this, reads of those records must come from disk.
+                // Intended for experiments that isolate the disk-serving path; gated behind --enable-debug-command.
+                var mainStore = storeWrapper.store;
+                mainStore.Log.FlushAndEvict(wait: true);
+
+                logger?.LogInformation("DEBUG FLUSHANDEVICT: main store head={Head} tail={Tail}",
+                    mainStore.Log.HeadAddress, mainStore.Log.TailAddress);
+
+                WriteSimpleString($"OK head={mainStore.Log.HeadAddress} tail={mainStore.Log.TailAddress}");
+                return true;
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -798,6 +819,9 @@ namespace Garnet.server
                     "\tunit tests to simulate Redis errors.",
                     "LOG <message>",
                     "\tWrite <message> to the server log.",
+                    "FLUSHANDEVICT",
+                    "\tFlush the main store's in-memory log to disk and evict it (shifts HeadAddress to",
+                    "\tTailAddress) so subsequent reads are served from disk. For experiments.",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",
