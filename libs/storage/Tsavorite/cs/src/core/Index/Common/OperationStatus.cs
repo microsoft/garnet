@@ -77,7 +77,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
         /// <list type="bullet">
-        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.HandleImmediateRetryStatus{TInput, TOutput, TContext, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{TStoreFunctions, TAllocator}.PendingContext{TInput, TOutput, TContext})"/>.</item>
+        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.HandleImmediateRetryStatus{TInput, TOutput, TContext, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{TStoreFunctions, TAllocator}.OperationState{TInput, TOutput, TContext})"/>.</item>
         ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
         /// </list>
         /// </summary>

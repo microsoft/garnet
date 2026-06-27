@@ -65,63 +65,43 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void Set()
-        {
-            Send(set);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
+        public void Set() => Send(set);
 
         [Benchmark]
-        public void SetEx()
-        {
-            Send(setex);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
+        public void SetEx() => Send(setex);
 
         [Benchmark]
-        public void SetNx()
-        {
-            Send(setnx);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void SetNx() => Send(setnx);
 
         [Benchmark]
-        public void SetXx()
-        {
-            Send(setxx);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void SetXx() => Send(setxx);
 
         [Benchmark]
-        public void GetFound()
-        {
-            Send(getf);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Read)]
+        public void GetFound() => Send(getf);
 
         [Benchmark]
-        public void GetNotFound()
-        {
-            Send(getnf);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Read)]
+        public void GetNotFound() => Send(getnf);
 
         [Benchmark]
-        public void Increment()
-        {
-            Send(incr);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void Increment() => Send(incr);
 
         [Benchmark]
-        public void Decrement()
-        {
-            Send(decr);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void Decrement() => Send(decr);
 
         [Benchmark]
-        public void IncrementBy()
-        {
-            Send(incrby);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void IncrementBy() => Send(incrby);
 
         [Benchmark]
-        public void DecrementBy()
-        {
-            Send(decrby);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public void DecrementBy() => Send(decrby);
     }
 }

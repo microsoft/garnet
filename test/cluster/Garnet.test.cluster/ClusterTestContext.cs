@@ -37,6 +37,7 @@ namespace Garnet.test.cluster
         ClusterMultiLog = 7700,
         ClusterReplicationRangeIndex = 7800,
         ClusterMultiLogDiskless = 7900,
+        ClusterMigrateRangeIndex = 8000,
     }
 
     public class ClusterTestContext
@@ -456,6 +457,7 @@ namespace Garnet.test.cluster
             int sublogCount = 1,
             int replayTaskCount = 1,
             int vectorSetReplayTaskCount = 0,
+            int vectorSetQuantizationTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
@@ -496,7 +498,8 @@ namespace Garnet.test.cluster
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                enableRangeIndexPreview: enableRangeIndexPreview);
+                enableRangeIndexPreview: enableRangeIndexPreview,
+                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount);
 
             return new GarnetServer(opts, loggerFactory);
         }

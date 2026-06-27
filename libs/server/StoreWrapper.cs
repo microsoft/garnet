@@ -360,19 +360,19 @@ namespace Garnet.server
             return localEndPoint;
         }
 
-        internal void Recover()
+        internal async ValueTask RecoverAsync()
         {
             if (serverOptions.EnableCluster)
             {
                 if (serverOptions.Recover)
-                    clusterProvider.Recover();
+                    await clusterProvider.RecoverAsync().ConfigureAwait(false);
             }
             else
             {
                 if (serverOptions.Recover)
                 {
-                    RecoverCheckpoint();
-                    RecoverAOF();
+                    await RecoverCheckpointAsync().ConfigureAwait(false);
+                    await RecoverAOFAsync().ConfigureAwait(false);
                     ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
                 }
             }
@@ -413,10 +413,10 @@ namespace Garnet.server
         /// <summary>
         /// Recover checkpoint
         /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
+        public async ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
             StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
-            databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+            await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -447,7 +447,7 @@ namespace Garnet.server
         /// <summary>
         /// Recover AOF
         /// </summary>
-        public void RecoverAOF() => databaseManager.RecoverAOF();
+        public ValueTask RecoverAOFAsync() => databaseManager.RecoverAOFAsync();
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.

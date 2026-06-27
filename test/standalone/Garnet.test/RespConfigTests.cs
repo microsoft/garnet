@@ -190,10 +190,10 @@ namespace Garnet.test
             // Check initial index size before any changes
             var currIndexSize = ServerOptions.ParseSize(initIndexSize, out _);
             var metrics = server.Metrics.GetInfoMetrics(metricType);
-            var miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
+            var miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySizeBytes");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out var actualIndexSize));
-            var expectedIndexSize = currIndexSize / 64;
+            var expectedIndexSize = currIndexSize;
             ClassicAssert.AreEqual(expectedIndexSize, actualIndexSize);
 
             // Try to set index size to the same value as current
@@ -202,7 +202,7 @@ namespace Garnet.test
 
             // Index size should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
+            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySizeBytes");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out actualIndexSize));
             ClassicAssert.AreEqual(expectedIndexSize, actualIndexSize);
@@ -214,10 +214,10 @@ namespace Garnet.test
             // Check that index size has changed accordingly
             currIndexSize = ServerOptions.ParseSize(largerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(metricType);
-            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySize");
+            miIndexSize = metrics.FirstOrDefault(mi => mi.Name == "IndexMemorySizeBytes");
             ClassicAssert.IsNotNull(miIndexSize);
             ClassicAssert.IsTrue(long.TryParse(miIndexSize.Value, out actualIndexSize));
-            expectedIndexSize = currIndexSize / 64;
+            expectedIndexSize = currIndexSize;
             ClassicAssert.AreEqual(expectedIndexSize, actualIndexSize);
 
             // Try to set index size to a smaller value than current - this should fail
@@ -713,8 +713,8 @@ namespace Garnet.test
             // Sanity-check the preconditions for the shrink/eviction we are about to trigger.
             var apcBefore = store.Log.AllocatedPageCount;
             var heapBefore = tracker.LogHeapSizeBytes;
-            Assert.That(apcBefore, Is.GreaterThan(LogSizeTracker.MinResizeTargetPageCount),
-                "Test precondition: need more than MinResizeTargetPageCount pages for eviction to be possible.");
+            Assert.That(apcBefore, Is.GreaterThan(1),
+                "Test precondition: need more than one page for eviction to be possible.");
             Assert.That(heapBefore, Is.GreaterThan(0), "Test precondition: heap should be non-empty after inserts.");
 
             using var trimCompleteEvent = new ManualResetEventSlim(false);

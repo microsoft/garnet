@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -166,10 +167,10 @@ namespace Garnet.server
             }
         }
 
-        public void Recover()
+        public async ValueTask RecoverAsync()
         {
             foreach (var log in sublog)
-                log.Recover();
+                await log.RecoverAsync().ConfigureAwait(false);
         }
 
         public void Reset()

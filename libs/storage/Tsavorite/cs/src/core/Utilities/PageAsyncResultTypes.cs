@@ -10,6 +10,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    internal enum RecoveryPhase : byte { None = 0, Pass1 = 1, Pass2 = 2 }
+
     /// <summary>
     /// Result of async page read
     /// </summary>
@@ -47,12 +49,12 @@ namespace Tsavorite.core
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxAddressOffsetOnPage;
 
-        /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
-        internal bool isForRecovery;
+        /// <summary>The recovery phase for this read. Non-<see cref="RecoveryPhase.None"/> uses the non-transient <see cref="ObjectIdMap"/>.</summary>
+        internal RecoveryPhase recoveryPhase;
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, isRecov {isForRecovery}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
+            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
@@ -127,6 +129,14 @@ namespace Tsavorite.core
 
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
+
+        /// <summary>During snapshot recovery, the snapshot object-log device that is the source for copying object bytes into the main object-log
+        /// (for records at/above <see cref="recoveryFormerFlushedUntilAddress"/>). Null for non-recovery flushes and for the hybrid-log region.</summary>
+        internal IDevice recoverySnapshotObjectLogDevice;
+
+        /// <summary>During snapshot recovery, the former FlushedUntilAddress (the hybrid-log/snapshot boundary). Records whose logical address is at or
+        /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
+        internal long recoveryFormerFlushedUntilAddress;
 
         /// <inheritdoc/>
         public override string ToString()

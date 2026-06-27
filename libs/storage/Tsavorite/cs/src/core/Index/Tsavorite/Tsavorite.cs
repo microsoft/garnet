@@ -56,9 +56,31 @@ namespace Tsavorite.core
         public long IndexSize => state[resizeInfo.version].size;
 
         /// <summary>
+        /// Size of index in bytes (#cache lines * 64)
+        /// </summary>
+        public long IndexSizeBytes => state[resizeInfo.version].size * Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Size of a single hash bucket (one cache line), in bytes. Applies to both main and overflow buckets,
+        /// which share the same layout.
+        /// </summary>
+        public long IndexBucketSizeBytes => Constants.kCacheLineBytes;
+
+        /// <summary>
         /// Number of overflow buckets in use (64 bytes each)
         /// </summary>
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+
+        /// <summary>
+        /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
+        /// </summary>
+        public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
+        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>).
+        /// </summary>
+        public long IndexTotalSizeBytes => IndexSizeBytes + IndexOverflowSizeBytes;
 
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
@@ -210,7 +232,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    Recover();
+                    RecoverAsync().AsTask().GetAwaiter().GetResult();
                 }
                 catch { }
             }
@@ -365,18 +387,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Recover from the latest valid checkpoint (blocking operation)
-        /// </summary>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true)
-        {
-            FindRecoveryInfo(-1, out var recoveredHlcInfo, out var recoveredIcInfo);
-            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion);
-        }
-
-        /// <summary>
         /// Get the version we would recover to if we were to request recovery the specified version
         /// </summary>
         /// <param name="recoverTo">Specified version</param>
@@ -410,16 +420,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Recover from specific token (blocking operation)
-        /// </summary>
-        /// <param name="fullCheckpointToken">Token</param>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion);
-
-        /// <summary>
         /// Asynchronously recover from specific token (blocking operation)
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
@@ -429,17 +429,6 @@ namespace Tsavorite.core
         /// <returns>Version we actually recovered to</returns>
         public ValueTask<long> RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
             => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
-
-        /// <summary>
-        /// Recover from specific index and log token (blocking operation)
-        /// </summary>
-        /// <param name="indexCheckpointToken"></param>
-        /// <param name="hybridLogCheckpointToken"></param>
-        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <returns>Version we actually recovered to</returns>
-        public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-            => InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion);
 
         /// <summary>
         /// Asynchronously recover from specific index and log token (blocking operation)
@@ -484,19 +473,19 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Keep PendingContext on the stack: the overwhelmingly common in-memory read never goes pending,
+            // Keep OperationState on the stack: the overwhelmingly common in-memory read never goes pending,
             // so it must not pay any heap cost. Only when the read goes pending (RECORD_ON_DISK) does
             // HandleOperationStatus copy this context onto the per-session pending op it rents (a holder /
             // reference wrapper was measured net-slower, so the struct is carried directly on the op).
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             var keyHash = storeFunctions.GetKeyHashCode64(key);
 
             do
-                internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -512,6 +501,11 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
+            // Per-batch read-copy options, with each Inherit field resolved against the session/store default so a
+            // batch can override CopyFrom and/or CopyTo independently (e.g. copy small, frequently-read vector-index
+            // records to the main-log tail on disk read while leaving others on disk).
+            var batchReadCopyOptions = ReadCopyOptions.Merge(sessionFunctions.Ctx.ReadCopyOptions, batch.ReadCopyOptions);
+
             if (batch.Count == 1)
             {
                 // Not actually a batch, no point prefetching
@@ -522,14 +516,15 @@ namespace Tsavorite.core
 
                 var hash = storeFunctions.GetKeyHashCode64(key);
 
-                var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                operationState.initialIORecordSize = batch.InitialIORecordSize;
                 OperationStatus internalStatus;
 
                 do
-                    internalStatus = InternalRead(key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
-                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                    internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
+                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-                batch.SetStatus(0, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                batch.SetStatus(0, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                 batch.SetOutput(0, output);
             }
             else
@@ -587,14 +582,15 @@ namespace Tsavorite.core
 
                             var hash = hashes[i];
 
-                            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                            var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                            operationState.initialIORecordSize = batch.InitialIORecordSize;
                             OperationStatus internalStatus;
 
                             do
-                                internalStatus = InternalRead(key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
-                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                                internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
+                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-                            batch.SetStatus(nextBatchIx, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                            batch.SetStatus(nextBatchIx, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                             batch.SetOutput(nextBatchIx, output);
 
                             nextBatchIx++;
@@ -612,14 +608,15 @@ namespace Tsavorite.core
 
                         var hash = storeFunctions.GetKeyHashCode64(key);
 
-                        var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                        var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                        operationState.initialIORecordSize = batch.InitialIORecordSize;
                         OperationStatus internalStatus;
 
                         do
-                            internalStatus = InternalRead(key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
-                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                            internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
+                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-                        batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                        batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                         batch.SetOutput(i, output);
                     }
                 }
@@ -635,16 +632,16 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
+            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
             var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(key);
 
             do
-                internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -655,9 +652,9 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
-            pcontext.SetIsNoKey();
-            return ContextReadAtAddress(address, key: default(TKey), ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
+            operationState.SetIsNoKey();
+            return ContextReadAtAddress(address, key: default(TKey), ref input, ref output, ref readOptions, out recordMetadata, context, ref operationState, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -668,13 +665,13 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
-            return ContextReadAtAddress(address, key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
+            return ContextReadAtAddress(address, key, ref input, ref output, ref readOptions, out recordMetadata, context, ref operationState, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
-                TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions)
+                TContext context, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
              where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -683,11 +680,11 @@ namespace Tsavorite.core
         {
             OperationStatus internalStatus;
             do
-                internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -699,17 +696,17 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
             DiskLogRecord emptyLogRecord = default;
 
             do
                 internalStatus = InternalUpsert<TKey, SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
-                        key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                        key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -721,17 +718,17 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
             DiskLogRecord emptyLogRecord = default;
 
             do
                 internalStatus = InternalUpsert<TKey, ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
-                        key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -744,16 +741,16 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
                 internalStatus = InternalUpsert<TKey, LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                        key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -765,15 +762,15 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         /// <summary>
@@ -791,16 +788,16 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
-            pcontext.initialIORecordSize = initialIORecordSize;
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
+            operationState.initialIORecordSize = initialIORecordSize;
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            recordMetadata = new(pcontext.logicalAddress);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            recordMetadata = new(operationState.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -811,14 +808,14 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            var operationState = default(OperationState<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(key, keyHash, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+                internalStatus = InternalDelete(key, keyHash, ref context, ref operationState, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
 
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
 
         /// <summary>
@@ -840,7 +837,6 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
-            Free();
             hlogBase.Dispose();
             readcacheBase?.Dispose();
             LockTable.Dispose();
@@ -848,6 +844,9 @@ namespace Tsavorite.core
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
             pauseRevivEvent?.Dispose();
+
+            // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
+            Free();
         }
 
         /// <summary>

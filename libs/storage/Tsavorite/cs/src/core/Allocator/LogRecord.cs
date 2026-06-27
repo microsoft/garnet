@@ -395,7 +395,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
                 if (!DataHeader.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    ThrowTsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
+                    ThrowTsavoriteException("set_ValueOverflow should only be called when transferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
 
                 // Restore ValueLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
@@ -450,11 +450,13 @@ namespace Tsavorite.core
             var dataHeader = DataHeader;
             return new()
             {
-                KeySize = dataHeader.KeyLength,
-                ValueSize = dataHeader.ValueLength,
+                KeySize = DataHeader.KeyIsInline ? dataHeader.GetKeyLengthRaw() : KeyOverflow.Length,
+                ValueSize = DataHeader.ValueIsInline ? dataHeader.GetValueLengthRaw() : (dataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueOverflow.Length),
+                ExtendedNamespaceSize = dataHeader.ExtendedNamespaceLength,
                 ValueIsObject = dataHeader.ValueIsObject,
                 HasETag = dataHeader.HasETag,
-                HasExpiration = dataHeader.HasExpiration
+                HasExpiration = dataHeader.HasExpiration,
+                RecordType = dataHeader.RecordType,
             };
         }
 
@@ -1482,7 +1484,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// For revivification or reuse: the record space has been retrieved from revivification or PendingContext, so prepare it to be passed to initial updaters,
+        /// For revivification or reuse: the record space has been retrieved from revivification or OperationState, so prepare it to be passed to initial updaters,
         /// based upon the sizeInfo's key and value lengths.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
@@ -1527,7 +1529,7 @@ namespace Tsavorite.core
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
                 var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthValueMask);
+                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
                 *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
             }
 
@@ -1536,17 +1538,43 @@ namespace Tsavorite.core
             {
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
                 var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
             }
             else if (dataHeader.ValueIsObject)
             {
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
             }
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
+        }
+
+        /// <summary>
+        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the R11-encoded
+        /// key/value lengths (in the RDH fields and the int* slots at keyAddress/valueAddress) or the <see cref="ObjectIdMap"/>.
+        /// </summary>
+        /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
+        /// <remarks>
+        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log and must
+        /// repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point (objectIdMap is empty and the
+        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> and
+        /// <see cref="SetRecoveredObjectLogRecordStartPosition"/> this must not read the lengths from objectIdMap. The existing R11 length encoding
+        /// is preserved as-is, since the copied lengths are unchanged.
+        /// <para>IMPORTANT: Like the other position setters, this is only safe to call on the disk-image copy of the record (srcBuffer).</para>
+        /// </remarks>
+        internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
+        {
+            if (DataHeader.RecordIsInline)
+            {
+                Debug.Fail("Cannot call RepointObjectLogPosition for an inline record");
+                return;
+            }
+
+            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            *objectLogPositionPtr = objectLogFilePosition.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
         }
 
         /// <summary>
@@ -1627,7 +1655,7 @@ namespace Tsavorite.core
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
                 objectLengths += (uint)overflow.Length;
                 var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthValueMask);
+                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
                 *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
             }
 
@@ -1636,13 +1664,13 @@ namespace Tsavorite.core
                 var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
                 objectLengths += (uint)overflow.Length;
                 var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
             }
             else if (dataHeader.ValueIsObject)
             {
                 objectLengths += valueObjectLength;
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthValueMask);
+                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
             }
 

@@ -82,7 +82,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="replicaRecover"></param>
         /// <param name="recoverFromToken"></param>        
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
+        public ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
         /// Take checkpoint of all active databases (or a specified database) if checkpointing is not in progress
@@ -140,7 +140,7 @@ namespace Garnet.server
         /// <summary>
         /// Recover AOF
         /// </summary>
-        public void RecoverAOF();
+        public ValueTask RecoverAOFAsync();
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.

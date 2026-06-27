@@ -25,6 +25,8 @@ namespace Tsavorite.core
         ///     for object serialization to the object log.</summary>
         public const int kMaxSegmentSizeBits = 62;
 
+        public const int kMinPageCount = 2;
+
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMinMemorySizeBits = kMinPageSizeBits + 1;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
@@ -67,7 +69,7 @@ namespace Tsavorite.core
         public const int MaxInlineValueSizeLimit = (1 << RecordDataHeader.kValueLengthBits) - 2;
 
         /// <summary>Minimum allowed <see cref="MaxInlineKeySize"/> / <see cref="MaxInlineValueSize"/>.</summary>
-        public const int MinMaxInlineSize = 1 << 6;                                     // 64B
+        public const int MinMaxInlineSize = 0;  // Allow Garnet to be used as a pure object store, with no inline key/value support.
 
         /// <summary>Whether the given key size exceeds the RDH KeyLength inline limit and requires overflow encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]

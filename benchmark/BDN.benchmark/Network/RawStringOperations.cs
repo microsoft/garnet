@@ -65,63 +65,43 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public async ValueTask Set()
-        {
-            await Send(set);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
+        public async ValueTask Set() => await Send(set);
 
         [Benchmark]
-        public async ValueTask SetEx()
-        {
-            await Send(setex);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
+        public async ValueTask SetEx() => await Send(setex);
 
         [Benchmark]
-        public async ValueTask SetNx()
-        {
-            await Send(setnx);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask SetNx() => await Send(setnx);
 
         [Benchmark]
-        public async ValueTask SetXx()
-        {
-            await Send(setxx);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask SetXx() => await Send(setxx);
 
         [Benchmark]
-        public async ValueTask GetFound()
-        {
-            await Send(getf);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Read)]
+        public async ValueTask GetFound() => await Send(getf);
 
         [Benchmark]
-        public async ValueTask GetNotFound()
-        {
-            await Send(getnf);
-        }
+        [BenchmarkCategory(BenchmarkCategories.Read)]
+        public async ValueTask GetNotFound() => await Send(getnf);
 
         [Benchmark]
-        public async ValueTask Increment()
-        {
-            await Send(incr);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask Increment() => await Send(incr);
 
         [Benchmark]
-        public async ValueTask Decrement()
-        {
-            await Send(decr);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask Decrement() => await Send(decr);
 
         [Benchmark]
-        public async ValueTask IncrementBy()
-        {
-            await Send(incrby);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask IncrementBy() => await Send(incrby);
 
         [Benchmark]
-        public async ValueTask DecrementBy()
-        {
-            await Send(decrby);
-        }
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
+        public async ValueTask DecrementBy() => await Send(decrby);
     }
 }

@@ -203,6 +203,5 @@ namespace Tsavorite.test
             }
             recoveredLog.Dispose();
         }
-
     }
 }

@@ -937,6 +937,223 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void EnableVectorSetPreview()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--enable-vector-set-preview" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // False is accepted
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // True is accepted
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void MinimumPageSizeWithVectorSetPreview()
+        {
+            // Command line args
+            {
+                // Allow exactly minimum
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "16k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    var args = new[] { "--page", "1k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "4k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // Allow exactly minimum
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""16k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": false, ""PageSize"": ""1k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""4k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void VectorSetQuantizationTaskCount()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(1, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Zero is accepted
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "0" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "foo" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too low rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "-1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too high rejected
+                {
+                    var args = new[] { "--vector-set-quantization-task-count", "2147483648" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Field is accepted
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(1, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Zero is accepted
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 0 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.VectorSetQuantizationTaskCount);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too low rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": -1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Too high rejected
+                {
+                    const string JSON = @"{ ""VectorSetQuantizationTaskCount"": 2147483648 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>
@@ -1252,123 +1469,6 @@ namespace Garnet.test
                 // Invalid value is rejected.
                 {
                     const string JSON = @"{ ""AclStrictCustomCommands"": ""foo"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
-                    ClassicAssert.IsFalse(parseSuccessful);
-                }
-            }
-        }
-
-        [Test]
-        public void EnableVectorSetPreview()
-        {
-            // Command line args
-            {
-                // Default accepted
-                {
-                    var args = Array.Empty<string>();
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
-                }
-
-                // Switch is accepted
-                {
-                    var args = new[] { "--enable-vector-set-preview" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
-                }
-            }
-
-            // JSON args
-            {
-                // Default accepted
-                {
-                    const string JSON = @"{ }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
-                }
-
-                // False is accepted
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": false }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
-                }
-
-                // True is accepted
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": true }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
-                }
-
-                // Invalid rejected
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": ""foo"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
-                    ClassicAssert.IsFalse(parseSuccessful);
-                }
-            }
-        }
-
-        [Test]
-        public void MinimumPageSizeWithVectorSetPreview()
-        {
-            // Command line args
-            {
-                // Allow exactly minimum
-                {
-                    var args = new[] { "--enable-vector-set-preview", "--page", "16k" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
-                    ClassicAssert.AreEqual("16k", options.PageSize);
-                }
-
-                // Allow lower than minimum if preview not enabled
-                {
-                    var args = new[] { "--page", "1k" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
-                    ClassicAssert.AreEqual("1k", options.PageSize);
-                }
-
-                // Reject too small
-                {
-                    var args = new[] { "--enable-vector-set-preview", "--page", "4k" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _);
-                    ClassicAssert.IsFalse(parseSuccessful);
-                }
-            }
-
-            // JSON args
-            {
-                // Allow exactly minimum
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""16k"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
-                    ClassicAssert.AreEqual("16k", options.PageSize);
-                }
-
-                // Allow lower than minimum if preview not enabled
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": false, ""PageSize"": ""1k"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
-                    ClassicAssert.IsTrue(parseSuccessful);
-                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
-                    ClassicAssert.AreEqual("1k", options.PageSize);
-                }
-
-                // Reject too small
-                {
-                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""4k"" }";
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }

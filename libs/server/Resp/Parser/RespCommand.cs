@@ -308,7 +308,6 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
-        FORCEGC,
         PURGEBP,
         FAILOVER,
 
@@ -2532,10 +2531,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
             {
                 return RespCommand.FLUSHDB;
-            }
-            else if (command.SequenceEqual(CmdStrings.FORCEGC))
-            {
-                return RespCommand.FORCEGC;
             }
             else if (command.SequenceEqual(CmdStrings.MIGRATE))
             {
