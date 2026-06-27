@@ -797,8 +797,7 @@ namespace Garnet.server
                 }
 
                 // Flush all dirty pages of the main store's hybrid log to the disk device and evict them from memory
-                // (shifts HeadAddress up to TailAddress). After this, reads of those records must come from disk.
-                // Intended for experiments that isolate the disk-serving path; gated behind --enable-debug-command.
+                // (shifts HeadAddress up to TailAddress), so subsequent reads of those records are served from disk.
                 var mainStore = storeWrapper.store;
                 mainStore.Log.FlushAndEvict(wait: true);
 
@@ -821,7 +820,7 @@ namespace Garnet.server
                     "\tWrite <message> to the server log.",
                     "FLUSHANDEVICT",
                     "\tFlush the main store's in-memory log to disk and evict it (shifts HeadAddress to",
-                    "\tTailAddress) so subsequent reads are served from disk. For experiments.",
+                    "\tTailAddress) so subsequent reads are served from disk.",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",

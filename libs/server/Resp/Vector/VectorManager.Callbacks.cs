@@ -31,10 +31,9 @@ namespace Garnet.server
             /// Per-term initial disk read size. The big, fixed-size records (FullVector, and the adjacency
             /// NeighborList) are sized to the active vector set's geometry (<see cref="SetActiveReadGeometry"/>)
             /// so each lands in a single IO regardless of dimension / M — and different vector sets get different
-            /// optimal sizes. When the geometry isn't set (paths that don't call SetActiveReadGeometry) we fall
-            /// back to the previous behavior: FullVector defers to the configured store/session size
-            /// (<c>--initial-io-record-size</c>); everything else uses the small default to avoid over-reading a
-            /// full vector-sized block for a tiny record.
+            /// optimal sizes. When the geometry is unset (paths that don't call SetActiveReadGeometry), FullVector
+            /// uses the configured store/session size (<c>--initial-io-record-size</c>) and the other terms use the
+            /// small default, avoiding over-reading a full-vector-sized block for a tiny record.
             /// </summary>
             public readonly int InitialIORecordSize
             {
@@ -58,28 +57,12 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Per-term read-copy policy. The small per-element records that form the serial read-barrier chain
-            /// (the NeighborList graph adjacency, the QuantizedVector approximate-distance vectors, and the
-            /// internal/external id maps) are copied back into memory when read from disk, so subsequent hops and
-            /// queries serve them from memory. The destination is <see cref="StubReadCopyTo"/>: the <b>read cache</b>
-            /// when it is enabled (<c>--readcache</c>) — a separate, never-flushed, LRU region, so these read-only
-            /// graph records don't pollute the writable main log (which would otherwise have to flush them back to
-            /// disk when it fills) — otherwise the main-log tail (still memory-resident).
-            ///
-            /// <para>The large raw FullVector (and Attributes/Metadata) are left on disk (CopyTo=None) in <b>both</b>
-            /// quant and noquant modes. In quant mode the raw vector is cold — the small QuantizedVector drives the
-            /// distance computation and the raw vector is read only for final reranking — so serving it from disk is
-            /// ideal. In noquant mode the raw vector <i>is</i> the hot distance source (read for every neighbor
-            /// evaluated), so caching it is tempting; but an A/B experiment showed it is a net loss whenever the raw
-            /// working set exceeds the read cache — i.e. exactly the disk-tiered case (you tier to disk <i>because</i>
-            /// the set does not fit memory). 80k Cohere-768 NoQuant, 48&#160;MB read cache, raw set ~246&#160;MB:
-            /// caching raw gave 87.5&#160;ms/query vs 76.4&#160;ms without, despite ~40% fewer disk reads, because
-            /// copying large raw vectors into the cache thrashes it (~282&#160;MB evicted per 250 queries) and that
-            /// overhead exceeds the read savings — while the tiny stubs sit in the cache with zero eviction either way.
-            /// Caching raw only wins when the whole set <i>fits</i> the read cache (a small set then serves with zero
-            /// IO), which would require a size-aware admission gate (cache raw iff set size ≤ read-cache budget) that is
-            /// not implemented. So raw stays on disk; quantization is the intended path for a compact, cacheable hot
-            /// distance source.</para>
+            /// Per-term read-copy policy. The small per-element records (NeighborList adjacency, QuantizedVector,
+            /// internal/external id maps) are copied back into memory on disk read — to <see cref="StubReadCopyTo"/>
+            /// (the read cache when enabled, else the main-log tail) — so later hops and queries serve them from
+            /// memory. The large raw FullVector and Attributes/Metadata are served from disk (CopyTo=None): quantized
+            /// sets use the raw vector only for reranking, and for no-quant sets caching it yields no net gain once the
+            /// working set exceeds the read cache, as copying these large records in costs more than the reads it saves.
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
