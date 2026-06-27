@@ -171,6 +171,11 @@ namespace Garnet.server
 
             IsEnabled = serverOptions.EnableVectorSetPreview;
 
+            // Destination for copying the small graph "stub" records back into memory on disk read (see
+            // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log
+            // clean), otherwise the main-log tail (still memory-resident, but occupies writable log space).
+            StubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
+
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
 
@@ -431,6 +436,9 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
 
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
+
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
                 errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
@@ -633,7 +641,10 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -821,7 +832,10 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+
+            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
+            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 

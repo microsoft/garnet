@@ -56,9 +56,31 @@ namespace Tsavorite.core
         public long IndexSize => state[resizeInfo.version].size;
 
         /// <summary>
+        /// Size of index in bytes (#cache lines * 64)
+        /// </summary>
+        public long IndexSizeBytes => state[resizeInfo.version].size * Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Size of a single hash bucket (one cache line), in bytes. Applies to both main and overflow buckets,
+        /// which share the same layout.
+        /// </summary>
+        public long IndexBucketSizeBytes => Constants.kCacheLineBytes;
+
+        /// <summary>
         /// Number of overflow buckets in use (64 bytes each)
         /// </summary>
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+
+        /// <summary>
+        /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
+        /// </summary>
+        public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
+
+        /// <summary>
+        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
+        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>).
+        /// </summary>
+        public long IndexTotalSizeBytes => IndexSizeBytes + IndexOverflowSizeBytes;
 
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
@@ -479,6 +501,11 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
+            // Per-batch read-copy options, with each Inherit field resolved against the session/store default so a
+            // batch can override CopyFrom and/or CopyTo independently (e.g. copy small, frequently-read vector-index
+            // records to the main-log tail on disk read while leaving others on disk).
+            var batchReadCopyOptions = ReadCopyOptions.Merge(sessionFunctions.Ctx.ReadCopyOptions, batch.ReadCopyOptions);
+
             if (batch.Count == 1)
             {
                 // Not actually a batch, no point prefetching
@@ -489,7 +516,8 @@ namespace Tsavorite.core
 
                 var hash = storeFunctions.GetKeyHashCode64(key);
 
-                var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                operationState.initialIORecordSize = batch.InitialIORecordSize;
                 OperationStatus internalStatus;
 
                 do
@@ -554,7 +582,8 @@ namespace Tsavorite.core
 
                             var hash = hashes[i];
 
-                            var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                            var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                            operationState.initialIORecordSize = batch.InitialIORecordSize;
                             OperationStatus internalStatus;
 
                             do
@@ -579,7 +608,8 @@ namespace Tsavorite.core
 
                         var hash = storeFunctions.GetKeyHashCode64(key);
 
-                        var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                        var operationState = new OperationState<TInput, TOutput, TContext>(batchReadCopyOptions);
+                        operationState.initialIORecordSize = batch.InitialIORecordSize;
                         OperationStatus internalStatus;
 
                         do
