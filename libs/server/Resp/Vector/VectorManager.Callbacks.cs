@@ -70,11 +70,16 @@ namespace Garnet.server
             /// quant and noquant modes. In quant mode the raw vector is cold — the small QuantizedVector drives the
             /// distance computation and the raw vector is read only for final reranking — so serving it from disk is
             /// ideal. In noquant mode the raw vector <i>is</i> the hot distance source (read for every neighbor
-            /// evaluated), yet it is still deliberately not cached: it is ~tens of times larger than the NeighborList
-            /// at roughly the same access frequency, so admitting it into the shared read-cache LRU would evict the
-            /// small, far-higher-reuse-per-byte stubs (adjacency / id-maps) that traversal needs on every hop — a net
-            /// loss under cache pressure. Caching raw safely would need a separate or protected budget rather than the
-            /// shared stub cache; quantization is the intended path for a compact, cacheable hot distance source.</para>
+            /// evaluated), so caching it is tempting; but an A/B experiment showed it is a net loss whenever the raw
+            /// working set exceeds the read cache — i.e. exactly the disk-tiered case (you tier to disk <i>because</i>
+            /// the set does not fit memory). 80k Cohere-768 NoQuant, 48&#160;MB read cache, raw set ~246&#160;MB:
+            /// caching raw gave 87.5&#160;ms/query vs 76.4&#160;ms without, despite ~40% fewer disk reads, because
+            /// copying large raw vectors into the cache thrashes it (~282&#160;MB evicted per 250 queries) and that
+            /// overhead exceeds the read savings — while the tiny stubs sit in the cache with zero eviction either way.
+            /// Caching raw only wins when the whole set <i>fits</i> the read cache (a small set then serves with zero
+            /// IO), which would require a size-aware admission gate (cache raw iff set size ≤ read-cache budget) that is
+            /// not implemented. So raw stays on disk; quantization is the intended path for a compact, cacheable hot
+            /// distance source.</para>
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
