@@ -75,7 +75,7 @@ namespace Garnet.server
                         case DiskANNService.QuantizedVector:
                         case DiskANNService.InternalIdMap:
                         case DiskANNService.ExternalIdMap:
-                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = StubReadCopyTo };
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ActiveThreadSession.vectorManager.StubReadCopyTo };
                         default:
                             return new ReadCopyOptions { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None };
                     }
@@ -283,12 +283,14 @@ namespace Garnet.server
         /// <summary>
         /// Destination for copying the small graph "stub" records (NeighborList adjacency, internal/external id
         /// maps, quantized vectors) back into memory when they are read from disk (see
-        /// <see cref="VectorReadBatch.ReadCopyOptions"/>). Set once from <see cref="GarnetServerOptions.EnableReadCache"/>
+        /// <see cref="VectorReadBatch.ReadCopyOptions"/>). Set from <see cref="GarnetServerOptions.EnableReadCache"/>
         /// at <see cref="VectorManager"/> construction: the read cache when it is enabled (the natural home for hot
         /// read-only data — separate, never flushed, LRU — so it doesn't pollute the writable main log), otherwise
-        /// the main-log tail (still memory-resident). Server-wide, so a static is appropriate.
+        /// the main-log tail (still memory-resident). Per instance, so servers/databases with different read-cache
+        /// settings in the same process do not clobber each other; reads reach it via
+        /// <see cref="ActiveThreadSession"/>.<see cref="StorageSession.vectorManager"/>.
         /// </summary>
-        internal static ReadCopyTo StubReadCopyTo = ReadCopyTo.MainLog;
+        internal readonly ReadCopyTo StubReadCopyTo;
 
         /// <summary>
         /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the

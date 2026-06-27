@@ -817,7 +817,7 @@ namespace Tsavorite.core
         // up to the next power of 2 and so overestimates the real maximum.
         public long MaxMemorySizeBytes => (long)MaxAllocatedPageCount * PageSize;
 
-        /// <summary>Increments AllocatedPageCount. Updates MaxAllocatedPageCount if a higher number of pages have been allocated.</summary>
+        /// <summary>Increments AllocatedPageCount. Updates HighWaterAllocatedPageCount if a higher number of pages have been allocated.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         protected void IncrementAllocatedPageCount()
         {
