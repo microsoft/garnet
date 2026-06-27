@@ -2345,12 +2345,6 @@
     ]
   },
   {
-    "Command": "FORCEGC",
-    "Name": "FORCEGC",
-    "Summary": "Forces garbage collection.",
-    "Group": "Server"
-  },
-  {
     "Command": "GEOADD",
     "Name": "GEOADD",
     "Summary": "Adds one or more members to a geospatial index. The key is created if it doesn't exist.",

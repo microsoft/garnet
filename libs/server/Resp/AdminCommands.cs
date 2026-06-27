@@ -59,7 +59,6 @@ namespace Garnet.server
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
-                RespCommand.FORCEGC => NetworkFORCEGC(),
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
@@ -650,29 +649,6 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkFORCEGC()
-        {
-            if (parseState.Count > 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC));
-            }
-
-            var generation = GC.MaxGeneration;
-            if (parseState.Count == 1)
-            {
-                if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
-                {
-                    return AbortWithErrorMessage("ERR Invalid GC generation."u8);
-                }
-            }
-
-            GC.Collect(generation, GCCollectionMode.Forced, true);
-            while (!RespWriteUtils.TryWriteSimpleString("GC completed"u8, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -808,6 +784,27 @@ namespace Garnet.server
                 return true;
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FORCEGC))
+            {
+                if (parseState.Count > 2)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                var generation = GC.MaxGeneration;
+                if (parseState.Count == 2 &&
+                    (!parseState.TryGetInt(1, out generation) || generation < 0 || generation > GC.MaxGeneration))
+                {
+                    return AbortWithErrorMessage("ERR Invalid GC generation."u8);
+                }
+
+                GC.Collect(generation, GCCollectionMode.Forced, blocking: true);
+
+                WriteSimpleString("GC completed");
+                return true;
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -821,6 +818,8 @@ namespace Garnet.server
                     "FLUSHANDEVICT",
                     "\tFlush the main store's in-memory log to disk and evict it (shifts HeadAddress to",
                     "\tTailAddress) so subsequent reads are served from disk.",
+                    "FORCEGC [generation]",
+                    "\tForce a blocking garbage collection of the given generation (default: max).",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",
