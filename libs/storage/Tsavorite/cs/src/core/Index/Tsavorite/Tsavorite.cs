@@ -501,12 +501,10 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
-            // Per-batch read-copy options: a batch may request its records be copied to the main-log tail on disk
-            // read (e.g. small, frequently-read vector-index records) while leaving others on disk. Inherit resolves
-            // to the session/store default.
-            var batchReadCopyOptions = batch.ReadCopyOptions;
-            if (batchReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
-                batchReadCopyOptions = sessionFunctions.Ctx.ReadCopyOptions;
+            // Per-batch read-copy options, with each Inherit field resolved against the session/store default so a
+            // batch can override CopyFrom and/or CopyTo independently (e.g. copy small, frequently-read vector-index
+            // records to the main-log tail on disk read while leaving others on disk).
+            var batchReadCopyOptions = ReadCopyOptions.Merge(sessionFunctions.Ctx.ReadCopyOptions, batch.ReadCopyOptions);
 
             if (batch.Count == 1)
             {

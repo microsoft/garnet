@@ -70,6 +70,11 @@ namespace Tsavorite.core
         public int BufferSize => allocatorBase.BufferSize;
 
         /// <summary>
+        /// Maximum number of pages that can be allocated in the log (the cap on AllocatedPageCount)
+        /// </summary>
+        public int MaxAllocatedPageCount => allocatorBase.MaxAllocatedPageCount;
+
+        /// <summary>
         /// Size of a single log page, in bytes
         /// </summary>
         public long PageSizeBytes => 1L << allocatorBase.LogPageSizeBits;
