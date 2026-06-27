@@ -30,7 +30,19 @@ namespace Resp.benchmark
             startSignal.Set();
 
             // Monitor and report metrics periodically
-            MonitorAndReportWorkerPoolOnline(sw, runTime, threads);
+            var allProviders = workers.SelectMany(w => w.Providers).ToArray();
+            MonitorOnline(sw, runTime, allProviders);
+
+            // Signal all providers to stop
+            foreach (var provider in allProviders)
+                provider.Stop();
+
+            // Wait for all threads to complete
+            foreach (var t in threads)
+                t.Join();
+
+            // Final report
+            PrintWorkerPoolFinalReport(sw.Elapsed);
         }
 
         private void RunOnline()
@@ -54,36 +66,7 @@ namespace Resp.benchmark
             startSignal.Set();
 
             // Monitor and report metrics periodically
-            MonitorAndReportOnline(sw, runTime, threads);
-        }
-
-        private void MonitorAndReportOnline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
-        {
-            long lastTotalOps = 0;
-            var reportInterval = TimeSpan.FromSeconds(2);
-            var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
-            var batchSize = opts.BatchSize.First();
-            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
-
-            while (sw.Elapsed < runTime)
-            {
-                Thread.Sleep(reportInterval);
-
-                // Aggregate histograms from all providers
-                summary.Reset();
-                long currentTotalOps = 0;
-                foreach (var provider in providers)
-                {
-                    summary.Add(provider.Histogram);
-                    currentTotalOps += provider.OpsCompleted * keysPerOp;
-                }
-
-                long iterOps = currentTotalOps - lastTotalOps;
-                double tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
-
-                ReportOnlineIteration(summary, currentTotalOps, iterOps, tptKops);
-                lastTotalOps = currentTotalOps;
-            }
+            MonitorOnline(sw, runTime, providers);
 
             // Signal all providers to stop
             foreach (var provider in providers)
@@ -97,10 +80,10 @@ namespace Resp.benchmark
             PrintFinalReport(sw.Elapsed);
         }
 
-        private void MonitorAndReportWorkerPoolOnline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
+        private void MonitorOnline(Stopwatch sw, TimeSpan runTime, IEnumerable<ClientRequestProvider> allProviders)
         {
             long lastTotalOps = 0;
-            var reportInterval = TimeSpan.FromSeconds(2);
+            var reportInterval = TimeSpan.FromSeconds(1);
             var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
             var batchSize = opts.BatchSize.First();
             var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
@@ -109,16 +92,12 @@ namespace Resp.benchmark
             {
                 Thread.Sleep(reportInterval);
 
-                // Aggregate histograms and operations from all workers' providers
                 summary.Reset();
                 long currentTotalOps = 0;
-                foreach (var worker in workers)
+                foreach (var provider in allProviders)
                 {
-                    foreach (var provider in worker.Providers)
-                    {
-                        summary.Add(provider.Histogram);
-                        currentTotalOps += provider.OpsCompleted * keysPerOp;
-                    }
+                    summary.Add(provider.Histogram);
+                    currentTotalOps += provider.OpsCompleted * keysPerOp;
                 }
 
                 var iterOps = currentTotalOps - lastTotalOps;
@@ -127,18 +106,6 @@ namespace Resp.benchmark
                 ReportOnlineIteration(summary, currentTotalOps, iterOps, tptKops);
                 lastTotalOps = currentTotalOps;
             }
-
-            // Signal all providers to stop
-            foreach (var worker in workers)
-                foreach (var provider in worker.Providers)
-                    provider.Stop();
-
-            // Wait for all threads to complete
-            foreach (var t in threads)
-                t.Join();
-
-            // Final report
-            PrintWorkerPoolFinalReport(sw.Elapsed);
         }
 
         private void PrintOnlineHeader()

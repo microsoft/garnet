@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.client;
 using Garnet.common;
@@ -54,13 +53,7 @@ namespace Resp.benchmark
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
             // Size buffer to fit the largest pre-generated request batch
-            var bufferSize = 1 << 17; // 128KB default
-            if (requestLengths != null)
-            {
-                var maxLen = requestLengths.Max();
-                if (maxLen > bufferSize)
-                    bufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
-            }
+            var bufferSize = offlineBufferSize > 0 ? offlineBufferSize : (1 << 17);
 
             switch (opts.Client)
             {
@@ -281,7 +274,7 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ExecuteSingleOfflineBatch()
         {
-            if (requestBuffers == null && opts.Client == ClientType.LightClient)
+            if (requests == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before ExecuteSingleOfflineBatch()");
 
             // Ensure connections are initialized
@@ -331,23 +324,22 @@ namespace Resp.benchmark
         {
             // Select batch index (cycle through pre-generated batches)
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            var buffer = requestBuffers[batchIdx];
-            var len = requestLengths[batchIdx];
+            ref var request = ref requests[batchIdx];
 
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
             unsafe
             {
-                fixed (byte* bufPtr = buffer)
+                fixed (byte* bufPtr = request.RespData)
                 {
-                    client.Send(bufPtr, len, numCommands);
+                    client.Send(bufPtr, request.ByteCount, request.CommandCount);
                     client.CompletePendingRequests();
                 }
             }
 
             var bytesRcvd = client.TotalBytesReceived;
             Interlocked.Exchange(ref bytesReceived, bytesRcvd);
-            Interlocked.Add(ref bytesSent, len);
+            Interlocked.Add(ref bytesSent, request.ByteCount);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -521,7 +513,7 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SendSingleOfflineBatch()
         {
-            if (requestBuffers == null && opts.Client == ClientType.LightClient)
+            if (requests == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before SendSingleOfflineBatch()");
 
             if (!connectionsInitialized)
@@ -562,21 +554,20 @@ namespace Resp.benchmark
         {
             // Select batch
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            var buffer = requestBuffers[batchIdx];
-            var len = requestLengths[batchIdx];
+            ref var request = ref requests[batchIdx];
 
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
             // Send without waiting for response
             unsafe
             {
-                fixed (byte* bufPtr = buffer)
+                fixed (byte* bufPtr = request.RespData)
                 {
-                    client.Send(bufPtr, len, numCommands);
+                    client.Send(bufPtr, request.ByteCount, request.CommandCount);
                 }
             }
 
-            pendingBytesSent = len;
+            pendingBytesSent = request.ByteCount;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

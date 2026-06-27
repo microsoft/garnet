@@ -141,9 +141,7 @@ namespace Resp.benchmark
 
         public void Dispose()
         {
-            requestBuffers = null;
-            requestLengths = null;
-            requestCounts = null;
+            requests = null;
             DisposeWorkerPoolConnections();
         }
 
@@ -161,73 +159,61 @@ namespace Resp.benchmark
         }
 
         /// <summary>
-        /// Format MGET or MSET request with multiple keys.
+        /// Format MGET or MSET request with multiple keys generated inline.
         /// </summary>
-        private byte[] FormatMRequest(OpType op, string[] keys)
+        private byte[] FormatMRequest(OpType op, int keyCount, Random rng, int dbSize)
         {
             var sb = new StringBuilder(256);
-            AppendMCommand(sb, op, keys);
+            AppendCommand(sb, op, keyCount, rng, dbSize);
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
+        /// <summary>
+        /// Append a RESP command to the string builder.
+        /// Writes the header first, then appends key(/value) pairs iteratively.
+        /// For single-key ops (GET, SET, INCR, DEL): keyCount=1, generates one key.
+        /// For multi-key ops (MGET, MSET): keyCount=N, generates N keys inline.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AppendCommand(StringBuilder sb, OpType op, string key)
+        private void AppendCommand(StringBuilder sb, OpType op, int keyCount, Random rng, int dbSize)
         {
+            // Write RESP array header
             switch (op)
             {
                 case OpType.GET:
-                    sb.Append($"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n");
+                    sb.Append($"*2\r\n$3\r\nGET\r\n");
                     break;
                 case OpType.SET:
-                    var value = GenerateValue();
-                    sb.Append($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n");
+                    sb.Append($"*3\r\n$3\r\nSET\r\n");
                     break;
                 case OpType.INCR:
-                    sb.Append($"*2\r\n$4\r\nINCR\r\n${key.Length}\r\n{key}\r\n");
+                    sb.Append($"*2\r\n$4\r\nINCR\r\n");
                     break;
                 case OpType.DEL:
-                    sb.Append($"*2\r\n$3\r\nDEL\r\n${key.Length}\r\n{key}\r\n");
+                    sb.Append($"*2\r\n$3\r\nDEL\r\n");
                     break;
                 case OpType.MGET:
+                    sb.Append($"*{keyCount + 1}\r\n$4\r\nMGET\r\n");
+                    break;
                 case OpType.MSET:
-                    throw new InvalidOperationException($"{op} requires multiple keys - use AppendMCommand");
+                    sb.Append($"*{(keyCount * 2) + 1}\r\n$4\r\nMSET\r\n");
+                    break;
                 default:
-                    sb.Append($"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n");
+                    sb.Append($"*2\r\n$3\r\nGET\r\n");
                     break;
             }
-        }
 
-        /// <summary>
-        /// Append MGET or MSET command with multiple keys to the string builder.
-        /// For MGET: *N\r\n$4\r\nMGET\r\n$K1Len\r\nK1\r\n$K2Len\r\nK2\r\n...
-        /// For MSET: *N\r\n$4\r\nMSET\r\n$K1Len\r\nK1\r\n$V1Len\r\nV1\r\n$K2Len\r\nK2\r\n$V2Len\r\nV2\r\n...
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AppendMCommand(StringBuilder sb, OpType op, string[] keys)
-        {
-            switch (op)
+            // Append key(/value) pairs
+            var hasValue = op is OpType.SET or OpType.MSET;
+            for (var i = 0; i < keyCount; i++)
             {
-                case OpType.MGET:
-                    // *N\r\n$4\r\nMGET\r\n$K1Len\r\nK1\r\n...
-                    sb.Append($"*{keys.Length + 1}\r\n$4\r\nMGET\r\n");
-                    foreach (var key in keys)
-                    {
-                        sb.Append($"${key.Length}\r\n{key}\r\n");
-                    }
-                    break;
-
-                case OpType.MSET:
-                    // *N\r\n$4\r\nMSET\r\n$K1Len\r\nK1\r\n$V1Len\r\nV1\r\n...
-                    sb.Append($"*{keys.Length * 2 + 1}\r\n$4\r\nMSET\r\n");
-                    foreach (var key in keys)
-                    {
-                        var value = GenerateValue();
-                        sb.Append($"${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n");
-                    }
-                    break;
-
-                default:
-                    throw new InvalidOperationException($"AppendMCommand only supports MGET and MSET, not {op}");
+                var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
+                sb.Append($"${key.Length}\r\n{key}\r\n");
+                if (hasValue)
+                {
+                    var value = GenerateValue();
+                    sb.Append($"${value.Length}\r\n{value}\r\n");
+                }
             }
         }
 

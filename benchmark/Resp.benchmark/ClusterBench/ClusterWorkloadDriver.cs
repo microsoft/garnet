@@ -14,6 +14,8 @@ namespace Resp.benchmark
     /// </summary>
     public partial class ClusterBench : IDisposable
     {
+        const int LoadDataThreads = 8;
+
         static readonly long HISTOGRAM_LOWER_BOUND = 1;
         static readonly long HISTOGRAM_UPPER_BOUND = TimeStamp.Seconds(100);
 
@@ -308,8 +310,7 @@ namespace Resp.benchmark
 
             if (opts.Pool)
             {
-                // Worker pool mode: Use first worker's providers to load data
-                // This prevents duplicate loading since all workers have same providers
+                // Worker pool mode: Use first worker's providers to load data (one per shard)
                 var firstWorker = workers[0];
                 var loadThreads = new Thread[shards.Length];
 
@@ -345,17 +346,9 @@ namespace Resp.benchmark
             }
             else
             {
-                // Sharded mode: Each provider loads its slice
-                var threads = new Thread[providers.Length];
-                for (var i = 0; i < providers.Length; i++)
-                {
-                    var p = providers[i];
-                    threads[i] = new Thread(() => p.LoadData());
-                    threads[i].Start();
-                }
-
-                foreach (var t in threads)
-                    t.Join();
+                // Sharded mode: Parallelize across LoadDataThreads
+                Parallel.ForEach(providers, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
+                    p => p.LoadData());
 
                 sw.Stop();
 
@@ -444,11 +437,12 @@ namespace Resp.benchmark
 
                 try
                 {
-                    using var redis = ConnectionMultiplexer.Connect(
-                        BenchUtils.GetConfig(shards[s].Address, shards[s].Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost, allowAdmin: true));
+                    var config = BenchUtils.GetConfig(shards[s].Address, shards[s].Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost, allowAdmin: true);
+                    config.AbortOnConnectFail = false;
+                    using var redis = ConnectionMultiplexer.Connect(config);
 
-                    var db = redis.GetDatabase(0);
-                    var actualKeys = (long)db.Execute("DBSIZE");
+                    var server = redis.GetServer(shards[s].Address, shards[s].Port);
+                    var actualKeys = server.DatabaseSize();
 
                     var endpoint = $"{shards[s].Address}:{shards[s].Port}";
                     if (actualKeys == expectedKeys)
@@ -484,6 +478,8 @@ namespace Resp.benchmark
 
             var summary = new LongHistogram(1, TimeStamp.Seconds(100), 2);
             long totalOps = 0;
+            long totalPrimaryOps = 0;
+            long totalReplicaOps = 0;
             long totalBytesSent = 0;
             long totalBytesReceived = 0;
 
@@ -503,9 +499,11 @@ namespace Resp.benchmark
                 for (var t = 0; t < threadsPerShard; t++)
                 {
                     var provider = providers[s * threadsPerShard + t];
-                    shardOps += provider.OpsCompleted * keysPerOp;  // Multiply by keysPerOp for MGET/MSET
+                    shardOps += provider.OpsCompleted * keysPerOp;
                     shardBytesSent += provider.BytesSent;
                     shardBytesRcvd += provider.BytesReceived;
+                    totalPrimaryOps += provider.PrimaryOps * keysPerOp;
+                    totalReplicaOps += provider.ReplicaOps * keysPerOp;
                     summary.Add(provider.Histogram);
                 }
                 totalOps += shardOps;
@@ -533,7 +531,7 @@ namespace Resp.benchmark
             }
 
             // Throughput summary
-            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);
             var dataGBps = (totalOps * logicalBytesPerOp) / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
             var totalWireBytes = totalBytesSent + totalBytesReceived;
             var wireGBps = totalWireBytes / totalElapsed.TotalSeconds / (1024.0 * 1024 * 1024);
@@ -543,6 +541,16 @@ namespace Resp.benchmark
             Console.WriteLine($"Total throughput: {totalOpsPerSec:N0} ops/sec ({totalOpsPerSec / 1000:N1} Kops/sec)");
             Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
             Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP sent: {totalBytesSent:N0} B, received: {totalBytesReceived:N0} B)");
+
+            if (totalOps > 0 && totalReplicaOps > 0)
+            {
+                var actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
+                var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
+                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
+                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec)");
+                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec)");
+            }
 
             // Report hit rates from INFO STATS
             ReportHitRates();
@@ -627,7 +635,11 @@ namespace Resp.benchmark
             if (totalOps > 0 && totalReplicaOps > 0)
             {
                 var actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
+                var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
                 Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
+                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec)");
+                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec)");
             }
 
             // Report hit rates from INFO STATS

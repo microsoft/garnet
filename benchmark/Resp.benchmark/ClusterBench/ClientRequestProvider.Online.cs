@@ -79,12 +79,7 @@ namespace Resp.benchmark
 
                     if (isMCommand)
                     {
-                        // Generate multiple keys for MGET/MSET
-                        var keys = new string[batchSize];
-                        for (var i = 0; i < batchSize; i++)
-                            keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-
-                        request = FormatMRequest(opts.Op, keys);
+                        request = FormatMRequest(opts.Op, batchSize, rng, dbSizePerShard);
                     }
                     else
                     {

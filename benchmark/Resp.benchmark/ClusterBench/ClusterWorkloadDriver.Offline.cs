@@ -10,13 +10,10 @@ namespace Resp.benchmark
     {
         private void RunOffline()
         {
-            // Prepare offline buffers for LightClient (other clients generate on-the-fly)
-            if (opts.Client == ClientType.LightClient)
-            {
-                Console.WriteLine("Preparing offline buffers...");
-                foreach (var provider in providers)
-                    provider.PrepareBuffers();
-            }
+            // Prepare offline buffers
+            Console.WriteLine("Preparing offline buffers...");
+            Parallel.ForEach(providers, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
+                provider => provider.PrepareBuffers());
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);
@@ -37,25 +34,27 @@ namespace Resp.benchmark
             startSignal.Set();
 
             // Monitor and report metrics periodically
-            MonitorAndReportOffline(sw, runTime, threads);
+            MonitorOffline(sw, runTime, providers);
+
+            // Signal all providers to stop
+            foreach (var provider in providers)
+                provider.Stop();
+
+            // Wait for all threads to complete
+            foreach (var t in threads)
+                t.Join();
+
+            // Final report
+            PrintFinalReport(sw.Elapsed);
         }
 
         private void RunWorkerPoolOffline()
         {
-            // Prepare offline buffers for LightClient (other clients generate on-the-fly)
-            if (opts.Client == ClientType.LightClient)
-            {
-                Console.WriteLine("Preparing offline buffers...");
-                foreach (var worker in workers)
-                {
-                    // Each worker prepares buffers for all its providers
-                    for (var shardIdx = 0; shardIdx < shards.Length; shardIdx++)
-                    {
-                        var provider = worker.GetProvider(shardIdx);
-                        provider.PrepareBuffers();
-                    }
-                }
-            }
+            // Prepare offline buffers
+            Console.WriteLine("Preparing offline buffers...");
+            var allProviders = workers.SelectMany(w => w.Providers).ToArray();
+            Parallel.ForEach(allProviders, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
+                provider => provider.PrepareBuffers());
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
 
@@ -82,7 +81,7 @@ namespace Resp.benchmark
             var sw = Stopwatch.StartNew();
 
             // Monitor and report metrics periodically
-            MonitorAndReportWorkerPoolOffline(sw, runTime, cts);
+            MonitorOffline(sw, runTime, allProviders);
 
             // Signal all workers to stop
             cts.Cancel();
@@ -95,52 +94,14 @@ namespace Resp.benchmark
             PrintWorkerPoolFinalReport(sw.Elapsed);
         }
 
-        private void MonitorAndReportWorkerPoolOffline(Stopwatch sw, TimeSpan runTime, CancellationTokenSource cts)
+        private void MonitorOffline(Stopwatch sw, TimeSpan runTime, IEnumerable<ClientRequestProvider> allProviders)
         {
             long lastTotalOps = 0;
             long lastTotalBytes = 0;
-            var reportInterval = TimeSpan.FromSeconds(2);
+            var reportInterval = TimeSpan.FromSeconds(1);
             var batchSize = opts.BatchSize.First();
             var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
-            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
-
-            while (sw.Elapsed < runTime)
-            {
-                Thread.Sleep(reportInterval);
-
-                // Aggregate operations and bytes from all workers' providers
-                // For MGET/MSET, multiply opsCompleted by keysPerOp to get total keys
-                long currentTotalOps = 0;
-                long currentTotalBytes = 0;
-                foreach (var worker in workers)
-                {
-                    foreach (var provider in worker.Providers)
-                    {
-                        currentTotalOps += provider.OpsCompleted * keysPerOp;
-                        currentTotalBytes += provider.BytesSent;
-                    }
-                }
-
-                var iterOps = currentTotalOps - lastTotalOps;
-                var iterBytes = currentTotalBytes - lastTotalBytes;
-                var tptKops = iterOps / reportInterval.TotalSeconds / 1000.0;
-                var dataGBps = (iterOps * logicalBytesPerOp) / reportInterval.TotalSeconds / (1024.0 * 1024 * 1024);
-                var wireGbps = iterBytes * 8.0 / reportInterval.TotalSeconds / 1_000_000_000.0;
-
-                ReportOfflineIteration(currentTotalOps, iterOps, tptKops, dataGBps, wireGbps);
-                lastTotalOps = currentTotalOps;
-                lastTotalBytes = currentTotalBytes;
-            }
-        }
-
-        private void MonitorAndReportOffline(Stopwatch sw, TimeSpan runTime, Thread[] threads)
-        {
-            long lastTotalOps = 0;
-            long lastTotalBytes = 0;
-            var reportInterval = TimeSpan.FromSeconds(2);
-            var batchSize = opts.BatchSize.First();
-            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
-            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);  // Per key (SlotKeyGenerator enforces min 8)
+            var logicalBytesPerOp = Math.Max(opts.KeyLength, 8) + Math.Max(opts.ValueLength, 8);
 
             while (sw.Elapsed < runTime)
             {
@@ -148,7 +109,7 @@ namespace Resp.benchmark
 
                 long currentTotalOps = 0;
                 long currentTotalBytes = 0;
-                foreach (var provider in providers)
+                foreach (var provider in allProviders)
                 {
                     currentTotalOps += provider.OpsCompleted * keysPerOp;
                     currentTotalBytes += provider.BytesSent;
@@ -164,17 +125,6 @@ namespace Resp.benchmark
                 lastTotalOps = currentTotalOps;
                 lastTotalBytes = currentTotalBytes;
             }
-
-            // Signal all providers to stop
-            foreach (var provider in providers)
-                provider.Stop();
-
-            // Wait for all threads to complete
-            foreach (var t in threads)
-                t.Join();
-
-            // Final report
-            PrintFinalReport(sw.Elapsed);
         }
 
         private void PrintOfflineHeader()

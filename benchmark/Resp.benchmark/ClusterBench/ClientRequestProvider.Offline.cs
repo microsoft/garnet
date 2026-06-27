@@ -13,70 +13,90 @@ namespace Resp.benchmark
 {
     public unsafe partial class ClientRequestProvider
     {
-        // Pre-generated buffers for offline mode
-        byte[][] requestBuffers;
-        int[] requestLengths;
-        int[] requestCounts;  // Number of commands in each buffer (1 for MGET/MSET, batchSize for others)
+        // Pre-generated request batches for offline mode
+        Request[] requests;
         int batchCount;
+        int offlineBufferSize;
 
         /// <summary>
         /// Pre-generate request buffers for offline mode.
-        /// For GET/SET/etc: Each buffer contains batchSize commands.
-        /// For MGET/MSET: Each buffer contains 1 command with batchSize keys.
+        /// For GET/SET/etc: Each request contains batchSize commands.
+        /// For MGET/MSET: Each request contains 1 command with batchSize keys.
         /// </summary>
         public void PrepareBuffers()
         {
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
+            batchCount = Math.Max(1, dbSizePerShard / batchSize);
 
-            // For LightClient, ensure batch size doesn't exceed 128KB buffer limit
-            // Calculate max batch size based on value size (use 120KB for safety margin)
-            var keyLen = Math.Max(opts.KeyLength, 8);
-            var valLen = Math.Max(opts.ValueLength, 8);
-
-            int effectiveBatchSize;
-            if (opts.Op is OpType.MGET or OpType.MSET)
-            {
-                // For MGET/MSET: estimate bytes for single multi-key command
-                // MSET: *N*2+1\r\n$4\r\nMSET\r\n + N × ($KLen\r\nK\r\n$VLen\r\nV\r\n)
-                var bytesPerPair = keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length + 10;  // 10 for delimiters
-                var maxKeysPerCommand = Math.Max(1, (120 * 1024) / bytesPerPair);  // 120KB safety margin
-                effectiveBatchSize = (int)Math.Min(batchSize, maxKeysPerCommand);
-            }
-            else
-            {
-                // For GET/SET: estimate bytes for batch of individual commands
-                var bytesPerCommand = 20 + keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length;
-                var maxCommandsPerBatch = Math.Max(1, (120 * 1024) / bytesPerCommand);  // 120KB safety margin
-                effectiveBatchSize = (int)Math.Min(batchSize, maxCommandsPerBatch);
-            }
-
-            // For MGET/MSET, batchSize is keys per command, so adjust batch count
-            if (opts.Op is OpType.MGET or OpType.MSET)
-            {
-                // Generate enough MGET/MSET commands to cover the DB
-                // Each MGET/MSET covers effectiveBatchSize keys, so we need dbSize/effectiveBatchSize commands
-                batchCount = Math.Max(1, dbSizePerShard / effectiveBatchSize);
-            }
-            else
-            {
-                // For regular ops, effectiveBatchSize is number of commands
-                batchCount = Math.Max(1, dbSizePerShard / effectiveBatchSize);
-            }
-
-            requestBuffers = new byte[batchCount][];
-            requestLengths = new int[batchCount];
-            requestCounts = new int[batchCount];
+            requests = new Request[batchCount];
 
             for (var b = 0; b < batchCount; b++)
             {
-                var buffer = GenerateRandomBatch(effectiveBatchSize, dbSizePerShard);
-                requestBuffers[b] = buffer;
-                requestLengths[b] = buffer.Length;
-
-                // Track number of commands (responses to expect)
-                requestCounts[b] = opts.Op is OpType.MGET or OpType.MSET ? 1 : effectiveBatchSize;
+                var buffer = GenerateRandomBatch(batchSize, dbSizePerShard);
+                requests[b] = new Request
+                {
+                    RespData = buffer,
+                    ByteCount = buffer.Length,
+                    CommandCount = opts.Op is OpType.MGET or OpType.MSET ? 1 : batchSize
+                };
             }
+
+            ComputeOfflineBufferSize();
+        }
+
+        /// <summary>
+        /// Compute the LightClient buffer size needed to hold the largest pre-generated request.
+        /// </summary>
+        private void ComputeOfflineBufferSize()
+        {
+            var maxLen = requests.Max(r => r.ByteCount);
+            offlineBufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
+            offlineBufferSize = Math.Max(offlineBufferSize, 1 << 17); // At least 128KB
+        }
+
+        /// <summary>
+        /// Generate a batch of random keys for benchmarking.
+        /// For GET/SET/etc: batchSize = number of commands, each with 1 key.
+        /// For MGET/MSET: batchSize = number of keys per single MGET/MSET command.
+        /// </summary>
+        private byte[] GenerateRandomBatch(int batchSize, int dbSize)
+        {
+            var keyLen = Math.Max(opts.KeyLength, 8);
+            var valLen = Math.Max(opts.ValueLength, 8);
+
+            // Estimate capacity based on op type to avoid StringBuilder reallocations
+            var estimatedCapacity = opts.Op switch
+            {
+                // GET: *2\r\n$3\r\nGET\r\n$<keyLenDigits>\r\n<key>\r\n ≈ 20 + keyLen per command
+                OpType.GET => batchSize * (20 + keyLen),
+                // SET: *3\r\n$3\r\nSET\r\n$<kld>\r\n<key>\r\n$<vld>\r\n<val>\r\n ≈ 30 + keyLen + valLen
+                OpType.SET => batchSize * (30 + keyLen + valLen),
+                // INCR/DEL: similar to GET
+                OpType.INCR or OpType.DEL => batchSize * (22 + keyLen),
+                // MGET: header + N × ($<kld>\r\n<key>\r\n) ≈ 20 + N × (6 + keyLen)
+                OpType.MGET => 20 + batchSize * (6 + keyLen),
+                // MSET: header + N × ($<kld>\r\n<key>\r\n$<vld>\r\n<val>\r\n) ≈ 20 + N × (12 + keyLen + valLen)
+                OpType.MSET => 20 + batchSize * (12 + keyLen + valLen),
+                _ => batchSize * (30 + keyLen + valLen)
+            };
+
+            var sb = new StringBuilder(estimatedCapacity);
+            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
+
+            if (isMCommand)
+            {
+                // MGET/MSET: one command with batchSize keys
+                AppendCommand(sb, opts.Op, batchSize, rng, dbSize);
+            }
+            else
+            {
+                // Single-key ops: batchSize commands, each with 1 key
+                for (var i = 0; i < batchSize; i++)
+                    AppendCommand(sb, opts.Op, 1, rng, dbSize);
+            }
+
+            return Encoding.ASCII.GetBytes(sb.ToString());
         }
 
         /// <summary>
@@ -110,13 +130,18 @@ namespace Resp.benchmark
                 keyOffset = shardThreadIndex * keysToLoad;
             }
 
-            // Calculate max batch size to stay under LightClient's 128KB buffer limit
-            // Each SET command: *3\r\n$3\r\nSET\r\n$KLen\r\nK\r\n$VLen\r\nV\r\n (~20 + keyLen + valueLen bytes)
+            // Compute exact max RESP bytes for one SET command:
+            // *3\r\n$3\r\nSET\r\n$<keyLenDigits>\r\n<key>\r\n$<valLenDigits>\r\n<val>\r\n
             var keyLen = Math.Max(opts.KeyLength, 8);
             var valLen = Math.Max(opts.ValueLength, 8);
-            var bytesPerSet = 20 + keyLen + valLen + keyLen.ToString().Length + valLen.ToString().Length;
+            var bytesPerSet = 4 + 9 + 1 + keyLen.ToString().Length + 2 + keyLen + 2
+                                      + 1 + valLen.ToString().Length + 2 + valLen + 2;
             var maxBatchSize = Math.Max(1, (120 * 1024) / bytesPerSet);  // Stay under 120KB (safety margin)
             var batchSize = (int)Math.Min(maxBatchSize, Math.Min(256, keysToLoad));
+
+            // Size the LightClient buffer to fit the largest load batch
+            var loadBufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)(batchSize * bytesPerSet));
+            loadBufferSize = Math.Max(loadBufferSize, 1 << 17); // At least 128KB
 
             // IMPORTANT: Always use primary endpoint for loading (replicas are read-only)
             var endpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
@@ -126,7 +151,7 @@ namespace Resp.benchmark
                 endpoint,
                 (int)OpType.SET,
                 onResponse,
-                1 << 17, // Buffer size in bytes for the network buffer (128KB)
+                loadBufferSize,
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();
@@ -150,13 +175,31 @@ namespace Resp.benchmark
         }
 
         /// <summary>
+        /// Generate a batch of sequential keys for loading data.
+        /// Always generates SET commands (one key-value pair per operation).
+        /// </summary>
+        private byte[] GenerateLoadBatch(int batchSize, int startKeyIndex)
+        {
+            var sb = new StringBuilder();
+
+            for (var i = 0; i < batchSize; i++)
+            {
+                var key = keyGen.GenerateKey(rng, startKeyIndex + i);
+                var value = GenerateValue();
+                _ = sb.Append($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n");
+            }
+
+            return Encoding.ASCII.GetBytes(sb.ToString());
+        }
+
+        /// <summary>
         /// Run offline benchmark: send pre-generated batches and measure throughput/latency.
         /// Supports dual-connection routing for replica reads.
         /// </summary>
         public void RunOffline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
-            if (requestBuffers == null && opts.Client == ClientType.LightClient)
-                throw new InvalidOperationException("Must call PrepareOfflineBuffers() before RunOffline()");
+            if (requests == null && opts.Client == ClientType.LightClient)
+                throw new InvalidOperationException("Must call PrepareBuffers() before RunOffline()");
 
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
             var replicaEndpoint = hasReplica ? new IPEndPoint(IPAddress.Parse(replicaAddress), replicaPort) : null;
@@ -184,20 +227,11 @@ namespace Resp.benchmark
         {
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
-            // Buffer size must be large enough to hold the largest pre-generated request buffer
-            var bufferSize = 1 << 17; // 128KB default
-            if (requestBuffers != null)
-            {
-                var maxLen = requestLengths.Max();
-                if (maxLen > bufferSize)
-                    bufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
-            }
-
             using var primaryClient = new LightClient(
                 primaryEndpoint,
                 (int)opts.Op,
                 onResponse,
-                bufferSize,
+                offlineBufferSize,
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             primaryClient.Connect();
@@ -211,7 +245,7 @@ namespace Resp.benchmark
                     replicaEndpoint,
                     (int)opts.Op,
                     onResponse,
-                    bufferSize,
+                    offlineBufferSize,
                     opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
                 replicaClient.Connect();
@@ -226,13 +260,10 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var batchIdx = 0;
-                var batchSize = opts.BatchSize.First();
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var buffer = requestBuffers[batchIdx % batchCount];
-                    var len = requestLengths[batchIdx % batchCount];
-                    var numCommands = requestCounts[batchIdx % batchCount];
+                    ref var request = ref requests[batchIdx % batchCount];
                     var opStart = Stopwatch.GetTimestamp();
 
                     // Route entire batch based on operation type
@@ -240,9 +271,9 @@ namespace Resp.benchmark
                     var useReplica = ShouldUseReplica(opts.Op);
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
 
-                    fixed (byte* bufPtr = buffer)
+                    fixed (byte* bufPtr = request.RespData)
                     {
-                        client.Send(bufPtr, len, numCommands);
+                        client.Send(bufPtr, request.ByteCount, request.CommandCount);
                         client.CompletePendingRequests();
                     }
 
@@ -255,14 +286,14 @@ namespace Resp.benchmark
                     if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                         histogram.RecordValue(elapsed);
 
-                    Interlocked.Add(ref opsCompleted, numCommands);
-                    Interlocked.Add(ref bytesSent, len);
+                    Interlocked.Add(ref opsCompleted, request.CommandCount);
+                    Interlocked.Add(ref bytesSent, request.ByteCount);
 
                     // Track per-endpoint metrics
                     if (useReplica && replicaClient != null)
-                        Interlocked.Add(ref replicaOps, numCommands);
+                        Interlocked.Add(ref replicaOps, request.CommandCount);
                     else
-                        Interlocked.Add(ref primaryOps, numCommands);
+                        Interlocked.Add(ref primaryOps, request.CommandCount);
 
                     batchIdx++;
                 }
@@ -592,69 +623,6 @@ namespace Resp.benchmark
                 primaryRedis?.Dispose();
                 replicaRedis?.Dispose();
             }
-        }
-
-        private byte[] GenerateBatch(int batchSize, int startKeyIndex)
-        {
-            var sb = new StringBuilder();
-
-            for (var i = 0; i < batchSize; i++)
-            {
-                var key = keyGen.GenerateKey(rng, startKeyIndex + i);
-                AppendCommand(sb, opts.Op, key);
-            }
-
-            return Encoding.ASCII.GetBytes(sb.ToString());
-        }
-
-        /// <summary>
-        /// Generate a batch of random keys for benchmarking.
-        /// For GET/SET/etc: batchSize = number of commands, each with 1 key.
-        /// For MGET/MSET: batchSize = number of keys per single MGET/MSET command.
-        /// </summary>
-        private byte[] GenerateRandomBatch(int batchSize, int dbSize)
-        {
-            var sb = new StringBuilder();
-
-            if (opts.Op is OpType.MGET or OpType.MSET)
-            {
-                // For MGET/MSET: generate ONE command with batchSize keys
-                var keys = new string[batchSize];
-                for (var k = 0; k < batchSize; k++)
-                {
-                    keys[k] = keyGen.GenerateKey(rng, rng.Next(dbSize));
-                }
-                AppendMCommand(sb, opts.Op, keys);
-            }
-            else
-            {
-                // For other ops: generate batchSize commands, each with 1 key
-                for (var i = 0; i < batchSize; i++)
-                {
-                    var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
-                    AppendCommand(sb, opts.Op, key);
-                }
-            }
-
-            return Encoding.ASCII.GetBytes(sb.ToString());
-        }
-
-        /// <summary>
-        /// Generate a batch of sequential keys for loading data.
-        /// Always generates SET commands (one key-value pair per operation).
-        /// </summary>
-        private byte[] GenerateLoadBatch(int batchSize, int startKeyIndex)
-        {
-            var sb = new StringBuilder();
-
-            for (var i = 0; i < batchSize; i++)
-            {
-                var key = keyGen.GenerateKey(rng, startKeyIndex + i);
-                var value = GenerateValue();
-                sb.Append($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n");
-            }
-
-            return Encoding.ASCII.GetBytes(sb.ToString());
         }
     }
 }
