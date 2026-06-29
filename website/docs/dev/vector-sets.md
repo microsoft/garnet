@@ -14,16 +14,9 @@ Vector Sets are a combination of one "index" key, which stores metadata and a po
 
 ## Global Metadata
 
-In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep a single `ContextMetadata` struct under the empty key in namespace `VectorManager.MetadataNamespace` (which is `1`).
+In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep an array of `ContextMetadata` structs in namespace `VectorManager.MetadataNamespace` (which is `1`) with each index of the array used as the key.
 
-This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
-
-> [!IMPORTANT]
-> Today `ContextMetadata` can track only 64 Vector Sets in some state of creation or cleanup.
-> 
-> The practical limit is actually 15, because context must be &lt; 128, divisible by 8, and not 0 (which is reserved).
->
-> This limitation will be lifted eventually.
+These are loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
 
 ## Indexes
 
@@ -51,6 +44,7 @@ The index key is in the store alongside other binary values like strings, hyperl
 While the Vector Set API only concerns itself with top-level index keys, ids, vectors, and attributes; DiskANN has different storage needs.  To abstract around these needs a bit, we reserve a number of different "namespaces" for each Vector Set.
 
 These namespaces are simple numbers, starting at the `Context` value stored in the `Index` struct - we currently reserve 8 namespaces per Vector Set.  What goes in which namespace is mostly hidden from Garnet, DiskANN indicates namespace (and index) to use with a modified `Context` passed to relevant callbacks.
+
 > There are two cases where we "know" the namespace involved: attributes (+3) and full vectors (+0) which are used to implement the `WITHATTR` option and the `VEMB` command respectively.  These exceptions _may_ go away in the future, but don't have to.
 
 Using namespaces prevents other commands from accessing keys which store element data.
@@ -205,9 +199,9 @@ For operations which might be either (like `VADD`) we first acquire the usual si
 
 ## `VectorManager` Lock Around `ContextMetadata`
 
-Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a plain `lock` around `VectorManager` while preparing a new `ContextMetadata`.
+Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` array and write the new values to Tsavorite.  To simplify this, we take a plain `lock` around `VectorManager` while updating `ContextMetadata`s.
 
-The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a version counter in `ContextMetadata` allows us to keep only the latest version in the store.
+The `RMW`s into Tsavorite still proceeds in parallel, outside of the lock, but a version counter in `ContextMetadata` allows us to keep only the latest version in the store.
 
 > [!NOTE]
 > Rapid creation or deletion of Vector Sets is expected to perform poorly due to this lock.
@@ -297,18 +291,13 @@ To clean up the remaining data we record the deleted index context value in `Con
 >
 > If we wanted to explore better options, we'd need to build something that can drop whole namespaces at once in Tsavorite.
 
-> [!IMPORTANT]
-> Today because we only have ~15 available Vector Set contexts, it is quite likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
->
-> This will be fixed once we have arbitrarily long namespaces in Store V2, and have updated `ContextMetadata` to track those.
-
 # Recovery
 
 Vector Sets represent a unique kind of recovery because most operations are mediated through DiskANN, for which we only ever have a pointer to a data structure.  This means that recovery needs to both deal with Vector Sets metadata AND the recreation of the DiskANN side of things.
 
 ## Vector Set Metadata
 
-During startup we read any old `ContextMetadata` out of the Main Store, cache it, and resume any in progress cleanups.
+During startup we discover any old `ContextMetadata`s in Tsavorite via `GarnetRecordTriggers.OnRecoverySnapshotRead`.  Once all records are recovered, `VectorManager.ResumePostRecovery()` populates the cache `ContextMetadata` array, cancels any abandoned migrations, cancels any abandoned index deletions, and resumes cleanups that were interrupted.
 
 ## Vector Sets
 
@@ -326,11 +315,6 @@ In order for DiskANN to access and store data in Garnet, we provide a set of cal
 
 All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opaque identifier.
 
-> [!IMPORTANT]
-> As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to ~15.
->
-> This restriction will go away later, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for intermediate data copies with longer namespaces.
-
 ## Read Callback
 
 The most complicated of our callbacks, the signature is:
@@ -341,9 +325,6 @@ void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint key
 `context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.
-
-> [!NOTE]
-> Today we place the `context`-derived namespace byte in a field on `VectorElementKey`.  In store v1 we kept namespace inline with key bytes (using the length prefixed bytes for storage) - it may be worth restoring that for performance.
 
 As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 

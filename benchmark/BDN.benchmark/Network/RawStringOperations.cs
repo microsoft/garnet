@@ -65,33 +65,43 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public async ValueTask Set() => await Send(set);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public async ValueTask SetEx() => await Send(setex);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask SetNx() => await Send(setnx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask SetXx() => await Send(setxx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public async ValueTask GetFound() => await Send(getf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public async ValueTask GetNotFound() => await Send(getnf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask Increment() => await Send(incr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask Decrement() => await Send(decr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask IncrementBy() => await Send(incrby);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public async ValueTask DecrementBy() => await Send(decrby);
     }
 }

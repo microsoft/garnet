@@ -39,6 +39,10 @@ namespace Garnet.server
                 Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
+                // Clear the per-index read geometry so a subsequent operation on a different vector set
+                // (possibly with different dimensions / M) does not inherit stale sizes.
+                ActiveReadGeometry = default;
+
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;

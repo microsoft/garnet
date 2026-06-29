@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
@@ -70,7 +69,7 @@ namespace Garnet.common
                     return false;
                 }
 
-                return k1.KeyBytes.SequenceEqual(k2.KeyBytes);
+                return SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
             }
             else if (typeof(TSecondKey) == typeof(FixedSpanByteKey))
             {

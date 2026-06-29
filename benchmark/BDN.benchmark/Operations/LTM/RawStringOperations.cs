@@ -174,33 +174,43 @@ namespace BDN.benchmark.Operations.LTM
         }
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public void Set() => SendRandomized(ref set);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Upsert)]
         public void SetEx() => SendRandomized(ref setex);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void SetNx() => SendRandomized(ref setnx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void SetXx() => SendRandomized(ref setxx);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public void GetFound() => SendRandomized(ref getf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.Read)]
         public void GetNotFound() => SendRandomized(ref getnf);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void Increment() => SendRandomized(ref incr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void Decrement() => SendRandomized(ref decr);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void IncrementBy() => SendRandomized(ref incrby);
 
         [Benchmark]
+        [BenchmarkCategory(BenchmarkCategories.RMW)]
         public void DecrementBy() => SendRandomized(ref decrby);
 
         /// <summary>Overwrite every command's key in the batch with a freshly chosen random id, then send the batch.</summary>

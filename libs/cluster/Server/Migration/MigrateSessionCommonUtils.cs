@@ -16,14 +16,12 @@ namespace Garnet.cluster
     {
         private unsafe ValueTask<bool> WriteOrSendRecordAsync(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
         {
-            Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces not yet supported");
-
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
 
             // Read the value for the key. This will populate output with the entire serialized record.
-            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan[0..1], key.ReadOnlySpan), ref input, ref output);
+            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output);
 
             if (storeStatus.IsPending)
             {
@@ -50,7 +48,7 @@ namespace Garnet.cluster
             }
 
             // Map up any namespaces as needed
-            VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
+            VectorManager.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
 
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
             {

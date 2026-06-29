@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -108,11 +107,7 @@ namespace Garnet.cluster
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
-                                // Vector Set indexes are Key + Value
-                                var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                var keyBytes = payload.Slice(sizeof(int), keyLen);
-                                var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + keyBytes.Length)..]);
-                                var valueBytes = payload.Slice(sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
 
                                 // An error has occurred
                                 if (migrateState > 0)
@@ -158,14 +153,9 @@ namespace Garnet.cluster
 
                                     // Vector Set elements are Namespace + Key + Value
 
-                                    var payload = payloadRaw.ReadOnlySpan;
+                                    var payload = payloadRaw.Span;
 
-                                    var namespaceLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                    var namespaceBytes = payload.Slice(sizeof(int), namespaceLen);
-                                    var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length)..]);
-                                    var keyBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int), keyLen);
-                                    var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length + sizeof(int) + keyBytes.Length)..]);
-                                    var valueBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                    VectorManager.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
 
                                     // An error has occurred
                                     if (migrateState > 0)

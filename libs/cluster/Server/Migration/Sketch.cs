@@ -47,12 +47,14 @@ namespace Garnet.cluster
 
         public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(ns.Length == 1, "Longer namespaces not yet supported");
+            Debug.Assert(ns.Length is (sizeof(byte) or sizeof(uint)), "Longer namespaces not yet supported");
 
             if (!argSliceVector.TryAddItem(ns, key))
                 return false;
 
-            var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)ns[0]) & (size - 1);
+            var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
+
+            var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw) & (size - 1);
             var byteOffset = slot >> 3;
             var bitOffset = slot & 7;
             bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));

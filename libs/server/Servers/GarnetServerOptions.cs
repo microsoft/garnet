@@ -384,9 +384,12 @@ namespace Garnet.server
 
         /// <summary>
         /// For DeviceType.Native on Linux: number of background IO completion drain threads.
-        /// Has a strong effect on io_uring throughput; default of 1 is usually enough for libaio.
+        /// Defaults to 4: under high concurrent pending-read load (e.g. disk-served vector search)
+        /// a single drainer convoys on the per-session completion-signal path and collapses
+        /// throughput past moderate concurrency; 4 drainers remove that collapse on both backends.
+        /// io_uring scales further/more CPU-efficiently with additional threads, libaio less so.
         /// </summary>
-        public int DeviceCompletionThreads = 1;
+        public int DeviceCompletionThreads = 4;
 
         /// <summary>
         /// Per-device max number of in-flight IOs (<see cref="IDevice.ThrottleLimit"/>).

@@ -142,7 +142,6 @@ namespace CommandInfoUpdater
             new("FAILOVER", RespCommand.FAILOVER),
             new("FLUSHALL", RespCommand.FLUSHALL),
             new("FLUSHDB", RespCommand.FLUSHDB),
-            new("FORCEGC", RespCommand.FORCEGC),
             new("GEOADD", RespCommand.GEOADD, StoreType.Object),
             new("GEODIST", RespCommand.GEODIST, StoreType.Object),
             new("GEOHASH", RespCommand.GEOHASH, StoreType.Object),

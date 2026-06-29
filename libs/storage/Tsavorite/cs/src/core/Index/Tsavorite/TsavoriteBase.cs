@@ -69,15 +69,10 @@ namespace Tsavorite.core
 
         internal void Free()
         {
-            Free(0);
-            Free(1);
             if (isEpochOwned)
                 epoch.Dispose();
             overflowBucketsAllocator.Dispose();
-        }
-
-        private static void Free(int version)
-        {
+            overflowBucketsAllocatorResize?.Dispose();
         }
 
         /// <summary>
@@ -116,14 +111,16 @@ namespace Tsavorite.core
                 ((size_bytes + (sector_size - 1)) & ~(sector_size - 1));
 
             logger?.LogTrace("KV Initialize size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
-            //Over-allocate and align the table to the cacheline
+
+            // Over-allocate and align the table to the cacheline
+            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
+            var sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
+            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+
+            // Successful (re-)allocation so update the state sizes.
             state[version].size = size;
             state[version].size_mask = size - 1;
             state[version].size_bits = Utility.GetLogBase2((int)size);
-
-            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
-            long sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
-            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
         }
 
         /// <summary>
