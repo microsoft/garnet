@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -164,6 +165,7 @@ namespace Garnet.server
         private readonly int dbId;
 
         private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
@@ -209,6 +211,7 @@ namespace Garnet.server
 #endif
 
             recoveredIndexes = new();
+            recoveredMetadata = new();
 
             quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
 
@@ -230,40 +233,14 @@ namespace Garnet.server
 
             initialized = true;
 
-            using var session = (RespServerSession)getTempSession();
-            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            // Come up empty, with one ContextMetadata
+            lock (this)
             {
-                throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                contextMetadatas = new ContextMetadata[1];
+                dirtyContextMetadatas = [];
             }
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
-#pragma warning restore IDE0302 
-            VectorElementKey key = new(nsBytes, []);
-
-            Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
-
-            VectorOutput data = new(dataSpan);
-
-            ref var ctx = ref session.storageSession.vectorBasicContext;
-
-            var status = ctx.Read(key, ref data);
-
-            if (status.IsPending)
-            {
-                VectorOutput ignored = new();
-                CompletePending(ref status, ref ignored, ref ctx);
-            }
-
-            // Can be not found if we've never spun up a Vector Set
-            if (status.Found)
-            {
-                lock (this)
-                {
-                    contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
-                }
-            }
-
+            // Spin up quantization
             StartQuantizationTasks();
         }
 
@@ -274,50 +251,119 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
+            // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
             using var session = (RespServerSession)getTempSession();
+            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            {
+                throw new GarnetException($"Could not switch VectorManager resume session to {dbId}, initialization failed");
+            }
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
+            var needsUpdated = false;
+
             lock (this)
             {
+                // Any ContextMetadatas we found need to be restored
+                if (!recoveredMetadata.IsEmpty)
+                {
+                    var maxContext = recoveredMetadata.Keys.Max();
+                    contextMetadatas = new ContextMetadata[maxContext + 1];
+
+                    for (var i = 0; i < contextMetadatas.Length; i++)
+                    {
+                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]))
+                        {
+                            contextMetadatas[i] = new();
+                        }
+                    }
+                }
+
+                recoveredMetadata = null;
+
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
-                var abandonedMigrations = contextMetadata.GetMigrating();
-                var needsUpdated = false;
-
-                if (abandonedMigrations != null)
+                for (var i = 0; i < contextMetadatas.Length; i++)
                 {
-                    foreach (var abandoned in abandonedMigrations)
-                    {
-                        contextMetadata.MarkMigrationComplete(abandoned, ushort.MaxValue);
-                        contextMetadata.MarkCleaningUp(abandoned);
-                    }
+                    var abandonedMigrations = contextMetadatas[i].GetMigrating();
 
-                    needsUpdated = true;
+                    if (abandonedMigrations != null)
+                    {
+                        foreach (var abandoned in abandonedMigrations)
+                        {
+                            contextMetadatas[i].MarkMigrationComplete(i != 0, abandoned, ushort.MaxValue);
+                            contextMetadatas[i].MarkCleaningUp(i != 0, abandoned);
+                        }
+
+                        _ = dirtyContextMetadatas.Add(i);
+
+                        needsUpdated = true;
+                    }
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
                 foreach (var (context, _) in recoveredIndexes)
                 {
-                    if (contextMetadata.IsCleaningUp(context))
+                    var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                    if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
-                        contextMetadata.ClearIsCleaningUp(context);
+                        contextMetadatas[contextIndex].ClearIsCleaningUp(contextIndex != 0, contextValue);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
                         needsUpdated = true;
                     }
-
-                    recoveredIndexes = null;
                 }
 
-                if (needsUpdated)
+                // Any indexes still marked in use that we _didn't_ recover should be marked for cleanup
+                for (var i = 0; i < contextMetadatas.Length; i++)
                 {
-                    UpdateContextMetadata(ref ctx);
+                    var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                    for (ulong j = 0; j < 64; j++)
+                    {
+                        var context = offset + (j * ContextStep);
+
+                        // Skip context 0, it's illegal to use
+                        if (context == 0)
+                        {
+
+                            continue;
+                        }
+
+                        // Index was recovered, nothing to do
+                        if (recoveredIndexes.ContainsKey(context))
+                        {
+                            continue;
+                        }
+
+                        var (_, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                        // In use, but not recovered, cleanup any data and get the context back
+                        if (contextMetadatas[i].IsInUse(i != 0, contextValue) && !contextMetadatas[i].IsCleaningUp(i != 0, contextValue))
+                        {
+                            contextMetadatas[i].MarkCleaningUp(i != 0, contextValue);
+                            _ = dirtyContextMetadatas.Add(i);
+                        }
+                    }
                 }
+
+                recoveredIndexes = null;
+            }
+
+            if (needsUpdated)
+            {
+                UpdateContextMetadata(ref ctx);
             }
 
             // Resume any cleanups we didn't complete before recovery
             _ = cleanupTaskChannel.Writer.TryWrite(null);
         }
 
+        /// <summary>
+        /// Called during recovery for each Vector Set index key.
+        /// </summary>
         public void RecoveredVectorSetIndexKey(ref LogRecord record)
         {
             if (record.ValueSpan.Length != IndexSize)
@@ -327,6 +373,33 @@ namespace Garnet.server
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
             recoveredIndexes[context] = 0;
+        }
+
+        /// <summary>
+        /// Called during recovery for each ContextMetadata record.
+        /// </summary>
+        public void RecoveredContextMetadata(ref LogRecord record)
+        {
+            if (record.ValueSpan.Length != ContextMetadata.Size || record.KeyBytes.Length != sizeof(int))
+            {
+                return;
+            }
+
+            var index = BinaryPrimitives.ReadInt32LittleEndian(record.KeyBytes);
+            var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
+
+            // During recovery, we can trim off empty ContextMetadata
+            //
+            // ResumePostRecovery will fill in any gaps this causes
+            if (metadata.IsEmpty)
+            {
+                return;
+            }
+
+            if (!recoveredMetadata.TryAdd(index, metadata))
+            {
+                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+            }
         }
 
         /// <inheritdoc/>

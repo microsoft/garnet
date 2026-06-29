@@ -346,9 +346,9 @@ namespace Garnet.server
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(context, ref nsBytes);
+
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -362,6 +362,7 @@ namespace Garnet.server
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
+
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             input.AlignmentExpected = true;
@@ -421,9 +422,10 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
+
+            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(context, ref nsBytes);
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
@@ -476,8 +478,8 @@ namespace Garnet.server
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
             // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key
-            Span<byte> nsBytes = new(((byte*)keyData) - 1, 1);
-            nsBytes[0] = (byte)context;
+            Span<byte> nsBytes = new(((byte*)keyData) - sizeof(uint), sizeof(uint));
+            StoreContextInNamespace(context, ref nsBytes);
 
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 

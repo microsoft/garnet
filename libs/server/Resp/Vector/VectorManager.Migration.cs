@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -34,16 +35,19 @@ namespace Garnet.server
             ReadOnlySpan<byte> value
         )
         {
-            Debug.Assert(namespaceBytes.Length == 1 && namespaceBytes[0] <= 127, "Larger than byte namespaces not yet supported");
+            var ns = ExtractContextFromNamespaces(namespaceBytes);
+
 #if DEBUG
             // Do some extra sanity checking in DEBUG builds
             lock (this)
             {
-                var ns = (byte)namespaceBytes[0];
-                var context = (ulong)(ns & ~(ContextStep - 1));
-                Debug.Assert(contextMetadata.IsInUse(context), "Shouldn't be migrating to an unused context");
-                Debug.Assert(contextMetadata.IsMigrating(context), "Shouldn't be migrating to context not marked for it");
-                Debug.Assert(!(contextMetadata.GetNeedCleanup()?.Contains(context) ?? false), "Shouldn't be migrating into context being deleted");
+                var context = ns & ~(ContextStep - 1);
+
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Shouldn't be migrating to an unused context");
+                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Shouldn't be migrating to context not marked for it");
+                Debug.Assert(!(contextMetadatas[contextIndex].GetNeedCleanup()?.Contains(contextValue) ?? false), "Shouldn't be migrating into context being deleted");
             }
 #endif
 
@@ -51,7 +55,14 @@ namespace Garnet.server
             input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
-            VectorElementKey key = new(namespaceBytes[0..1], keyWithoutNamespace);
+            // When we migrate a record we expand the namespace to always occupy 4-bytes
+            // in order to have space for updating to the destination namespace.
+            //
+            // Shrink it back down if able post-migration.
+            Span<byte> nsCopy = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(ns, ref nsCopy);
+
+            VectorElementKey key = new(nsCopy, keyWithoutNamespace);
 
             var status = vectorCtx.Upsert(key, ref input, value, ref outputSpan);
             if (status.IsPending)
@@ -72,11 +83,14 @@ namespace Garnet.server
                 StringInput input = default;
 
                 // Serialize namespace and key data explicitly, we'll deserialize it in HandleVectorSetAddReplication
-                Span<byte> serializedKeyBytes = stackalloc byte[sizeof(int) + key.NamespaceBytes.Length + sizeof(int) + key.KeyBytes.Length];
-                BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes, key.NamespaceBytes.Length);
-                key.NamespaceBytes.CopyTo(serializedKeyBytes[sizeof(int)..]);
-                BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes[(sizeof(int) + key.NamespaceBytes.Length)..], key.KeyBytes.Length);
-                key.KeyBytes.CopyTo(serializedKeyBytes[(sizeof(int) + key.NamespaceBytes.Length + sizeof(int))..]);
+                Span<byte> serializedKeyBytes = stackalloc byte[sizeof(int) + sizeof(uint) + sizeof(int) + key.KeyBytes.Length];
+                BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes, 4);
+
+                var ns = ExtractContextFromNamespaces(key.NamespaceBytes);
+                BinaryPrimitives.WriteUInt32LittleEndian(serializedKeyBytes[sizeof(int)..], (uint)ns);
+
+                BinaryPrimitives.WriteInt32LittleEndian(serializedKeyBytes[(sizeof(int) + sizeof(uint))..], key.KeyBytes.Length);
+                key.KeyBytes.CopyTo(serializedKeyBytes[(sizeof(int) + sizeof(uint) + sizeof(int))..]);
 
                 input.header.cmd = RespCommand.VADD;
                 input.arg1 = MigrateElementKeyLogArg;
@@ -139,8 +153,10 @@ namespace Garnet.server
 #if DEBUG
             lock (this)
             {
-                Debug.Assert(contextMetadata.IsInUse(context), "Context should be assigned if we're migrating");
-                Debug.Assert(contextMetadata.IsMigrating(context), "Context should be marked migrating if we're moving an index key in");
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
+                Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Context should be marked migrating if we're moving an index key in");
             }
 #endif
 
@@ -224,9 +240,13 @@ namespace Garnet.server
 
                     var hashSlot = HashSlotUtils.HashSlot(key);
 
+                    var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
                     lock (this)
                     {
-                        contextMetadata.MarkMigrationComplete(context, hashSlot);
+                        contextMetadatas[contextIndex].MarkMigrationComplete(contextIndex != 0, contextValue, hashSlot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorBasicContext);
@@ -302,7 +322,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], byte[]> vectorSetKeys)
+        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], byte[]> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -337,6 +357,146 @@ namespace Garnet.server
             }
 
             return namespaces;
+        }
+
+
+        /// <summary>
+        /// Update the namespaces stored in <paramref name="readOutput"/> according to <see cref="FrozenDictionary"/>.
+        /// 
+        /// <paramref name="readInput"/> should have been used to populate <paramref name="readOutput"/> with a Tsavorite Read prior to this call.
+        /// </summary>
+        public static void UpdateMigratedElementNamespaces(FrozenDictionary<ulong, ulong> oldToNewNamespaces, ref VectorInput readInput, ref VectorOutput readOutput)
+        {
+            Debug.Assert(readInput.IsMigrationRead, "Unexpected input");
+
+            DeserializeMigratedElementKey(readOutput.SpanByteAndMemory.Span, out var namespaceBytes, out _, out _);
+
+            ulong oldNs = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+
+            if (!oldToNewNamespaces.TryGetValue(oldNs, out var newNs))
+            {
+                return;
+            }
+
+            Debug.Assert(newNs <= uint.MaxValue, "Shouldn't have reserved such a large context");
+
+            BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)newNs);
+        }
+
+        /// <summary>
+        /// Calculate needed storage for migrating a Vector Set element key.
+        /// </summary>
+        public static int GetMigratedElementKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
+        {
+            var neededSpace =
+                sizeof(int) + sizeof(uint) + // Namespace is ALWAYS expanded to 4-bytes so we have space to re-write it
+                sizeof(int) + keyBytes.Length +
+                sizeof(int) + alignedValue.Length;
+
+            return neededSpace;
+        }
+
+        /// <summary>
+        /// Serialize a record for migrating a Vector Set element key.
+        /// </summary>
+        public static void SerializeMigratedElementKey(Span<byte> dataBytes, ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> alignedValue)
+        {
+            var context = ExtractContextFromNamespaces(namespaceBytes);
+
+            var writeTo = dataBytes;
+
+            // Namespace length, Namespace
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, 4);
+            writeTo = writeTo[sizeof(int)..];
+            BinaryPrimitives.WriteUInt32LittleEndian(writeTo, (uint)context);
+            writeTo = writeTo[sizeof(uint)..];
+
+            // Key length, Key
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, keyBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            keyBytes.CopyTo(writeTo);
+            writeTo = writeTo[keyBytes.Length..];
+
+            // Value length, Value
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, alignedValue.Length);
+            writeTo = writeTo[sizeof(int)..];
+            alignedValue.CopyTo(writeTo);
+        }
+
+        /// <summary>
+        /// Reverse <see cref="SerializeMigratedElementKey"/>.
+        /// </summary>
+        public static void DeserializeMigratedElementKey(Span<byte> dataBytes, out Span<byte> namespaceBytes, out Span<byte> keyBytes, out Span<byte> value)
+        {
+            var readFrom = dataBytes;
+
+            // Namespace length, Namespace
+            var nsLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            Debug.Assert(nsLength == sizeof(uint), "Namespace should always be 4-bytes when deserializing");
+            readFrom = readFrom[sizeof(uint)..];
+            namespaceBytes = readFrom[..nsLength];
+            readFrom = readFrom[nsLength..];
+
+            // Key length, Key
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            keyBytes = readFrom[..keyLength];
+            readFrom = readFrom[keyLength..];
+
+            // Value length, Value
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            value = readFrom[..valueLength];
+        }
+
+        /// <summary>
+        /// Calculate needed storage for migrating a Vector Set index key.
+        /// </summary>
+        public static int GetMigratedIndexKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
+        {
+            var neededSpace = sizeof(int) + keyBytes.Length + sizeof(int) + valueBytes.Length;
+
+            return neededSpace;
+        }
+
+        /// <summary>
+        /// Serialize a record for migrating a Vector Set index key.
+        /// </summary>
+        public static void SerializeMigratedIndexKey(Span<byte> dataBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
+        {
+            Debug.Assert(valueBytes.Length == VectorManager.IndexSize, "Should only ever serialize index");
+
+            var writeTo = dataBytes;
+
+            // Key length, Key
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, keyBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            keyBytes.CopyTo(writeTo);
+            writeTo = writeTo[keyBytes.Length..];
+
+            // Value length, Value
+            BinaryPrimitives.WriteInt32LittleEndian(writeTo, valueBytes.Length);
+            writeTo = writeTo[sizeof(int)..];
+            valueBytes.CopyTo(writeTo);
+        }
+
+        /// <summary>
+        /// Reverse <see cref="SerializeMigratedIndexKey"/>.
+        /// </summary>
+        public static void DeserializeMigratedIndexKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> valueBytes)
+        {
+            var readFrom = dataBytes;
+
+            // Key length, Key
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            keyBytes = readFrom[..keyLength];
+            readFrom = readFrom[keyLength..];
+
+            // Value length, Value
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
+            readFrom = readFrom[sizeof(int)..];
+            valueBytes = readFrom[..valueLength];
         }
     }
 }

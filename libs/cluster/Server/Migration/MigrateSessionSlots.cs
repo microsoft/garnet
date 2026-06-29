@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -144,7 +143,7 @@ namespace Garnet.cluster
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
 
-                                var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
+                                var neededSpace = VectorManager.GetMigratedIndexKeySerializationSize(key, value);
 
                                 if (neededSpace > serializeBufferArr.Length)
                                 {
@@ -152,14 +151,7 @@ namespace Garnet.cluster
                                     serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                                 }
 
-                                // Scope so Span doesn't cross await boundary
-                                {
-                                    Span<byte> serializeBuffer = serializeBufferArr;
-                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
-                                    key.CopyTo(serializeBuffer[sizeof(int)..]);
-                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
-                                    value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
-                                }
+                                VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value);
 
                                 if (gcs.NeedsInitialization)
                                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
@@ -205,6 +197,7 @@ namespace Garnet.cluster
                     await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
+
                 return true;
             }
 

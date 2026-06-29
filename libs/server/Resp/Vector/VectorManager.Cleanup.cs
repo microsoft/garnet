@@ -50,22 +50,27 @@ namespace Garnet.server
                     return true;
                 }
 
-                // TODO: Implement variable length namespace support
-                Debug.Assert(logRecord.Namespace.Length == 1, "Variable length namespaces not supported");
-
-                ulong ns = logRecord.Namespace[0];
-                var pairedContext = ns & ~(ContextStep - 1);
-                if (!contexts.Contains(pairedContext))
+                var namespaceBytes = logRecord.NamespaceBytes;
+                if (namespaceBytes.Length is not (sizeof(byte) or sizeof(uint)))
                 {
-                    // Vector Set, but not one we're scanning for
+                    // Not Vector Set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
                     return true;
                 }
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-                ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)ns };
-#pragma warning restore IDE0302
-                VectorElementKey toDeleteKey = new(nsBytes, logRecord.KeyBytes);
+                var ns = ExtractContextFromNamespaces(namespaceBytes);
+
+                // We only store the _first_ context in a batch of related contexts to delete
+                // so mask it down to just the first context
+                var pairedContext = ns & ~(ContextStep - 1);
+                if (!contexts.Contains(pairedContext))
+                {
+                    // Not a target vector set, ignore
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
+
+                VectorElementKey toDeleteKey = new(namespaceBytes, logRecord.KeyBytes);
 
                 // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
@@ -74,6 +79,8 @@ namespace Garnet.server
                     VectorOutput ignored = new();
                     CompletePending(ref status, ref ignored, ref storageSession.vectorBasicContext);
                 }
+
+                Debug.Assert(status.IsCompletedSuccessfully, "Nothing else should be deleting namespaced keys");
 
                 cursorRecordResult = CursorRecordResult.Accept;
                 return true;
@@ -220,9 +227,12 @@ namespace Garnet.server
                                 completions.Add(t.MarkCompleted);
                             }
 
-                            if (!contextMetadata.IsCleaningUp(t.Context))
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
+                            if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
-                                contextMetadata.MarkCleaningUp(t.Context);
+                                contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
+
+                                _ = dirtyContextMetadatas.Add(contextIndex);
 
                                 needsUpdate = true;
                             }
@@ -299,10 +309,23 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
-                    HashSet<ulong> needCleanup;
+                    HashSet<ulong> needCleanup = null;
                     lock (this)
                     {
-                        needCleanup = contextMetadata.GetNeedCleanup();
+                        for (var i = 0; i < contextMetadatas.Length; i++)
+                        {
+                            var subCleanup = contextMetadatas[i].GetNeedCleanup();
+                            if (subCleanup != null)
+                            {
+                                var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                                needCleanup ??= [];
+                                foreach (var item in subCleanup)
+                                {
+                                    _ = needCleanup.Add(offset + item);
+                                }
+                            }
+                        }
                     }
 
                     if (needCleanup == null)
@@ -326,7 +349,10 @@ namespace Garnet.server
                     {
                         foreach (var cleanedUp in needCleanup)
                         {
-                            contextMetadata.FinishedCleaningUp(cleanedUp);
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(cleanedUp);
+                            contextMetadatas[contextIndex].FinishedCleaningUp(contextIndex != 0, contextValue);
+
+                            _ = dirtyContextMetadatas.Add(contextIndex);
                         }
                     }
 

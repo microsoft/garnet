@@ -111,6 +111,9 @@ namespace Tsavorite.core
         /// <summary>The fixed size of the RecordDataHeader in bytes.</summary>
         public const int Size = 8;
 
+        /// <summary>Largest value that can be stored in <see cref="NamespaceByte"/>, larger values require extended namespace space.</summary>
+        public const byte MaximumSingleByteNamespaceValue = (1 << ExtendedNamespaceIndicatorBit) - 1;
+
         /// <summary>The bit position of the extended-namespace indicator (bit 7 of the namespace byte). The full byte may be split as:
         /// <list type="bullet">
         ///     <item>If bit at this position is 0, the lower 7 bits hold the namespace value itself (single-byte namespace).</item>
@@ -515,6 +518,11 @@ namespace Tsavorite.core
 
         // ── Key and Value field info ───────────────────────────────────────────────
 
+        /// <summary>Get the extended namespace length and extended namespace data address.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly (int namespaceLength, long namespaceAddress) GetExtendedNamespaceInfo(long recordBaseAddress)
+        => ((byte)((word >> kNamespaceShift) & ByteMask) & ~(1 << ExtendedNamespaceIndicatorBit), recordBaseAddress + Constants.FixedHeaderSize);
+
         /// <summary>Get the offset of the key data, relative to the RecordInfo start.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetOffsetToKeyStart() => Constants.FixedHeaderSize + ExtendedNamespaceLength;
@@ -602,7 +610,18 @@ namespace Tsavorite.core
                  | ((ulong)namespaceByte << kNamespaceShift)
                  | ((ulong)recordType << kRecordTypeShift);
 
-            namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
+            // Namespace can be in two different places depending on if we're using the extended namespace space...
+            if (extendedNamespaceSize == 0)
+            {
+                // In a fix position in DataHeader
+                namespaceAddress = recordBaseAddress + RecordInfo.Size + NamespaceOffsetInHeader;
+            }
+            else
+            {
+                // Before the key
+                namespaceAddress = recordBaseAddress + Constants.FixedHeaderSize;
+            }
+
             keyAddress = recordBaseAddress + Constants.FixedHeaderSize + extendedNamespaceSize;
             valueAddress = keyAddress + keyLength;
 

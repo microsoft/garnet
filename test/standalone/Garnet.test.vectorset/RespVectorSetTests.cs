@@ -20,12 +20,20 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    [TestFixture(0)]
+    [TestFixture(1_000)]
     public class RespVectorSetTests : TestBase
     {
         private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
 
+        private readonly int preAllocatedContexts;
+
         GarnetServer server;
+
+        public RespVectorSetTests(int preAllocatedContexts)
+        {
+            this.preAllocatedContexts = preAllocatedContexts;
+        }
 
         [SetUp]
         public void Setup()
@@ -34,6 +42,8 @@ namespace Garnet.test
             server = CreateGarnetServer(tryRecover: false);
 
             server.Start();
+
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
         }
 
         [TearDown]
@@ -2811,8 +2821,8 @@ namespace Garnet.test
         [CancelAfter(30_000)]
         public async Task WithQuantizationBackfillAsync(
             [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8)] VectorQuantType quantType,
-            [Values(false, true)] bool concurrentAdds,
-            [Values(false, true)] bool concurrentSearches,
+            [Values(true)] bool concurrentAdds,
+            [Values(true)] bool concurrentSearches,
             CancellationToken cancellation)
         {
             const int Vectors = 5_000;
@@ -3088,6 +3098,94 @@ namespace Garnet.test
 
             var sim = (RedisResult[])db.Execute("VSIM", [Key, "FP32", MemoryMarshal.Cast<float, byte>(query).ToArray(), "COUNT", "10", "EF", "64"]);
             ClassicAssert.IsNotEmpty(sim);
+        }
+
+        [Test]
+        public async Task LotsOfVectorSetsAsync()
+        {
+            const int NumVectorSets = 1_000;
+
+            var connections = new ConnectionMultiplexer[Environment.ProcessorCount];
+            try
+            {
+                var dbs = new IDatabase[connections.Length];
+                for (var i = 0; i < connections.Length; i++)
+                {
+                    connections[i] = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                    dbs[i] = connections[i].GetDatabase();
+                }
+
+                // Create them all
+                {
+                    var allAdds = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        TestContext.Progress.WriteLine(i);
+
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
+
+                        var task = CreateVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allAdds.Add(task);
+                    }
+
+                    await Task.WhenAll(allAdds);
+                }
+
+                // Validate them all
+                {
+                    var allReads = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
+
+                        var task = ReadVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allReads.Add(task);
+                    }
+
+                    await Task.WhenAll(allReads);
+                }
+            }
+            finally
+            {
+                foreach (var con in connections)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync();
+                    }
+                }
+            }
+
+            static async Task CreateVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
+            {
+                var res = (int)await db.ExecuteAsync("VADD", [key, "XU8", data, elem, "NOQUANT"]);
+                ClassicAssert.AreEqual(1, res);
+            }
+
+            static async Task ReadVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
+            {
+                var sim = (string[])await db.ExecuteAsync("VSIM", [key, "XU8", data]);
+                ClassicAssert.AreEqual(1, sim.Length);
+                ClassicAssert.AreEqual(elem, sim[0]);
+
+                var emb = (string[])await db.ExecuteAsync("VEMB", [key, elem]);
+                ClassicAssert.AreEqual(data.Length, emb.Length);
+                for (var i = 0; i < data.Length; i++)
+                {
+                    var expected = data[i];
+                    var actual = (byte)float.Parse(emb[i]);
+
+                    ClassicAssert.AreEqual(expected, actual);
+                }
+            }
         }
 
         /// <summary>

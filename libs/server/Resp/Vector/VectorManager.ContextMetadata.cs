@@ -2,15 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -53,11 +55,15 @@ namespace Garnet.server
             [FieldOffset(32)]
             private HashSlots slots;
 
-            public readonly bool IsInUse(ulong context)
+
+            public readonly bool IsEmpty
+            => inUse == 0 && migrating == 0 && cleaningUp == 0;
+
+            public readonly bool IsInUse(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -65,11 +71,11 @@ namespace Garnet.server
                 return (inUse & mask) != 0;
             }
 
-            public readonly bool IsMigrating(ulong context)
+            public readonly bool IsMigrating(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -77,11 +83,11 @@ namespace Garnet.server
                 return (migrating & mask) != 0;
             }
 
-            public readonly bool IsCleaningUp(ulong context)
+            public readonly bool IsCleaningUp(bool allowZero, ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -89,9 +95,9 @@ namespace Garnet.server
                 return (cleaningUp & mask) == mask;
             }
 
-            public readonly HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
+            public readonly HashSet<ushort> GetNamespacesForHashSlots(HashSet<int> hashSlots)
             {
-                HashSet<ulong> ret = null;
+                HashSet<ushort> ret = null;
 
                 var remaining = inUse;
                 while (remaining != 0)
@@ -116,43 +122,48 @@ namespace Garnet.server
 
                     ret ??= [];
 
-                    var nsStart = ContextStep * (ulong)inUseIx;
+                    var nsStart = (ushort)(ContextStep * (ulong)inUseIx);
                     for (var i = 0U; i < ContextStep; i++)
                     {
-                        _ = ret.Add(nsStart + i);
+                        _ = ret.Add((ushort)(nsStart + i));
                     }
                 }
 
                 return ret;
             }
 
-            public readonly ulong NextNotInUse()
+            public readonly ushort? NextNotInUse(bool allowZero)
             {
                 var ignoringUnusuable = inUse;
 
-                ignoringUnusuable |= 1; // Context 0 is reserved
+                if (!allowZero)
+                {
+                    // Overall context 0 is reserved, but blocks past the first can assign it
+                    ignoringUnusuable |= 1;
+                }
 
-                // We cannot use namespaces > 127
-                // TODO: Once Variable length namespaces work, remove this constraint
-                ignoringUnusuable |= ~((1UL << 15) - 1);
-
-                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)(~ignoringUnusuable));
+                var bit = BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)~ignoringUnusuable);
 
                 if (bit == 64)
                 {
-                    throw new GarnetException("All possible Vector Sets allocated");
+                    return null;
                 }
 
-                var ret = bit * ContextStep;
+                var ret = (ushort)(bit * (int)ContextStep);
 
                 return ret;
             }
 
-            public bool TryReserveForMigration(int count, out List<ulong> reserved)
+            public bool TryReserveForMigration(bool allowZero, int count, out List<ushort> reserved)
             {
-                var ignoringZero = inUse | 1;
+                var availableMask = inUse;
 
-                var available = BitOperations.PopCount(~ignoringZero);
+                if (!allowZero)
+                {
+                    availableMask |= 1;
+                }
+
+                var available = BitOperations.PopCount(~availableMask);
 
                 if (available < count)
                 {
@@ -160,24 +171,27 @@ namespace Garnet.server
                     return false;
                 }
 
-                reserved = new();
+                reserved = [];
                 for (var i = 0; i < count; i++)
                 {
-                    var ctx = NextNotInUse();
-                    reserved.Add(ctx);
+                    var ctx = NextNotInUse(allowZero);
 
-                    MarkInUse(ctx, ushort.MaxValue); // HashSlot isn't known yet, so use an invalid value
-                    MarkMigrating(ctx);
+                    Debug.Assert(ctx != null, "Context should be locked, so this should never fail");
+
+                    reserved.Add(ctx.Value);
+
+                    MarkInUse(allowZero, ctx.Value, ushort.MaxValue); // HashSlot isn't known yet, so use an invalid value
+                    MarkMigrating(allowZero, ctx.Value);
                 }
 
                 return true;
             }
 
-            public void MarkInUse(ulong context, ushort hashSlot)
+            public void MarkInUse(bool allowZero, ushort context, ushort hashSlot)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -190,11 +204,11 @@ namespace Garnet.server
                 Version++;
             }
 
-            public void MarkMigrating(ulong context)
+            public void MarkMigrating(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -206,11 +220,11 @@ namespace Garnet.server
                 Version++;
             }
 
-            public void MarkMigrationComplete(ulong context, ushort hashSlot)
+            public void MarkMigrationComplete(bool allowZero, ushort context, ushort hashSlot)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -226,11 +240,11 @@ namespace Garnet.server
                 Version++;
             }
 
-            public void MarkCleaningUp(ulong context)
+            public void MarkCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -247,11 +261,11 @@ namespace Garnet.server
                 Version++;
             }
 
-            public void ClearIsCleaningUp(ulong context)
+            public void ClearIsCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -263,11 +277,11 @@ namespace Garnet.server
                 Version++;
             }
 
-            public void FinishedCleaningUp(ulong context)
+            public void FinishedCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -282,21 +296,21 @@ namespace Garnet.server
                 Version++;
             }
 
-            public readonly HashSet<ulong> GetNeedCleanup()
+            public readonly HashSet<ushort> GetNeedCleanup()
             {
                 if (cleaningUp == 0)
                 {
                     return null;
                 }
 
-                var ret = new HashSet<ulong>();
+                var ret = new HashSet<ushort>();
 
                 var remaining = cleaningUp;
                 while (remaining != 0UL)
                 {
                     var ix = BitOperations.TrailingZeroCount(remaining);
 
-                    _ = ret.Add((ulong)ix * ContextStep);
+                    _ = ret.Add((ushort)(ix * (int)ContextStep));
 
                     remaining &= ~(1UL << (byte)ix);
                 }
@@ -304,27 +318,41 @@ namespace Garnet.server
                 return ret;
             }
 
-            public readonly HashSet<ulong> GetMigrating()
+            public readonly HashSet<ushort> GetMigrating()
             {
                 if (migrating == 0)
                 {
                     return null;
                 }
 
-                var ret = new HashSet<ulong>();
+                var ret = new HashSet<ushort>();
 
                 var remaining = migrating;
                 while (remaining != 0UL)
                 {
                     var ix = BitOperations.TrailingZeroCount(remaining);
 
-                    _ = ret.Add((ulong)ix * ContextStep);
+                    _ = ret.Add((ushort)(ix * (int)ContextStep));
 
                     remaining &= ~(1UL << (byte)ix);
                 }
 
                 return ret;
             }
+
+            /// <summary>
+            /// Take a context stored outside a <see cref="ContextMetadata"/> and break it into:
+            ///   - an index into <see cref="contextMetadatas"/>
+            ///   - a value to pass to methods on <see cref="ContextMetadata"/> instances
+            /// </summary>
+            internal static (int ContextMetadataIndex, ushort Context) DecomposeContext(ulong context)
+            => ((int)(context / (64 * ContextStep)), (ushort)(context % (64 * ContextStep)));
+
+            /// <summary>
+            /// Given an index into <see cref="contextMetadatas"/>, return the first context that would be stored in it.
+            /// </summary>
+            internal static ulong OffsetForContextMetadata(int contextMetadataIndex)
+            => (ulong)contextMetadataIndex * 64UL * ContextStep;
 
             /// <inheritdoc/>
             public override readonly string ToString()
@@ -332,7 +360,7 @@ namespace Garnet.server
                 // Just for debugging purposes
 
                 var sb = new StringBuilder();
-                sb.AppendLine();
+                _ = sb.AppendLine();
                 _ = sb.AppendLine($"Version: {Version}");
                 var mask = 1UL;
                 var ix = 0;
@@ -347,7 +375,10 @@ namespace Garnet.server
                         var ctxStart = (ulong)ix * ContextStep;
                         var ctxEnd = ctxStart + ContextStep - 1;
 
-                        sb.AppendLine($"[{ctxStart:00}-{ctxEnd:00}): {(isInUse ? "in-use " : "")}{(isMigrating ? "migrating " : "")}{(cleanup ? "cleanup" : "")}");
+                        var slot = slots[ix];
+
+                        _ = sb.AppendLine($"[{ctxStart:00}-{ctxEnd:00}): {(isInUse ? "in-use " : "")}{(isMigrating ? "migrating " : "")}{(cleanup ? "cleanup" : "")}");
+                        _ = sb.AppendLine($"  - hash slot: {slot}");
                     }
 
                     mask <<= 1;
@@ -388,7 +419,8 @@ namespace Garnet.server
                     return;
                 }
 
-                manager.contextMetadata = default;
+                // Clear out all context data
+                manager.contextMetadatas = new ContextMetadata[1];
 
                 // Allow Vector Set operations again
                 manager.vectorSetLocks.ReleaseLock(lockToken);
@@ -398,7 +430,8 @@ namespace Garnet.server
             }
         }
 
-        private ContextMetadata contextMetadata;
+        private ContextMetadata[] contextMetadatas;
+        private HashSet<int> dirtyContextMetadatas;
 
         /// <summary>
         /// Get a new unique context for a vector set.
@@ -407,47 +440,68 @@ namespace Garnet.server
         /// </summary>
         private ulong NextVectorSetContext(ushort hashSlot)
         {
-            var start = Stopwatch.GetTimestamp();
-
-            // TODO: This retry is no good, but will go away when namespaces >= 256 are possible
-            while (true)
+            lock (this)
             {
-                // Lock isn't amazing, but _new_ vector set creation should be rare
-                // So just serializing it all is easier.
-                try
-                {
-                    ulong nextFree;
-                    lock (this)
-                    {
-                        nextFree = contextMetadata.NextNotInUse();
+                var startFrom = 0;
 
-                        contextMetadata.MarkInUse(nextFree, hashSlot);
-                    }
-                    return nextFree;
-                }
-                catch (Exception e)
+                while (true)
                 {
-                    logger?.LogError(e, "NextContext not available, delaying and retrying");
-                }
-
-                if (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(30))
-                {
-                    lock (this)
+                    for (var i = startFrom; i < contextMetadatas.Length; i++)
                     {
-                        if (contextMetadata.GetNeedCleanup() == null)
+                        var nextFreeInBlock = contextMetadatas[i].NextNotInUse(i != 0);
+                        if (nextFreeInBlock != null)
                         {
-                            throw new GarnetException("No available Vector Sets contexts to allocate, none scheduled for cleanup");
+                            contextMetadatas[i].MarkInUse(i != 0, nextFreeInBlock.Value, hashSlot);
+
+                            var offset = ContextMetadata.OffsetForContextMetadata(i);
+                            var contextToRet = nextFreeInBlock.Value + offset;
+
+                            _ = dirtyContextMetadatas.Add(i);
+
+                            return contextToRet;
                         }
                     }
 
-                    // Wait a little bit for cleanup to make progress
-                    Thread.Sleep(1_000);
-                }
-                else
-                {
-                    throw new GarnetException("No available Vector Sets contexts to allocate, timeout reached");
+                    // Today we limit ourselves to uint.MaxValue _contexts_ (ContextStep per Vector Set).
+                    //
+                    // If a new ContextMetadata would allow us to exceed that limit, fail.
+                    //
+                    // This is unlikely (~8.3M Vector Sets), so treated as an error.
+                    //
+                    // We could raise this to ulong.MaxValue by increasing reserved space on the DiskANN size, in which case
+                    // the cause of failure would be the GC refusing to allocate a large enough contextMetadatas array.
+                    var limitOfNewAllocation = ContextMetadata.OffsetForContextMetadata(contextMetadatas.Length) + (64 * ContextStep);
+                    if (limitOfNewAllocation > uint.MaxValue)
+                    {
+                        throw new GarnetException("Maximum Vector Set allocations exceeded, cannot issue new context");
+                    }
+
+                    // All allocated contexts are full, allocate more space
+                    var newContextMetadatas = new ContextMetadata[contextMetadatas.Length + 1];
+                    contextMetadatas.AsSpan().CopyTo(newContextMetadatas);
+
+                    contextMetadatas = newContextMetadatas;
+                    startFrom = contextMetadatas.Length - 1;
+
+                    _ = dirtyContextMetadatas.Add(startFrom);
                 }
             }
+        }
+
+        /// <summary>
+        /// For testing purposes, force a number of contexts to be allocated.
+        /// 
+        /// Contexts are not persisted at call time, but may be persisted after future operations.
+        /// </summary>
+        public void AllocateTestContexts(int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                _ = NextVectorSetContext(0);
+            }
+
+            using var session = (RespServerSession)getTempSession();
+            UpdateContextMetadata(ref session.storageSession.vectorBasicContext);
         }
 
         /// <summary>
@@ -473,55 +527,117 @@ namespace Garnet.server
         /// 
         /// The return contexts are unavailable for other use, but are not yet "live" for visibility purposes.
         /// </summary>
-        public bool TryReserveContextsForMigration(ref VectorBasicContext ctx, int count, out List<ulong> contexts)
+        public List<ulong> ReserveContextsForMigration(ref VectorBasicContext ctx, int count)
         {
+            // At most 64 contexts can fit in a single ContextMetadata (though only 63 in the first one).
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(count, 64);
+
+            List<ulong> contexts;
+
             lock (this)
             {
-                if (!contextMetadata.TryReserveForMigration(count, out contexts))
+                var startFrom = 0;
+
+                while (true)
                 {
-                    contexts = null;
-                    return false;
+                    for (var i = startFrom; i < contextMetadatas.Length; i++)
+                    {
+                        if (contextMetadatas[i].TryReserveForMigration(i != 0, count, out var subContexts))
+                        {
+                            var offset = ContextMetadata.OffsetForContextMetadata(i);
+                            contexts = new(count);
+                            foreach (var item in subContexts)
+                            {
+                                contexts.Add(offset + item);
+                            }
+
+                            _ = dirtyContextMetadatas.Add(i);
+
+                            goto persistAndReturn;
+                        }
+                    }
+
+                    // Today we limit ourselves to uint.MaxValue _contexts_ (ContextStep per Vector Set).
+                    //
+                    // If a new ContextMetadata would allow us to exceed that limit, fail.
+                    //
+                    // This is unlikely (~8.3M Vector Sets), so treated as an error.
+                    //
+                    // We could raise this to ulong.MaxValue by increasing reserved space on the DiskANN size, in which case
+                    // the cause of failure would be the GC refusing to allocate a large enough contextMetadatas array.
+                    var limitOfNewAllocation = ContextMetadata.OffsetForContextMetadata(contextMetadatas.Length) + (64 * ContextStep);
+                    if (limitOfNewAllocation > uint.MaxValue)
+                    {
+                        throw new GarnetException("Maximum Vector Set allocations exceeded, cannot issue new context");
+                    }
+
+                    // All allocated contexts are full, allocate more space
+                    var newContextMetadatas = new ContextMetadata[contextMetadatas.Length + 1];
+                    contextMetadatas.AsSpan().CopyTo(newContextMetadatas);
+
+                    contextMetadatas = newContextMetadatas;
+                    startFrom = contextMetadatas.Length - 1;
+
+                    _ = dirtyContextMetadatas.Add(startFrom);
                 }
             }
 
+        persistAndReturn:
             UpdateContextMetadata(ref ctx);
 
-            return true;
+            return contexts;
         }
 
         /// <summary>
-        /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
+        /// Called when an index creation succeeds to flush <see cref="contextMetadatas"/> into the store.
         /// </summary>
         private void UpdateContextMetadata(ref VectorBasicContext ctx)
         {
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
-            lock (this)
-            {
-                MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
-            }
-
 #pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
             ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
 #pragma warning restore IDE0302
 
-            // empty key is context metadata
-            VectorElementKey key = new(nsBytes, []);
+            Span<byte> keyBytes = stackalloc byte[sizeof(int)];
 
-            VectorInput input = default;
-            input.Callback = 0;
-            input.WriteDesiredSize = ContextMetadata.Size;
-            unsafe
+            while (true)
             {
-                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
-            }
+                int contextIndex;
+                lock (this)
+                {
+                    if (dirtyContextMetadatas.Count == 0)
+                    {
+                        return;
+                    }
 
-            var status = ctx.RMW(key, ref input);
+                    contextIndex = dirtyContextMetadatas.First();
+                    _ = dirtyContextMetadatas.Remove(contextIndex);
 
-            if (status.IsPending)
-            {
-                VectorOutput ignored = new();
-                CompletePending(ref status, ref ignored, ref ctx);
+                    MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadatas[contextIndex];
+                }
+
+                BinaryPrimitives.WriteInt32LittleEndian(keyBytes, contextIndex);
+
+                // empty key is context metadata
+                VectorElementKey key = new(nsBytes, keyBytes);
+
+                VectorInput input = default;
+                input.Callback = 0;
+                input.WriteDesiredSize = ContextMetadata.Size;
+                unsafe
+                {
+                    input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+                }
+
+                var status = ctx.RMW(key, ref input);
+
+                if (status.IsPending)
+                {
+                    VectorOutput ignored = new();
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
             }
         }
 
@@ -532,9 +648,73 @@ namespace Garnet.server
         /// </summary>
         public HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
         {
+            HashSet<ulong> ret = null;
+
             lock (this)
             {
-                return contextMetadata.GetNamespacesForHashSlots(hashSlots);
+                for (var i = 0; i < contextMetadatas.Length; i++)
+                {
+                    var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                    var sub = contextMetadatas[i].GetNamespacesForHashSlots(hashSlots);
+                    if (sub != null)
+                    {
+                        ret ??= [];
+
+                        foreach (var item in sub)
+                        {
+                            _ = ret.Add(offset + item);
+                        }
+                    }
+                }
+            }
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Given a namespace that contains a serialized context, extract the context.
+        /// 
+        /// Inverse of <see cref="StoreContextInNamespace"/>.
+        /// </summary>
+        public static ulong ExtractContextFromNamespaces(ReadOnlySpan<byte> namespaceBytes)
+        {
+            Debug.Assert(namespaceBytes.Length is (sizeof(byte) or sizeof(uint)), "Namespace size unexpected");
+
+            ulong ns;
+            if (namespaceBytes.Length == 1)
+            {
+                ns = namespaceBytes[0];
+            }
+            else
+            {
+                ns = BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes);
+            }
+
+            return ns;
+        }
+
+        /// <summary>
+        /// Given a context, store it in a span of bytes.
+        /// 
+        /// This handles rules about byte maximum single byte namespace and record value alignment.
+        /// 
+        /// Inverse of <see cref="ExtractContextFromNamespaces"/>.
+        /// </summary>
+        public static void StoreContextInNamespace(ulong context, ref Span<byte> namespaceBytes)
+        {
+            Debug.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
+            Debug.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
+
+            if (context <= RecordDataHeader.MaximumSingleByteNamespaceValue)
+            {
+                namespaceBytes = namespaceBytes[..1];
+                namespaceBytes[0] = (byte)context;
+            }
+            else
+            {
+                namespaceBytes = namespaceBytes[0..sizeof(uint)];
+                BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)context);
             }
         }
     }
