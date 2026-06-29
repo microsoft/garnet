@@ -14,12 +14,25 @@ namespace Resp.benchmark
     public unsafe partial class ClientRequestProvider
     {
         // Pre-generated request batches for offline mode
-        Request[] requests;
+        ClusterWorkload workload;   // Holds primary requests (always) + replica requests (conditional)
         int batchCount;
         int offlineBufferSize;
 
         /// <summary>
         /// Pre-generate request buffers for offline mode.
+        ///
+        /// Single-operation mode (normal):
+        ///   - Generate PrimaryRequests[] array with write OR read operations
+        ///
+        /// Mixed workload mode (when replicas exist + write op + --replica-ops-percent > 0):
+        ///   - Generate PrimaryRequests[] with write operations (SET, MSET, etc.)
+        ///   - Generate ReplicaRequests[] with corresponding reads (GET, MGET) FOR THE SAME KEYS
+        ///   - Pre-compute ReadUseReplica[] routing decisions based on --replica-ops-percent
+        ///
+        /// Execution model: Choose ONE request per iteration:
+        ///   - ReadUseReplica[i] = true  → execute ReplicaRequests[i] to replica
+        ///   - ReadUseReplica[i] = false → execute PrimaryRequests[i] to primary
+        ///
         /// For GET/SET/etc: Each request contains batchSize commands.
         /// For MGET/MSET: Each request contains 1 command with batchSize keys.
         /// </summary>
@@ -29,17 +42,42 @@ namespace Resp.benchmark
             var dbSizePerShard = opts.DbSize;
             batchCount = Math.Max(1, dbSizePerShard / batchSize);
 
-            requests = new Request[batchCount];
+            // Always fill primary requests (write ops in mixed mode, or single op in normal mode)
+            workload.PrimaryRequests = new Request[batchCount];
 
             for (var b = 0; b < batchCount; b++)
             {
-                var buffer = GenerateRandomBatch(batchSize, dbSizePerShard);
-                requests[b] = new Request
+                var buffer = GenerateRandomBatch(batchSize, dbSizePerShard, b);
+                workload.PrimaryRequests[b] = new Request
                 {
                     RespData = buffer,
                     ByteCount = buffer.Length,
                     CommandCount = opts.Op is OpType.MGET or OpType.MSET ? 1 : batchSize
                 };
+            }
+
+            // If replicas exist and we have a write op with read mapping, generate replica-eligible requests
+            if (ShouldGenerateMixedWorkload())
+            {
+                var readOp = GetReadOperationType();
+
+                workload.ReplicaRequests = new Request[batchCount];
+                workload.ReadUseReplica = new bool[batchCount];
+
+                for (var b = 0; b < batchCount; b++)
+                {
+                    // Generate corresponding read request (GET/MGET) for THE SAME KEYS as primary
+                    var readBuffer = GenerateReadBatchForKeys(batchSize, dbSizePerShard, b, readOp);
+                    workload.ReplicaRequests[b] = new Request
+                    {
+                        RespData = readBuffer,
+                        ByteCount = readBuffer.Length,
+                        CommandCount = readOp is OpType.MGET ? 1 : batchSize
+                    };
+
+                    // Pre-compute routing decision: should this read go to replica?
+                    workload.ReadUseReplica[b] = rng.Next(100) < opts.ReplicaOpsPercent;
+                }
             }
 
             ComputeOfflineBufferSize();
@@ -50,7 +88,14 @@ namespace Resp.benchmark
         /// </summary>
         private void ComputeOfflineBufferSize()
         {
-            var maxLen = requests.Max(r => r.ByteCount);
+            var maxLen = workload.PrimaryRequests.Max(r => r.ByteCount);
+
+            if (workload.ReplicaRequests != null)
+            {
+                var maxReplicaLen = workload.ReplicaRequests.Max(r => r.ByteCount);
+                maxLen = Math.Max(maxLen, maxReplicaLen);
+            }
+
             offlineBufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
             offlineBufferSize = Math.Max(offlineBufferSize, 1 << 17); // At least 128KB
         }
@@ -60,7 +105,8 @@ namespace Resp.benchmark
         /// For GET/SET/etc: batchSize = number of commands, each with 1 key.
         /// For MGET/MSET: batchSize = number of keys per single MGET/MSET command.
         /// </summary>
-        private byte[] GenerateRandomBatch(int batchSize, int dbSize)
+        /// <param name="bufferIndex">Seed for deterministic key generation (ensures reads match writes)</param>
+        private byte[] GenerateRandomBatch(int batchSize, int dbSize, int bufferIndex)
         {
             var keyLen = Math.Max(opts.KeyLength, 8);
             var valLen = Math.Max(opts.ValueLength, 8);
@@ -84,16 +130,66 @@ namespace Resp.benchmark
             var sb = new StringBuilder(estimatedCapacity);
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
+            // Create deterministic RNG with buffer index for reproducible key generation
+            var deterministicRng = new Random(31337 + (threadIndex * 1000) + shard.Port + bufferIndex);
+
             if (isMCommand)
             {
                 // MGET/MSET: one command with batchSize keys
-                AppendCommand(sb, opts.Op, batchSize, rng, dbSize);
+                AppendCommand(sb, opts.Op, batchSize, deterministicRng, dbSize);
             }
             else
             {
                 // Single-key ops: batchSize commands, each with 1 key
                 for (var i = 0; i < batchSize; i++)
-                    AppendCommand(sb, opts.Op, 1, rng, dbSize);
+                    AppendCommand(sb, opts.Op, 1, deterministicRng, dbSize);
+            }
+
+            return Encoding.ASCII.GetBytes(sb.ToString());
+        }
+
+        /// <summary>
+        /// Generate a batch of read commands for the same keys as a write batch.
+        /// Uses deterministic key generation (same buffer index) to ensure reads target the same keys as writes.
+        /// For GET: batchSize individual GET commands (one per key).
+        /// For MGET: One MGET command with batchSize keys.
+        /// </summary>
+        private byte[] GenerateReadBatchForKeys(int batchSize, int dbSize, int bufferIndex, OpType readOp)
+        {
+            var keyLen = Math.Max(opts.KeyLength, 8);
+
+            // Estimate capacity based on read op type
+            var estimatedCapacity = readOp switch
+            {
+                // GET: *2\r\n$3\r\nGET\r\n$<keyLenDigits>\r\n<key>\r\n ≈ 20 + keyLen per command
+                OpType.GET => batchSize * (20 + keyLen),
+                // MGET: header + N × ($<kld>\r\n<key>\r\n) ≈ 20 + N × (6 + keyLen)
+                OpType.MGET => 20 + batchSize * (6 + keyLen),
+                // GETBIT: *3\r\n$6\r\nGETBIT\r\n$<kld>\r\n<key>\r\n$1\r\n0\r\n ≈ 30 + keyLen
+                OpType.GETBIT => batchSize * (30 + keyLen),
+                // PFCOUNT: *2\r\n$7\r\nPFCOUNT\r\n$<kld>\r\n<key>\r\n ≈ 22 + keyLen
+                OpType.PFCOUNT => batchSize * (22 + keyLen),
+                // ZCARD: *2\r\n$5\r\nZCARD\r\n$<kld>\r\n<key>\r\n ≈ 20 + keyLen
+                OpType.ZCARD => batchSize * (20 + keyLen),
+                _ => batchSize * (25 + keyLen)
+            };
+
+            var sb = new StringBuilder(estimatedCapacity);
+            var isMCommand = readOp is OpType.MGET;
+
+            // Create deterministic RNG with same seed to generate same keys as write buffer
+            var deterministicRng = new Random(31337 + (threadIndex * 1000) + shard.Port + bufferIndex);
+
+            if (isMCommand)
+            {
+                // MGET: one command with batchSize keys
+                AppendCommand(sb, readOp, batchSize, deterministicRng, dbSize);
+            }
+            else
+            {
+                // Single-key reads: batchSize commands, each with 1 key
+                for (var i = 0; i < batchSize; i++)
+                    AppendCommand(sb, readOp, 1, deterministicRng, dbSize);
             }
 
             return Encoding.ASCII.GetBytes(sb.ToString());
@@ -198,7 +294,7 @@ namespace Resp.benchmark
         /// </summary>
         public void RunOffline(ManualResetEventSlim startSignal, TimeSpan runTime)
         {
-            if (requests == null && opts.Client == ClientType.LightClient)
+            if (workload.PrimaryRequests == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before RunOffline()");
 
             var primaryEndpoint = new IPEndPoint(IPAddress.Parse(primaryAddress), primaryPort);
@@ -227,9 +323,20 @@ namespace Resp.benchmark
         {
             var onResponse = new LightClient.OnResponseDelegateUnsafe(OnResponse);
 
+            // Determine operation types for LightClient initialization
+            var primaryOpType = (int)opts.Op;
+            var replicaOpType = primaryOpType;  // Default to same operation
+            
+            // If mixed workload, replica client should be configured for read operations
+            if (workload.ReplicaRequests != null)
+            {
+                var readOp = GetReadOperationType();
+                replicaOpType = (int)readOp;
+            }
+
             using var primaryClient = new LightClient(
                 primaryEndpoint,
-                (int)opts.Op,
+                primaryOpType,
                 onResponse,
                 offlineBufferSize,
                 opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -243,7 +350,7 @@ namespace Resp.benchmark
             {
                 replicaClient = new LightClient(
                     replicaEndpoint,
-                    (int)opts.Op,
+                    replicaOpType,  // Use read operation type for mixed workload
                     onResponse,
                     offlineBufferSize,
                     opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -263,12 +370,25 @@ namespace Resp.benchmark
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    ref var request = ref requests[batchIdx % batchCount];
-                    var opStart = Stopwatch.GetTimestamp();
+                    var bufIdx = batchIdx % batchCount;
+                    Request request;
+                    bool useReplica;
 
-                    // Route entire batch based on operation type
-                    // For offline mode, we route per-batch (all ops in batch are same type)
-                    var useReplica = ShouldUseReplica(opts.Op);
+                    // Model B: Choose ONE request per iteration based on ReadUseReplica flag
+                    if (workload.ReplicaRequests != null && workload.ReadUseReplica[bufIdx])
+                    {
+                        // Execute read request to replica
+                        request = workload.ReplicaRequests[bufIdx];
+                        useReplica = true;
+                    }
+                    else
+                    {
+                        // Execute primary request (write or fallback read)
+                        request = workload.PrimaryRequests[bufIdx];
+                        useReplica = false;
+                    }
+
+                    var opStart = Stopwatch.GetTimestamp();
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
 
                     fixed (byte* bufPtr = request.RespData)
@@ -343,25 +463,49 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
-                var numCommands = isMCommand ? 1 : batchSize;
+                var batchIdx = 0;
+
+                // Determine operation types for mixed workload
+                var primaryOp = opts.Op;
+                OpType? replicaOp = null;
+                if (workload.ReplicaRequests != null)
+                    replicaOp = GetReadOperationType();
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var opStart = Stopwatch.GetTimestamp();
-                    var useReplica = ShouldUseReplica(opts.Op);
+                    var bufIdx = batchIdx % batchCount;
+                    bool useReplica;
+                    OpType currentOp;
+                    int numCommands;
+
+                    // Model B: Choose ONE operation per iteration based on ReadUseReplica flag
+                    if (workload.ReplicaRequests != null && workload.ReadUseReplica[bufIdx])
+                    {
+                        useReplica = true;
+                        currentOp = replicaOp.Value;
+                    }
+                    else
+                    {
+                        useReplica = false;
+                        currentOp = primaryOp;
+                    }
+
+                    var isMCommand = currentOp is OpType.MGET or OpType.MSET;
+                    numCommands = isMCommand ? 1 : batchSize;
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                    var opStart = Stopwatch.GetTimestamp();
 
                     if (isMCommand)
                     {
                         var args = new List<string>();
-                        if (opts.Op == OpType.MGET)
+                        if (currentOp == OpType.MGET)
                         {
                             args.Add("MGET");
                             for (int i = 0; i < batchSize; i++)
                                 args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
                         }
-                        else if (opts.Op == OpType.MSET)
+                        else if (currentOp == OpType.MSET)
                         {
                             args.Add("MSET");
                             for (int i = 0; i < batchSize; i++)
@@ -377,9 +521,9 @@ namespace Resp.benchmark
                         for (int i = 0; i < batchSize; i++)
                         {
                             var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-                            if (opts.Op == OpType.GET)
+                            if (currentOp == OpType.GET)
                                 client.Execute("GET", key);
-                            else if (opts.Op == OpType.SET)
+                            else if (currentOp == OpType.SET)
                                 client.Execute("SET", key, GenerateValue());
                             else
                                 client.Execute("GET", key);
@@ -397,11 +541,11 @@ namespace Resp.benchmark
                     // Track bytes (approximate RESP protocol overhead)
                     var keysInBatch = isMCommand ? batchSize : batchSize;  // MGET/MSET has batchSize keys, GET/SET has batchSize commands (1 key each)
                     var sentBytes = isMCommand
-                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
-                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                        ? CalculateRespSentBytes(currentOp, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(currentOp, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
                     var rcvdBytes = isMCommand
-                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
-                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+                        ? CalculateRespReceivedBytes(currentOp, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(currentOp, 1) * batchSize;  // batchSize GET/SET responses
 
                     Interlocked.Add(ref bytesSent, sentBytes);
                     Interlocked.Add(ref bytesReceived, rcvdBytes);
@@ -410,6 +554,8 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
+
+                    batchIdx++;
                 }
             }
             finally
@@ -450,25 +596,49 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
-                var numCommands = isMCommand ? 1 : batchSize;
+                var batchIdx = 0;
+
+                // Determine operation types for mixed workload
+                var primaryOp = opts.Op;
+                OpType? replicaOp = null;
+                if (workload.ReplicaRequests != null)
+                    replicaOp = GetReadOperationType();
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var opStart = Stopwatch.GetTimestamp();
-                    var useReplica = ShouldUseReplica(opts.Op);
+                    var bufIdx = batchIdx % batchCount;
+                    bool useReplica;
+                    OpType currentOp;
+                    int numCommands;
+
+                    // Model B: Choose ONE operation per iteration based on ReadUseReplica flag
+                    if (workload.ReplicaRequests != null && workload.ReadUseReplica[bufIdx])
+                    {
+                        useReplica = true;
+                        currentOp = replicaOp.Value;
+                    }
+                    else
+                    {
+                        useReplica = false;
+                        currentOp = primaryOp;
+                    }
+
+                    var isMCommand = currentOp is OpType.MGET or OpType.MSET;
+                    numCommands = isMCommand ? 1 : batchSize;
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                    var opStart = Stopwatch.GetTimestamp();
 
                     if (isMCommand)
                     {
-                        if (opts.Op == OpType.MGET)
+                        if (currentOp == OpType.MGET)
                         {
                             var keys = new string[batchSize];
                             for (int i = 0; i < batchSize; i++)
                                 keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
                             client.StringGetAsync(keys).GetAwaiter().GetResult();
                         }
-                        else if (opts.Op == OpType.MSET)
+                        else if (currentOp == OpType.MSET)
                         {
                             var args = new List<string>();
                             for (int i = 0; i < batchSize; i++)
@@ -485,9 +655,9 @@ namespace Resp.benchmark
                         for (int i = 0; i < batchSize; i++)
                         {
                             var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-                            if (opts.Op == OpType.GET)
+                            if (currentOp == OpType.GET)
                                 tasks[i] = client.StringGetAsMemoryAsync(key);
-                            else if (opts.Op == OpType.SET)
+                            else if (currentOp == OpType.SET)
                                 tasks[i] = client.StringSetAsync(key, GenerateValue());
                             else
                                 tasks[i] = client.StringGetAsMemoryAsync(key);
@@ -503,11 +673,11 @@ namespace Resp.benchmark
 
                     // Track bytes (approximate RESP protocol overhead)
                     var sentBytes = isMCommand
-                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
-                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                        ? CalculateRespSentBytes(currentOp, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(currentOp, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
                     var rcvdBytes = isMCommand
-                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
-                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+                        ? CalculateRespReceivedBytes(currentOp, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(currentOp, 1) * batchSize;  // batchSize GET/SET responses
 
                     Interlocked.Add(ref bytesSent, sentBytes);
                     Interlocked.Add(ref bytesReceived, rcvdBytes);
@@ -516,6 +686,8 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
+
+                    batchIdx++;
                 }
             }
             finally
@@ -551,25 +723,49 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
-                var numCommands = isMCommand ? 1 : batchSize;
+                var batchIdx = 0;
+
+                // Determine operation types for mixed workload
+                var primaryOp = opts.Op;
+                OpType? replicaOp = null;
+                if (workload.ReplicaRequests != null)
+                    replicaOp = GetReadOperationType();
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var opStart = Stopwatch.GetTimestamp();
-                    var useReplica = ShouldUseReplica(opts.Op);
+                    var bufIdx = batchIdx % batchCount;
+                    bool useReplica;
+                    OpType currentOp;
+                    int numCommands;
+
+                    // Model B: Choose ONE operation per iteration based on ReadUseReplica flag
+                    if (workload.ReplicaRequests != null && workload.ReadUseReplica[bufIdx])
+                    {
+                        useReplica = true;
+                        currentOp = replicaOp.Value;
+                    }
+                    else
+                    {
+                        useReplica = false;
+                        currentOp = primaryOp;
+                    }
+
+                    var isMCommand = currentOp is OpType.MGET or OpType.MSET;
+                    numCommands = isMCommand ? 1 : batchSize;
                     var db = (useReplica && replicaDb != null) ? replicaDb : primaryDb;
+
+                    var opStart = Stopwatch.GetTimestamp();
 
                     if (isMCommand)
                     {
-                        if (opts.Op == OpType.MGET)
+                        if (currentOp == OpType.MGET)
                         {
                             var keys = new RedisKey[batchSize];
                             for (int i = 0; i < batchSize; i++)
                                 keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
                             db.StringGet(keys);
                         }
-                        else if (opts.Op == OpType.MSET)
+                        else if (currentOp == OpType.MSET)
                         {
                             var pairs = new KeyValuePair<RedisKey, RedisValue>[batchSize];
                             for (int i = 0; i < batchSize; i++)
@@ -586,9 +782,9 @@ namespace Resp.benchmark
                         for (int i = 0; i < batchSize; i++)
                         {
                             var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
-                            if (opts.Op == OpType.GET)
+                            if (currentOp == OpType.GET)
                                 db.StringGet(key);
-                            else if (opts.Op == OpType.SET)
+                            else if (currentOp == OpType.SET)
                                 db.StringSet(key, GenerateValue());
                             else
                                 db.StringGet(key);
@@ -603,11 +799,11 @@ namespace Resp.benchmark
 
                     // Track bytes (approximate RESP protocol overhead)
                     var sentBytes = isMCommand
-                        ? CalculateRespSentBytes(opts.Op, batchSize)  // Single MGET/MSET command with batchSize keys
-                        : CalculateRespSentBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
+                        ? CalculateRespSentBytes(currentOp, batchSize)  // Single MGET/MSET command with batchSize keys
+                        : CalculateRespSentBytes(currentOp, 1) * batchSize;  // batchSize GET/SET commands (1 key each)
                     var rcvdBytes = isMCommand
-                        ? CalculateRespReceivedBytes(opts.Op, batchSize)  // Single MGET/MSET response with batchSize values
-                        : CalculateRespReceivedBytes(opts.Op, 1) * batchSize;  // batchSize GET/SET responses
+                        ? CalculateRespReceivedBytes(currentOp, batchSize)  // Single MGET/MSET response with batchSize values
+                        : CalculateRespReceivedBytes(currentOp, 1) * batchSize;  // batchSize GET/SET responses
 
                     Interlocked.Add(ref bytesSent, sentBytes);
                     Interlocked.Add(ref bytesReceived, rcvdBytes);
@@ -616,6 +812,8 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
+
+                    batchIdx++;
                 }
             }
             finally

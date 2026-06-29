@@ -274,7 +274,7 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ExecuteSingleOfflineBatch()
         {
-            if (requests == null && opts.Client == ClientType.LightClient)
+            if (workload.PrimaryRequests == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before ExecuteSingleOfflineBatch()");
 
             // Ensure connections are initialized
@@ -324,7 +324,7 @@ namespace Resp.benchmark
         {
             // Select batch index (cycle through pre-generated batches)
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            ref var request = ref requests[batchIdx];
+            ref var request = ref workload.PrimaryRequests[batchIdx];
 
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
@@ -513,7 +513,7 @@ namespace Resp.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SendSingleOfflineBatch()
         {
-            if (requests == null && opts.Client == ClientType.LightClient)
+            if (workload.PrimaryRequests == null && opts.Client == ClientType.LightClient)
                 throw new InvalidOperationException("Must call PrepareBuffers() before SendSingleOfflineBatch()");
 
             if (!connectionsInitialized)
@@ -554,7 +554,7 @@ namespace Resp.benchmark
         {
             // Select batch
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            ref var request = ref requests[batchIdx];
+            ref var request = ref workload.PrimaryRequests[batchIdx];
 
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 

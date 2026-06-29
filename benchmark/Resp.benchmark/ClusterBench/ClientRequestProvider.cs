@@ -110,7 +110,7 @@ namespace Resp.benchmark
                 return false;
 
             // If replica reads are set to 0%, always use primary
-            if (opts.ReplicaReadPercent == 0)
+            if (opts.ReplicaOpsPercent == 0)
                 return false;
 
             // Write operations always go to primary (replicas are read-only)
@@ -121,17 +121,48 @@ namespace Resp.benchmark
             if (OperationClassifier.IsReadOperation(op))
             {
                 // If percentage is 100, always use replica
-                if (opts.ReplicaReadPercent >= 100)
+                if (opts.ReplicaOpsPercent >= 100)
                     return true;
 
                 // Probabilistic: generate random number 0-99, compare with percentage
                 // This ensures approximately X% of reads go to replicas across all clients
                 var randomValue = rng.Next(100);
-                return randomValue < opts.ReplicaReadPercent;
+                return randomValue < opts.ReplicaOpsPercent;
             }
 
             // Unknown operation type: default to primary (safe default)
             return false;
+        }
+
+        /// <summary>
+        /// Determines if mixed write/read workload should be generated for offline mode.
+        /// Mixed workload is enabled when:
+        /// - Replica read percentage > 0
+        /// - This provider has a replica assigned
+        /// - The primary operation is a write operation
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool ShouldGenerateMixedWorkload()
+        {
+            return opts.ReplicaOpsPercent > 0
+                && hasReplica
+                && OperationClassifier.IsWriteOperation(opts.Op);
+        }
+
+        /// <summary>
+        /// Gets the corresponding read operation for the configured write operation.
+        /// Throws if no read mapping exists.
+        /// </summary>
+        private OpType GetReadOperationType()
+        {
+            var readOp = OperationClassifier.GetCorrespondingReadOperation(opts.Op);
+            if (readOp == null)
+            {
+                throw new Exception($"No read operation mapping for {opts.Op}. " +
+                    $"Cannot generate mixed workload with --replica-read-percent > 0. " +
+                    $"Either set --replica-read-percent 0 or use a write operation with read mapping (SET, MSET, SETBIT, etc.)");
+            }
+            return readOp.Value;
         }
 
         /// <summary>
@@ -141,7 +172,9 @@ namespace Resp.benchmark
 
         public void Dispose()
         {
-            requests = null;
+            workload.PrimaryRequests = null;
+            workload.ReplicaRequests = null;
+            workload.ReadUseReplica = null;
             DisposeWorkerPoolConnections();
         }
 

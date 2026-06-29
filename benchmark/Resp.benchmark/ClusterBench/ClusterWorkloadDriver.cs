@@ -142,9 +142,9 @@ namespace Resp.benchmark
         /// </summary>
         private void ValidateReplicaReadOptions()
         {
-            if (opts.ReplicaReadPercent < 0 || opts.ReplicaReadPercent > 100)
+            if (opts.ReplicaOpsPercent < 0 || opts.ReplicaOpsPercent > 100)
             {
-                throw new Exception($"Invalid --replica-read-percent value: {opts.ReplicaReadPercent}. Valid range is 0-100 (percentage).");
+                throw new Exception($"Invalid --replica-read-percent value: {opts.ReplicaOpsPercent}. Valid range is 0-100 (percentage).");
             }
         }
 
@@ -160,7 +160,7 @@ namespace Resp.benchmark
             // Count total replicas and workers with replica assignments
             var totalReplicas = shards.Sum(s => s.Replicas.Count);
             var workersWithReplicas = providers.Count(p => p.HasReplica);
-            var replicaReads = $"{opts.ReplicaReadPercent}%";
+            var replicaReads = $"{opts.ReplicaOpsPercent}%";
             var totalConnections = totalProviders + workersWithReplicas; // primary + replica connections
 
             Console.WriteLine();
@@ -206,7 +206,7 @@ namespace Resp.benchmark
             // Info message about replica assignment (only if replicas exist)
             if (totalReplicas > 0)
             {
-                Console.WriteLine($"  [INFO] Replica read routing: ~{opts.ReplicaReadPercent}% of read operations per shard will target replicas.");
+                Console.WriteLine($"  [INFO] Replica read routing: ~{opts.ReplicaOpsPercent}% of read operations per shard will target replicas.");
                 Console.WriteLine($"         Round-robin assignment: Each client assigned to one of {totalReplicas / shards.Length} replica(s) per shard.");
                 Console.WriteLine($"         Clients with replicas: {workersWithReplicas}/{totalProviders}");
                 Console.WriteLine();
@@ -224,7 +224,7 @@ namespace Resp.benchmark
 
             // Count total replicas
             var totalReplicas = shards.Sum(s => s.Replicas.Count);
-            var replicaReads = $"{opts.ReplicaReadPercent}%";
+            var replicaReads = $"{opts.ReplicaOpsPercent}%";
 
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
@@ -278,7 +278,7 @@ namespace Resp.benchmark
             {
                 Console.WriteLine($"  [INFO] Worker pool mode: {workerCount} workers, each handling all {shards.Length} shards.");
                 Console.WriteLine($"         Operations randomly distributed across shards.");
-                Console.WriteLine($"         Replica read routing: ~{opts.ReplicaReadPercent}% of reads per shard target replicas.");
+                Console.WriteLine($"         Replica read routing: ~{opts.ReplicaOpsPercent}% of reads per shard target replicas.");
                 Console.WriteLine();
             }
         }
@@ -542,14 +542,28 @@ namespace Resp.benchmark
             Console.WriteLine($"Data throughput:  {dataGBps:N3} GB/sec (logical: key={opts.KeyLength}B + val={opts.ValueLength}B = {logicalBytesPerOp}B/op)");
             Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP sent: {totalBytesSent:N0} B, received: {totalBytesReceived:N0} B)");
 
-            if (totalOps > 0 && totalReplicaOps > 0)
+            // Show replica metrics when replicas are configured in the cluster
+            if (totalOps > 0 && shards.Any(s => s.Replicas.Count > 0))
             {
-                var actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                var actualReplicaPercent = totalOps > 0 ? (totalReplicaOps * 100.0) / totalOps : 0.0;
                 var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
                 var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
-                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
-                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec)");
-                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec)");
+                
+                // Determine operation types for display
+                string primaryOpType = opts.Op.ToString();
+                string replicaOpType = opts.Op.ToString();
+                
+                // If mixed workload (write op with replicas and percentage > 0), show read operation type
+                if (opts.ReplicaOpsPercent > 0 && OperationClassifier.IsWriteOperation(opts.Op))
+                {
+                    var readOp = OperationClassifier.GetCorrespondingReadOperation(opts.Op);
+                    if (readOp.HasValue)
+                        replicaOpType = readOp.Value.ToString();
+                }
+                
+                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaOpsPercent}% for reads)");
+                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec) ({primaryOpType})");
+                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
             }
 
             // Report hit rates from INFO STATS
@@ -632,14 +646,28 @@ namespace Resp.benchmark
             Console.WriteLine($"Wire throughput:  {wireGBps:N3} GB/sec (RESP sent: {totalBytesSent:N0} B, received: {totalBytesReceived:N0} B)");
             Console.WriteLine($"Workers: {workers.Length}, Shards: {shards.Length}, Providers: {workers.Length * shards.Length}");
 
-            if (totalOps > 0 && totalReplicaOps > 0)
+            // Show replica metrics when replicas are configured in the cluster
+            if (totalOps > 0 && shards.Any(s => s.Replicas.Count > 0))
             {
-                var actualReplicaPercent = (totalReplicaOps * 100.0) / totalOps;
+                var actualReplicaPercent = totalOps > 0 ? (totalReplicaOps * 100.0) / totalOps : 0.0;
                 var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
                 var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
-                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaReadPercent}%)");
-                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec)");
-                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec)");
+                
+                // Determine operation types for display
+                string primaryOpType = opts.Op.ToString();
+                string replicaOpType = opts.Op.ToString();
+                
+                // If mixed workload (write op with replicas and percentage > 0), show read operation type
+                if (opts.ReplicaOpsPercent > 0 && OperationClassifier.IsWriteOperation(opts.Op))
+                {
+                    var readOp = OperationClassifier.GetCorrespondingReadOperation(opts.Op);
+                    if (readOp.HasValue)
+                        replicaOpType = readOp.Value.ToString();
+                }
+                
+                Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaOpsPercent}% for reads)");
+                Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec) ({primaryOpType})");
+                Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
             }
 
             // Report hit rates from INFO STATS
