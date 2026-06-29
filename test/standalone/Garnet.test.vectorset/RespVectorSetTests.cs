@@ -3091,12 +3091,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task RenamesAsync()
+        public async Task RenamesAsync([Values(false, true)] bool runRenameInTransaction)
         {
             const string SourceKey = nameof(RenamesAsync) + "_source";
             const string DestKey = SourceKey + "_dest";
 
-            // TODO: Do all the renames in a transaction as well since RENAME is implemented that way
             // TODO: In non-cluster mode the hash slot change change, make sure that is done correctly
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3110,7 +3109,7 @@ namespace Garnet.test
                 var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
                 ClassicAssert.AreEqual(1, vaddRes);
 
-                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
@@ -3135,10 +3134,10 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(setRes);
 
                 // RENAMENX shoudl fail
-                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
-                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
@@ -3163,10 +3162,10 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, vaddRes2);
 
                 // RENAMENX shoudl fail
-                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
-                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
@@ -3191,10 +3190,10 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, vaddRes);
 
                 // RENAMENX shoudl fail
-                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
-                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
@@ -3202,6 +3201,25 @@ namespace Garnet.test
 
                 var getRes = (string)await db.StringGetAsync(DestKey);
                 ClassicAssert.AreEqual("fizzbuzz", getRes);
+            }
+
+            // Perform rename, optionally in a transaction, optionally with NX
+            static async Task<bool> DoRenameAsync(IDatabase db, bool inTransaction, bool nx)
+            {
+                var when = nx ? When.NotExists : When.Always;
+
+                if (inTransaction)
+                {
+                    var tran = db.CreateTransaction();
+                    var renameTask = tran.KeyRenameAsync(SourceKey, DestKey, when);
+                    var tranRes = await tran.ExecuteAsync();
+
+                    ClassicAssert.IsTrue(tranRes);
+
+                    return await renameTask;
+                }
+
+                return await db.KeyRenameAsync(SourceKey, DestKey, when);
             }
         }
 
