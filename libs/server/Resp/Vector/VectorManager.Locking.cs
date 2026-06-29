@@ -379,7 +379,6 @@ namespace Garnet.server
                             // Create a new index, grab a new context
 
                             // We must associate the index with a hash slot at creation time to enable future migrations
-                            // TODO: RENAME and friends need to also update this data
                             var slot = HashSlotUtils.HashSlot(key);
 
                             indexContext = NextVectorSetContext(slot);

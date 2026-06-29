@@ -293,6 +293,18 @@ namespace Garnet.server
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
+                    // Vector Sets need special handling during renames
+                    if (logRecord.RecordType == VectorManager.RecordType)
+                    {
+                        if (vectorManager.TryRename(this, oldKey, newKey, out var errorStatus))
+                        {
+                            result = 1;
+                            return GarnetStatus.OK;
+                        }
+
+                        return errorStatus;
+                    }
+
                     status = SET(newKey, ref input, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {

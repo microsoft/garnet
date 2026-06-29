@@ -532,6 +532,9 @@ namespace Garnet.server
 
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _);
 
+            // TODO: Don't allow deletions of keys that are being deleted as part of a rename
+            asjdfkljjasfd
+
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
             if (!requestCleanupTaskChannel.Writer.TryWrite((context, tcs)))
@@ -1167,6 +1170,68 @@ namespace Garnet.server
             finally
             {
                 asBytes.Memory?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Attempt a rename of a Vector Set - assumes locks are held so <paramref name="oldKey"/> will not be deleted and <paramref name="newKey"/> will not be set.
+        /// </summary>
+        internal bool TryRename(StorageSession storageSession, ReadOnlySpan<byte> oldKey, ReadOnlySpan<byte> newKey, out GarnetStatus failureResult)
+        {
+            StringInput input = new(RespCommand.VADD);
+
+            Span<byte> oldIndexSpan = stackalloc byte[Index.Size];
+
+            var oldHashSlot = HashSlotUtils.HashSlot(oldKey);
+            var newHashSlot = HashSlotUtils.HashSlot(newKey);
+
+            using (ReadForDeleteVectorIndex(storageSession, oldKey, ref input, oldIndexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    failureResult = status;
+                    return false;
+                }
+
+                ReadIndex(oldIndexSpan, out var context, out var dimensions, out var reducedDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr);
+
+                // Create an index under newKey, basically acting like a VADD
+                Span<byte> newIndexSpan = stackalloc byte[Index.Size];
+                var newIndexConfig = SpanByteAndMemory.FromPinnedSpan(newIndexSpan);
+                StringOutput newIndexConfigOutput = new(newIndexConfig);
+
+                input.parseState.EnsureCapacity(12);
+
+                input.parseState.SetArgument(0, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<uint>(ref dimensions))));
+                input.parseState.SetArgument(1, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<uint>(ref reducedDims))));
+                // ValueType is here, skipping during index creation
+                // Values is here, skipping during index creation
+                // Element is here, skipping during index creation
+                input.parseState.SetArgument(5, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<VectorQuantType>(ref quantType))));
+                input.parseState.SetArgument(6, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<uint>(ref buildExplorationFactor))));
+                // Attributes is here, skipping during index creation
+                input.parseState.SetArgument(8, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<uint>(ref numLinks))));
+                input.parseState.SetArgument(9, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(new Span<VectorDistanceMetricType>(ref distanceMetric))));
+                input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(new Span<ulong>(ref context))));
+                input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(new Span<nint>(ref indexPtr))));
+
+                GarnetStatus writeRes;
+                writeRes = storageSession.RMW_MainStore(newKey, ref input, ref newIndexConfigOutput, ref storageSession.stringBasicContext);
+
+                // Copy failed, abort
+                if (writeRes != GarnetStatus.OK)
+                {
+                    failureResult = writeRes;
+                    return false;
+                }
+
+                // In a cluster the hash slot won't change, but in single nodes we may need to update
+                UpdateContextHashSlot(storageSession, context, oldHashSlot, newHashSlot);
+
+                // Delete the old key
+                _ = storageSession.unifiedBasicContext.Delete((FixedSpanByteKey)oldKey);
+                failureResult = default;
+                return true;
             }
         }
 
