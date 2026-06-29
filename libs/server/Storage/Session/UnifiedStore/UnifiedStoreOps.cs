@@ -359,6 +359,13 @@ namespace Garnet.server
                     {
                         result = 1;
 
+                        if (oldIsVectorSet)
+                        {
+                            // Update hash slot after rename occurs - in cluster mode this is a no-op
+                            // but in single node mode this data does need to be synced
+                            functionsState.vectorManager.UpdateHashSlot(oldKey, newKey, logRecord.ValueSpan, ref vectorBasicContext);
+                        }
+
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
                         return GarnetStatus.OK;
