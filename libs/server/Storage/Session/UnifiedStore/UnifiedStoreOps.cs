@@ -251,6 +251,9 @@ namespace Garnet.server
 
             // Note: RespServerSession.CanServeSlot has already verified the keys are in the same slot
 
+            // Use transaction to prevent modifications to old and new keys while rename is in progress
+            //
+            // If we're already in a transaction, we get that for free
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
@@ -261,11 +264,24 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
+            // Vector Sets complicate renames, there are 4 cases to consider:
+            //  1. old and new key are NOT Vector Sets
+            //     * We can copy old's record into new and then delete old
+            //  2. old IS a Vector Set and new IS NOT a Vector Set
+            //     * We mark old a no copy, create a new Vector Set (with the
+            //       same index and context) under new key, update slot information,
+            //       then delete old
+            //  3. old IS NOT a Vector Set and new IS a Vector Set
+            //     * We must explicitly delete new before copying old into new
+            //       and then delete old
+            //  4. old IS a Vector Set and new IS a Vector Set
+            //     * First we perform an explicit delete of new (like in #3)
+            //       then we do a no copy + create as in #2
+
             var context = txnManager.UnifiedTransactionalContext;
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var returnStatus = GarnetStatus.NOTFOUND;
             var abortTransaction = false;
 
             var output = new UnifiedOutput();
@@ -274,11 +290,29 @@ namespace Garnet.server
                 // Check if new key exists.
                 UnifiedInput input = new(RespCommand.RENAME);
                 var status = GET(newKey, ref input, ref output, ref context);
-                if (isNX && status != GarnetStatus.NOTFOUND)
+
+                var newExists = status != GarnetStatus.NOTFOUND;
+                if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
                     abortTransaction = true;
                     return GarnetStatus.OK;
+                }
+
+                bool newIsVectorSet;
+                if (newExists)
+                {
+                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    {
+                        // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                        var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
+
+                        newIsVectorSet = logRecord.RecordType == VectorManager.RecordType;
+                    }
+                }
+                else
+                {
+                    newIsVectorSet = false;
                 }
 
                 status = GET(oldKey, ref input, ref output, ref context);
@@ -293,18 +327,25 @@ namespace Garnet.server
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
-                    // Vector Sets need special handling during renames
-                    if (logRecord.RecordType == VectorManager.RecordType)
-                    {
-                        if (vectorManager.TryRename(this, oldKey, newKey, out var errorStatus))
-                        {
-                            result = 1;
-                            return GarnetStatus.OK;
-                        }
+                    var oldIsVectorSet = logRecord.RecordType == VectorManager.RecordType;
 
-                        return errorStatus;
+                    if (newIsVectorSet)
+                    {
+                        // Case #3 or #4 - new key is a Vector Set and needs to be explicitly deleted
+                        _ = DELETE(newKey, ref context);
                     }
 
+                    var suppressedCleanup = false;
+
+                    if (oldIsVectorSet)
+                    {
+                        // Case #2 or #4 - old key is a Vector Set, so its delete is 
+
+                        VectorManager.MarkSuppressCleanup(this, oldKey);
+                        suppressedCleanup = true;
+                    }
+
+                    // Copy old record into new key - this happens in all 4 cases
                     status = SET(newKey, ref input, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {
@@ -313,6 +354,12 @@ namespace Garnet.server
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
                         return GarnetStatus.OK;
+                    }
+
+                    // If set failed for whatever reason, attempt to recover
+                    if (suppressedCleanup)
+                    {
+                        VectorManager.ClearSuppressCleanup(this, oldKey);
                     }
                 }
             }
@@ -327,7 +374,8 @@ namespace Garnet.server
                 }
                 output.Dispose();
             }
-            return returnStatus;
+
+            return GarnetStatus.NOTFOUND;
         }
     }
 }
