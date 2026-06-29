@@ -1370,29 +1370,78 @@ namespace Tsavorite.core
         /// ABI / loaded-library drift detector with no path-resolution false positives.
         /// </remarks>
         private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
+            => GetSectorSize(MaterializeParentDirForProbe(filename));
+
+        /// <summary>
+        /// Materializes the parent directory of <paramref name="filename"/> (if missing) and
+        /// returns the path the alignment probe should run against — the parent directory when
+        /// it could be materialized, otherwise the original filename. Probing the parent dir
+        /// (rather than the not-yet-existing data file) makes <c>stat()</c>/<c>statx()</c>
+        /// succeed on the first try and prevents the probe from walking up to a grandparent on
+        /// a different filesystem.
+        /// </summary>
+        private static string MaterializeParentDirForProbe(string filename)
         {
-            string parent = null;
             try
             {
-                parent = new FileInfo(filename).Directory?.FullName;
+                var parent = new FileInfo(filename).Directory?.FullName;
                 if (!string.IsNullOrEmpty(parent))
+                {
                     Directory.CreateDirectory(parent);
+                    return parent;
+                }
             }
             catch
             {
                 // Mkdir failures (permissions, race with concurrent create, etc.) are not
                 // fatal here — they will surface with a clearer error when the device tries
-                // to open the file. The probe still runs against the best ancestor we have.
-                parent = null;
+                // to open the file. Fall back to the filename; the probe's own stat-walk-up
+                // still produces a best-effort value.
             }
-            // Probe the materialized parent dir directly when we have one — this removes any
-            // dependency on whether the file itself exists and prevents the probe from
-            // walking up to a different filesystem when the lazy file create has not yet
-            // run. Fall back to the original filename path when we couldn't determine /
-            // materialize a parent (the probe's own stat-walk-up will still produce a
-            // best-effort value).
-            string probePath = !string.IsNullOrEmpty(parent) ? parent : filename;
-            return GetSectorSize(probePath);
+            return filename;
+        }
+
+        /// <summary>
+        /// Unified required-direct-I/O-alignment probe shared by ALL local-disk devices
+        /// (<see cref="NativeStorageDevice"/>, <c>RandomAccessLocalStorageDevice</c>,
+        /// <c>ManagedLocalStorageDevice</c>, <c>LocalStorageDevice</c>) so they agree on one
+        /// sector size per host. Returns a power of two &gt;= <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// </summary>
+        /// <remarks>
+        /// On Linux the canonical probe lives in the native library
+        /// (<c>NativeDevice_ProbeAlignment</c> → statx <c>STATX_DIOALIGN</c> / sysfs
+        /// <c>logical_block_size</c>, never <c>physical_block_size</c>); reusing it makes the
+        /// managed O_DIRECT devices align identically to the native device. When the native
+        /// library cannot be loaded (e.g. musl/Alpine) it falls back to
+        /// <see cref="Native32.GetDeviceSectorSize"/> (the historical 512 floor on Linux). On
+        /// Windows it uses <see cref="Native32.GetDeviceSectorSize"/> directly (the
+        /// <c>GetDiskFreeSpace</c> logical sector size, already logical-only) so the managed
+        /// Windows devices take no native-library dependency.
+        /// </remarks>
+        internal static uint ProbeSectorSize(string filename)
+        {
+            var probePath = MaterializeParentDirForProbe(filename);
+
+            uint result = 0;
+            if (OperatingSystem.IsLinux())
+            {
+                try
+                {
+                    uint probed = NativeDevice_ProbeAlignment(probePath);
+                    if (probed >= MinSectorSize && (probed & (probed - 1)) == 0)
+                        result = probed;
+                }
+                catch (DllNotFoundException) { }
+                catch (EntryPointNotFoundException) { }
+            }
+
+            if (result == 0)
+                result = Native32.GetDeviceSectorSize(probePath);
+
+            // Final guard: power-of-two floor at MinDeviceSectorSize.
+            if (result < MinSectorSize || (result & (result - 1)) != 0)
+                result = MinSectorSize;
+            return result;
         }
 
         /// <summary>
