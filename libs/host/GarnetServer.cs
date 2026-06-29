@@ -11,6 +11,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
@@ -70,6 +71,16 @@ namespace Garnet
         /// Store API
         /// </summary>
         public StoreApi Store;
+
+        /// <summary>
+        /// Configured shutdown drain timeout in seconds.
+        /// </summary>
+        public int ShutdownTimeoutSeconds => opts.ShutdownTimeoutSeconds > 0 ? opts.ShutdownTimeoutSeconds : GarnetServerOptions.DefaultShutdownTimeoutSeconds;
+
+        /// <summary>
+        /// Configured data-finalization timeout in seconds (AOF commit / checkpoint during shutdown).
+        /// </summary>
+        public int DataFinalizationTimeoutSeconds => opts.DataFinalizationTimeoutSeconds > 0 ? opts.DataFinalizationTimeoutSeconds : GarnetServerOptions.DefaultDataFinalizationTimeoutSeconds;
 
         /// <summary>
         /// Create Garnet Server instance using specified command line arguments; use Start to start the server.
@@ -493,6 +504,229 @@ namespace Garnet
             Provider.Start();
             if (!opts.QuietMode)
                 Console.WriteLine("* Ready to accept connections");
+        }
+
+        /// <summary>
+        /// Performs graceful shutdown of the server.
+        /// Stops accepting new connections, waits for active connections to complete, commits AOF, and takes checkpoint if needed.
+        /// </summary>
+        /// <param name="timeout">Timeout for waiting on active connections (default: configured <see cref="ShutdownTimeoutSeconds"/> value)</param>
+        /// <param name="noSave">If true, skip data persistence (AOF commit and checkpoint) during shutdown</param>
+        /// <param name="token">Cancellation token; when cancelled (e.g. second Ctrl+C), connection draining and data finalization are aborted</param>
+        /// <returns>Task representing the async shutdown operation</returns>
+        public async Task ShutdownAsync(TimeSpan? timeout = null, bool noSave = false, CancellationToken token = default)
+        {
+            var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(ShutdownTimeoutSeconds);
+            var skipPersistence = noSave;
+
+            try
+            {
+                // Quiesce existing sessions first: they will reject the next incoming message
+                // and close themselves, so FinalizeDataAsync runs with no concurrent writers.
+                if (servers != null)
+                {
+                    foreach (var server in servers)
+                        server.BeginQuiesce();
+                }
+
+                // Quiesce pub/sub fan-out so no new messages are delivered after this point.
+                subscribeBroker?.BeginQuiesce();
+
+                // Stop accepting new connections.
+                StopListening();
+
+                // Wait for existing connections to complete (cancellable)
+                try
+                {
+                    await WaitForActiveConnectionsAsync(shutdownTimeout, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    skipPersistence = true;
+                    logger?.LogWarning("Connection draining was cancelled due to forced shutdown.");
+                }
+                catch (OperationCanceledException)
+                {
+                    logger?.LogWarning("Connection draining timed out. Proceeding with data finalization...");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error during graceful shutdown");
+            }
+            finally
+            {
+                if (skipPersistence)
+                {
+                    logger?.LogInformation("Skipping data persistence during shutdown.");
+                }
+                else
+                {
+                    // Attempt AOF commit or checkpoint as best-effort,
+                    // even if connection draining timed out. Honor caller cancellation (forced shutdown)
+                    // and cap total finalize time with DataFinalizationTimeoutSeconds.
+                    using var finalizeCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    finalizeCts.CancelAfter(TimeSpan.FromSeconds(DataFinalizationTimeoutSeconds));
+                    try
+                    {
+                        await FinalizeDataAsync(finalizeCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        logger?.LogWarning("Data finalization was cancelled due to forced shutdown.");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        logger?.LogWarning("Data finalization timed out after {TimeoutSeconds} seconds.", DataFinalizationTimeoutSeconds);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error during data finalization");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stop all servers from accepting new connections.
+        /// </summary>
+        private void StopListening()
+        {
+            if (servers == null) return;
+
+            logger?.LogDebug("Stopping listeners to prevent new connections...");
+            foreach (var server in servers)
+            {
+                try
+                {
+                    server?.StopListening();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Error stopping listener");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Waits for active connections to complete within the specified timeout.
+        /// </summary>
+        private async Task WaitForActiveConnectionsAsync(TimeSpan timeout, CancellationToken token)
+        {
+            if (servers == null) return;
+
+            // Linked Token : between external token and timeout
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(timeout);
+
+            var delays = new[] { 50, 300, 1000 };
+            var delayIndex = 0;
+
+            try
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    var activeConnections = GetActiveConnectionCount();
+                    if (activeConnections == 0)
+                    {
+                        logger?.LogInformation("All connections have been closed gracefully.");
+                        return;
+                    }
+
+                    logger?.LogInformation("Waiting for {ActiveConnections} active connections to complete...", activeConnections);
+
+                    var currentDelay = delays[delayIndex];
+                    if (delayIndex < delays.Length - 1) delayIndex++;
+
+                    await Task.Delay(currentDelay, cts.Token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // timeout reached error logging
+                logger?.LogWarning("Timeout reached after {TimeoutSeconds} seconds. Some connections may still be active.",
+                    timeout.TotalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error checking active connections");
+                await Task.Delay(500, token).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Gets the current number of active connections directly from server instances.
+        /// </summary>
+        private long GetActiveConnectionCount()
+        {
+            long count = 0;
+            if (servers != null)
+            {
+                foreach (var garnetServer in servers)
+                {
+                    if (garnetServer is GarnetServerBase garnetServerBase)
+                    {
+                        count += garnetServerBase.get_conn_active();
+                    }
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Persists data during shutdown using AOF or checkpoint based on configuration.
+        /// Both Enabled AOF and checkpoint, but AOF is prioritized.
+        /// IF AOF commit failed, checkpoint will be performed.
+        /// </summary>
+        private async Task FinalizeDataAsync(CancellationToken token)
+        {
+            if (opts.EnableAOF)
+            {
+                logger?.LogDebug("Committing AOF before shutdown...");
+                try
+                {
+                    var commitSuccess = await Store.CommitAOFAsync(token).ConfigureAwait(false);
+                    if (commitSuccess)
+                    {
+                        logger?.LogDebug("AOF committed successfully.");
+                        return; // skip checkpoint
+                    }
+                    else
+                    {
+                        logger?.LogInformation("AOF commit skipped (another commit in progress or replica mode).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error committing AOF during shutdown");
+                }
+            }
+
+            if (!opts.EnableStorageTier)
+                return;
+
+            logger?.LogDebug("Taking checkpoint for tiered storage...");
+            try
+            {
+                var checkpointSuccess = await Store.TakeCheckpointAsync(background: false, token: token).ConfigureAwait(false);
+                if (checkpointSuccess)
+                {
+                    logger?.LogDebug("Checkpoint completed successfully.");
+                }
+                else
+                {
+                    logger?.LogInformation("Checkpoint skipped (another checkpoint in progress or replica mode).");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error taking checkpoint during shutdown");
+            }
+            return;
         }
 
         /// <summary>
