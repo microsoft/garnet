@@ -182,10 +182,11 @@ namespace Garnet.server
         /// 
         /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
-        internal static void MarkSuppressCleanup(StorageSession storageSession, ReadOnlySpan<byte> key)
+        internal static void MarkSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             // Since we only have the one flag, setting it doesn't require a read first.
-            SetFlags(storageSession, key, VectorSetFlags.SuppressCleanup);
+            SetFlags(key, VectorSetFlags.SuppressCleanup, ref stringContext);
         }
 
         /// <summary>
@@ -193,10 +194,11 @@ namespace Garnet.server
         /// 
         /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
-        internal static void ClearSuppressCleanup(StorageSession storageSession, ReadOnlySpan<byte> key)
+        internal static void ClearSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             // Since we only have the one flag, clearing it is equivalent to setting to None
-            SetFlags(storageSession, key, VectorSetFlags.None);
+            SetFlags(key, VectorSetFlags.None, ref stringContext);
         }
 
         /// <summary>
@@ -204,7 +206,8 @@ namespace Garnet.server
         /// 
         /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
-        private static void SetFlags(StorageSession storageSession, ReadOnlySpan<byte> key, VectorSetFlags flags)
+        private static void SetFlags<TContext>(ReadOnlySpan<byte> key, VectorSetFlags flags, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             var input = new StringInput(RespCommand.VADD, arg1: VADDSetFlagsArg);
 
@@ -217,8 +220,13 @@ namespace Garnet.server
 
             var output = new StringOutput();
 
-            var writeRes = storageSession.RMW_MainStore(key, ref input, ref output, ref storageSession.stringBasicContext);
-            if (writeRes != GarnetStatus.OK)
+            var writeRes = stringContext.RMW((FixedSpanByteKey)key, ref input, ref output);
+            if (writeRes.IsPending)
+            {
+                CompletePending(ref writeRes, ref stringContext);
+            }
+
+            if (!writeRes.IsCompletedSuccessfully)
             {
                 throw new GarnetException("Marking existing Vector Set index flags should never fail");
             }

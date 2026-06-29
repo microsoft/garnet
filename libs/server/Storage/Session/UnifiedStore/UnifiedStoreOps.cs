@@ -268,15 +268,17 @@ namespace Garnet.server
             //  1. old and new key are NOT Vector Sets
             //     * We can copy old's record into new and then delete old
             //  2. old IS a Vector Set and new IS NOT a Vector Set
-            //     * We mark old a no copy, create a new Vector Set (with the
-            //       same index and context) under new key, update slot information,
-            //       then delete old
+            //     * We mark old with suppress cleanup before we copy it into new key,
+            //       then delete after after teh rename
             //  3. old IS NOT a Vector Set and new IS a Vector Set
             //     * We must explicitly delete new before copying old into new
             //       and then delete old
             //  4. old IS a Vector Set and new IS a Vector Set
             //     * First we perform an explicit delete of new (like in #3)
-            //       then we do a no copy + create as in #2
+            //       then we do a suppress cleanup + copy as in #2
+            //
+            // One final subtlety: if the RecordType changes between old and new, we must
+            // DELETE new before SET'ing no matter what
 
             var context = txnManager.UnifiedTransactionalContext;
             var oldKey = oldKeySlice;
@@ -329,9 +331,15 @@ namespace Garnet.server
 
                     var oldIsVectorSet = logRecord.RecordType == VectorManager.RecordType;
 
-                    if (newIsVectorSet)
+                    var needDeleteNewKey =
+                        newIsVectorSet ||
+                        (newExists && newIsVectorSet != oldIsVectorSet);
+
+                    if (needDeleteNewKey)
                     {
                         // Case #3 or #4 - new key is a Vector Set and needs to be explicitly deleted
+                        // OR
+                        // The RecordType is changing, and so we can't just copy values and optionals over
                         _ = DELETE(newKey, ref context);
                     }
 
@@ -339,9 +347,9 @@ namespace Garnet.server
 
                     if (oldIsVectorSet)
                     {
-                        // Case #2 or #4 - old key is a Vector Set, so its delete is 
+                        // Case #2 or #4 - old key is a Vector Set, so suppress cleanups on the coming delete
 
-                        VectorManager.MarkSuppressCleanup(this, oldKey);
+                        VectorManager.MarkSuppressCleanup(oldKey, ref stringTransactionalContext);
                         suppressedCleanup = true;
                     }
 
@@ -359,7 +367,7 @@ namespace Garnet.server
                     // If set failed for whatever reason, attempt to recover
                     if (suppressedCleanup)
                     {
-                        VectorManager.ClearSuppressCleanup(this, oldKey);
+                        VectorManager.ClearSuppressCleanup(oldKey, ref stringTransactionalContext);
                     }
                 }
             }

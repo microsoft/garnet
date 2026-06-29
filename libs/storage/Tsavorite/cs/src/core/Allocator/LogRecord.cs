@@ -1312,6 +1312,7 @@ namespace Tsavorite.core
                         return false;
                 }
             }
+
             return TryCopyOptionals(in srcLogRecord, in sizeInfo);
         }
 

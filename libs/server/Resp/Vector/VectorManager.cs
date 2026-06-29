@@ -395,7 +395,8 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
-        private static void CompletePending(ref Status status, ref StringBasicContext ctx)
+        private static void CompletePending<TContext>(ref Status status, ref TContext ctx)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();

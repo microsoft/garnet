@@ -3090,6 +3090,121 @@ namespace Garnet.test
             ClassicAssert.IsNotEmpty(sim);
         }
 
+        [Test]
+        public async Task RenamesAsync()
+        {
+            const string SourceKey = nameof(RenamesAsync) + "_source";
+            const string DestKey = SourceKey + "_dest";
+
+            // TODO: Do all the renames in a transaction as well since RENAME is implemented that way
+            // TODO: In non-cluster mode the hash slot change change, make sure that is done correctly
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Old key is Vector Set, and new key does not exist
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                ClassicAssert.IsTrue(renameRes);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is Vector Set, new key exists and is NOT a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                // RENAMENX shoudl fail
+                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                ClassicAssert.IsTrue(renameRes);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is Vector Set, new key exists and IS a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes2);
+
+                // RENAMENX shoudl fail
+                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                ClassicAssert.IsTrue(renameRes);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is NOT a Vector Set, new key exists and IS a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var setRes = await db.StringSetAsync(SourceKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                // RENAMENX shoudl fail
+                var renameNxRes = await db.KeyRenameAsync(SourceKey, DestKey, when: When.NotExists);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey);
+                ClassicAssert.IsTrue(renameRes);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var getRes = (string)await db.StringGetAsync(DestKey);
+                ClassicAssert.AreEqual("fizzbuzz", getRes);
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
