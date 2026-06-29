@@ -84,7 +84,7 @@ namespace Garnet.server
 
             foreach (var db in databases)
             {
-                store_index_size += db.Store.IndexSize * 64;
+                store_index_size += db.Store.IndexTotalSizeBytes;
                 aof_log_memory_size += db.AppendOnlyFile != null ? db.AppendOnlyFile.Log.MemorySizeBytes.AggregateDiff(0) : 0;
 
                 if (db.SizeTracker?.mainLogTracker is null)
@@ -295,23 +295,32 @@ namespace Garnet.server
             new($"CurrentVersion", db.Store.CurrentVersion.ToString()),
             new($"LastCheckpointedVersion", db.Store.LastCheckpointedVersion.ToString()),
             new($"SystemState", db.Store.SystemState.ToString()),
-            new($"IndexMemorySize", db.Store.IndexSize.ToString()),
+            new($"IndexBucketCount", db.Store.IndexSize.ToString()),
+            new($"IndexBucketSizeBytes", db.Store.IndexBucketSizeBytes.ToString()),
+            new($"IndexMemorySizeBytes", db.Store.IndexSizeBytes.ToString()),
+            new($"IndexOverflowBucketCount", db.Store.OverflowBucketCount.ToString()),
+            new($"IndexOverflowMemorySizeBytes", db.Store.IndexOverflowSizeBytes.ToString()),
+            new($"IndexTotalMemorySizeBytes", db.Store.IndexTotalSizeBytes.ToString()),
             new($"LogDir", storeWrapper.serverOptions.LogDir),
-            new($"Log.BeginAddress", db.Store.Log.BeginAddress.ToString()),
-            new($"Log.BufferSize", db.Store.Log.BufferSize.ToString()),
+            new($"Log.PageSizeBytes", db.Store.Log.PageSizeBytes.ToString()),
+            new($"Log.MaxPageCount", db.Store.Log.MaxAllocatedPageCount.ToString()),
             new($"Log.AllocatedPageCount", db.Store.Log.AllocatedPageCount.ToString()),
+            new($"Log.MaxMemorySizeBytes", db.Store.Log.MaxMemorySizeBytes.ToString()),
+            new($"Log.CurrentMemorySizeBytes", db.Store.Log.MemorySizeBytes.ToString()),
+            new($"Log.CurrentHeapSizeBytes", db.Store.Log.HeapSizeBytes.ToString()),
+            new($"Log.BeginAddress", db.Store.Log.BeginAddress.ToString()),
             new($"Log.HeadAddress", db.Store.Log.HeadAddress.ToString()),
-            new($"Log.MemorySizeBytes", db.Store.Log.MemorySizeBytes.ToString()),
-            new($"Log.HeapSizeBytes", db.Store.Log.HeapSizeBytes.ToString()),
             new($"Log.SafeReadOnlyAddress", db.Store.Log.SafeReadOnlyAddress.ToString()),
             new($"Log.FlushedUntilAddress", db.Store.Log.FlushedUntilAddress.ToString()),
             new($"Log.TailAddress", db.Store.Log.TailAddress.ToString()),
-            new($"ReadCache.BeginAddress", db.Store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-            new($"ReadCache.BufferSize", db.Store.ReadCache?.BufferSize.ToString() ?? "N/A"),
+            new($"ReadCache.PageSizeBytes", db.Store.ReadCache?.PageSizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.MaxPageCount", db.Store.ReadCache?.MaxAllocatedPageCount.ToString() ?? "N/A"),
             new($"ReadCache.AllocatedPageCount", db.Store.ReadCache?.AllocatedPageCount.ToString() ?? "N/A"),
+            new($"ReadCache.MaxMemorySizeBytes", db.Store.ReadCache?.MaxMemorySizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.CurrentMemorySizeBytes", db.Store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.CurrentHeapSizeBytes", db.Store.ReadCache?.HeapSizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.BeginAddress", db.Store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
             new($"ReadCache.HeadAddress", db.Store.ReadCache?.HeadAddress.ToString() ?? "N/A"),
-            new($"ReadCache.MemorySizeBytes", db.Store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-            new($"ReadCache.HeapSizeBytes", db.Store.ReadCache?.HeapSizeBytes.ToString() ?? "N/A"),
             new($"ReadCache.TailAddress", db.Store.ReadCache?.TailAddress.ToString() ?? "N/A"),
         ];
 

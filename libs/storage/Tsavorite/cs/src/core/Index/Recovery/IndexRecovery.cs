@@ -40,7 +40,7 @@ namespace Tsavorite.core
 
             if (state[ht_version].size != info.info.table_size)
             {
-                Free(ht_version);
+                // This will allocate over any existing table for this version and initialize the new table size
                 Initialize(info.info.table_size, (int)sectorSize);
             }
 

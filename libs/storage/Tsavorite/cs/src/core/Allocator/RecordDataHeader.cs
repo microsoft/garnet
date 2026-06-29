@@ -86,14 +86,14 @@ namespace Tsavorite.core
         // ── KeyLength field (low kKeyLengthBits bits after FillerWords) ─────────────
         const int kKeyLengthShift = 14;
         internal const int kKeyLengthBits = 10;
-        internal const ulong kKeyLengthValueMask = (1UL << kKeyLengthBits) - 1;
-        const ulong kKeyLengthMask = kKeyLengthValueMask << kKeyLengthShift;
+        internal const ulong kKeyLengthLowBitsMask = (1UL << kKeyLengthBits) - 1;       // The bit mask at the low bit positions of the shifted ulong
+        const ulong kKeyLengthMask = kKeyLengthLowBitsMask << kKeyLengthShift;
 
         // ── ValueLength field (low kValueLengthBits bits after KeyLength) ───────────
         const int kValueLengthShift = kKeyLengthShift + kKeyLengthBits;
         internal const int kValueLengthBits = 24;
-        internal const ulong kValueLengthValueMask = (1UL << kValueLengthBits) - 1;
-        const ulong kValueLengthMask = kValueLengthValueMask << kValueLengthShift;
+        internal const ulong kValueLengthLowBitsMask = (1UL << kValueLengthBits) - 1;   // The bit mask at the low bit positions of the shifted ulong
+        const ulong kValueLengthMask = kValueLengthLowBitsMask << kValueLengthShift;
 
         // ── RecordType byte (byte 6 of word; must be byte-aligned: requires kValueLengthShift + kValueLengthBits == 48) ─
         const int kRecordTypeShift = kValueLengthShift + kValueLengthBits;
@@ -252,19 +252,19 @@ namespace Tsavorite.core
         internal int KeyLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => KeyIsInline ? (int)((word >> kKeyLengthShift) & kKeyLengthValueMask) : ObjectIdMap.ObjectIdSize;
+            readonly get => KeyIsInline ? (int)((word >> kKeyLengthShift) & kKeyLengthLowBitsMask) : ObjectIdMap.ObjectIdSize;
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kKeyLengthValueMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
-                word = (word & ~kKeyLengthMask) | (((ulong)value & kKeyLengthValueMask) << kKeyLengthShift);
+                Debug.Assert((uint)value <= kKeyLengthLowBitsMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
+                word = (word & ~kKeyLengthMask) | (((ulong)value & kKeyLengthLowBitsMask) << kKeyLengthShift);
             }
         }
 
         /// <summary>Read the raw value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
         /// where the field may hold the low <see cref="kKeyLengthBits"/> bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthValueMask);
+        internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthLowBitsMask);
 
         /// <summary>The effective ValueLength for record-length calculations.
         /// <para>For inline values, returns the raw <see cref="kValueLengthBits"/>-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
@@ -277,19 +277,19 @@ namespace Tsavorite.core
         internal int ValueLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => ValueIsInline ? (int)((word >> kValueLengthShift) & kValueLengthValueMask) : ObjectIdMap.ObjectIdSize;
+            readonly get => ValueIsInline ? (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask) : ObjectIdMap.ObjectIdSize;
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kValueLengthValueMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
-                word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthValueMask) << kValueLengthShift);
+                Debug.Assert((uint)value <= kValueLengthLowBitsMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
+                word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthLowBitsMask) << kValueLengthShift);
             }
         }
 
         /// <summary>Read the raw value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
         /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthValueMask);
+        internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask);
 
         internal readonly int ExtendedNamespaceLength
         {
@@ -501,7 +501,7 @@ namespace Tsavorite.core
             var newRDH = new RecordDataHeader
             {
                 word = kKeyIsInlineMask | kValueIsInlineMask
-                     | (((ulong)newValueLength & kValueLengthValueMask) << kValueLengthShift)
+                     | (((ulong)newValueLength & kValueLengthLowBitsMask) << kValueLengthShift)
             };
             // If there's still leftover filler after maxing out ValueLength, set it (this may itself trigger another split).
             if (newRemainingFiller > 0)
@@ -605,8 +605,8 @@ namespace Tsavorite.core
             // to a 16-byte advance) or this fully-formed post-Initialize state.
             word = indicatorBits
                  | (((ulong)fillerWords & kFillerWordsValueMask) << kFillerWordsShift)
-                 | (((ulong)keyLength & kKeyLengthValueMask) << kKeyLengthShift)
-                 | (((ulong)valueLength & kValueLengthValueMask) << kValueLengthShift)
+                 | (((ulong)keyLength & kKeyLengthLowBitsMask) << kKeyLengthShift)
+                 | (((ulong)valueLength & kValueLengthLowBitsMask) << kValueLengthShift)
                  | ((ulong)namespaceByte << kNamespaceShift)
                  | ((ulong)recordType << kRecordTypeShift);
 
