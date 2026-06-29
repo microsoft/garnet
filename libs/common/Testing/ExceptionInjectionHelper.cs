@@ -150,6 +150,16 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Blocks until <paramref name="exceptionType"/> is disabled.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public static void WaitOnClearWithThreadSleep(ExceptionInjectionType exceptionType)
+        {
+            while (IsEnabled(exceptionType))
+                Thread.Sleep(1);
+        }
+
+        /// <summary>
         /// Wait on clear condition
         /// </summary>
         /// <param name="exceptionType"></param>

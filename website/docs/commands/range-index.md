@@ -44,6 +44,41 @@ Range Index is fully integrated with Garnet's checkpoint and AOF mechanisms:
 - **Eviction and lazy restore:** When memory pressure causes the stub to be evicted from the log,
   the BfTree data file is preserved. On next access, the tree is lazily restored from its snapshot.
 
+#### Snapshot performance
+
+A BfTree checkpoint takes a CPR (Concurrent Prefix Recovery) snapshot, which is synchronous and
+non-blocking to concurrent readers/writers. It has a **fixed floor of ~3 seconds** (the snapshot
+state machine advances through several phases, each with a short barrier) plus a component that
+grows roughly **linearly with the tree's data size**. The snapshot is dominated by total data
+**size**, not the number of keys.
+
+Measured on a single disk-backed tree (local NVMe, 1 KB values, cache large enough to keep the
+tree resident; times are approximate and hardware-dependent):
+
+| Tree data | Keys | Snapshot file | Snapshot time |
+|-----------|------|---------------|---------------|
+| 32 MB     | 32 K | 39 MB         | ~3.0 s        |
+| 64 MB     | 65 K | 78 MB         | ~3.1 s        |
+| 128 MB    | 129 K| 145 MB        | ~3.2 s        |
+| 512 MB    | 516 K| 594 MB        | ~4.0 s        |
+| 1 GB      | 1.0 M| 1.16 GB       | ~5.1 s        |
+| 2 GB      | 2.1 M| 2.44 GB       | ~6.3 s        |
+| 4 GB      | 4.1 M| 4.90 GB       | ~8.6 s        |
+
+Holding the data size roughly constant (~500 MB) while varying the value size — and therefore the
+key count — shows snapshot time is **independent of key count**:
+
+| Value size | Keys  | Snapshot time |
+|------------|-------|---------------|
+| 64 B       | 6.7 M | ~4.2 s        |
+| 256 B      | 2.0 M | ~4.0 s        |
+| 1 KB       | 516 K | ~4.1 s        |
+| 4 KB       | 131 K | ~4.0 s        |
+
+> **Note:** Each live tree is snapshotted independently during a checkpoint, and snapshots of the
+> same tree are serialized. A checkpoint of many large indexes therefore scales with the sum of
+> their sizes.
+
 ---
 
 ## Lifecycle Commands
