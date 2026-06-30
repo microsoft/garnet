@@ -39,6 +39,10 @@ namespace Garnet.server
                 Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
+                // Clear the per-index read geometry so a subsequent operation on a different vector set
+                // (possibly with different dimensions / M) does not inherit stale sizes.
+                ActiveReadGeometry = default;
+
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;
@@ -136,6 +140,20 @@ namespace Garnet.server
 
                     if (needsRecreate)
                     {
+                        // If we need to recreate the index, BUT we haven't finished drop from the last time
+                        // we need to spin (without holding a lock) until that happens
+                        //
+                        // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
+                        // will break inserts quite badly - so it's not optional.
+                        if (DropRequested(key))
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            takeExclusiveLock = false;
+
+                            WaitForDiskANNIndexDrop(key);
+                            continue;
+                        }
+
                         if (!lockToken.IsExclusive)
                         {
                             // Try to promote
@@ -154,9 +172,10 @@ namespace Garnet.server
                         input.arg1 = RecreateIndexArg;
 
                         nint newlyAllocatedIndex;
+                        bool requestQuantization;
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -197,6 +216,12 @@ namespace Garnet.server
 
                         if (writeRes == GarnetStatus.OK)
                         {
+                            // Post recreate the index might already need quantization - if so, queue it up
+                            if (requestQuantization)
+                            {
+                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                            }
+
                             // Try again so we don't hold an exclusive lock while performing a search
                             vectorSetLocks.ReleaseLock(lockToken);
 
@@ -321,15 +346,30 @@ namespace Garnet.server
 
                         ulong indexContext;
                         nint newlyAllocatedIndex;
+                        bool requestQuantization;
                         if (needsRecreate)
                         {
+                            // If we need to recreate the index, BUT we haven't finished drop from the last time
+                            // we need to spin (without holding a lock) until that happens
+                            //
+                            // This should be rare, but having two active DiskANN indexes for the same logical Vector Set
+                            // will break inserts quite badly - so it's not optional.
+                            if (DropRequested(key))
+                            {
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                takeExclusiveLock = false;
+
+                                WaitForDiskANNIndexDrop(key);
+                                continue;
+                            }
+
                             ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
 
                             input.arg1 = RecreateIndexArg;
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -361,7 +401,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -409,6 +449,12 @@ namespace Garnet.server
 
                         if (writeRes == GarnetStatus.OK)
                         {
+                            // Post (re)create the index might already need quantization - if so, queue it up
+                            if (requestQuantization)
+                            {
+                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                            }
+
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseLock(lockToken);
                             continue;

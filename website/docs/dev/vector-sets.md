@@ -14,16 +14,9 @@ Vector Sets are a combination of one "index" key, which stores metadata and a po
 
 ## Global Metadata
 
-In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep a single `ContextMetadata` struct under the empty key in namespace `VectorManager.MetadataNamespace` (which is `1`).
+In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep an array of `ContextMetadata` structs in namespace `VectorManager.MetadataNamespace` (which is `1`) with each index of the array used as the key.
 
-This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
-
-> [!IMPORTANT]
-> Today `ContextMetadata` can track only 64 Vector Sets in some state of creation or cleanup.
-> 
-> The practical limit is actually 15, because context must be &lt; 128, divisible by 8, and not 0 (which is reserved).
->
-> This limitation will be lifted eventually.
+These are loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
 
 ## Indexes
 
@@ -36,11 +29,10 @@ The index key (represented by the `Index` struct) contains the following data:
      > Today this ignored except for validation purposes, eventually DiskANN will use it.
  - `uint NumLinks` - the `M` used to create the Vector Set, or the default value of 16 if not specified
  - `uint BuildExplorationFactor` - the `EF` used to create the Vector Set, or the default value of 200 if not specified
- - `VectorQuantType QuantType` - the quantizier specified at creation time, or the default value of `Q8` if not specified
+ - `VectorQuantType QuantType` - the quantizer specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
-     > We have an extension here, `XPREQ8` which is not from Redis.
-     > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
-     > It forbids the `REDUCE` option and requires 4-byte element ids.
+     > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
+     > They forbid the `REDUCE` option, a restriction we may lift in the future.
 
 The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 
@@ -52,6 +44,7 @@ The index key is in the store alongside other binary values like strings, hyperl
 While the Vector Set API only concerns itself with top-level index keys, ids, vectors, and attributes; DiskANN has different storage needs.  To abstract around these needs a bit, we reserve a number of different "namespaces" for each Vector Set.
 
 These namespaces are simple numbers, starting at the `Context` value stored in the `Index` struct - we currently reserve 8 namespaces per Vector Set.  What goes in which namespace is mostly hidden from Garnet, DiskANN indicates namespace (and index) to use with a modified `Context` passed to relevant callbacks.
+
 > There are two cases where we "know" the namespace involved: attributes (+3) and full vectors (+0) which are used to implement the `WITHATTR` option and the `VEMB` command respectively.  These exceptions _may_ go away in the future, but don't have to.
 
 Using namespaces prevents other commands from accessing keys which store element data.
@@ -145,14 +138,44 @@ During recovery partially deleted Vector Sets are found by checking [`ContextMet
 
 `FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 
+# Quantization
+
+To speed up search and reduce the size of the "live set" Vector Sets support quantization.
+
+The following quantizers are supported:
+ - `NOQUANT` - disables quantization, dimensions are `float`s
+ - `BIN` - binary quantization, each dimension is a single bit
+ - `Q8` - signed 8-bit quantization, each dimension is an `sbyte`
+ - `XNOQUANT_U8` - disables quantization, but requires dimensions are [0, 255]
+ - `XNOQUANT_I8` - disables quantization, but requires dimensions are [-128, 127]
+ - `XBIN_U8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [0, 255]
+ - `XBIN_I8` - binary quantization, each dimension is a bit, but the unquantized dimensions are [-128, 127]
+
+Quantizers that start with an `X` are extensions, quantizers that are not also found in Redis.  For the `_U8`, and `_I8` suffixed quantizers it is legal to use `FP32`, or `VALUES` with `VADD` but for optimal performance use `XU8` or `XI8` to remove copies and validation.
+
+Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to background tasks.
+
+Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
+ - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
+ - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
+ - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
+ 
+ It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
+
+ > [!NOTE]
+ > Today DiskANN does not recover quantization state.
+ >
+ > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
+
 # Locking
 
 Vector Sets workloads require extreme parallelism, and so intricate locking protocols are required for both performance and correctness.
 
-Concretely, there are 3 sorts of locks involved:
+Concretely, there are 4 sorts of locks involved:
  - Tsavorite hashbucket locks
  - A `ReadOptimizedLock` instance
  - `VectorManager` lock around `ContextMetadata`
+ - Spin wait around `drop_index` calls
 
 ## Tsavorite Locks
 
@@ -176,13 +199,26 @@ For operations which might be either (like `VADD`) we first acquire the usual si
 
 ## `VectorManager` Lock Around `ContextMetadata`
 
-Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a plain `lock` around `VectorManager` while preparing a new `ContextMetadata`.
+Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` array and write the new values to Tsavorite.  To simplify this, we take a plain `lock` around `VectorManager` while updating `ContextMetadata`s.
 
-The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a version counter in `ContextMetadata` allows us to keep only the latest version in the store.
+The `RMW`s into Tsavorite still proceeds in parallel, outside of the lock, but a version counter in `ContextMetadata` allows us to keep only the latest version in the store.
 
 > [!NOTE]
 > Rapid creation or deletion of Vector Sets is expected to perform poorly due to this lock.
 > This isn't a case we're very interested in right now, but if that changes this will need to be reworked.
+
+## Spin wait around `drop_index` calls
+
+When a DiskANN index needs to be dropped due to memory pressure (as indicated by a `GarnetRecordTriggers.OnEvict` call) we move that drop on a background task and guard it with exclusive `ReadOptimizedLock` acquisitions.  This is necessary to prevent an index from being dropped while it is in use.
+
+This introduces a rare race where we might try to recreate an index that was evicted to disk and then reloaded from disk _before_ the drop actually executes.  If we allowed that, the two DiskANN index instances could disagree about internal state and corrupt future inserts.
+
+To prevent that, when we recreate an index we first check if that key has a scheduled drop and if so we spin waiting for it to be processed before recreating the index.
+
+> [!NOTE]
+> The code in `VectorManager.WaitForDiskANNIndexDrop` is a naive `while(...) { Thread.Yield(); }`-loop, which is decidedly suboptimal.
+> 
+> Since this case should be rare, that should be fine.  If it turns out this is less rare than hoped, we'll need to do something smarter.
 
 # Replication
 
@@ -255,18 +291,13 @@ To clean up the remaining data we record the deleted index context value in `Con
 >
 > If we wanted to explore better options, we'd need to build something that can drop whole namespaces at once in Tsavorite.
 
-> [!IMPORTANT]
-> Today because we only have ~15 available Vector Set contexts, it is quite likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
->
-> This will be fixed once we have arbitrarily long namespaces in Store V2, and have updated `ContextMetadata` to track those.
-
 # Recovery
 
 Vector Sets represent a unique kind of recovery because most operations are mediated through DiskANN, for which we only ever have a pointer to a data structure.  This means that recovery needs to both deal with Vector Sets metadata AND the recreation of the DiskANN side of things.
 
 ## Vector Set Metadata
 
-During startup we read any old `ContextMetadata` out of the Main Store, cache it, and resume any in progress cleanups.
+During startup we discover any old `ContextMetadata`s in Tsavorite via `GarnetRecordTriggers.OnRecoverySnapshotRead`.  Once all records are recovered, `VectorManager.ResumePostRecovery()` populates the cache `ContextMetadata` array, cancels any abandoned migrations, cancels any abandoned index deletions, and resumes cleanups that were interrupted.
 
 ## Vector Sets
 
@@ -284,11 +315,6 @@ In order for DiskANN to access and store data in Garnet, we provide a set of cal
 
 All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opaque identifier.
 
-> [!IMPORTANT]
-> As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to ~15.
->
-> This restriction will go away later, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for intermediate data copies with longer namespaces.
-
 ## Read Callback
 
 The most complicated of our callbacks, the signature is:
@@ -299,9 +325,6 @@ void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint key
 `context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.
-
-> [!NOTE]
-> Today we place the `context`-derived namespace byte in a field on `VectorElementKey`.  In store v1 we kept namespace inline with key bytes (using the length prefixed bytes for storage) - it may be worth restoring that for performance.
 
 As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
@@ -366,19 +389,21 @@ Garnet calls into the following DiskANN functions:
 
  - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
- - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+ - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
  - [ ] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
- - [x] `int search_vector(ulong context, nint index, VectorValueType vector_value_type, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
  - [x] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
+ - [x] `build_quant_table(ulong context, nint index)`
+ - [x] `backfill_quant_vectors(ulong context, nint index, nuint task_index, nuint task_count)`
 
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
   - `output_distances_len` is the number of _floats_ in `output_distances`, not bytes
-  - When inserting, if `vector_value_type == FP32` then `vector_len` is the number of _floats_ in `vector_data`, otherwise it is the number of bytes
+  - When inserting and searching, the `VectorQuantType` used to create the index defines the expected format of `vector_data` and whether `vector_len` is counting bytes, floats, etc.
   - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8

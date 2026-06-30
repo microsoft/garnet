@@ -17,6 +17,13 @@ namespace Garnet.common
     public static unsafe class RespReadUtils
     {
         /// <summary>
+        /// Maximum size a single RESP element can be.
+        /// 
+        /// This matches the default Redis max string size of 512MB.
+        /// </summary>
+        public const int MaxArgumentLengthBytes = 512 * 1_024 * 1_024;
+
+        /// <summary>
         /// Tries to read the leading sign of the given ASCII-encoded number.
         /// </summary>
         /// <param name="ptr">String to try reading sign from.</param>
@@ -690,7 +697,7 @@ namespace Garnet.common
         public static bool TrySkipByteArrayWithLengthHeader(ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end))
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
                 return false;
 
             // Advance read pointer to the end of the array (including terminator)
@@ -753,7 +760,7 @@ namespace Garnet.common
             result = default;
 
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end))
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
                 return false;
 
             // Advance read pointer to the end of the array (including terminator)
@@ -860,7 +867,7 @@ namespace Garnet.common
                 return false;
 
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end))
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
                 return false;
 
             // Extract string content + '\r\n' terminator
@@ -925,7 +932,7 @@ namespace Garnet.common
         public static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadSignedLengthHeader(out length, ref ptr, end))
+            if (!TryReadSignedLengthHeader(out length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
             {
                 return false;
             }
@@ -1148,7 +1155,7 @@ namespace Garnet.common
         public static bool TryReadPtrWithLengthHeader(ref byte* result, ref int len, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out len, ref ptr, end))
+            if (!TryReadUnsignedLengthHeader(out len, ref ptr, end) || len > RespReadUtils.MaxArgumentLengthBytes)
             {
                 return false;
             }

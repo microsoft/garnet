@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
@@ -19,12 +20,20 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    [TestFixture(0)]
+    [TestFixture(1_000)]
     public class RespVectorSetTests : TestBase
     {
         private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
 
+        private readonly int preAllocatedContexts;
+
         GarnetServer server;
+
+        public RespVectorSetTests(int preAllocatedContexts)
+        {
+            this.preAllocatedContexts = preAllocatedContexts;
+        }
 
         [SetUp]
         public void Setup()
@@ -33,6 +42,8 @@ namespace Garnet.test
             server = CreateGarnetServer(tryRecover: false);
 
             server.Start();
+
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
         }
 
         [TearDown]
@@ -350,14 +361,6 @@ namespace Garnet.test
             // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
             var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
-
-            // Unsupported quantization types (Q8 and BIN are not yet supported)
-            var exc28 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc28.Message);
-            var exc29 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "Q8"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc29.Message);
-            var exc30 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "BIN"]));
-            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc30.Message);
 
             // Malformed XDISTANCE_METRIC
             var exc31 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC"]));
@@ -875,6 +878,236 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSIMBadFilters()
+        {
+            const string VectorSet = "vs";
+            const string CompileErr = "ERR Compiling filter failed";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete(VectorSet);
+
+            // Seed:
+            //   ids 0..2  -> valid JSON attributes (year + genre)
+            //   id  3     -> malformed JSON attribute
+            //   id  4     -> no SETATTR at all
+            var add0 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT", "SETATTR", "{\"year\":1980,\"genre\":\"action\"}"]);
+            ClassicAssert.AreEqual(1, (int)add0);
+            var add1 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.1", "2.1", "3.1", new byte[] { 0, 0, 0, 1 }, "NOQUANT", "SETATTR", "{\"year\":1990,\"genre\":\"drama\"}"]);
+            ClassicAssert.AreEqual(1, (int)add1);
+            var add2 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.2", "2.2", "3.2", new byte[] { 0, 0, 0, 2 }, "NOQUANT", "SETATTR", "{\"year\":2000,\"genre\":\"sci-fi\"}"]);
+            ClassicAssert.AreEqual(1, (int)add2);
+            var add3 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.3", "2.3", "3.3", new byte[] { 0, 0, 0, 3 }, "NOQUANT", "SETATTR", "{not-valid-json"]);
+            ClassicAssert.AreEqual(1, (int)add3);
+            var add4 = db.Execute("VADD", [VectorSet, "VALUES", "3", "1.4", "2.4", "3.4", new byte[] { 0, 0, 0, 4 }, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)add4);
+
+            // ── Section A: compile-time errors ─────────────────────────────────
+            // Every entry below must surface as "ERR Compiling filter failed".
+            (string Filter, string Why)[] badFilters =
+            [
+                ("   ", "whitespace-only filter (compiler sees zero tokens)"),
+                ("(.year > 1980", "unclosed opening paren"),
+                (".year > 1980)", "extra closing paren"),
+                ("()", "empty parens with no expression"),
+                (".genre == \"action", "unterminated double-quoted string"),
+                (".genre == 'action", "unterminated single-quoted string"),
+                (". > 1", "bare-dot selector with no field name"),
+                ("> 1980", "binary operator with no left operand"),
+                (".year >", "binary operator with no right operand"),
+                (".year > > 1980", "two consecutive binary operators"),
+                (".year 1980", "two consecutive operands with no operator"),
+                (".year > 1.2.3", "malformed number literal"),
+                ("foobar", "unknown identifier"),
+                ("@ > 1", "character not allowed in any token"),
+                (".x in [1, 2", "unterminated tuple literal"),
+                (".x in [1 2]", "tuple elements without a comma separator"),
+                ("not", "unary 'not' with no operand"),
+                ("in [1, 2]", "'in' operator with no left operand"),
+                (".x in", "'in' operator with no right operand"),
+                (">", "naked binary operator"),
+            ];
+
+            foreach (var (filter, why) in badFilters)
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(
+                    () => db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", filter, "COUNT", "10"]),
+                    $"Expected compile failure for filter '{filter}' ({why})");
+                ClassicAssert.AreEqual(CompileErr, exc.Message, $"Wrong error message for filter '{filter}' ({why})");
+            }
+
+            // ── Section B: documented "skip silently" behavior ─────────────────
+            // Per the filter-expressions docs: "If a field is missing or invalid,
+            // the element is skipped without error." None of the queries below
+            // should raise an exception.
+
+            // Empty FILTER string is treated as no filter at all by the VSIM
+            // parser (length-0 check before compile), so it returns all elements.
+            var emptyFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "", "COUNT", "10"]);
+            ClassicAssert.AreEqual(5, emptyFilter.Length, "Empty FILTER string should behave as no filter");
+
+            // Filter referencing a field no element has -> 0 results, no error.
+            var missingField = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".nonexistent > 5", "COUNT", "10"]);
+            ClassicAssert.AreEqual(0, missingField.Length, "Filter on a non-existent field should return zero results, not an error");
+
+            // Type-mismatched comparisons must not raise. Exact result count
+            // depends on whether the runner skips or coerces, which the spec
+            // leaves unspecified, so we only assert "no error" and that the
+            // result stays within the seeded population.
+            var numCmpString = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".genre > 5", "COUNT", "10"]);
+            ClassicAssert.IsNotNull(numCmpString, "Numeric comparison against a string field must not raise");
+            ClassicAssert.LessOrEqual(numCmpString.Length, 5);
+
+            var stringEqOnNum = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year == \"hello\"", "COUNT", "10"]);
+            ClassicAssert.IsNotNull(stringEqOnNum, "Comparing a numeric field to a string literal must not raise");
+            ClassicAssert.LessOrEqual(stringEqOnNum.Length, 5);
+
+            // A permissive valid filter should match the 3 well-formed elements
+            // and silently skip the malformed-JSON (id 3) and no-attr (id 4)
+            // elements, demonstrating both documented skip cases at once.
+            var validFilter = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year >= 1980", "COUNT", "10"]);
+            ClassicAssert.AreEqual(3, validFilter.Length, "Only the 3 well-formed elements should match; malformed-JSON and no-attr elements must be skipped silently");
+            var matchedIds = new HashSet<byte[]>(validFilter, ByteArrayComparer.Instance);
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 0]), "id 0 (valid attrs) should be in results");
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 1]), "id 1 (valid attrs) should be in results");
+            ClassicAssert.IsTrue(matchedIds.Contains([0, 0, 0, 2]), "id 2 (valid attrs) should be in results");
+            ClassicAssert.IsFalse(matchedIds.Contains([0, 0, 0, 3]), "id 3 (malformed JSON) should be silently skipped");
+            ClassicAssert.IsFalse(matchedIds.Contains([0, 0, 0, 4]), "id 4 (no SETATTR) should be silently skipped");
+        }
+
+        [Test]
+        public void VSIMComplexJsonAttributes()
+        {
+            const string VectorSet = "vs";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete(VectorSet);
+
+            // Seed 11 elements covering nested objects, booleans, null, arrays,
+            // non-object top-level JSON, empty objects, dash-in-field-name, and
+            // same-named top-level vs nested fields.
+            //
+            //   id 0  -> top-level year + nested meta.director
+            //   id 1  -> year only exists at nested depth
+            //   id 2  -> top-level boolean true
+            //   id 3  -> top-level boolean false
+            //   id 4  -> top-level null
+            //   id 5  -> top-level number array
+            //   id 6  -> non-object top-level JSON (whole attr is an array)
+            //   id 7  -> empty object
+            //   id 8  -> field name contains a dash
+            //   id 9  -> same-named field both top-level (1980) and nested (2020)
+            //   id 10 -> top-level string array + nested object value
+            (byte[] Id, string Attr)[] seed =
+            [
+                ([0, 0, 0, 0],  "{\"year\":1980,\"meta\":{\"director\":\"Spielberg\"}}"),
+                ([0, 0, 0, 1],  "{\"meta\":{\"year\":1980}}"),
+                ([0, 0, 0, 2],  "{\"active\":true}"),
+                ([0, 0, 0, 3],  "{\"active\":false}"),
+                ([0, 0, 0, 4],  "{\"year\":null}"),
+                ([0, 0, 0, 5],  "{\"scores\":[1,2,3]}"),
+                ([0, 0, 0, 6],  "[1,2,3]"),
+                ([0, 0, 0, 7],  "{}"),
+                ([0, 0, 0, 8],  "{\"year-old\":1980}"),
+                ([0, 0, 0, 9],  "{\"year\":1980,\"nested\":{\"year\":2020}}"),
+                ([0, 0, 0, 10], "{\"tags\":[\"classic\"],\"director\":{\"name\":\"Spielberg\"}}"),
+            ];
+
+            for (var i = 0; i < seed.Length; i++)
+            {
+                var (id, attr) = seed[i];
+                // Spread the vectors slightly so cosine/L2 doesn't collapse them on top of each other.
+                var v0 = (1.0f + i * 0.1f).ToString();
+                var v1 = (2.0f + i * 0.1f).ToString();
+                var v2 = (3.0f + i * 0.1f).ToString();
+                var res = db.Execute("VADD", [VectorSet, "VALUES", "3", v0, v1, v2, id, "NOQUANT", "SETATTR", attr]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD for id {i} should succeed even with unusual attribute shape");
+            }
+
+            // Sanity: all 11 elements made it into the set.
+            var info = (RedisValue[])db.Execute("VINFO", [VectorSet]);
+            var infoMap = new Dictionary<string, string>();
+            for (var i = 0; i < info.Length; i += 2)
+                infoMap[info[i]] = info[i + 1];
+            ClassicAssert.AreEqual("11", infoMap["size"], "All 11 elements must be present");
+
+            // ── Case 1 + 9: top-level .year is visible; nested .year is not ───
+            // Filter .year > 1900 should match id 0 and id 9 (both have top-level
+            // year 1980). It must NOT match id 1 (nested-only) or id 4 (null).
+            var byYear = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1900", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), byYear, "Top-level .year > 1900 should match only ids 0 and 9");
+
+            // ── Case 9 specifically: nested .year=2020 must be invisible ──────
+            var byYear2000 = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 2000", "COUNT", "20"]));
+            ClassicAssert.AreEqual(0, byYear2000.Count, ".year > 2000 must not see the nested year=2020 in id 9");
+
+            var byYearRange = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1900 and .year < 2000", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), byYearRange, "Range filter should still see only top-level .year for ids 0 and 9");
+
+            // ── Case 1 sub: top-level field whose value is an object is unusable
+            // id 0's .meta and id 1's .meta are objects. Comparing to a string
+            // must yield 0 matches without raising.
+            var metaEq = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".meta == \"Spielberg\"", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, metaEq.Length, "Equality against an object-valued top-level field must yield 0 results");
+
+            // Same idea for case 10: .director is an object on id 10.
+            var directorEq = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".director == \"Spielberg\"", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, directorEq.Length, "Equality against object-valued .director must yield 0 results");
+
+            // ── Case 3: top-level booleans coerce to 1 / 0 ────────────────────
+            var activeTrue = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".active == 1", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 2]), activeTrue, ".active == 1 should match only the element whose JSON value is true");
+
+            var activeFalse = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".active == 0", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 3]), activeFalse, ".active == 0 should match only the element whose JSON value is false");
+
+            // ── Case 4: top-level null does not match numeric > comparisons ───
+            // (.year > 5 with year=null: id 4 must NOT appear; ids 0 and 9 do.)
+            var yearGt5 = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 5", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 0], [0, 0, 0, 9]), yearGt5, ".year > 5 must skip the null-valued id 4");
+
+            // ── Case 5: top-level number array works with `in`, fails > silently
+            var inHit = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "2 in .scores", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 5]), inHit, "2 in .scores should match only id 5");
+
+            var inMiss = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "99 in .scores", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, inMiss.Length, "99 in .scores should match nothing");
+
+            var arrAsNum = (byte[][])db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".scores > 5", "COUNT", "20"]);
+            ClassicAssert.AreEqual(0, arrAsNum.Length, "Numeric comparison against an array-valued field must yield 0 results without raising");
+
+            // ── Case 8: selector greedily includes '-' so .year-old is one name
+            // The filter must NOT be interpreted as `.year - old > 1900`.
+            var yearOld = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year-old > 1900", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 8]), yearOld, ".year-old must be treated as a single selector and match only id 8");
+
+            // ── Case 10: top-level string array still works with `in` ─────────
+            var classicInTags = MatchedIds(db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", "\"classic\" in .tags", "COUNT", "20"]));
+            AssertSameIds(ExpectIds([0, 0, 0, 10]), classicInTags, "\"classic\" in .tags should match only id 10");
+
+            // ── Case 6 + 7 (implicit): the above filters together demonstrate
+            // that ids 6 (non-object top-level JSON) and 7 (empty object) never
+            // appear in any field-based result and never cause an error.
+            ClassicAssert.IsFalse(yearOld.Contains([0, 0, 0, 6], ByteArrayComparer.Instance), "Non-object top-level JSON (id 6) must be silently skipped, not error");
+            ClassicAssert.IsFalse(yearOld.Contains([0, 0, 0, 7], ByteArrayComparer.Instance), "Empty-object JSON (id 7) must be silently skipped, not error");
+
+            static HashSet<byte[]> MatchedIds(RedisResult res)
+                => new((byte[][])res, ByteArrayComparer.Instance);
+
+            static HashSet<byte[]> ExpectIds(params byte[][] ids)
+                => new(ids, ByteArrayComparer.Instance);
+
+            static void AssertSameIds(HashSet<byte[]> expected, HashSet<byte[]> actual, string message)
+                => ClassicAssert.IsTrue(expected.SetEquals(actual), $"{message} (expected {Format(expected)}, got {Format(actual)})");
+
+            static string Format(HashSet<byte[]> set)
+                => "{" + string.Join(", ", set.Select(static b => "[" + string.Join(",", b) + "]")) + "}";
+        }
+
+        [Test]
         public void VSIMErrors()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -886,9 +1119,9 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            // FILTER-EF exceeding MaxRetrieveCount must be rejected
+            // FILTER-EF exceeding MaxFilteringScaleFactor must be rejected
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
-            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 0 and 100000000", exc1.Message);
+            ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 4 and 256", exc1.Message);
 
             // COUNT exceeding MaxRetrieveCount must be rejected
             var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
@@ -901,32 +1134,6 @@ namespace Garnet.test
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
             var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
-        }
-
-        [Test]
-        public void VSIMWithDefaultFilterEFOverflowDoesNotCrash()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            _ = db.KeyDelete("foo");
-
-            // Add a vector with attributes so FILTER can be used
-            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
-            ClassicAssert.AreEqual(1, (int)res1);
-
-            // Verify that a moderate COUNT with FILTER (no explicit FILTER-EF) works correctly.
-            // The default maxFilteringEffort = count*200. With count=1000, that's 200,000 which is safe.
-            // This validates the code path through the (long) cast fix without hitting resource limits.
-            var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "1000", "WITHATTRIBS"]);
-            ClassicAssert.AreEqual(2, res.Length, "Should return 1 result (1 pair of id+attribute) for year > 1950");
-
-            // Verify that COUNT values which would overflow count*200 in int32 are rejected.
-            // 10,737,419 * 200 = 2,147,483,800 > int32.MaxValue.
-            // Our (long) cast prevents the overflow, but MaxRetrieveCount caps COUNT itself.
-            // Any COUNT above MaxRetrieveCount (~178M) is rejected at parse time.
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "COUNT", "999999999", "WITHATTRIBS"]));
-            ClassicAssert.IsTrue(ex.Message.Contains("COUNT must be an integer between"), $"Expected COUNT validation error, got: {ex.Message}");
         }
 
         private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)
@@ -988,6 +1195,10 @@ namespace Garnet.test
             s.FlushDatabase(0);
 
 #if DEBUG
+            // Drops are requested and processed in the background, wait for them to drop
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            vectorManager.WaitForDiskANNIndexDrop("foo"u8);
+
             var finalCreateCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.CreateIndexCalls;
             var finalDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
 
@@ -1387,6 +1598,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0302:Simplify collection initialization", Justification = "Collection initializers don't guarantee stackalloc, which is required in these tests")]
         public unsafe void VectorReadBatchVariants()
         {
             // Single key, 4 byte keys
@@ -1395,12 +1607,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 64 };
+
                 var data = new int[] { 4, 1234 };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1423,6 +1637,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1433,12 +1657,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 32 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1465,6 +1691,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(7, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1475,12 +1711,14 @@ namespace Garnet.test
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
 
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 16 };
+
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
                 var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1506,6 +1744,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1515,6 +1763,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
                 var key0 = "hello"u8.ToArray();
                 var data =
@@ -1526,7 +1776,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1564,6 +1814,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(1, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1573,6 +1833,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
@@ -1633,7 +1895,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1685,6 +1947,16 @@ namespace Garnet.test
                     }
 
                     ClassicAssert.AreEqual(8, iters);
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1694,6 +1966,8 @@ namespace Garnet.test
                 VectorInput input = default;
                 input.Callback = 5678;
                 input.CallbackContext = 9012;
+
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
                 var key0 = "hello"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
@@ -1754,7 +2028,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -1797,7 +2071,7 @@ namespace Garnet.test
                             };
 
                         batch.GetKey(i, out var keyCopy);
-                        ClassicAssert.AreEqual(4, keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.AreEqual(2, keyCopy.NamespaceBytes[0]);
                         var keyCopyData = keyCopy.KeyBytes;
                         var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
                         ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
@@ -1805,6 +2079,16 @@ namespace Garnet.test
                         // Validate output doesn't throw
                         batch.GetOutput(i, out _);
                     }
+
+                    BasicContext<
+                        Garnet.common.VectorElementKey,
+                        Garnet.server.VectorInput,
+                        Garnet.server.VectorOutput,
+                        long, Garnet.server.VectorSessionFunctions,
+                        Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                    > ignored = default;
+                    batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
@@ -1814,7 +2098,6 @@ namespace Garnet.test
         public unsafe void MakeVectorElementKey()
         {
             var data = new int[] { 4, 1234 };
-            var dataCopy = data.ToArray();
             fixed (int* intPtr = data)
             {
                 var bytePtr = (byte*)intPtr;
@@ -1822,7 +2105,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(8, span.NamespaceBytes[0]);
                 ClassicAssert.AreEqual(1234, MemoryMarshal.Cast<byte, int>(span.KeyBytes)[0]);
             }
-            ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
         }
 
         [Test]
@@ -2090,8 +2372,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // TODO: Add tests for Q8 and BIN quantizers once supported in diskann-garnet
-            string[] quantizers = ["XPREQ8", "NOQUANT"];
+            string[] quantizers = ["NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8"];
             int[] reduceValues = [0, 5];
             int[] efValues = [0, 8];
             int[] mValues = [0, 16];
@@ -2105,7 +2386,8 @@ namespace Garnet.test
 
                 foreach (var reduceValue in reduceValues)
                 {
-                    var reduceValueToUse = quantizer == "XPREQ8" ? 0 : reduceValue;
+                    var isExtensionQuantizer = quantizer[0] == 'X';
+                    var reduceValueToUse = isExtensionQuantizer ? 0 : reduceValue;
                     foreach (var ef in efValues)
                     {
                         foreach (var numLinks in mValues)
@@ -2119,7 +2401,8 @@ namespace Garnet.test
                                 // XPREQ8 requires XB8 format, NOQUANT uses VALUES format
                                 object vectorData1;
                                 object vectorData2;
-                                if (quantizer == "XPREQ8")
+
+                                if (isExtensionQuantizer)
                                 {
                                     // XB8 format: byte array
                                     var bytes1 = new byte[vectorDim];
@@ -2147,7 +2430,8 @@ namespace Garnet.test
                                 }
 
                                 // Create a vector set with known parameters
-                                var res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData1, [0, 0, 0, 0]));
+                                var opts = GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData1, [0, 0, 0, 0]);
+                                var res = db.Execute("VADD", opts);
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 string expectedEf = ef == 0 ? "200" : ef.ToString();
@@ -2190,7 +2474,9 @@ namespace Garnet.test
 
             static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object vectorData, byte[] elementId)
             {
-                if (quantizer == "XPREQ8")
+                var isExtensionQuantizer = quantizer[0] == 'X';
+
+                if (isExtensionQuantizer)
                 {
                     reduce = 0;
                 }
@@ -2203,10 +2489,10 @@ namespace Garnet.test
                 }
 
                 // Add vector data based on quantizer type
-                if (quantizer == "XPREQ8")
+                if (isExtensionQuantizer)
                 {
-                    // XB8 format for XPREQ8
-                    opts.Add("XB8");
+                    // XU8 format for extension methods
+                    opts.Add("XU8");
                     opts.Add(vectorData);
                 }
                 else
@@ -2527,6 +2813,377 @@ namespace Garnet.test
                 else
                 {
                     ClassicAssert.IsEmpty(embRes);
+                }
+            }
+        }
+
+        [Test]
+        [CancelAfter(30_000)]
+        public async Task WithQuantizationBackfillAsync(
+            [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8)] VectorQuantType quantType,
+            [Values(true)] bool concurrentAdds,
+            [Values(true)] bool concurrentSearches,
+            CancellationToken cancellation)
+        {
+            const int Vectors = 5_000;
+            const int Dimensions = 64;
+            const string Key = nameof(WithQuantizationBackfillAsync);
+            const int Count = 30;
+
+            var connections = new ConnectionMultiplexer[concurrentAdds ? Environment.ProcessorCount : 1];
+
+            try
+            {
+                var dbs = new IDatabaseAsync[connections.Length];
+                for (var i = 0; i < connections.Length; i++)
+                {
+                    connections[i] = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    dbs[i] = connections[i].GetDatabase(0);
+                }
+
+                using var cts = new CancellationTokenSource();
+
+                List<Task<int>> searchTasks;
+                if (concurrentSearches)
+                {
+                    searchTasks = [];
+
+                    for (var i = 0; i < connections.Length; i++)
+                    {
+                        var searchTask =
+                            Task.Run(
+                                async () =>
+                                {
+                                    var idBytes = new byte[sizeof(int)];
+
+                                    var count = 0;
+
+                                    var ix = 0;
+                                    while (!cts.IsCancellationRequested)
+                                    {
+                                        var db = dbs[ix % dbs.Length];
+                                        ix++;
+
+                                        var id = Random.Shared.Next(Vectors);
+
+                                        BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                                        var expectedValues = new float[Dimensions];
+                                        expectedValues.AsSpan().Fill((byte)id % 128);
+
+                                        // Perform a search, but ignore response since we don't know what we'll find
+                                        var searchRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+
+                                        // Get embedding, if not null check for validiting
+                                        var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
+                                        if (vembRes.Length > 0)
+                                        {
+                                            ClassicAssert.AreEqual(Dimensions, vembRes.Length);
+                                            for (var i = 0; i < vembRes.Length; i++)
+                                            {
+                                                var actual = (byte)float.Parse(vembRes[i]);
+                                                var expected = (byte)expectedValues[i];
+                                                ClassicAssert.AreEqual(expected, actual);
+                                            }
+                                        }
+
+                                        if (searchRes != null && searchRes.Length > 0 && vembRes.Length > 0)
+                                        {
+                                            count++;
+                                        }
+                                    }
+
+                                    return count;
+                                },
+                                cancellation
+                            );
+
+                        searchTasks.Add(searchTask);
+                    }
+                }
+                else
+                {
+                    searchTasks = [];
+                }
+
+                var addTasks = new List<Task<RedisResult>>();
+
+                var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+                var quantTableStart = vectorManager.QuantizationRequestsProcessed;
+                var quantBackfillStart = vectorManager.QuantizationBackfillsProcessed;
+
+                for (var id = 0; id < Vectors; id++)
+                {
+                    var idBytes = new byte[sizeof(int)];
+                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                    var db = dbs[id % connections.Length];
+
+                    var values = new float[Dimensions];
+                    values.AsSpan().Fill((byte)id % 128);
+
+                    var vaddArgs = new List<object>() { Key };
+
+                    var format = (VectorValueType)(id % 4);
+                    ClassicAssert.IsTrue(Enum.IsDefined(format));
+
+                    switch (format)
+                    {
+                        // Treat this as VALUES
+                        case VectorValueType.Invalid:
+                            vaddArgs.AddRange(["VALUES", Dimensions.ToString()]);
+                            for (var i = 0; i < values.Length; i++)
+                            {
+                                vaddArgs.Add(values[i].ToString());
+                            }
+                            break;
+                        case VectorValueType.FP32:
+                            vaddArgs.Add("FP32");
+                            vaddArgs.Add(MemoryMarshal.AsBytes(values.AsSpan()).ToArray());
+                            break;
+                        case VectorValueType.XI8:
+                            vaddArgs.Add("XI8");
+                            vaddArgs.Add(values.Select(static t => (byte)t).ToArray());
+                            break;
+                        case VectorValueType.XU8:
+                            vaddArgs.Add("XU8");
+                            vaddArgs.Add(values.Select(static t => (byte)t).ToArray());
+                            break;
+                        default:
+                            ClassicAssert.Fail($"Unexpected format: {format}");
+                            break;
+                    }
+
+                    vaddArgs.Add(idBytes);
+
+                    vaddArgs.Add(quantType.ToString());
+
+                    var idCopy = id;
+                    var addTask = db.ExecuteAsync("VADD", [.. vaddArgs]);
+
+                    // Wait immediately if non-concurrent, otherwise queue for later
+                    if (concurrentAdds)
+                    {
+                        addTasks.Add(addTask);
+                    }
+                    else
+                    {
+                        var res = (int)await addTask.ConfigureAwait(false);
+                        ClassicAssert.AreEqual(1, res);
+                    }
+                }
+
+                // If concurrent, validate everything succeeded
+                if (concurrentAdds)
+                {
+                    var reses = await Task.WhenAll(addTasks).ConfigureAwait(false);
+                    foreach (var r in reses)
+                    {
+                        var res = (int)r;
+                        ClassicAssert.AreEqual(1, res);
+                    }
+                }
+
+                // Wait for concurrent searches (if any) to complete
+                if (concurrentSearches)
+                {
+                    cts.Cancel();
+                    var successes = await Task.WhenAll(searchTasks).ConfigureAwait(false);
+
+                    foreach (var s in successes)
+                    {
+                        ClassicAssert.IsTrue(s > 0);
+                    }
+                }
+
+                // Wait for quantization to complete
+                var noQuantizationNeeded = quantType.ToString().Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantType == VectorQuantType.Q8;
+                var quantizationExpected = !noQuantizationNeeded;
+                if (quantizationExpected)
+                {
+                    // We expect 1 _succesful_ table build
+                    while (vectorManager.QuantizationRequestsProcessed != (quantTableStart + 1))
+                    {
+                        await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                    }
+
+                    // No explicit config is set, so we expect Environment.ProcessorCount _successful_ backfills after the table build
+                    while (vectorManager.QuantizationBackfillsProcessed != (quantBackfillStart + Environment.ProcessorCount))
+                    {
+                        await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                    }
+                }
+
+                // Check all vectors still present
+                for (var id = 0; id < Vectors; id++)
+                {
+                    var idBytes = new byte[sizeof(int)];
+                    var db = dbs[id % dbs.Length];
+
+                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+
+                    var expectedValues = new float[Dimensions];
+                    expectedValues.AsSpan().Fill((byte)id % 128);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", Key, idBytes).ConfigureAwait(false);
+                    ClassicAssert.AreEqual(Dimensions, vembRes.Length);
+
+                    for (var i = 0; i < vembRes.Length; i++)
+                    {
+                        var actual = (byte)float.Parse(vembRes[i]);
+                        var expected = (byte)expectedValues[i];
+                        ClassicAssert.AreEqual(expected, actual);
+                    }
+
+                    // Search should succeed
+                    var vsimRes = (byte[][])await db.ExecuteAsync("VSIM", Key, "FP32", MemoryMarshal.AsBytes(expectedValues.AsSpan()).ToArray(), "COUNT", Count.ToString()).ConfigureAwait(false);
+                    ClassicAssert.AreEqual(Count, vsimRes.Length);
+                }
+            }
+            finally
+            {
+                foreach (var con in connections)
+                {
+                    con?.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Regression test for namespace corruption on the storage-tiered (disk-backed) Vector Set path.
+        ///
+        /// With a tiny main-log (lowMemory) and storage tiering enabled, vector records spill to disk and
+        /// are read back via pending (async-IO) RMW during DiskANN graph construction. The namespaced key
+        /// carried across that pending boundary must round-trip its namespace byte intact. A regression here
+        /// surfaces server-side as "Extended namespace not yet supported" (the namespace byte is read back
+        /// with bit 7 set), which kills the connection mid-load.
+        /// </summary>
+        [Test]
+        public void VADDLowMemoryStorageTierForcesDiskSpill()
+        {
+            // Recreate the server with a tiny main log + storage tiering so inserts spill to disk.
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = "lowmem-vs";
+            const int Dim = 16;
+            const int Count = 4000;     // far exceeds the low-memory main log, forcing records to disk
+            var rng = new Random(0);
+
+            var id = new byte[4];
+            for (var i = 0; i < Count; i++)
+            {
+                var vec = new float[Dim];
+                for (var d = 0; d < Dim; d++)
+                    vec[d] = (float)rng.NextDouble();
+
+                BinaryPrimitives.WriteInt32LittleEndian(id, i);
+
+                // VADD of a namespaced record; once data spills to disk, building the graph reads
+                // earlier records back via pending RMW (the path that corrupts the namespace).
+                var res = db.Execute("VADD", [Key, "FP32", MemoryMarshal.Cast<float, byte>(vec).ToArray(), id, "NOQUANT", "EF", "16", "M", "16"]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD #{i} should succeed (server must not crash on the disk-backed path)");
+            }
+
+            // The disk-backed set must still be searchable.
+            var query = new float[Dim];
+            for (var d = 0; d < Dim; d++)
+                query[d] = (float)rng.NextDouble();
+
+            var sim = (RedisResult[])db.Execute("VSIM", [Key, "FP32", MemoryMarshal.Cast<float, byte>(query).ToArray(), "COUNT", "10", "EF", "64"]);
+            ClassicAssert.IsNotEmpty(sim);
+        }
+
+        [Test]
+        public async Task LotsOfVectorSetsAsync()
+        {
+            const int NumVectorSets = 1_000;
+
+            var connections = new ConnectionMultiplexer[Environment.ProcessorCount];
+            try
+            {
+                var dbs = new IDatabase[connections.Length];
+                for (var i = 0; i < connections.Length; i++)
+                {
+                    connections[i] = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+                    dbs[i] = connections[i].GetDatabase();
+                }
+
+                // Create them all
+                {
+                    var allAdds = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        TestContext.Progress.WriteLine(i);
+
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
+
+                        var task = CreateVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allAdds.Add(task);
+                    }
+
+                    await Task.WhenAll(allAdds);
+                }
+
+                // Validate them all
+                {
+                    var allReads = new List<Task>();
+                    for (var i = 0; i < NumVectorSets; i++)
+                    {
+                        var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
+                        var elemName = $"x{i}";
+                        var vector = new byte[(i * 3) + 1];
+                        vector.AsSpan().Fill((byte)i);
+
+                        var task = ReadVectorSetAsync(dbs[i % dbs.Length], keyName, elemName, vector);
+
+                        allReads.Add(task);
+                    }
+
+                    await Task.WhenAll(allReads);
+                }
+            }
+            finally
+            {
+                foreach (var con in connections)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync();
+                    }
+                }
+            }
+
+            static async Task CreateVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
+            {
+                var res = (int)await db.ExecuteAsync("VADD", [key, "XU8", data, elem, "NOQUANT"]);
+                ClassicAssert.AreEqual(1, res);
+            }
+
+            static async Task ReadVectorSetAsync(IDatabase db, string key, string elem, byte[] data)
+            {
+                var sim = (string[])await db.ExecuteAsync("VSIM", [key, "XU8", data]);
+                ClassicAssert.AreEqual(1, sim.Length);
+                ClassicAssert.AreEqual(elem, sim[0]);
+
+                var emb = (string[])await db.ExecuteAsync("VEMB", [key, elem]);
+                ClassicAssert.AreEqual(data.Length, emb.Length);
+                for (var i = 0; i < data.Length; i++)
+                {
+                    var expected = data[i];
+                    var actual = (byte)float.Parse(emb[i]);
+
+                    ClassicAssert.AreEqual(expected, actual);
                 }
             }
         }

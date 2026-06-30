@@ -81,11 +81,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
+        public override async ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
             if (replicaRecover)
                 throw new GarnetException(
-                    $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
+                    $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpointAsync)} with {nameof(replicaRecover)} == true.");
 
             var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
             var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
@@ -116,7 +116,7 @@ namespace Garnet.server
 
                 try
                 {
-                    RecoverDatabaseCheckpoint(db, out storeVersion);
+                    storeVersion = await RecoverDatabaseCheckpointAsync(db).ConfigureAwait(false);
                 }
                 catch (TsavoriteNoHybridLogException ex)
                 {
@@ -416,7 +416,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverAOF()
+        public override async ValueTask RecoverAOFAsync()
         {
             var aofParentDir = StoreWrapper.serverOptions.AppendOnlyFileBaseDirectory;
             var aofDirBaseName = GarnetServerOptions.GetAppendOnlyFileDirectoryName(0);
@@ -442,7 +442,7 @@ namespace Garnet.server
                 if (!success)
                     throw new GarnetException($"Failed to retrieve or create database for AOF recovery (DB ID = {dbId}).");
 
-                RecoverDatabaseAOF(db);
+                await RecoverDatabaseAOFAsync(db).ConfigureAwait(false);
             }
         }
 
@@ -1063,6 +1063,7 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.Initialize();
                 databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
             }
         }

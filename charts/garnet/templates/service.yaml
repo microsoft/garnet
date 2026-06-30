@@ -10,6 +10,11 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.service.type }}
+  ipFamilies:
+    {{- with .Values.service.ipFamilies }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  ipFamilyPolicy: {{ .Values.service.ipFamilyPolicy }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: {{ .Values.containers.port }}

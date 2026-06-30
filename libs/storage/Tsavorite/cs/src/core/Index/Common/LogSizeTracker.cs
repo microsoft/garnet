@@ -23,11 +23,14 @@ namespace Tsavorite.core
         public static readonly int ResizeTaskDelaySeconds = 10;
 
         /// <summary>Target size must be at least this many pages; this gives us (at least a little) room for heap allocations in a minimum of
-        /// <see cref="MinResizeTargetPageCount"/> pages.</summary>
-        public const int MinTargetPageCount = MinResizeTargetPageCount * 2;
+        /// <see cref="LogSettings.kMinPageCount"/> pages.</summary>
+        public const int MinTargetPageCount = LogSettings.kMinPageCount * 2;
 
-        /// <summary>When resizing we must preserve at least this many pages</summary>
-        public const int MinResizeTargetPageCount = 2;
+        /// <summary>
+        /// When evicting, do not allow HeadAddress to advance to within this many bytes of TailAddress. This usually allows more than one usable record in
+        /// the database. If there are records with objects in that range that exceed the memory budget, then the memory budget should be adjusted to allow for it.
+        /// </summary>
+        public const int MinEvictionHeadAddressLag = 4096;
     }
 
     /// <summary>Tracks and controls size of log</summary>
@@ -85,11 +88,15 @@ namespace Tsavorite.core
         public override string ToString()
         {
             return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}];"
-                 + $" isOver: [{IsBeyondSizeLimit}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
+                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
+        /// <summary>Returns the memory budget we have remaining</summary>
+        /// <remarks>May return a negative value if already over budget.</remarks>
+        public long RemainingBudget => highTargetSize - TotalSize;
+
         /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
+        public bool IsOverBudget => TotalSize > highTargetSize;
 
         /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
         /// <param name="addingPage">If true, we are allocating a new page. Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/></param>
@@ -105,14 +112,11 @@ namespace Tsavorite.core
             if (addingPage && numPages == logAccessor.allocatorBase.MaxAllocatedPageCount)
                 return true;
 
-            // Otherwise, we need at least MinResizeTargetPageCount to be able to evict anything.
-            return (TotalSize > highTargetSize) && numPages > MinResizeTargetPageCount;
+            // Otherwise, we need at least MinEvictionHeadAddressLag to be able to evict anything. Use UnstableGetTailAddress (as above): this is
+            // reached from HandlePageOverflow on the thread that owns tail-address stabilization, and the stable GetTailAddress() would spin-wait
+            // forever for a TailPageOffset that only this same thread can reset (after NeedToWaitForClose returns).
+            return (TotalSize > highTargetSize) && logAccessor.allocatorBase.UnstableGetTailAddress(out _) - logAccessor.allocatorBase.HeadAddress >= MinEvictionHeadAddressLag;
         }
-
-        /// <summary>Return true if the total size plus the size needed for the requested number of pages to read is outside the target plus delta *and*
-        /// we have pages we can (partially or completely) evict</summary>
-        /// <remarks>This is called by Recovery.</remarks>
-        public bool IsBeyondSizeLimitToReadPages(int numPagesToRead) => TotalSize + (numPagesToRead * logAccessor.allocatorBase.PageSize) > highTargetSize;
 
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
@@ -267,77 +271,107 @@ namespace Tsavorite.core
             ref int allocatedPageCount, out long estimatedHeapTrimmedSize)
         {
             // We know we are oversize so we calculate how much we need to trim to get to lowTargetSize.
-            var overSize = currentSize - lowTargetSize;
+            var overBudgetAmount = currentSize - lowTargetSize;
             estimatedHeapTrimmedSize = 0L;
 
             var allocator = logAccessor.allocatorBase;
             headAddress = allocator.HeadAddress;
-            var headPage = allocator.GetPage(headAddress);
-            var untilAddress = allocator.UnstableGetTailAddress(out _);
-            var untilPage = allocator.GetPage(untilAddress);
+            var startingHeadPage = allocator.GetPage(headAddress);
+            var maxEvictUntilAddress = allocator.UnstableGetTailAddress(out _) - MinEvictionHeadAddressLag;
+            var maxEvictUntilPage = allocator.GetPage(maxEvictUntilAddress);
 
-            // The number of pages we have is untilPage - headPage + 1.
-            if (untilPage - headPage + 1 <= MinResizeTargetPageCount)
-                return false;
-            untilAddress = allocator.GetLogicalAddressOfStartOfPage(untilPage - MinResizeTargetPageCount + 1);
-
-            // If there is nothing to trim from the heap, we can just do math to advance HA.
+            // If there is nothing to trim from the heap, we just do math to trim as many pages as we need to (up to the limit).
             if (heapSize.Total == 0)
             {
-                var evictableSize = untilAddress - headAddress;
-                var isComplete = overSize <= evictableSize;
-                if (!isComplete)
-                    overSize = evictableSize;
-                headAddress = RoundUp(headAddress + overSize, Constants.kRecordAlignment);
+                // We are evicting in units of pages, so we set this to the start of the maxEvictUntilPage.
+                maxEvictUntilAddress = allocator.GetLogicalAddressOfStartOfPage(maxEvictUntilPage);
+                var evictableSize = maxEvictUntilAddress - headAddress;
 
-                // Scan from head of page to snap headAddress to the next record boundary.
-                var pageIndex = allocator.GetPage(headAddress);
-                var pageStartAddress = allocator.GetLogicalAddressOfStartOfPage(pageIndex);
-                var offset = headAddress - pageStartAddress;
-                if (offset <= PageHeader.Size)
-                    headAddress = pageStartAddress;
-                else
+                // evictableSize is the resident span [headAddress, tail-aligned). When heapSize is 0, TotalSize == AllocatedPageCount * PageSize, so being
+                // over budget here means AllocatedPageCount * PageSize > budget; recovery keeps AllocatedPageCount within MaxAllocatedPageCount (the read
+                // batch is capped at the budget and a final trim evicts any object-free overage), so AllocatedPageCount ~= the resident page count and that
+                // resident span must itself exceed the budget => evictableSize > 0. A negative value would mean AllocatedPageCount exceeds the resident set
+                // (stale pages left allocated below headAddress), which we must not reach.
+                Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
+
+                var margin = evictableSize - overBudgetAmount;
+                var isComplete = margin > 0;
+                if (isComplete)
                 {
-                    var currentAddress = pageStartAddress + PageHeader.Size;
-                    var physicalAddress = allocator.GetPhysicalAddress(currentAddress);
-                    while (currentAddress < headAddress)
-                    {
-                        var allocatedSize = new LogRecord(physicalAddress).AllocatedSize;
-                        currentAddress += allocatedSize;
-                        physicalAddress += allocatedSize;
-                    }
+                    // We can completely satisfy the over-budget amount, so we can add some pages back to keep more below maxEvictUntilPage.
+                    var additionalPagesToKeep = margin / allocator.PageSize;
+                    maxEvictUntilPage -= additionalPagesToKeep;
                 }
 
-                allocatedPageCount -= (int)(allocator.GetPage(headAddress) - headPage);
+                // We'll evict the maxEvictUntilPage so start at the first valid logical address on the next page.
+                headAddress = allocator.GetFirstValidLogicalAddressOnPage(maxEvictUntilPage);
+
+                allocatedPageCount -= (int)(maxEvictUntilPage - startingHeadPage);
                 return isComplete;
             }
 
-            // This will iterate until iterator.CurrentAddress == untilAddress
-            using var iterator = logAccessor.Scan(headAddress, untilAddress);
-            allocatedPageCount = allocator.AllocatedPageCount;
+            // We have heap objects we can potentially evict. This will iterate until iterator.CurrentAddress == untilAddress.
+            // To optimize performance, iterate pages and skip the whole page if objectIdMap.IsEmpty, else enumerate records on the page.
             var pageTrimmedSize = 0L;
-            while (estimatedHeapTrimmedSize + pageTrimmedSize < overSize && iterator.GetNext() && !IsStopped)
+            var lastEvictPage = allocator.GetPage(maxEvictUntilAddress);
+            for (var currentPage = startingHeadPage; currentPage <= lastEvictPage && estimatedHeapTrimmedSize + pageTrimmedSize < overBudgetAmount && !IsStopped; currentPage++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                estimatedHeapTrimmedSize += iterator.CalculateHeapMemorySize();
 
-                // If we've crossed a page boundary, we can subtract the pagesize as well.
-                var currentPage = allocator.GetPage(iterator.CurrentAddress);
-                if (currentPage > headPage)
+                if (currentPage != startingHeadPage)
+                    headAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage);
+
+                // If there are no objects on this page and it's below maxEvictUntilPage (which may not be able to be evicted fully),
+                // we can skip the whole page and just subtract the pagesize from the amount we need to trim.
+                if (currentPage < maxEvictUntilPage)
                 {
-                    headPage = currentPage;
-                    --allocatedPageCount;
-                    pageTrimmedSize += allocator.PageSize;
+                    var oidMap = allocator._wrapper.GetPageObjectIdMap(currentPage);
+                    if (oidMap is null || oidMap.Count == 0)
+                    {
+                        pageTrimmedSize += allocator.PageSize;
+                        if (estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount)
+                        {
+                            // Set headAddress to the start of the next page and we're done.
+                            headAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage + 1);
+                            break;
+                        }
+                        continue;
+                    }
                 }
+
+                // We have objects, so iterate records to see where the new headAddress must be. Don't go past maxEvictUntilAddress.
+                var endAddress = allocator.GetLogicalAddressOfStartOfPage(currentPage + 1);
+                if (endAddress > maxEvictUntilAddress)
+                    endAddress = maxEvictUntilAddress;
+                while (headAddress < endAddress)
+                {
+                    var logRecord = allocator._wrapper.CreateLogRecord(headAddress);
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (allocatedSize <= 0)
+                        ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
+
+                    headAddress += allocatedSize;
+                    if (!logRecord.Info.Valid)
+                        continue;
+
+                    estimatedHeapTrimmedSize += logRecord.CalculateHeapMemorySize();
+                    if (estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount)
+                        break;
+                }
+
+                // If we have finished a page, add its size to our eviction total and set headAddress to the start of the next page.
+                if (headAddress >= endAddress)
+                {
+                    pageTrimmedSize += allocator.PageSize;
+                    headAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage + 1);
+                }
+
+                if (estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount)
+                    break;
             }
 
-            // iterator.NextAddress is the end of the last-processed record; if we did not advance far enough to clear all the oversize space
-            // it is the start of the next record we would have processed (and probably equal to untilAddress). In both cases it is how far we
-            // can evict to, and because it is the next address we've not yet evaluated whether it's crossed the page boundary; do that here.
-            headAddress = iterator.NextAddress;
-
-            // Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
-            return estimatedHeapTrimmedSize + pageTrimmedSize >= overSize;
+            // headAddress is now properly set. Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
+            return estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount;
         }
 
         /// <summary>
@@ -353,13 +387,16 @@ namespace Tsavorite.core
 
             long headAddress, estimatedHeapTrimmedSize, readOnlyAddress;
             var isComplete = false;
-            var allocatedPageCount = logAccessor.AllocatedPageCount;
-            logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, allocatedPageCount, logAccessor.BufferSize);
+            int allocatedPageCount;
 
             // Acquire the epoch long enough to calculate eviction ranges.
             logAccessor.allocatorBase.epoch.Resume();
             try
             {
+                // AllocatedPageCount is set here, after we've resumed the epoch (which may have done eviction).
+                allocatedPageCount = logAccessor.AllocatedPageCount;
+                logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, allocatedPageCount, logAccessor.BufferSize);
+
                 // See how much we can evict from HeadAddress onwards. Ignore the return value that indicates whether this is complete;
                 // we calculate the new ROA up to MinTargetPageCount pages before TailAddress, and that's as far as we can go.
                 isComplete = DetermineEvictionRange(currentSize, cancellationToken, out headAddress, ref allocatedPageCount, out estimatedHeapTrimmedSize);

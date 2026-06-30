@@ -129,6 +129,9 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => default;
 
         /// <inheritdoc/>
+        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => default;
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 
@@ -137,6 +140,6 @@ namespace Tsavorite.core
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
-        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) { }
     }
 }

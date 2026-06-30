@@ -13,7 +13,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy a record from the disk to the read cache.
         /// </summary>
-        /// <param name="pendingContext"></param>
+        /// <param name="operationState"></param>
         /// <param name="inputLogRecord">Input log record that was IO'd from disk</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
@@ -21,14 +21,14 @@ namespace Tsavorite.core
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
         internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord inputLogRecord, TSessionFunctionsWrapper sessionFunctions,
-                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+                                        ref OperationState<TInput, TOutput, TContext> operationState, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
+            if (!TryAllocateRecordReadCache(ref operationState, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
                 return false;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord, readcacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
@@ -54,7 +54,7 @@ namespace Tsavorite.core
             readcacheBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
 
             newLogRecord.InfoRef.UnsealAndValidate();
-            // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
+            // Do not clear operationState.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
             // addresses, but here we found it in the main log address space, so retain that address.
             stackCtx.ClearNewRecord();
             return true;

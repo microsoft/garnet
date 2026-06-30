@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -114,6 +113,17 @@ namespace Garnet.cluster
                         return false;
                     }
 
+                    // Handle migration of discovered RangeIndex keys with sketch protection.
+                    // All RI keys are added to the sketch in one batch, then a single epoch
+                    // barrier per phase gates concurrent operations.
+                    var rangeIndexKeys = new HashSet<byte[]>(migrateOperation.SelectMany(static mo => mo.RangeIndexKeys), ByteArrayComparer.Instance);
+
+                    if (rangeIndexKeys.Count > 0)
+                    {
+                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], rangeIndexKeys, _cts.Token).ConfigureAwait(false))
+                            return false;
+                    }
+
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
 
@@ -133,7 +143,7 @@ namespace Garnet.cluster
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
 
-                                var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
+                                var neededSpace = VectorManager.GetMigratedIndexKeySerializationSize(key, value);
 
                                 if (neededSpace > serializeBufferArr.Length)
                                 {
@@ -141,14 +151,7 @@ namespace Garnet.cluster
                                     serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                                 }
 
-                                // Scope so Span doesn't cross await boundary
-                                {
-                                    Span<byte> serializeBuffer = serializeBufferArr;
-                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
-                                    key.CopyTo(serializeBuffer[sizeof(int)..]);
-                                    BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
-                                    value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
-                                }
+                                VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value);
 
                                 if (gcs.NeedsInitialization)
                                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
@@ -194,6 +197,7 @@ namespace Garnet.cluster
                     await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
+
                 return true;
             }
 

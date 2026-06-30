@@ -39,13 +39,13 @@ by `GarnetRecordTriggers`:
 
 | Trigger | When | What it does for RangeIndex |
 |---------|------|---------------------------|
-| `OnFlush(addr)` | Page moves to read-only | Branch on `stub.TreeHandle`: `!=0` (live) → `BfTreeService.CprSnapshotByPtr(handle)` (concurrent-safe with workers via CPR) + `File.Copy(scratch.cpr → <addr:x16>.flush.bftree)`; `==0` (cold, just-CAS'd at tail) → S-lock to block RestoreTree from registering mid-copy; if a live tree exists under another stub for this key → CPR snapshot via that handle, else `File.Copy(data.bftree → <addr>.flush.bftree)`. Set `IsFlushed`. **No per-key X-lock taken.** Per-tree atomic (`TreeEntry.SnapshotInProgress`) serializes against concurrent checkpoint snapshot. |
+| `OnFlush(addr)` | Page moves to read-only | Branch on `stub.TreeHandle`: `!=0` (live) → `BfTreeService.CprSnapshotByPtr(handle, <addr:x16>.flush.bftree)` (CPR snapshot written **directly** to the per-flush file; concurrent-safe with workers via CPR); `==0` (cold, just-CAS'd at tail) → S-lock to block RestoreTree from registering mid-copy; if a live tree exists under another stub for this key → CPR snapshot via that handle, else `File.Copy(data.bftree → <addr>.flush.bftree)`. Set `IsFlushed`. **No per-key X-lock taken.** Per-tree atomic (`TreeEntry.SnapshotInProgress`) serializes against concurrent checkpoint snapshot. |
 | `OnEvict` | Page evicted past HeadAddress | Remove entry from `liveIndexes` under per-key exclusive lock; **defer** `bfTree.Dispose()` via `storeEpoch.BumpCurrentEpoch(...)` so concurrent readers using `TreeHandle` complete before native free. Data files preserved for lazy restore |
 | `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale); no file work |
 | `PostCopyToTail` | After `TryCopyToTail` CAS, before unseal | Propagate `RecordType=RangeIndexRecordType` from src to dst (CTT does not carry it). Branch on `src.TreeHandle`: `!=0` live transfer (clear src.TreeHandle); `==0` cold pre-stage (`PreStageAndRegisterPending`). Set src.`IsTransferred` so a later eviction of src does not free dst's tree / pending entry. Clear `IsFlushed` on dst. |
 | `OnTruncate(newBA)` | After device truncate | Delete `<hash>.<addr:x16>.flush.bftree` files where `addr < newBA`. |
 | `OnCheckpoint(VersionShift)` | PREPARE→IN_PROGRESS | Set checkpoint barrier; mark all entries (activated AND pending) `SnapshotPending=1` |
-| `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees: activated → per-tree atomic + `BfTreeService.CprSnapshotByPtr(handle)` + `File.Copy(scratch.cpr → snapshot path)`; pending → `File.Copy(data.bftree → snapshot path)`. Clear barrier. **No per-key X-lock taken.** |
+| `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees: activated → per-tree atomic + `BfTreeService.CprSnapshotByPtr(handle, snapshot path)` (CPR snapshot written **directly** to the per-token file); pending → `File.Copy(data.bftree → snapshot path)`. Clear barrier. **No per-key X-lock taken.** |
 | `OnCheckpoint(CheckpointCompleted)` | REST | No-op — Tsavorite removes per-token snapshot dirs when `removeOutdated=true`; per-flush files cleaned by `OnTruncate` |
 | `OnRecovery(token)` | Before snapshot file recovery | Store recovered checkpoint token (used by `RebuildFromSnapshotIfPending`) |
 | `OnRecoverySnapshotRead` | Per record from snapshot file | Set `IsRecovered`; pre-stage `data.bftree` from `cpr-checkpoints/<token>/rangeindex/<hash>.bftree` and register pending entry (snapshot files may be deleted post-recovery) |
@@ -64,7 +64,7 @@ Lifetime tracks log addresses (cleared by `OnTruncate(newBA)`).
 ```
 {riLogRoot}/
     <hash>.data.bftree              # bftree's working file (disk-backed) / cold-restore staging (memory-backed)
-    <hash>.scratch.cpr              # bftree's CPR snapshot scratch path (overwritten each cpr_snapshot)
+    <hash>.scratch.cpr              # CPR snapshot-enable path passed at create/recover (use_snapshot); no longer written — snapshots go directly to the flush/checkpoint/migration file
     <hash>.<addr:x16>.flush.bftree  # immutable per-flush snapshot
 ```
 
@@ -149,9 +149,9 @@ When `ReadRangeIndex` detects `TreeHandle == 0` (and the stub is not flushed):
 - At `FlushBegin`: each entry is snapshotted using the per-tree atomic
   `TreeEntry.SnapshotInProgress` (no per-key X-lock — that would risk deadlock with
   deferred `OnFlush` firing on the checkpoint thread):
-  - Activated → `BfTreeService.CprSnapshotByPtr(handle)` (concurrent-safe with workers via
-    CPR; serialized against concurrent `OnFlush` for the same tree by the per-tree atomic)
-    + `File.Copy(<riLogRoot>/<hash>.scratch.cpr → <cprDir>/<token>/rangeindex/<hash>.bftree)`.
+  - Activated → `BfTreeService.CprSnapshotByPtr(handle, <cprDir>/<token>/rangeindex/<hash>.bftree)`
+    — CPR snapshot written **directly** to the per-token file (concurrent-safe with workers via
+    CPR; serialized against concurrent `OnFlush` for the same tree by the per-tree atomic).
   - Pending → `File.Copy(<riLogRoot>/<hash>.data.bftree → <cprDir>/<token>/rangeindex/<hash>.bftree)`.
 - Entries created during checkpoint enumeration (after the barrier) have
   `SnapshotPending=0` and are skipped — they belong to v+1.
@@ -2659,115 +2659,247 @@ and restores from the snapshot files at the expected paths.
 
 ### E. Key Migration (Cluster Slot Migration)
 
-> **Reference:** `libs/cluster/Server/Migration/MigrateSessionKeys.cs` —
-> migrates individual keys during cluster slot migration via `MigrateKeysFromStore()`.
-> Key scanning: `MigrateScanFunctions.cs` — iterates store records for slot matching.
-> Receiver: `libs/cluster/Session/RespClusterMigrateCommands.cs`.
-> Currently, migration handles only standard string and object records. RangeIndex
-> keys require special 2-phase migration since BfTree data lives outside Tsavorite.
+> **Reference files:**
+> - `libs/cluster/Server/Migration/MigrateSession.RangeIndex.cs` — `TransmitRangeIndexAsync` and `MigrateRangeIndexKeysAsync`
+> - `libs/cluster/Server/Migration/MigrateScanFunctions.cs` — scan-time RI key detection
+> - `libs/cluster/Server/Migration/MigrateSessionSlots.cs` — SLOTS path orchestration
+> - `libs/cluster/Server/Migration/MigrateSessionKeys.cs` — KEYS path orchestration
+> - `libs/server/Resp/RangeIndex/RangeIndexChunkedSerializer.cs` — pure state-machine serializer (no I/O)
+> - `libs/server/Resp/RangeIndex/RangeIndexMigrationReader.cs` — async wrapper that reads file data
+> - `libs/server/Resp/RangeIndex/RangeIndexChunkedDeserializer.cs` — stateful deserializer with file I/O
+> - `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` — snapshot + factory methods
+> - `libs/cluster/Session/RangeIndexMigrationReceiveSession.cs` — receive-side state machine (`RangeIndexMigrationReceiveState`)
+> - `libs/cluster/Session/RespClusterMigrateCommands.cs` — destination record dispatcher
 
-**Problem:** During slot migration, individual keys are transferred to the target node.
-For a RangeIndex key, we can't just send the 51-byte stub — we must also send the
-entire BfTree data (all entries in the index). The target node must recreate the BfTree
-from this data.
+**Problem.** During slot migration, a stub-only transfer is insufficient: the 35-byte stub
+points to a process-local native `BfTree` whose on-disk data file lives outside Tsavorite
+(`{riLogRoot}/{key_hash}.data.bftree`). The target node has no access to that
+file. We must ship the entire tree-data file alongside the stub, and the target must
+rebuild the native `BfTree` from it before publishing a usable stub into its main store.
 
-**Solution: 2-Phase Migration**
+#### Architecture
 
-#### Phase 1: Serialize BfTree data
+The serializer is a pure state machine that frames key, file data, and stub bytes into a
+chunked stream. It performs no I/O — file data is supplied by the caller via a parameter.
+An async wrapper (`RangeIndexMigrationReader`) reads the snapshot file asynchronously and
+feeds bytes to the serializer. The deserializer handles file writes internally (sync I/O)
+and is used directly on the receive side.
 
-When the migration scanner encounters a RangeIndex record (identified by `RecordType`):
+```
+Source side (async):
+  SnapshotRangeIndexAndCreateReader()
+    ├→ SnapshotForMigration() — exclusive lock, snapshot to temp file
+    ├→ new RangeIndexChunkedSerializer(key, stub, fileSize) — pure state machine
+    └→ new RangeIndexMigrationReader(serializer, fileStream, tempFilePath, chunkSize) — async I/O wrapper
 
-```csharp
-// In MigrateScanFunctions.cs (add RangeIndex detection):
-if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
-{
-    mss.EncounteredRangeIndex(ref key, ref value);
-    return; // Don't transmit the stub yet — Phase 2
-}
+  TransmitRangeIndexAsync loop:
+    reader.ReadNextChunkAsync(buffer)
+      ├→ fileStream.ReadAsync() — async file read
+      └→ serializer.SupplyFileData(buffer) + serializer.MoveNext(dest) — sync framing
+    WriteOrSendRecordSpanAsync() — send over network
+
+Destination side (sync):
+  RangeIndexMigrationReceiveState.ProcessRecord()
+    ├→ RangeIndexChunkedDeserializer.ProcessChunk(data) — sync, writes to temp file
+    └→ on completion: slot check, then RangeIndexManager.PublishMigratedIndex()
+       — move file, recover BfTree, RICREATE RMW stub
 ```
 
-```csharp
-// In MigrateSessionKeys.cs (new method):
-internal void EncounteredRangeIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
-{
-    // Save key + value for Phase 2
-    rangeIndexKeysToMigrate.Add((key.ToByteArray(), value.ToByteArray()));
-}
+#### Wire format
+
+One `MigrationRecordSpanType` value is used:
+
+| Tag | Name | Description |
+|---|---|---|
+| `4` | `SerializedRangeIndexStream` | Chunked stream. The receiver uses a state machine to track the in-progress stream. |
+
+The stream format across one or more chunks:
+
+```
+[4-byte keyLen][key bytes][8-byte fileSize][file bytes][8-byte xxHash64][4-byte stubLen][stub]
 ```
 
-#### Phase 2: Transmit BfTree snapshot + stub
+- Key bytes and file bytes may span multiple chunks.
+- All other elements (keyLen, fileSize, hash, stubLen, stub) must fit entirely within a single chunk.
+- The xxHash64 checksum covers all file bytes and is validated on the destination.
 
-```csharp
-// In MigrateSessionKeys.cs, TransmitRangeIndexKeys() (new method):
-internal bool TransmitRangeIndexKeys()
-{
-    foreach (var (keyBytes, stubBytes) in rangeIndexKeysToMigrate)
-    {
-        // 1. Read stub to get TreePtr
-        RangeIndexManager.ReadIndex(stubBytes, out var treePtr, out var cacheSize,
-            out var minRecordSize, out var maxRecordSize,
-            out var maxKeyLen, out var leafPageSize,
-            out var storageBackend, ...);
+**Max chunk size.** Configurable via `RangeIndexManager.DefaultMigrationChunkSize` (default
+`256 * 1024`). The serializer's `MoveNext` writes at most `destination.Length` bytes per call.
 
-        // 2. Snapshot BfTree to a temporary file
-        var tempSnapshotPath = Path.GetTempFileName();
-        rangeIndexManager.SnapshotToPath(treePtr, tempSnapshotPath);
+#### Source side — SLOTS path
 
-        // 3. Read snapshot file bytes
-        var snapshotBytes = File.ReadAllBytes(tempSnapshotPath);
+1. **Scan detection.** `MigrateScanFunctions.Reader` classifies each record by
+   `logRecord.RecordType`. When it encounters `RangeIndexRecordType == 2`, it calls
+   `mo.AddRangeIndexKey(key.ToArray())` to capture the key on the
+   `MigrateOperation`. The stub is re-read later under exclusive lock during
+   `SnapshotRangeIndexAndCreateReader`. The key is **not** added to the scan sketch — it
+   is handled out-of-band after the scan completes.
 
-        // 4. Send to target: [stub (51 bytes)] + [snapshot_length (4 bytes)]
-        //                   + [snapshot_bytes (N bytes)]
-        var payload = new byte[stubBytes.Length + 4 + snapshotBytes.Length];
-        Buffer.BlockCopy(stubBytes, 0, payload, 0, stubBytes.Length);
-        BitConverter.TryWriteBytes(payload.AsSpan(stubBytes.Length), snapshotBytes.Length);
-        Buffer.BlockCopy(snapshotBytes, 0, payload, stubBytes.Length + 4,
-            snapshotBytes.Length);
+2. **Sketch-protected batch migration.** After all parallel scan tasks complete,
+   `MigrateRangeIndexKeysAsync` runs a single sketch cycle for all discovered RI keys:
 
-        // 5. Transmit as a special store type "RISTORE"
-        gcs.TryWriteRangeIndexMigration(keyBytes, payload);
+   ```
+   a. Clear sketch, set INITIALIZING.
+   b. Add ALL RI keys to sketch via TryHashAndStore().
+   c. Set TRANSMITTING + WaitForConfigPropagationAsync()
+      — writes to RI keys are now blocked by the sketch gate.
+   d. For each RI key: TransmitRangeIndexAsync(mo, key)
+      — snapshot under exclusive lock, stream chunks, flush + ACK.
+   e. Set DELETING + WaitForConfigPropagationAsync()
+      — reads AND writes to RI keys are now blocked.
+   f. For each RI key: mo.DeleteRangeIndex(key)
+      — always deletes local key (COPY option is not yet supported for RI keys).
+   g. finally: sketch.Clear()
+      — unblocks client operations; deleted keys get ASK redirect.
+   ```
 
-        // 6. Cleanup temp file
-        File.Delete(tempSnapshotPath);
+   The `try/finally` ensures the sketch is always cleared even on failure, preventing
+   client operations from spinning indefinitely.
 
-        // 7. Delete local key (if not COPY)
-        if (!isCopy) DeleteLocalKey(keyBytes);
-    }
-    return true;
-}
-```
+3. **Snapshot details.** `SnapshotForMigration` (in `RangeIndexManager.Migration.cs`):
+   - Acquires the per-key exclusive lock.
+   - Re-reads the stub from the main store (`RIGET`) under the lock to get a fresh `TreeHandle`.
+   - If the tree is live (`TreeHandle ≠ 0`, in `liveIndexes`): takes a CPR snapshot
+     **directly into** `{riLogRoot}/migration-tmp/{guid}.bftree`
+     (`CprSnapshotByPtr(handle, dest)`), using `TryClaimSnapshot`/`ReleaseSnapshot`
+     to serialize against concurrent flush/checkpoint snapshots (same pattern as
+     `SnapshotForFlushViaCpr`).
+   - If the tree was evicted: copies the working `{key_hash}.data.bftree` file (same source as
+     checkpoint pending entries) to the same temp directory.
+   - Releases the exclusive lock.
 
-#### Receiver side
+   The temp file has a unique GUID name, protecting it from concurrent `OnFlush` overwrites,
+   checkpoint operations, and other migrations.
 
-```csharp
-// In RespClusterMigrateCommands.cs, add case for RISTORE:
-case "RISTORE":
-    // 1. Parse payload: stub + snapshot bytes
-    var stub = payload.AsSpan(0, RangeIndexManager.IndexSizeBytes);
-    var snapshotLen = BitConverter.ToInt32(
-        payload.AsSpan(RangeIndexManager.IndexSizeBytes));
-    var snapshotBytes = payload.AsSpan(
-        RangeIndexManager.IndexSizeBytes + 4, snapshotLen);
+4. **Serializer architecture.** `RangeIndexChunkedSerializer` is a pure state machine with
+   phases: `KeyHeader → KeyData → FileHeader → FileData → Trailer → Done`. File data is
+   supplied via `SupplyFileData(Memory<byte>)` rather than passed directly to `MoveNext`.
+   The `NeedsFileData` property tells the caller when to supply more file bytes. The
+   `RangeIndexMigrationReader` wrapper handles async file reads and loops to handle phase
+   transitions within a single call.
 
-    // 2. Write snapshot to local file
-    var localSnapshotPath = DeriveSnapshotPath(key);
-    File.WriteAllBytes(localSnapshotPath, snapshotBytes.ToArray());
+#### Source side — KEYS path
 
-    // 3. Restore BfTree from snapshot
-    RangeIndexManager.ReadIndex(stub, out _, out var cacheSize, ...);
-    var newTreePtr = rangeIndexManager.RestoreFromSnapshot(
-        localSnapshotPath, cacheSize, minRecordSize, maxRecordSize,
-        maxKeyLen, leafPageSize);
+1. **Upfront discovery.** `RangeIndexManager.GetRangeIndexKeysForMigration` reads each key
+   via `RIGET` through the string context and returns the set of keys that are RangeIndex
+   type. Stub bytes are **not** captured here (to avoid TOCTOU) — the authoritative stub is
+   re-read later under exclusive lock by `SnapshotForMigration`.
 
-    // 4. Build new stub with updated TreePtr + ProcessInstanceId
-    var newStubBytes = new byte[RangeIndexManager.IndexSizeBytes];
-    stub.CopyTo(newStubBytes);
-    rangeIndexManager.UpdateStubPointer(newStubBytes, newTreePtr);
+2. **Regular key transmission.** `TransmitKeysAsync` skips RI keys (they appear in the
+   `rangeIndexKeysToMigrate` set passed as the skip predicate).
 
-    // 5. Insert into local main store with RangeIndex RecordType
-    InsertRangeIndexKey(keyBytes, newStubBytes);
-    break;
-```
+3. **RI key transmission.** Each RI key is transmitted via `TransmitRangeIndexAsync`.
+   After successful transmission, the key is marked in the sketch (`Item2 = true`) so
+   `DeleteKeysAsync()` deletes it in the proper `DELETING` sketch status phase.
+
+   In the KEYS path, RI keys are already in the sketch (added by the caller during key
+   enumeration), so the `TRANSMITTING` status gate already blocks concurrent writes.
+
+#### Destination side — reassembly + finalization
+
+`RespClusterMigrateCommands.NetworkClusterMigrate` dispatches `SerializedRangeIndexStream`
+records to `RangeIndexMigrationReceiveState`, which enforces protocol ordering: while
+receiving a stream, only `SerializedRangeIndexStream` records are accepted.
+
+`RangeIndexChunkedDeserializer` is a state machine that:
+1. Parses the key length header and accumulates key bytes.
+2. Parses the file size header.
+3. Writes file bytes to a temp file (`{riLogRoot}/migration-tmp/{guid}.bftree`),
+   updating an xxHash64 incrementally.
+4. Parses the trailer: validates checksum, extracts stub.
+
+Once the deserializer reports `IsComplete`, `RangeIndexMigrationReceiveState.ProcessRecord`
+finalizes the stream:
+1. Computes the key's hash slot and verifies the slot is in the `IMPORTING` state on this
+   node (`currentConfig.IsImportingSlot`); otherwise the record is rejected.
+2. Calls `RangeIndexManager.PublishMigratedIndex(key, stub, tempPath, replaceOption, ...)`,
+   which returns a `PublishMigratedIndexResult`:
+   - **`KeyExists` gate** — if any key already exists at this name (string, object, RI, or
+     vector), publish is skipped with `SkippedAlreadyExists` (or `SkippedReplaceNotSupported`
+     when `MIGRATE REPLACE` was requested — REPLACE is not yet implemented for RI keys). No
+     destructive action is taken; these are non-error outcomes.
+   - **Otherwise (no existing key)**: deletes any stale `{riLogRoot}/{key_hash}.data.bftree`
+     left from a prior migration of the same key (enables round-trip P0→P1→P0), moves the temp
+     file into place, calls `BfTreeService.RecoverFromCprSnapshot()` to load the native tree,
+     rewrites the stub (`TreeHandle = bfTree.NativePtr`, `ResetFlags()`, clears
+     `SerializationPhase`), publishes via `RICREATE` RMW, and registers the tree via
+     `RegisterIndex()` → `Success`.
+   - Only `Failed` (an exception or store-level error) is propagated as an error.
+
+On disposal (error or abort), the deserializer's temp file is deleted.
+
+#### Write protection during migration
+
+RI commands (`RI.SET`, `RI.CREATE`, `RI.DEL`, `RI.GET`, `RI.SCAN`, etc.) are classified as
+data commands and have `KeySpecifications` in the command metadata JSON. This means the
+generic slot verification layer (`CanServeSlot` → `NetworkMultiKeySlotVerify`) automatically
+extracts the key, hashes it to a slot, and checks migration state — no special code is
+needed inside the RI command handlers.
+
+When a slot is in `MIGRATING` state, `CanOperateOnKey` calls
+`migrationManager.CanAccessKey(key, slot, readOnly)`, which probes the sketch. Behavior
+depends on the sketch status:
+
+| Sketch Status | Read commands (RI.GET, RI.SCAN…) | Write commands (RI.SET, RI.CREATE…) |
+|---|---|---|
+| `INITIALIZING` | ✅ Allowed | ✅ Allowed |
+| `TRANSMITTING` | ✅ Allowed | ❌ **Returns `-TRYAGAIN`** |
+| `DELETING` | ❌ Returns `-TRYAGAIN` | ❌ Returns `-TRYAGAIN` |
+| `MIGRATED` | ✅ Allowed | ✅ Allowed |
+
+During the `TRANSMITTING` phase — while the CPR snapshot is being taken and streamed —
+write commands return a `-TRYAGAIN` error immediately, signaling the client to retry later.
+Read commands remain unblocked during transmission. During the `DELETING` phase, both reads
+and writes return `-TRYAGAIN`.
+
+**Why TRYAGAIN instead of spin-wait.** The default Garnet behavior for regular keys during
+migration is to spin-wait (`Thread.Yield()` in a loop). This is acceptable for regular keys
+because individual key transmission is fast. However, RangeIndex migration can take
+significantly longer — the BfTree must be snapshotted via CPR and streamed as chunked data.
+A long spin-wait has cascading effects on multiplexed clients like StackExchange.Redis:
+
+- SE.Redis uses a single TCP connection with pipelined commands in FIFO order.
+- If the server spin-waits on command A, **all subsequent pipelined commands on that
+  connection also stall** — even for unrelated keys.
+- SE.Redis has a per-connection `SyncTimeout` (default 5s) / `AsyncTimeout`. Commands
+  exceeding the timeout are faulted with `TimeoutException` on the client side, but the
+  server-side command **continues executing** (fire-and-forget after timeout).
+- If nothing is read from the pipe for 4× the timeout (~20s), SE.Redis detects a "dead
+  socket" and **kills the connection entirely**, triggering a reconnect.
+
+Returning `-TRYAGAIN` avoids these problems: the response is immediate, the pipeline stays
+unblocked, and the client can implement retry logic with backoff.
+
+> **TRYAGAIN in the Redis protocol.** `-TRYAGAIN` is an official Redis cluster error
+> (see `cluster.c:1466`). Redis uses it for multi-key commands during migration when some
+> keys exist locally and some have already migrated — the command cannot be served atomically.
+> Our use extends this semantics: the key exists, but it cannot be served right now because
+> it is being serialized for migration. The error message and retry semantics are the same.
+>
+> **Client handling.** SE.Redis does not auto-retry on TRYAGAIN — it surfaces as a
+> `RedisServerException("TRYAGAIN ...")` that the application must catch and retry manually.
+> This is consistent with Redis behavior for TRYAGAIN (no client auto-retries it).
+>
+> **Comparison with Redis.** Redis is single-threaded, so migration and client commands are
+> naturally serialized — no spin-wait or TRYAGAIN is needed for single-key operations.
+> When a slot is `MIGRATING`, Redis serves the request if the key exists locally and returns
+> `-ASK` redirect if it doesn't. Redis only returns `-TRYAGAIN` for multi-key commands where
+> some keys have already migrated.
+
+#### Failure modes
+
+- **Transmit failure.** `TransmitRangeIndexAsync` catches all exceptions and returns `false`.
+  The `try/finally` in `MigrateRangeIndexKeysAsync` ensures the sketch is cleared, unblocking
+  client operations. The migration session fails and `TryRecoverFromFailure` reverts slot state.
+- **Checksum mismatch.** The deserializer enters `Error` state and returns `false`. The
+  receive state resets and the migration fails.
+- **Key already exists at destination.** `PublishMigratedIndex` skips publishing
+  (`SkippedAlreadyExists`, or `SkippedReplaceNotSupported` under `MIGRATE REPLACE`) without
+  touching any existing data — a non-error outcome. A stale `data.bftree` file is only deleted
+  on the publish path that runs when no key exists (supporting round-trip migration).
+- **Source crash mid-stream.** The partial temp file on the destination is cleaned up by
+  the deserializer's `Dispose`, or by `RangeIndexManager` startup cleanup which deletes
+  the `migration-tmp` directory.
 
 ---
 
@@ -2796,32 +2928,6 @@ The core FFI functions for disk-backed tree persistence are implemented in
 trees (scan not supported). Future fix: use `StorageBackend::Memory` with
 `cache_only=false` instead, which supports scan and snapshot.
 
-**Future:** For key migration, additional buffer-based serialization functions may be
-needed to avoid temp files:
-
-```rust
-/// Serialize BfTree to a byte buffer (for migration without temp files).
-#[no_mangle]
-pub extern "C" fn bftree_serialize_to_buffer(
-    tree: *mut BfTree,
-    buffer: *mut u8, buffer_len: i32,
-) -> i64;  // bytes written, or -1 if buffer too small
-
-/// Get the serialized size of a BfTree snapshot (for pre-allocating buffer).
-#[no_mangle]
-pub extern "C" fn bftree_serialized_size(tree: *mut BfTree) -> i64;
-
-/// Restore from a byte buffer (received from migration).
-#[no_mangle]
-pub extern "C" fn bftree_deserialize_from_buffer(
-    buffer: *const u8, buffer_len: i32,
-    cb_size_byte: u64, cb_min_record_size: u32, cb_max_record_size: u32,
-    cb_max_key_len: u32, leaf_page_size: u32,
-) -> *mut BfTree;  // null on failure
-```
-
-These are not yet implemented and will be added when migration support is built.
-
 ---
 
 ### G. Updated File Inventory (Persistence-Related Additions)
@@ -2829,15 +2935,23 @@ These are not yet implemented and will be added when migration support is built.
 | # | File Path | Purpose |
 |---|---|---|
 | NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | `DisposeRecord` handler, `OnSnapshotRecord` handler, snapshot path derivation |
-| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | `HandleMigratedRangeIndexKey()`, migration serialization/deserialization |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | Source: `SnapshotForMigration()`, `SnapshotRangeIndexAndCreateReader()`, `GetRangeIndexKeysForMigration()`, `DeriveTempMigrationPath()`. Destination: `PublishMigratedIndex()`, `KeyExists()`. `DefaultMigrationChunkSize` const, nested `PublishMigratedIndexResult` enum. |
+| NEW | `libs/cluster/Server/Migration/MigrateSession.RangeIndex.cs` | Source-side driver: `TransmitRangeIndexAsync()` (snapshot → chunk stream → flush+ACK) and `MigrateRangeIndexKeysAsync()` (sketch-protected batch cycle). |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexChunkedSerializer.cs` | Pure state-machine serializer (no I/O); `MinChunkSize` const. |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexMigrationReader.cs` | Async wrapper that reads snapshot file data and frames it via the serializer. |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexChunkedDeserializer.cs` | Stateful deserializer with file I/O; validates checksum, exposes `Key`/`Stub`/`TempPath`. |
+| NEW | `libs/cluster/Session/RangeIndexMigrationReceiveSession.cs` | `RangeIndexMigrationReceiveState` — per-`ClusterSession` receive-side state machine; finalizes via `PublishMigratedIndex`. |
 | MOD | `libs/server/Databases/DatabaseManagerBase.cs` | *(no RangeIndex-specific changes needed — checkpoint handled via per-record callback)* |
 | MOD | `libs/server/Databases/SingleDatabaseManager.cs` | *(no RangeIndex-specific changes needed — recovery is lazy)* |
 | MOD | `libs/cluster/Server/Replication/CheckpointFileType.cs` | Add `RANGEINDEX_SNAPSHOT` enum value |
 | MOD | `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` | Send BfTree snapshot files during replica sync |
-| MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
-| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | Detect RangeIndex `RecordType`, serialize BfTree, 2-phase transmit |
-| MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | Check `RecordType` during slot scan |
-| MOD | `libs/native/bftree-garnet/src/lib.rs` | *(future)* Add `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` for migration |
+| MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Destination dispatcher: route `SerializedRangeIndexStream` records to `RangeIndexMigrationReceiveState` (protocol-ordered). |
+| MOD | `libs/cluster/Server/Migration/MigrateOperation.cs` | Add `rangeIndexKeysToMigrate` set, `RangeIndexKeys`, `AddRangeIndexKey`, `DeleteRangeIndex`. Mirrors the Vector Set hooks. |
+| MOD | `libs/cluster/Server/Migration/MigrateSessionSlots.cs` | SLOTS path: after the scan workers finish and the Vector Set drain, run `MigrateRangeIndexKeysAsync` over the discovered RI keys. |
+| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | KEYS path: discover RI keys via `GetRangeIndexKeysForMigration`, skip them in `TransmitKeysAsync`, transmit each via `TransmitRangeIndexAsync`, then mark for deletion. |
+| MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | `Reader`: detect `RangeIndexRecordType` and call `mo.AddRangeIndexKey(key.ToArray())` instead of shipping the record verbatim. |
+| MOD | `libs/client/ClientSession/GarnetClientSessionIncremental.cs` | Add `MigrationRecordSpanType.SerializedRangeIndexStream = 4`. |
+| MOD | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | Make `RangeIndexRecordType` and migration entry points `public` — they are called from `Garnet.cluster`, which is a separate assembly without `InternalsVisibleTo`. |
 
 ---
 

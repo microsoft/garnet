@@ -32,7 +32,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v6
     - name: Apply filter
-      uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d   #v4  for security reasons have pinned tag (commit SHA) for 3rd party
+      uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d   #v4  for security reasons we have pinned the tag (commit SHA) for 3rd party
       id: filter
       with:
         filters: |
@@ -159,7 +159,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.migrate.rangeindex', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -175,7 +175,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --blame-crash --blame-crash-dump-type full --blame-hang-timeout 30m --blame-hang-dump-type full --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v7

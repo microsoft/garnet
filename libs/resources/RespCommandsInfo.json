@@ -1513,16 +1513,6 @@
     ]
   },
   {
-    "Command": "FORCEGC",
-    "Name": "FORCEGC",
-    "Arity": -1,
-    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, Garnet"
-  },
-  {
     "Command": "GEOADD",
     "Name": "GEOADD",
     "Arity": -5,

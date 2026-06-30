@@ -63,7 +63,7 @@ namespace Garnet.test
             _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
-            _ = store.Recover();
+            _ = await store.RecoverAsync().ConfigureAwait(false);
             LocalRead();
 
             void LocalWrite()
@@ -100,7 +100,7 @@ namespace Garnet.test
             _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
-            _ = store.Recover();
+            _ = await store.RecoverAsync().ConfigureAwait(false);
             LocalRead();
 
             void LocalWrite()

@@ -28,7 +28,7 @@ jobs:
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Install helm
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5 for security reasons have pinned tag (commit SHA) for 3rd party
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5 for security reasons we have pinned the tag (commit SHA) for 3rd party
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 

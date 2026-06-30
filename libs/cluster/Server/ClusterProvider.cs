@@ -74,10 +74,8 @@ namespace Garnet.cluster
             => serverOptions.AllowDataLoss;
 
         /// <inheritdoc />
-        public void Recover()
-        {
-            replicationManager.Recover();
-        }
+        public ValueTask RecoverAsync()
+            => replicationManager.RecoverAsync();
 
         /// <inheritdoc />
         public bool PreventRoleChange()

@@ -107,7 +107,7 @@ namespace Garnet.server
                 // Drop DiskANN side of index
                 if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
-                    vectorManager?.DropInMemoryIndex(logRecord.ValueSpan);
+                    vectorManager?.RequestDropInMemoryIndex(logRecord.KeyBytes, logRecord.ValueSpan);
                 }
             }
         }
@@ -152,10 +152,23 @@ namespace Garnet.server
                     rangeIndexManager.RebuildFromSnapshotIfPending(logRecord.Key);
                 }
 
-                // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
-                if (vectorManager is not null && !logRecord.Info.Tombstone && logRecord.DataHeader.RecordType == VectorManager.RecordType)
+
+                if (vectorManager is not null && !logRecord.Info.Tombstone)
                 {
-                    vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                    if (logRecord.HasNamespace)
+                    {
+                        var ns = logRecord.NamespaceBytes;
+                        if (ns.Length == 1 && ns[0] == VectorManager.MetadataNamespace)
+                        {
+                            // Context metadata load during recover needs to be saved off
+                            vectorManager.RecoveredContextMetadata(ref logRecord);
+                        }
+                    }
+                    else if (logRecord.DataHeader.RecordType == VectorManager.RecordType)
+                    {
+                        // If we're recovering we might have a context marked as deleting, but the record itself isn't deleted
+                        vectorManager.RecoveredVectorSetIndexKey(ref logRecord);
+                    }
                 }
             }
         }

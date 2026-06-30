@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.test;
 using NUnit.Framework;
@@ -68,15 +69,12 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public void MallocFixedPageSizeRecoveryTest()
+        public async Task MallocFixedPageSizeRecoveryTest()
         {
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-            //issue call to recover
-            recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
-            //wait until complete
-            recoveredAllocator.IsRecoveryCompleted(true);
+            var numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, CancellationToken.None).ConfigureAwait(false);
 
             Finish_MallocFixedPageSizeRecoveryTest(seed, device, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
         }
@@ -158,7 +156,7 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public unsafe void FuzzyIndexRecoveryTest()
+        public async Task FuzzyIndexRecoveryTest()
         {
             Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out TsavoriteBase hash_table1,
                                          out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
@@ -166,10 +164,7 @@ namespace Tsavorite.test.recovery
             var hash_table2 = new TsavoriteBase();
             hash_table2.Initialize(size, 512);
 
-            //issue recover call
-            hash_table2.RecoverFuzzyIndex(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written);
-            //wait until complete
-            hash_table2.IsFuzzyIndexRecoveryComplete(true);
+            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, CancellationToken.None).ConfigureAwait(false);
 
             Finish_FuzzyIndexRecoveryTest(seed, numAdds, ht_device, ofb_device, hash_table1, hash_table2);
         }

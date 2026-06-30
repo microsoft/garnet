@@ -3491,27 +3491,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task ForceGCACLsAsync()
-        {
-            await CheckCommandsAsync(
-                "FORCEGC",
-                [DoForceGCAsync, DoForceGCGenAsync]
-            ).ConfigureAwait(false);
-
-            static async Task DoForceGCAsync(GarnetClient client)
-            {
-                string val = await client.ExecuteForStringResultAsync("FORCEGC").ConfigureAwait(false);
-                ClassicAssert.AreEqual("GC completed", val);
-            }
-
-            static async Task DoForceGCGenAsync(GarnetClient client)
-            {
-                string val = await client.ExecuteForStringResultAsync("FORCEGC", ["1"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("GC completed", val);
-            }
-        }
-
-        [Test]
         public async Task GetACLsAsync()
         {
             await CheckCommandsAsync(

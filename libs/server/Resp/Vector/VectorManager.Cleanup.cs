@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -49,27 +50,37 @@ namespace Garnet.server
                     return true;
                 }
 
-                // TODO: Implement variable length namespace support
-                Debug.Assert(logRecord.Namespace.Length == 1, "Variable length namespaces not supported");
-
-                ulong ns = logRecord.Namespace[0];
-                var pairedContext = ns & ~(ContextStep - 1);
-                if (!contexts.Contains(pairedContext))
+                var namespaceBytes = logRecord.NamespaceBytes;
+                if (namespaceBytes.Length is not (sizeof(byte) or sizeof(uint)))
                 {
-                    // Vector Set, but not one we're scanning for
+                    // Not Vector Set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
                     return true;
                 }
 
-                // Delete it
-                VectorElementKey toDeleteKey = new((byte)ns, logRecord.KeyBytes);
+                var ns = ExtractContextFromNamespaces(namespaceBytes);
 
+                // We only store the _first_ context in a batch of related contexts to delete
+                // so mask it down to just the first context
+                var pairedContext = ns & ~(ContextStep - 1);
+                if (!contexts.Contains(pairedContext))
+                {
+                    // Not a target vector set, ignore
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
+
+                VectorElementKey toDeleteKey = new(namespaceBytes, logRecord.KeyBytes);
+
+                // Delete it
                 var status = storageSession.vectorBasicContext.Delete(toDeleteKey, 0);
                 if (status.IsPending)
                 {
                     VectorOutput ignored = new();
                     CompletePending(ref status, ref ignored, ref storageSession.vectorBasicContext);
                 }
+
+                Debug.Assert(status.IsCompletedSuccessfully, "Nothing else should be deleting namespaced keys");
 
                 cursorRecordResult = CursorRecordResult.Accept;
                 return true;
@@ -78,9 +89,15 @@ namespace Garnet.server
 
         private readonly Channel<object> cleanupTaskChannel;
         private readonly Channel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
+        private readonly Channel<object> requestDropTaskChannel;
+        private ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)> requestedDrops;
+#if NET9_0_OR_GREATER
+        private ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)>.AlternateLookup<ReadOnlySpan<byte>> requestedDropsLookup;
+#endif
         private readonly Task cleanupTask;
         private readonly Task requestCleanupTask;
-        private readonly Func<IMessageConsumer> getCleanupSession;
+        private readonly Task requestDropTask;
+        private readonly Func<IMessageConsumer> getTempSession;
 
         // Pause / resume coordination for the cleanup task vs concurrent Reset.
         //
@@ -107,7 +124,70 @@ namespace Garnet.server
         private readonly SemaphoreSlim cleanupGate = new(initialCount: 1, maxCount: 1);
 
         /// <summary>
-        /// Seaparate task thas allows for marking Vector Sets contexts as needing cleanup.
+        /// Separate task that handles requests to drop the DiskANN side of indexes.
+        /// 
+        /// This needs to be in the background because we can't drop DiskANN indexes while
+        /// they are in use, which means we can't drop them in response to <see cref="GarnetRecordTriggers"/>.
+        /// 
+        /// An additional subtlety is that indexes which are requested to be dropped cannot be recreated
+        /// until that drop is processed.
+        /// </summary>
+        private async Task RunRequestDropTaskAsync()
+        {
+            while (await requestDropTaskChannel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                // Drain all wake up signals
+                while (requestDropTaskChannel.Reader.TryRead(out _))
+                {
+                }
+
+                // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                using var dropSession = (RespServerSession)getTempSession();
+                if (dropSession.activeDbId != dbId && !dropSession.TrySwitchActiveDatabaseSession(dbId))
+                {
+                    throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                }
+
+                ActiveThreadSession = dropSession.storageSession;
+                try
+                {
+                    // Process all pending drops
+                    foreach (var (k, (context, indexPtr)) in requestedDrops)
+                    {
+                        long keyHash;
+                        unsafe
+                        {
+                            fixed (byte* keyPtr = k)
+                            {
+                                keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedPointer(keyPtr, k.Length));
+                            }
+                        }
+
+                        vectorSetLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+
+                        try
+                        {
+                            Service.DropIndex(context, indexPtr);
+                        }
+                        finally
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            if (!requestedDrops.TryRemove(k, out _))
+                            {
+                                logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Separate task that allows for marking Vector Sets contexts as needing cleanup.
         /// 
         /// Cleanup is actually done by the <see cref="RunCleanupTaskAsync"/>.
         /// 
@@ -128,7 +208,7 @@ namespace Garnet.server
                 try
                 {
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
-                    using var cleanupSession = (RespServerSession)getCleanupSession();
+                    using var cleanupSession = (RespServerSession)getTempSession();
                     if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
                     {
                         throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
@@ -147,9 +227,12 @@ namespace Garnet.server
                                 completions.Add(t.MarkCompleted);
                             }
 
-                            if (!contextMetadata.IsCleaningUp(t.Context))
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
+                            if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
-                                contextMetadata.MarkCleaningUp(t.Context);
+                                contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
+
+                                _ = dirtyContextMetadatas.Add(contextIndex);
 
                                 needsUpdate = true;
                             }
@@ -212,7 +295,7 @@ namespace Garnet.server
                 try
                 {
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
-                    using var cleanupSession = (RespServerSession)getCleanupSession();
+                    using var cleanupSession = (RespServerSession)getTempSession();
                     if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
                     {
                         throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
@@ -226,10 +309,23 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
-                    HashSet<ulong> needCleanup;
+                    HashSet<ulong> needCleanup = null;
                     lock (this)
                     {
-                        needCleanup = contextMetadata.GetNeedCleanup();
+                        for (var i = 0; i < contextMetadatas.Length; i++)
+                        {
+                            var subCleanup = contextMetadatas[i].GetNeedCleanup();
+                            if (subCleanup != null)
+                            {
+                                var offset = ContextMetadata.OffsetForContextMetadata(i);
+
+                                needCleanup ??= [];
+                                foreach (var item in subCleanup)
+                                {
+                                    _ = needCleanup.Add(offset + item);
+                                }
+                            }
+                        }
                     }
 
                     if (needCleanup == null)
@@ -253,7 +349,10 @@ namespace Garnet.server
                     {
                         foreach (var cleanedUp in needCleanup)
                         {
-                            contextMetadata.FinishedCleaningUp(cleanedUp);
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(cleanedUp);
+                            contextMetadatas[contextIndex].FinishedCleaningUp(contextIndex != 0, contextValue);
+
+                            _ = dirtyContextMetadatas.Add(contextIndex);
                         }
                     }
 
@@ -296,5 +395,35 @@ namespace Garnet.server
         /// successful PauseCleanupAsync — typically from a finally block.
         /// </summary>
         public void ResumeCleanup() => cleanupGate.Release();
+
+        /// <summary>
+        /// True if a pending request to drop the DiskANN index behind this _specific_ key exists.
+        /// </summary>
+        public bool DropRequested(ReadOnlySpan<byte> key)
+        {
+#if NET9_0_OR_GREATER
+            return requestedDropsLookup.ContainsKey(key);
+#else
+            return requestedDrops.ContainsKey(key.ToArray());
+#endif
+        }
+
+        /// <summary>
+        /// Block until <see cref="DropRequested(ReadOnlySpan{byte})"/> would return false.
+        /// 
+        /// Do not call this while holding any Vector Set related locks, we will deadlock.
+        /// </summary>
+        public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key)
+        {
+#if NET9_0_OR_GREATER
+            while (requestedDropsLookup.ContainsKey(key))
+#else
+            var keyBytes = key.ToArray();
+            while (requestedDrops.ContainsKey(keyBytes))
+#endif
+            {
+                _ = Thread.Yield();
+            }
+        }
     }
 }

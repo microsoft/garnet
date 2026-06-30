@@ -8,23 +8,6 @@ slug: garnet-specific-commands
 Apart from Garnet's [server extensions](../extensions/overview.md), we support many API calls that are not available
 in other RESP servers. These are described below.
 
-### FORCEGC
-
-#### Syntax
-
-```bash
-    FORCEGC [generation]
-```
-
-Invoke garbage collection on the server side. Optionally, specify the generation level for the collection. For more
-information, see [this article](https://learn.microsoft.com/en-us/dotnet/api/system.gc.collect).
-
-#### Resp Reply
-
-Simple string reply: OK.
-
----
-
 ### COMMITAOF
 
 #### Syntax

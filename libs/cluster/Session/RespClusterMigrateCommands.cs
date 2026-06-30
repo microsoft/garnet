@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -108,11 +107,7 @@ namespace Garnet.cluster
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
-                                // Vector Set indexes are Key + Value
-                                var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                var keyBytes = payload.Slice(sizeof(int), keyLen);
-                                var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + keyBytes.Length)..]);
-                                var valueBytes = payload.Slice(sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
 
                                 // An error has occurred
                                 if (migrateState > 0)
@@ -135,6 +130,22 @@ namespace Garnet.cluster
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
                                     return;
 
+                                // An error has occurred
+                                if (migrateState > 0)
+                                {
+                                    i++;
+                                    continue;
+                                }
+
+                                // Protocol enforcement: while receiving a RangeIndex stream, only SerializedRangeIndexStream records are valid
+                                if (clusterProvider.serverOptions.EnableRangeIndexPreview && rangeIndexMigrationState.IsReceiving && kind != MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    logger?.LogError("Protocol violation: expected SerializedRangeIndexStream continuation after {ChunkCount} chunks, got {Kind}", rangeIndexMigrationState.CurrentChunkCount, kind);
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
                                 if (kind == MigrationRecordSpanType.VectorSetElement)
                                 {
                                     // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
@@ -142,14 +153,9 @@ namespace Garnet.cluster
 
                                     // Vector Set elements are Namespace + Key + Value
 
-                                    var payload = payloadRaw.ReadOnlySpan;
+                                    var payload = payloadRaw.Span;
 
-                                    var namespaceLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
-                                    var namespaceBytes = payload.Slice(sizeof(int), namespaceLen);
-                                    var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length)..]);
-                                    var keyBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int), keyLen);
-                                    var valueLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length + sizeof(int) + keyBytes.Length)..]);
-                                    var valueBytes = payload.Slice(sizeof(int) + namespaceLen + sizeof(int) + keyBytes.Length + sizeof(int), valueLen);
+                                    VectorManager.DeserializeMigratedElementKey(payload, out var namespaceBytes, out var keyBytes, out var valueBytes);
 
                                     // An error has occurred
                                     if (migrateState > 0)
@@ -159,6 +165,24 @@ namespace Garnet.cluster
                                     }
 
                                     clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref stringBasicContext, ref vectorBasicContext, namespaceBytes, keyBytes, valueBytes);
+                                }
+                                else if (kind == MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
+                                    {
+                                        logger?.LogError("Received RangeIndex migration data but RangeIndex feature is not enabled");
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
+
+                                    if (!rangeIndexMigrationState.ProcessRecord(payloadRaw.ReadOnlySpan, currentConfig, ref stringBasicContext, replaceOption))
+                                    {
+                                        logger?.LogError("Failed to process RangeIndex migration record");
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
                                 }
                                 else if (kind == MigrationRecordSpanType.LogRecord)
                                 {

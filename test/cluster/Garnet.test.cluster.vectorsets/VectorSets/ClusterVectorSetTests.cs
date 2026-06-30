@@ -25,7 +25,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    [TestFixture, NonParallelizable]
+    [TestFixture(0)]
+    [TestFixture(1_000)]
+    [NonParallelizable]
     public class ClusterVectorSetTests : TestBase
     {
         protected int sublogCount = 1;
@@ -81,10 +83,16 @@ namespace Garnet.test.cluster
             [nameof(MigrateVectorStressAsync)] = LogLevel.Error,
         };
 
-
         private ClusterTestContext context;
 
         private CaptureLogWriter captureLogWriter;
+
+        private readonly int preAllocatedContexts;
+
+        public ClusterVectorSetTests(int preAllocatedContexts)
+        {
+            this.preAllocatedContexts = preAllocatedContexts;
+        }
 
         [SetUp]
         public virtual void Setup()
@@ -102,20 +110,25 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        // TODO: restore BIN and Q8 when implemented
         [Test]
-        [TestCase("XB8", "XPREQ8")]
-        [TestCase("XB8", "NOQUANT")]
-        [TestCase("FP32", "XPREQ8")]
-        [TestCase("FP32", "NOQUANT")]
-        public async Task BasicVADDReplicatesAsync(string vectorFormat, string quantizer)
+        public async Task BasicVADDReplicatesAsync(
+            [Values("XU8", "XI8", "FP32", "VALUES")] string vectorFormat,
+            [Values("NOQUANT", "BIN", "Q8", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8")] string quantizer
+        )
         {
-            // TODO: also test VALUES format?
-
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
 
-            ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out var vectorFormatParsed));
+            VectorValueType vectorFormatParsed;
+            if (vectorFormat == "VALUES")
+            {
+                vectorFormatParsed = VectorValueType.Invalid;
+            }
+            else
+            {
+                ClassicAssert.IsTrue(Enum.TryParse(vectorFormat, ignoreCase: true, out vectorFormatParsed));
+            }
+
             ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
 
             _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1).ConfigureAwait(false);
@@ -126,73 +139,137 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
-            byte[] vectorAddData;
-            if (vectorFormatParsed == VectorValueType.XB8)
+            int addRes;
+
+            if (vectorFormatParsed == VectorValueType.Invalid)
             {
-                vectorAddData = new byte[75];
-                vectorAddData[0] = 1;
+                var vectorAddData = new string[75];
+                vectorAddData[0] = "1";
                 for (var i = 1; i < vectorAddData.Length; i++)
                 {
-                    vectorAddData[i] = (byte)(vectorAddData[i - 1] + 1);
-                }
-            }
-            else if (vectorFormatParsed == VectorValueType.FP32)
-            {
-                var floats = new float[75];
-                floats[0] = 1;
-                for (var i = 1; i < floats.Length; i++)
-                {
-                    floats[i] = floats[i - 1] + 1;
+                    vectorAddData[i] = ((byte)(int.Parse(vectorAddData[i - 1]) + 1)).ToString();
                 }
 
-                vectorAddData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
+                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "VALUES", vectorAddData.Length.ToString(), .. vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
             }
             else
             {
-                ClassicAssert.Fail("Unexpected vector format");
-                return;
+                byte[] vectorAddData;
+                if (vectorFormatParsed == VectorValueType.XU8)
+                {
+                    vectorAddData = new byte[75];
+                    vectorAddData[0] = 1;
+                    for (var i = 1; i < vectorAddData.Length; i++)
+                    {
+                        vectorAddData[i] = (byte)(vectorAddData[i - 1] + 1);
+                    }
+                }
+                else if (vectorFormatParsed == VectorValueType.XI8)
+                {
+                    var sbytes = new sbyte[75];
+                    sbytes[0] = 1;
+                    for (var i = 1; i < sbytes.Length; i++)
+                    {
+                        sbytes[i] = (sbyte)(sbytes[i - 1] + 1);
+                    }
+
+                    vectorAddData = MemoryMarshal.Cast<sbyte, byte>(sbytes).ToArray();
+                }
+                else if (vectorFormatParsed == VectorValueType.FP32)
+                {
+                    var floats = new float[75];
+                    floats[0] = 1;
+                    for (var i = 1; i < floats.Length; i++)
+                    {
+                        floats[i] = floats[i - 1] + 1;
+                    }
+
+                    vectorAddData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
+                }
+                else
+                {
+                    ClassicAssert.Fail("Unexpected vector format");
+                    return;
+                }
+
+                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", vectorFormat, vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
             }
 
-            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", vectorFormat, vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
             ClassicAssert.AreEqual(1, addRes);
 
-            byte[] vectorSimData;
-            if (vectorFormatParsed == VectorValueType.XB8)
+            if (vectorFormatParsed == VectorValueType.Invalid)
             {
-                vectorSimData = new byte[75];
-                vectorSimData[0] = 2;
+                var vectorSimData = new string[75];
+                vectorSimData[0] = "2";
                 for (var i = 1; i < vectorSimData.Length; i++)
                 {
-                    vectorSimData[i] = (byte)(vectorSimData[i - 1] + 1);
-                }
-            }
-            else if (vectorFormatParsed == VectorValueType.FP32)
-            {
-                var floats = new float[75];
-                floats[0] = 2;
-                for (var i = 1; i < floats.Length; i++)
-                {
-                    floats[i] = floats[i - 1] + 1;
+                    vectorSimData[i] = ((byte)(int.Parse(vectorSimData[i - 1]) + 1)).ToString();
                 }
 
-                vectorSimData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
+                var simRes = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", "VALUES", vectorSimData.Length.ToString(), .. vectorSimData]);
+
+                ClassicAssert.IsTrue(simRes.Length > 0);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+                var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+                var simOnReplica = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "VALUES", vectorSimData.Length.ToString(), .. vectorSimData]);
+                ClassicAssert.IsTrue(simOnReplica.Length > 0);
             }
             else
             {
-                ClassicAssert.Fail("Unexpected vector format");
-                return;
+                byte[] vectorSimData;
+                if (vectorFormatParsed == VectorValueType.XU8)
+                {
+                    vectorSimData = new byte[75];
+                    vectorSimData[0] = 2;
+                    for (var i = 1; i < vectorSimData.Length; i++)
+                    {
+                        vectorSimData[i] = (byte)(vectorSimData[i - 1] + 1);
+                    }
+                }
+                else if (vectorFormatParsed == VectorValueType.XI8)
+                {
+                    var sbytes = new sbyte[75];
+                    sbytes[0] = 2;
+                    for (var i = 1; i < sbytes.Length; i++)
+                    {
+                        sbytes[i] = (sbyte)(sbytes[i - 1] + 1);
+                    }
+
+                    vectorSimData = MemoryMarshal.Cast<sbyte, byte>(sbytes).ToArray();
+                }
+                else if (vectorFormatParsed == VectorValueType.FP32)
+                {
+                    var floats = new float[75];
+                    floats[0] = 2;
+                    for (var i = 1; i < floats.Length; i++)
+                    {
+                        floats[i] = floats[i - 1] + 1;
+                    }
+
+                    vectorSimData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
+                }
+                else
+                {
+                    ClassicAssert.Fail("Unexpected vector format");
+                    return;
+                }
+
+                var simRes = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", vectorFormat, vectorSimData]);
+
+                ClassicAssert.IsTrue(simRes.Length > 0);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+                var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+                var simOnReplica = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", vectorFormat, vectorSimData]);
+                ClassicAssert.IsTrue(simOnReplica.Length > 0);
             }
-
-            var simRes = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", vectorFormat, vectorSimData]);
-            ClassicAssert.IsTrue(simRes.Length > 0);
-
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
-
-            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
-            ClassicAssert.AreEqual("OK", readonlyOnReplica);
-
-            var simOnReplica = context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", vectorFormat, vectorSimData]);
-            ClassicAssert.IsTrue(simOnReplica.Length > 0);
         }
 
         [Test]
@@ -280,6 +357,13 @@ namespace Garnet.test.cluster
                                     nonZeroReturns++;
                                 }
 
+                                if ((readRes.Length % 2) != 0)
+                                {
+                                    var joined = string.Join(Environment.NewLine, readRes.Select(static x => Encoding.UTF8.GetString(x)));
+
+                                    ClassicAssert.Fail($"Unexpected response structure, entries={readRes.Length}{Environment.NewLine}{joined}");
+                                }
+
                                 for (var i = 0; i < readRes.Length; i += 2)
                                 {
                                     var id = readRes[i];
@@ -301,6 +385,11 @@ namespace Garnet.test.cluster
                                 if (readRes.Length > 0)
                                 {
                                     nonZeroReturns++;
+
+                                    for (var i = 0; i < readRes.Length; i++)
+                                    {
+                                        ClassicAssert.AreEqual(4, readRes[i].Length, $"Unexpected response: {Encoding.UTF8.GetString(readRes[i])}");
+                                    }
                                 }
                             }
                         }
@@ -787,7 +876,29 @@ namespace Garnet.test.cluster
                             for (var i = 0; i < expected.Length; i++)
                             {
                                 var s = (byte)float.Parse(fromSecondary[i]);
-                                ClassicAssert.AreEqual(expected[i], s);
+
+                                if (expected[i] != s)
+                                {
+                                    var actual = fromSecondary.Select(f => (byte)float.Parse(f)).ToArray();
+                                    int? matchesId = null;
+                                    for (var otherId = 0; otherId < vectors.Length; otherId++)
+                                    {
+                                        if (vectors[otherId].SequenceEqual(actual))
+                                        {
+                                            matchesId = otherId;
+                                            break;
+                                        }
+                                    }
+
+                                    if (matchesId != null)
+                                    {
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); matches vector with Id = {matchesId.Value}");
+                                    }
+                                    else
+                                    {
+                                        ClassicAssert.Fail($"For Id = {id}, mismatch at {i} ({expected[i]} != {s}); does not match any expected vector");
+                                    }
+                                }
                             }
                         }
                         else
@@ -2048,7 +2159,7 @@ namespace Garnet.test.cluster
 
                 // These kinds of errors happen from stressing migration independent of Vector Sets
                 // 
-                // TODO: These out to be fixed outside of Vector Set work
+                // TODO: These ought to be fixed outside of Vector Set work
                 var faultRound = capturedLog.Split("^GOSSIP round faulted^").Length - 1;
                 var faultResponse = capturedLog.Split("^GOSSIP faulted processing response^").Length - 1;
                 var faultMergeMap = capturedLog.Split("ClusterConfig.MergeSlotMap(").Length - 1;
@@ -2102,11 +2213,20 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-        private Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
+        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
             context.CreateConnection(useTLS: useTLS);
-            return context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
+            var ret = await context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
+
+            foreach (var server in context.nodes)
+            {
+                var wrapper = GetStoreWrapper(server);
+
+                wrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
+            }
+
+            return ret;
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]

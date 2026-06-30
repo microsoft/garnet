@@ -742,6 +742,7 @@ namespace Garnet.test
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
             bool enableRangeIndexPreview = false,
+            int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -867,6 +868,7 @@ namespace Garnet.test
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
+                VectorSetQuantizationTaskCount = vectorSetQuantizationTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
@@ -1275,7 +1277,7 @@ using System.Threading.Tasks;
                         result.FlushedUntilAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals("Log.MemorySizeBytes"))
+                    else if (entry.Key.Equals("Log.CurrentMemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.HeadAddress"))
                         result.ReadCacheHeadAddress = long.Parse(entry.Value);
