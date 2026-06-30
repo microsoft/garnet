@@ -149,7 +149,7 @@ namespace Tsavorite.core
         public const int DefaultMaxInlineKeySize = 1022;
 
         /// <summary>
-        /// Default maximum size of a key stored inline in the in-memory portion of the main log; this is less than the maximum inline size for <see cref="RecordDataHeader.ValueLength"/>.
+        /// Maximum size of a key stored inline in the in-memory portion of the main log.
         /// </summary>
         public int MaxInlineKeySize = DefaultMaxInlineKeySize;
 

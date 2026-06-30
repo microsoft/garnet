@@ -1642,8 +1642,8 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
 
-            // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (16m) passes the page-fit check.
-            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("16m", 16 * 1048576) })
+            // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (15m) passes the page-fit check.
+            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("15m", 15 * 1048576) })
             {
                 var args = new[] { "--page", "1g", "--max-inline-value-size", input };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
@@ -1881,7 +1881,7 @@ namespace Garnet.test
         [Test]
         public void MaxInlineKeySizeParsing()
         {
-            // Default value from defaults.conf is "1022"
+            // Default value from defaults.conf is null (falls back to 1022 at server-options time)
             {
                 var args = Array.Empty<string>();
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
@@ -1889,7 +1889,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 ClassicAssert.IsNull(options.MaxInlineKeySize);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.IsNull(options.MaxInlineKeySize);
+                ClassicAssert.IsNull(serverOptions.MaxInlineKeySize);
                 ClassicAssert.AreEqual(1022, serverOptions.MaxInlineKeySizeBytes());
             }
 

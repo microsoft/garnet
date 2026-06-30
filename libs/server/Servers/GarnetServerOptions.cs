@@ -123,13 +123,13 @@ namespace Garnet.server
 
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log.
-        /// Accepts a memory size (e.g. \"1k\", \"128b\"). Must be in range [0, 1022] bytes; default is 1022.
+        /// Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.
         /// </summary>
         public string MaxInlineKeySize = null;
 
         /// <summary>
         /// Maximum size of a value stored inline in the in-memory portion of the main log.
-        /// Accepts a memory size (e.g. \"4k\", \"16m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).
+        /// Accepts a memory size (e.g. \"4k\", \"15m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).
         /// </summary>
         public string MaxInlineValueSize = null;
 
@@ -864,7 +864,7 @@ namespace Garnet.server
                 return KVSettings.DefaultMaxInlineKeySize;
 
             if (!TryParseSize(MaxInlineKeySize, out var sizeInBytes))
-                throw new Exception($"Unable to parse {nameof(MaxInlineKeySize)} value '{MaxInlineKeySize}'. Expected a memory size string (e.g. '1k', '128b').");
+                throw new Exception($"Unable to parse {nameof(MaxInlineKeySize)} value '{MaxInlineKeySize}'. Expected a memory size string (e.g. '1k', '128').");
 
             if (sizeInBytes < MinBytes || sizeInBytes > MaxBytes)
                 throw new Exception($"{nameof(MaxInlineKeySize)} value '{MaxInlineKeySize}' ({sizeInBytes} bytes) is outside the allowed range [{MinBytes}, {MaxBytes}] bytes.");
@@ -877,14 +877,14 @@ namespace Garnet.server
         /// Tsavorite requires this to be at most 0xFFFFFE (the RecordDataHeader value-length field's
         /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
         /// is internal to Tsavorite.core and not visible from Garnet.server). If this value is not specified, it defaults
-        /// to the minimum of 1m or <paramref name="pageSize"/> / 2; otherwise, the value must be strictly less than pageSize / 2.
+        /// to the minimum of 1m or <paramref name="pageSize"/> / 2; otherwise, the value must be <= pageSize / 2.
         /// <returns>The byte-length value used for <c>KVSettings.MaxInlineValueSize</c>.</returns>
         /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
         /// </summary>
         public int MaxInlineValueSizeBytes(long pageSize)
         {
             const long MinBytes = 0;                    // TODO: LogSettings.MinMaxInlineSize
-            const long MaxBytes = 16 * 1024 * 1024;     // TODO: LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
+            const long MaxBytes = 0xFFFFFE;             // TODO: LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
 
             if (string.IsNullOrEmpty(MaxInlineValueSize))
                 return (int)Math.Min(pageSize / 2, KVSettings.DefaultMaxInlineValueSize);
@@ -898,7 +898,7 @@ namespace Garnet.server
             // This check guarantees at least one record fits on a page, because the minimum page size is 4k, and 2k is larger than
             // the PageHeader plus non-value components of a record (RecordInfo, RecordDataHeader, Key, and possible Optional fields).
             if (sizeInBytes > pageSize / 2)
-                throw new Exception($"{nameof(MaxInlineValueSize)} value '{MaxInlineValueSize}' ({sizeInBytes} bytes) is greater than half the page size [{pageSize}] bytes.");
+                throw new Exception($"{nameof(MaxInlineValueSize)} value '{MaxInlineValueSize}' ({sizeInBytes} bytes) is greater than half the page size ({pageSize / 2} bytes for PageSize {pageSize} bytes).");
 
             return (int)sizeInBytes;
         }

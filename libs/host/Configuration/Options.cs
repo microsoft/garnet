@@ -576,11 +576,11 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
-        [Option("max-inline-key-size", Required = false, HelpText = "Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"1k\", \"128b\"). Must be in range [0, 1022] bytes; default is 1022.")]
+        [Option("max-inline-key-size", Required = false, HelpText = "Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.")]
         public string MaxInlineKeySize { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
-        [Option("max-inline-value-size", Required = false, HelpText = "Maximum size of a value stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"4k\", \"16m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).")]
+        [Option("max-inline-value-size", Required = false, HelpText = "Maximum size of a value stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"4k\", \"15m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).")]
         public string MaxInlineValueSize { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
