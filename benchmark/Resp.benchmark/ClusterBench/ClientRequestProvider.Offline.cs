@@ -326,7 +326,7 @@ namespace Resp.benchmark
             // Determine operation types for LightClient initialization
             var primaryOpType = (int)opts.Op;
             var replicaOpType = primaryOpType;  // Default to same operation
-            
+
             // If mixed workload, replica client should be configured for read operations
             if (workload.ReplicaRequests != null)
             {

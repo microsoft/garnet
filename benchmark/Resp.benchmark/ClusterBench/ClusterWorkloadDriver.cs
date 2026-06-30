@@ -548,11 +548,11 @@ namespace Resp.benchmark
                 var actualReplicaPercent = totalOps > 0 ? (totalReplicaOps * 100.0) / totalOps : 0.0;
                 var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
                 var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
-                
+
                 // Determine operation types for display
                 string primaryOpType = opts.Op.ToString();
                 string replicaOpType = opts.Op.ToString();
-                
+
                 // If mixed workload (write op with replicas and percentage > 0), show read operation type
                 if (opts.ReplicaOpsPercent > 0 && OperationClassifier.IsWriteOperation(opts.Op))
                 {
@@ -560,7 +560,7 @@ namespace Resp.benchmark
                     if (readOp.HasValue)
                         replicaOpType = readOp.Value.ToString();
                 }
-                
+
                 Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaOpsPercent}% for reads)");
                 Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec) ({primaryOpType})");
                 Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
@@ -652,11 +652,11 @@ namespace Resp.benchmark
                 var actualReplicaPercent = totalOps > 0 ? (totalReplicaOps * 100.0) / totalOps : 0.0;
                 var primaryOpsPerSec = totalPrimaryOps / totalElapsed.TotalSeconds;
                 var replicaOpsPerSec = totalReplicaOps / totalElapsed.TotalSeconds;
-                
+
                 // Determine operation types for display
                 string primaryOpType = opts.Op.ToString();
                 string replicaOpType = opts.Op.ToString();
-                
+
                 // If mixed workload (write op with replicas and percentage > 0), show read operation type
                 if (opts.ReplicaOpsPercent > 0 && OperationClassifier.IsWriteOperation(opts.Op))
                 {
@@ -664,7 +664,7 @@ namespace Resp.benchmark
                     if (readOp.HasValue)
                         replicaOpType = readOp.Value.ToString();
                 }
-                
+
                 Console.WriteLine($"Replica routing: {actualReplicaPercent:F1}% actual (target: {opts.ReplicaOpsPercent}% for reads)");
                 Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec) ({primaryOpType})");
                 Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
