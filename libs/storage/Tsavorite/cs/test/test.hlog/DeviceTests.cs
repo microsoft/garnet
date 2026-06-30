@@ -148,13 +148,9 @@ namespace Tsavorite.test
         // up its own files via TestUtils.MethodTestDir, allocations stay below 16 MB, and the
         // parallel tests cap in-flight IOs well below the device's ThrottleLimit of 120.
         //
-        // Tests use HardeningSectorSize = 4096 as a safe upper bound for buffer alignment:
-        // NativeStorageDevice's probe is the required DIO alignment (statx STATX_DIOALIGN /
-        // logical_block_size, never physical_block_size), so on real hardware it is 512 or
-        // 4096. A 4096-aligned buffer is therefore always >= the device's actual sector size,
-        // so the libaio/io_uring path accepts it. If a future 8K-DIO disk appears, this
-        // constant needs to be bumped (or the helper refactored to consult device.SectorSize
-        // per-call).
+        // HardeningSectorSize = 4096 is a safe upper bound: the probe returns the required DIO
+        // alignment (512 or 4096 on real hardware), and a 4096-aligned buffer is always >= that.
+        // Bump this if an 8K-DIO disk ever appears.
         // ===================================================================================
 
         const int HardeningSectorSize = 4096;
@@ -861,13 +857,8 @@ namespace Tsavorite.test
         [Category("NativeStorageDevice")]
         public void DeviceSectorSize_IsConsistentAcrossDeviceTypes()
         {
-            // Regression guard for the unified-alignment work: every local-disk device type
-            // must derive the SAME required-DIO alignment from the shared probe
-            // (NativeStorageDevice.ProbeSectorSize → statx STATX_DIOALIGN / logical_block_size,
-            // never physical_block_size). A divergence here is exactly the read-amplification
-            // bug this guards against — e.g. a device reporting physical_block_size=256 KiB
-            // while the managed O_DIRECT device uses 512. Linux-only: NativeStorageDevice is the
-            // Linux native backend; on Windows the Native type maps to LocalStorageDevice.
+            // All local-disk device types must report the same required DIO alignment from the
+            // shared probe. Linux-only: NativeStorageDevice is the Linux native backend.
             if (!OperatingSystem.IsLinux())
                 Assert.Ignore("NativeStorageDevice vs RandomAccess comparison is Linux-specific.");
 

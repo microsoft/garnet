@@ -1373,12 +1373,9 @@ namespace Tsavorite.core
             => GetSectorSize(MaterializeParentDirForProbe(filename));
 
         /// <summary>
-        /// Materializes the parent directory of <paramref name="filename"/> (if missing) and
-        /// returns the path the alignment probe should run against — the parent directory when
-        /// it could be materialized, otherwise the original filename. Probing the parent dir
-        /// (rather than the not-yet-existing data file) makes <c>stat()</c>/<c>statx()</c>
-        /// succeed on the first try and prevents the probe from walking up to a grandparent on
-        /// a different filesystem.
+        /// Creates <paramref name="filename"/>'s parent directory (if missing) and returns it as
+        /// the probe path — probing the existing parent (not the lazily-created data file) keeps
+        /// the probe on the target filesystem.
         /// </summary>
         private static string MaterializeParentDirForProbe(string filename)
         {
@@ -1393,30 +1390,20 @@ namespace Tsavorite.core
             }
             catch
             {
-                // Mkdir failures (permissions, race with concurrent create, etc.) are not
-                // fatal here — they will surface with a clearer error when the device tries
-                // to open the file. Fall back to the filename; the probe's own stat-walk-up
-                // still produces a best-effort value.
+                // Not fatal — fall back to the filename; the probe walks up to an ancestor.
             }
             return filename;
         }
 
         /// <summary>
-        /// Unified required-direct-I/O-alignment probe shared by ALL local-disk devices
-        /// (<see cref="NativeStorageDevice"/>, <c>RandomAccessLocalStorageDevice</c>,
-        /// <c>ManagedLocalStorageDevice</c>, <c>LocalStorageDevice</c>) so they agree on one
-        /// sector size per host. Returns a power of two &gt;= <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// Required O_DIRECT alignment shared by all local-disk devices (native, RandomAccess,
+        /// Managed, Local) so they agree per host. Power of two &gt;= <see cref="IDevice.MinDeviceSectorSize"/>.
         /// </summary>
         /// <remarks>
-        /// On Linux the canonical probe lives in the native library
-        /// (<c>NativeDevice_ProbeAlignment</c> → statx <c>STATX_DIOALIGN</c> / sysfs
-        /// <c>logical_block_size</c>, never <c>physical_block_size</c>); reusing it makes the
-        /// managed O_DIRECT devices align identically to the native device. When the native
-        /// library cannot be loaded (e.g. musl/Alpine) it falls back to
-        /// <see cref="Native32.GetDeviceSectorSize"/> (the historical 512 floor on Linux). On
-        /// Windows it uses <see cref="Native32.GetDeviceSectorSize"/> directly (the
-        /// <c>GetDiskFreeSpace</c> logical sector size, already logical-only) so the managed
-        /// Windows devices take no native-library dependency.
+        /// Linux: the native probe (<c>NativeDevice_ProbeAlignment</c>), falling back to
+        /// <see cref="Native32.GetDeviceSectorSize"/> (512) when the native library can't load
+        /// (e.g. musl). Windows: <see cref="Native32.GetDeviceSectorSize"/> (GetDiskFreeSpace
+        /// logical), taking no native-library dependency.
         /// </remarks>
         internal static uint ProbeSectorSize(string filename)
         {

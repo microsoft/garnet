@@ -25,39 +25,19 @@
 
 namespace native_device {
 
-/// Probe the kernel-required direct-I/O (O_DIRECT) alignment for the device backing
-/// `filename`, returned as a power of two with a 512 B floor. Cold path, called once per
-/// device at construction. Never throws.
+/// Probe the device's required O_DIRECT alignment for `filename`, as a power of two, floor
+/// 512 B. Cold path, called once per device at construction. Never throws.
 ///
-/// We deliberately return the *required* DIO alignment, NOT max(logical, physical):
-///   - The kernel only enforces alignment to the device's logical block size (equivalently,
-///     statx STATX_DIOALIGN's stx_dio_offset_align / stx_dio_mem_align). That is the floor
-///     below which O_DIRECT reads/writes fail with EINVAL.
-///   - `physical_block_size` is merely a write-RMW optimization hint and can be enormous on
-///     some devices (e.g. 256 KiB on Azure NVMe). Because the upper layer rounds EVERY record
-///     I/O up to the reported alignment, using physical here would inflate a 2.5 KB record read
-///     into a 256 KB I/O — catastrophic read amplification for read-heavy larger-than-memory
-///     workloads. So we never consult physical_block_size.
+/// Returns the kernel-required alignment (logical block size / statx STATX_DIOALIGN), never
+/// physical_block_size — physical is a write-RMW hint that can be huge (e.g. 256 KiB on some
+/// NVMe) and would over-align every IO, as the upper layer rounds each IO up to this value.
 ///
-/// Linux: prefer statx(STATX_DIOALIGN) (Linux 6.1+) on the file (or its nearest existing
-///   ancestor, since the data file is often created lazily after construction). Fall back to
-///   the block device's logical_block_size from sysfs
-///   (/sys/dev/block/<major>:<minor>/queue/logical_block_size, with a ../queue/ retry for
-///   partitions) when statx is unavailable or reports 0 (e.g. the probe path is a directory,
-///   which never supports O_DIRECT).
+/// Linux: statx(STATX_DIOALIGN) on the file or nearest existing ancestor, else sysfs
+///   logical_block_size. Windows: IOCTL_STORAGE_QUERY_PROPERTY BytesPerLogicalSector.
 ///
-/// Windows: open \\.\<drive>: (no admin needed — FILE_READ_ATTRIBUTES is enough) and issue
-///   IOCTL_STORAGE_QUERY_PROPERTY with StorageAccessAlignmentProperty, using
-///   BytesPerLogicalSector only. This mirrors File::GetDeviceAlignment (LogicalBytesPerSector).
-///
-/// Single source of truth shared by:
-///   - NativeDeviceImpl constructor (caches in device_alignment_, returned by sector_size())
-///   - The C ABI NativeDevice_ProbeAlignment (used by the C# wrapper to size SectorSize for
-///     every local-disk device — native AND managed — so they all agree on the same host)
-///
-/// This matches File::GetDeviceAlignment (statx on Linux, LogicalBytesPerSector on Windows),
-/// so the per-File DIO asserts and the reported sector_size() can never disagree, and the ABI
-/// cross-check in EnsureNativeDeviceCreated stays a pure ABI / runtime-drift detector.
+/// Shared by the NativeDeviceImpl ctor (device_alignment_, returned by sector_size()) and the
+/// C ABI NativeDevice_ProbeAlignment (sizes the C# SectorSize for every local-disk device).
+/// Matches File::GetDeviceAlignment, so the per-File DIO asserts and sector_size() agree.
 inline uint32_t ProbeDioAlignment(const char* filename) {
     constexpr uint32_t kFallback = 512u;
     if (filename == nullptr || *filename == '\0') return kFallback;
@@ -96,9 +76,7 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
     ::CloseHandle(h);
     if (!ok || bytes_returned < sizeof(descriptor)) return kFallback;
 
-    // Logical sector only: this is the kernel-required O_DIRECT alignment. Deliberately ignore
-    // descriptor.BytesPerPhysicalSector (a write-RMW hint that can be far larger) so we don't
-    // over-align every IO. Mirrors File::GetDeviceAlignment (LogicalBytesPerSector).
+    // Logical sector = required O_DIRECT alignment; ignore BytesPerPhysicalSector (a write-RMW hint).
     uint32_t sec = descriptor.BytesPerLogicalSector;
     if (sec == 0) return kFallback;
 
@@ -108,9 +86,7 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
 #else
     namespace fs = std::experimental::filesystem;
 
-    // Resolve `filename` to an existing path we can probe. The data file is often created
-    // lazily after construction (only the parent directory exists at probe time), so walk up
-    // to the closest existing ancestor when the file itself isn't there yet.
+    // Resolve `filename` (or its nearest existing ancestor — the data file may not exist yet).
     struct stat st;
     std::string probe_path{ filename };
     if (::stat(probe_path.c_str(), &st) != 0) {
@@ -127,9 +103,7 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
 
     uint32_t required = 0;
 
-    // Preferred: the kernel's authoritative O_DIRECT alignment for this inode (Linux 6.1+).
-    // This is exactly what O_DIRECT enforces — the logical block size on a plain block device,
-    // or a larger value on stacked devices (dm-crypt, LVM). It is NOT physical_block_size.
+    // Preferred: kernel-required O_DIRECT alignment for this inode (Linux 6.1+).
 #if defined(STATX_DIOALIGN)
     {
         struct statx stx {};
@@ -138,11 +112,8 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
     }
 #endif
 
-    // Fallback (pre-6.1 kernels, or statx didn't populate the DIO fields — e.g. the probe path
-    // is a directory, which never supports O_DIRECT): the block device's logical_block_size,
-    // the kernel-required O_DIRECT alignment floor. Read from sysfs via the path's st_dev.
-    // Deliberately does NOT consult physical_block_size (a write-RMW hint that can be huge —
-    // e.g. 256 KiB on Azure NVMe — and would over-align every IO).
+    // Fallback (pre-6.1 kernel, or statx returned 0 — e.g. the path is a directory): sysfs
+    // logical_block_size via st_dev. Not physical_block_size.
     if (required == 0) {
         unsigned maj = major(st.st_dev);
         unsigned min = minor(st.st_dev);
@@ -175,8 +146,7 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
 
     if (required == 0) return kFallback;
 
-    // Round up to a power of two and floor at 512. Values are essentially always already pow2
-    // on real hardware, but the round-up keeps us safe against a future non-pow2 value.
+    // Round up to a power of two, floor 512.
     uint32_t pow2 = 512u;
     while (pow2 < required) pow2 <<= 1;
     return std::max(kFallback, pow2);
@@ -485,13 +455,9 @@ public:
 
     /// Methods required by the (implicit) disk interface.
     uint32_t sector_size() const override {
-        // device_alignment_ is the required O_DIRECT alignment probed at construction by
-        // native_device::ProbeDioAlignment (statx STATX_DIOALIGN / logical_block_size, never
-        // physical_block_size) — the same routine the C# wrapper calls via
-        // NativeDevice_ProbeAlignment, so the two values agree on the same machine. We
-        // deliberately do NOT delegate to `log_.alignment()` here — the FileSystemSegmentedFile
-        // path hardcodes 512, which would falsely trip the managed wrapper's sector-size
-        // cross-check on 4K-native disks where the probe returns 4096.
+        // device_alignment_ = ProbeDioAlignment (same routine as the C# probe, so they agree).
+        // Not log_.alignment(): FileSystemSegmentedFile hardcodes 512, under-reporting on
+        // 4K-native disks.
         return device_alignment_;
     }
 
