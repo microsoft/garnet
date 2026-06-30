@@ -644,19 +644,19 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void BeforeConsistentReadCallback(long hash)
-            => readSessionState?.BeforeConsistentReadKeyCallback(hash);
+        public void PreSingleKeyConsistentRead(long hash)
+            => readSessionState?.PreSingleKeyConsistentRead(hash);
 
         /// <inheritdoc />
-        public void AfterConsistentReadKeyCallback()
-            => readSessionState?.AfterConsistentReadKeyCallback();
+        public void PostSingleKeyConsistentReadCallback()
+            => readSessionState?.PostSingleKeyConsistentReadCallback();
 
         /// <inheritdoc />
-        public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters)
-            => readSessionState?.BeforeConsistentReadKeyBatch(parameters);
+        public void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters)
+            => readSessionState?.PreBatchKeyConsistentReadCallback(parameters);
 
         /// <inheritdoc />
-        public bool AfterConsistentReadKeyBatchCallback(int keyCount)
-            => readSessionState != null && readSessionState.AfterConsistentReadKeyBatch(keyCount);
+        public bool PostBatchKeyConsistentReadCallback(int keyCount)
+            => readSessionState != null && readSessionState.PostBatchKeyConsistentReadCallback(keyCount);
     }
 }

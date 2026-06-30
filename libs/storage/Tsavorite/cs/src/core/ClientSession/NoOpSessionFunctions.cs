@@ -162,13 +162,13 @@ namespace Tsavorite.core
 
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
 
-        public readonly void BeforeConsistentReadCallback(long hash) { }
+        public readonly void PreSingleKeyConsistentRead(long hash) { }
 
-        public readonly void AfterConsistentReadKeyCallback() { }
+        public readonly void PostSingleKeyConsistentReadCallback() { }
 
         /// <inheritdoc />
-        public readonly void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters) { }
+        public readonly void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters) { }
 
-        public readonly bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
+        public readonly bool PostBatchKeyConsistentReadCallback(int keyCount) => true;
     }
 }
