@@ -1370,29 +1370,69 @@ namespace Tsavorite.core
         /// ABI / loaded-library drift detector with no path-resolution false positives.
         /// </remarks>
         private static uint EnsureParentDirectoryAndProbeSectorSize(string filename)
+            => GetSectorSize(MaterializeParentDirForProbe(filename));
+
+        /// <summary>
+        /// Creates <paramref name="filename"/>'s parent directory (if missing) and returns it as
+        /// the probe path — probing the existing parent (not the lazily-created data file) keeps
+        /// the probe on the target filesystem.
+        /// </summary>
+        private static string MaterializeParentDirForProbe(string filename)
         {
-            string parent = null;
             try
             {
-                parent = new FileInfo(filename).Directory?.FullName;
+                var parent = new FileInfo(filename).Directory?.FullName;
                 if (!string.IsNullOrEmpty(parent))
+                {
                     Directory.CreateDirectory(parent);
+                    return parent;
+                }
             }
             catch
             {
-                // Mkdir failures (permissions, race with concurrent create, etc.) are not
-                // fatal here — they will surface with a clearer error when the device tries
-                // to open the file. The probe still runs against the best ancestor we have.
-                parent = null;
+                // Not fatal — fall back to the filename; the probe walks up to an ancestor.
             }
-            // Probe the materialized parent dir directly when we have one — this removes any
-            // dependency on whether the file itself exists and prevents the probe from
-            // walking up to a different filesystem when the lazy file create has not yet
-            // run. Fall back to the original filename path when we couldn't determine /
-            // materialize a parent (the probe's own stat-walk-up will still produce a
-            // best-effort value).
-            string probePath = !string.IsNullOrEmpty(parent) ? parent : filename;
-            return GetSectorSize(probePath);
+            return filename;
+        }
+
+        /// <summary>
+        /// Required O_DIRECT alignment shared by all local-disk devices (native, RandomAccess,
+        /// Managed, Local) so they agree per host. Power of two &gt;= <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// </summary>
+        /// <remarks>
+        /// Linux: the native probe (<c>NativeDevice_ProbeAlignment</c>), falling back to
+        /// <see cref="Native32.GetDeviceSectorSize"/> (512) when the native library can't load
+        /// (e.g. musl). Windows: <see cref="Native32.GetDeviceSectorSize"/> (GetDiskFreeSpace
+        /// logical), taking no native-library dependency.
+        /// </remarks>
+        internal static uint ProbeSectorSize(string filename)
+        {
+            var probePath = MaterializeParentDirForProbe(filename);
+
+            uint result = 0;
+            if (OperatingSystem.IsLinux())
+            {
+                try
+                {
+                    uint probed = NativeDevice_ProbeAlignment(probePath);
+                    if (probed >= MinSectorSize && (probed & (probed - 1)) == 0)
+                        result = probed;
+                }
+                catch (DllNotFoundException) { }
+                catch (EntryPointNotFoundException) { }
+                // A present-but-broken native lib (wrong-arch/corrupt) throws these; managed
+                // devices don't require it, so fall back to the managed probe instead of failing.
+                catch (BadImageFormatException) { }
+                catch (FileLoadException) { }
+            }
+
+            if (result == 0)
+                result = Native32.GetDeviceSectorSize(probePath);
+
+            // Final guard: power-of-two floor at MinDeviceSectorSize.
+            if (result < MinSectorSize || (result & (result - 1)) != 0)
+                result = MinSectorSize;
+            return result;
         }
 
         /// <summary>

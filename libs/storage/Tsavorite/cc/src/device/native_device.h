@@ -13,6 +13,8 @@
 #include <thread>
 
 #if !defined(_WIN32) && !defined(_WIN64)
+#include <fcntl.h>
+#include <string>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <cstdio>
@@ -23,36 +25,19 @@
 
 namespace native_device {
 
-/// Probe the block device backing `filename` for its sector size, returning
-/// `max(logical_block_size, physical_block_size)` (rounded up to a power of two, floor 512 B).
-/// Cold path, called once per device at construction. Never throws.
+/// Probe the device's required O_DIRECT alignment for `filename`, as a power of two, floor
+/// 512 B. Cold path, called once per device at construction. Never throws.
 ///
-/// Why max(logical, physical) and not just the kernel-required minimum:
-///   - `logical_block_size` is the kernel-enforced minimum DIO alignment.
-///   - `physical_block_size` exposes the firmware's internal sector — on a 512e drive
-///     (logical=512, physical=4096) the firmware wants 4096 even though the kernel will
-///     accept 512, and sub-4096 writes silently take an internal read-modify-write penalty.
-///     Taking the max picks the larger of "must" and "prefer" in one shot.
+/// Returns the kernel-required alignment (logical block size / statx STATX_DIOALIGN), never
+/// physical_block_size — physical is a write-RMW hint that can be huge (e.g. 256 KiB on some
+/// NVMe) and would over-align every IO, as the upper layer rounds each IO up to this value.
 ///
-/// Linux: stat the file (or its closest existing ancestor) for st_dev, then read
-///   /sys/dev/block/<major>:<minor>/queue/{logical,physical}_block_size. Partitions don't
-///   have their own queue/ dir — fall through to <major>:<minor>/../queue/<field>.
+/// Linux: statx(STATX_DIOALIGN) on the file or nearest existing ancestor, else sysfs
+///   logical_block_size. Windows: IOCTL_STORAGE_QUERY_PROPERTY BytesPerLogicalSector.
 ///
-/// Windows: open \\.\<drive>: (no admin needed — FILE_READ_ATTRIBUTES is enough) and issue
-///   IOCTL_STORAGE_QUERY_PROPERTY with StorageAccessAlignmentProperty. The resulting
-///   STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR carries BytesPerLogicalSector and
-///   BytesPerPhysicalSector. This is the Windows equivalent of Linux sysfs queue/* and
-///   gives us the same correctness-floor + RMW-avoidance signal.
-///
-/// Single source of truth shared by:
-///   - NativeDeviceImpl constructor (caches in device_alignment_, returned by sector_size())
-///   - The C ABI NativeDevice_ProbeAlignment (used by the C# wrapper to size SectorSize
-///     before any I/O is issued)
-///
-/// Both callers go through this function so the managed wrapper's probed SectorSize and the
-/// native shim's reported sector_size() are guaranteed to agree on the same machine — the
-/// ABI cross-check in EnsureNativeDeviceCreated is therefore a real ABI / runtime-drift
-/// detector with no 4K-disk false positives.
+/// Shared by the NativeDeviceImpl ctor (device_alignment_, returned by sector_size()) and the
+/// C ABI NativeDevice_ProbeAlignment (sizes the C# SectorSize for every local-disk device).
+/// Matches File::GetDeviceAlignment, so the per-File DIO asserts and sector_size() agree.
 inline uint32_t ProbeDioAlignment(const char* filename) {
     constexpr uint32_t kFallback = 512u;
     if (filename == nullptr || *filename == '\0') return kFallback;
@@ -91,9 +76,8 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
     ::CloseHandle(h);
     if (!ok || bytes_returned < sizeof(descriptor)) return kFallback;
 
-    uint32_t logical = descriptor.BytesPerLogicalSector;
-    uint32_t physical = descriptor.BytesPerPhysicalSector;
-    uint32_t sec = std::max(logical, physical);
+    // Logical sector = required O_DIRECT alignment; ignore BytesPerPhysicalSector (a write-RMW hint).
+    uint32_t sec = descriptor.BytesPerLogicalSector;
     if (sec == 0) return kFallback;
 
     uint32_t pow2 = kFallback;
@@ -102,58 +86,69 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
 #else
     namespace fs = std::experimental::filesystem;
 
-    // stat the file. If it doesn't exist yet (common: log file gets created lazily on
-    // first IO; only the parent directory exists at construction time), walk up to the
-    // closest existing ancestor.
+    // Resolve `filename` (or its nearest existing ancestor — the data file may not exist yet).
     struct stat st;
-    if (::stat(filename, &st) != 0) {
-        std::error_code ec;
+    std::string probe_path{ filename };
+    if (::stat(probe_path.c_str(), &st) != 0) {
         fs::path p{ filename };
         bool found = false;
         for (;;) {
             auto parent = p.parent_path();
             if (parent.empty() || parent == p) break;
             p = parent;
-            if (::stat(p.c_str(), &st) == 0) { found = true; break; }
+            if (::stat(p.c_str(), &st) == 0) { probe_path = p.string(); found = true; break; }
         }
         if (!found) return kFallback;
     }
 
-    unsigned maj = major(st.st_dev);
-    unsigned min = minor(st.st_dev);
+    uint32_t required = 0;
 
-    auto read_int_file = [](const char* path) -> int {
-        FILE* f = std::fopen(path, "r");
-        if (!f) return -1;
-        int v = -1;
-        int matched = std::fscanf(f, "%d", &v);
-        std::fclose(f);
-        return matched == 1 ? v : -1;
-    };
-    auto read_queue_field = [&](const char* field) -> int {
-        char path[512];
-        // Whole-disk devices (e.g. nvme0n1) expose queue/ directly under their dev node.
-        std::snprintf(path, sizeof(path),
-                      "/sys/dev/block/%u:%u/queue/%s", maj, min, field);
-        int v = read_int_file(path);
-        if (v > 0) return v;
-        // Partitions (e.g. sda2) don't have their own queue/ — it lives on the parent
-        // whole-disk symlink target. ../queue/ resolves to the parent's queue dir.
-        std::snprintf(path, sizeof(path),
-                      "/sys/dev/block/%u:%u/../queue/%s", maj, min, field);
-        return read_int_file(path);
-    };
+    // Preferred: kernel-required O_DIRECT alignment for this inode (Linux 6.1+).
+#if defined(STATX_DIOALIGN)
+    {
+        struct statx stx {};
+        if (::statx(AT_FDCWD, probe_path.c_str(), 0, STATX_DIOALIGN, &stx) == 0)
+            required = std::max(stx.stx_dio_offset_align, stx.stx_dio_mem_align);
+    }
+#endif
 
-    int logical = read_queue_field("logical_block_size");
-    int physical = read_queue_field("physical_block_size");
-    int sec = std::max(logical, physical);
-    if (sec <= 0) return kFallback;
+    // Fallback (pre-6.1 kernel, or statx returned 0 — e.g. the path is a directory): sysfs
+    // logical_block_size via st_dev. Not physical_block_size.
+    if (required == 0) {
+        unsigned maj = major(st.st_dev);
+        unsigned min = minor(st.st_dev);
 
-    // Round up to a power of two and floor at 512. Both fields are essentially always
-    // already pow2 on real hardware, but the round-up keeps us safe if the kernel exposes
-    // a future non-pow2 value.
+        auto read_int_file = [](const char* path) -> int {
+            FILE* f = std::fopen(path, "r");
+            if (!f) return -1;
+            int v = -1;
+            int matched = std::fscanf(f, "%d", &v);
+            std::fclose(f);
+            return matched == 1 ? v : -1;
+        };
+        auto read_queue_field = [&](const char* field) -> int {
+            char path[512];
+            // Whole-disk devices (e.g. nvme0n1) expose queue/ directly under their dev node.
+            std::snprintf(path, sizeof(path),
+                          "/sys/dev/block/%u:%u/queue/%s", maj, min, field);
+            int v = read_int_file(path);
+            if (v > 0) return v;
+            // Partitions (e.g. sda2) don't have their own queue/ — it lives on the parent
+            // whole-disk symlink target. ../queue/ resolves to the parent's queue dir.
+            std::snprintf(path, sizeof(path),
+                          "/sys/dev/block/%u:%u/../queue/%s", maj, min, field);
+            return read_int_file(path);
+        };
+
+        int logical = read_queue_field("logical_block_size");
+        if (logical > 0) required = static_cast<uint32_t>(logical);
+    }
+
+    if (required == 0) return kFallback;
+
+    // Round up to a power of two, floor 512.
     uint32_t pow2 = 512u;
-    while (pow2 < static_cast<uint32_t>(sec)) pow2 <<= 1;
+    while (pow2 < required) pow2 <<= 1;
     return std::max(kFallback, pow2);
 #endif
 }
@@ -460,12 +455,9 @@ public:
 
     /// Methods required by the (implicit) disk interface.
     uint32_t sector_size() const override {
-        // device_alignment_ was probed at construction via the same statx STATX_DIOALIGN
-        // path the C# wrapper uses to size SectorSize, so the two values agree on the same
-        // machine. We deliberately do NOT delegate to `log_.alignment()` here — the
-        // FileSystemSegmentedFile path hardcodes 512, which would falsely trip the managed
-        // wrapper's sector-size cross-check on 4K-native disks where the probe returns
-        // 4096.
+        // device_alignment_ = ProbeDioAlignment (same routine as the C# probe, so they agree).
+        // Not log_.alignment(): FileSystemSegmentedFile hardcodes 512, under-reporting on
+        // 4K-native disks.
         return device_alignment_;
     }
 
