@@ -144,14 +144,24 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
-        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// Default maximum size of a key stored inline in the in-memory portion of the main log; this is the maximum inline size for <see cref="RecordDataHeader.KeyLength"/>.
         /// </summary>
-        public int MaxInlineKeySize = LogSettings.DefaultMaxInlineKeySize;
+        public const int DefaultMaxInlineKeySize = 1022;
+
+        /// <summary>
+        /// Default maximum size of a key stored inline in the in-memory portion of the main log; this is less than the maximum inline size for <see cref="RecordDataHeader.ValueLength"/>.
+        /// </summary>
+        public int MaxInlineKeySize = DefaultMaxInlineKeySize;
+
+        /// <summary>
+        /// Default maximum size of a value stored inline in the in-memory portion of the main log for both allocators.
+        /// </summary>
+        public const int DefaultMaxInlineValueSize = 1024 * 1024;
 
         /// <summary>
         /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
-        public int MaxInlineValueSize = LogSettings.DefaultMaxInlineValueSize;
+        public int MaxInlineValueSize = DefaultMaxInlineValueSize;
 
         /// <summary>Sentinel value indicating that the default <see cref="IStreamBuffer.DefaultInitialIORecordSize"/> should be used.</summary>
         public const int UseDefaultInitialIORecordSize = -1;
