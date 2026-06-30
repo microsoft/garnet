@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -43,9 +42,13 @@ namespace Garnet.cluster
 
             public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
             {
-                Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces note supported");
+                // Vector Sets only use these two sizes, can ignore everything else
+                if (namespaceBytes.Length is not (sizeof(byte) or sizeof(uint)))
+                {
+                    return false;
+                }
 
-                var ns = (ulong)namespaceBytes[0];
+                var ns = VectorManager.ExtractContextFromNamespaces(namespaceBytes);
 
                 return session._namespaces?.Contains(ns) ?? false;
             }

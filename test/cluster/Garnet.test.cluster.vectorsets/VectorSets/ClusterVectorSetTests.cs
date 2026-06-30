@@ -25,7 +25,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    [TestFixture, NonParallelizable]
+    [TestFixture(0)]
+    [TestFixture(1_000)]
+    [NonParallelizable]
     public class ClusterVectorSetTests : TestBase
     {
         protected int sublogCount = 1;
@@ -81,10 +83,16 @@ namespace Garnet.test.cluster
             [nameof(MigrateVectorStressAsync)] = LogLevel.Error,
         };
 
-
         private ClusterTestContext context;
 
         private CaptureLogWriter captureLogWriter;
+
+        private readonly int preAllocatedContexts;
+
+        public ClusterVectorSetTests(int preAllocatedContexts)
+        {
+            this.preAllocatedContexts = preAllocatedContexts;
+        }
 
         [SetUp]
         public virtual void Setup()
@@ -118,7 +126,7 @@ namespace Garnet.test.cluster
             }
             else
             {
-                ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out vectorFormatParsed));
+                ClassicAssert.IsTrue(Enum.TryParse(vectorFormat, ignoreCase: true, out vectorFormatParsed));
             }
 
             ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
@@ -2205,11 +2213,20 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-        private Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
+        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
             context.CreateConnection(useTLS: useTLS);
-            return context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
+            var ret = await context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
+
+            foreach (var server in context.nodes)
+            {
+                var wrapper = GetStoreWrapper(server);
+
+                wrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
+            }
+
+            return ret;
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]

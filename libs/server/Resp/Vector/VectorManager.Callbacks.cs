@@ -27,6 +27,61 @@ namespace Garnet.server
             public readonly ReadOnlySpan<PinnedSpanByte> Parameters
                 => default;
 
+            /// <summary>
+            /// Per-term initial disk read size. The big, fixed-size records (FullVector, and the adjacency
+            /// NeighborList) are sized to the active vector set's geometry (<see cref="SetActiveReadGeometry"/>)
+            /// so each lands in a single IO regardless of dimension / M — and different vector sets get different
+            /// optimal sizes. When the geometry is unset (paths that don't call SetActiveReadGeometry), FullVector
+            /// uses the configured store/session size (<c>--initial-io-record-size</c>) and the other terms use the
+            /// small default, avoiding over-reading a full-vector-sized block for a tiny record.
+            /// </summary>
+            public readonly int InitialIORecordSize
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    // Single thread-static read; the struct copy (3 ints) is cheaper than re-reading TLS per branch.
+                    var geometry = ActiveReadGeometry;
+                    switch (NamespaceBytes[0] & 7)
+                    {
+                        case DiskANNService.FullVector:
+                            return geometry.FullVectorIOSize > 0 ? geometry.FullVectorIOSize : KVSettings.UseDefaultInitialIORecordSize;
+                        case DiskANNService.NeighborList:
+                            return geometry.NeighborListIOSize > 0 ? geometry.NeighborListIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                        case DiskANNService.QuantizedVector:
+                            return geometry.QuantizedVectorIOSize > 0 ? geometry.QuantizedVectorIOSize : IStreamBuffer.DefaultInitialIORecordSize;
+                        default:
+                            return IStreamBuffer.DefaultInitialIORecordSize;
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Per-term read-copy policy. The small per-element records (NeighborList adjacency, QuantizedVector,
+            /// internal/external id maps) are copied back into memory on disk read — to <see cref="StubReadCopyTo"/>
+            /// (the read cache when enabled, else the main-log tail) — so later hops and queries serve them from
+            /// memory. The large raw FullVector and Attributes/Metadata are served from disk (CopyTo=None): quantized
+            /// sets use the raw vector only for reranking, and for no-quant sets caching it yields no net gain once the
+            /// working set exceeds the read cache, as copying these large records in costs more than the reads it saves.
+            /// </summary>
+            public readonly ReadCopyOptions ReadCopyOptions
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (NamespaceBytes[0] & 7)
+                    {
+                        case DiskANNService.NeighborList:
+                        case DiskANNService.QuantizedVector:
+                        case DiskANNService.InternalIdMap:
+                        case DiskANNService.ExternalIdMap:
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ActiveThreadSession.vectorManager.StubReadCopyTo };
+                        default:
+                            return new ReadCopyOptions { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None };
+                    }
+                }
+            }
+
             private readonly ReadOnlySpan<byte> NamespaceBytes
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -196,6 +251,89 @@ namespace Garnet.server
         [ThreadStatic]
         internal static StorageSession ActiveThreadSession;
 
+        /// <summary>
+        /// Per-term initial disk-read sizes (in bytes) for the vector set currently being operated on, so each
+        /// record is fetched in a single IO sized to its actual geometry. A field value of 0 means "not set" and
+        /// the read falls back to the normal default.
+        /// </summary>
+        internal struct VectorReadGeometry
+        {
+            /// <summary>Initial disk-read size for the FullVector record (term 0).</summary>
+            public int FullVectorIOSize;
+
+            /// <summary>Initial disk-read size for the adjacency NeighborList record (term 1).</summary>
+            public int NeighborListIOSize;
+
+            /// <summary>Initial disk-read size for the QuantizedVector record (term 2).</summary>
+            public int QuantizedVectorIOSize;
+        }
+
+        /// <summary>
+        /// Per-term initial disk-read sizes for the vector set currently being operated on. Thread-static for the
+        /// same reason as <see cref="ActiveThreadSession"/> (DiskANN runs single-threaded per operation): set on
+        /// entry to a search/add once the index's dimensions / links are known (<see cref="SetActiveReadGeometry"/>)
+        /// and reset to <c>default</c> when the index context is exited (<see cref="VectorSetLock.Dispose"/>) so a
+        /// subsequent operation on a different set does not inherit stale sizes. Because the sizes are derived
+        /// per-index, two vector sets with different dimensions or M get different (each optimal) sizes within the
+        /// same Garnet instance.
+        /// </summary>
+        [ThreadStatic]
+        internal static VectorReadGeometry ActiveReadGeometry;
+
+        /// <summary>
+        /// Destination for copying the small graph "stub" records (NeighborList adjacency, internal/external id
+        /// maps, quantized vectors) back into memory when they are read from disk (see
+        /// <see cref="VectorReadBatch.ReadCopyOptions"/>). Set from <see cref="GarnetServerOptions.EnableReadCache"/>
+        /// at <see cref="VectorManager"/> construction: the read cache when it is enabled (the natural home for hot
+        /// read-only data — separate, never flushed, LRU — so it doesn't pollute the writable main log), otherwise
+        /// the main-log tail (still memory-resident). Per instance, so servers/databases with different read-cache
+        /// settings in the same process do not clobber each other; reads reach it via
+        /// <see cref="ActiveThreadSession"/>.<see cref="StorageSession.vectorManager"/>.
+        /// </summary>
+        internal readonly ReadCopyTo StubReadCopyTo;
+
+        /// <summary>
+        /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
+        /// initial disk-read size, so the whole record lands in one IO. Generous; the read is sector-aligned downstream.
+        /// </summary>
+        private const int VectorRecordReadOverheadBytes = 64;
+
+        /// <summary>
+        /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
+        /// <see cref="VectorReadBatch.InitialIORecordSize"/> can size each read to the record it is fetching.
+        /// FullVector value = <paramref name="dimensions"/> * (full bytes-per-element for <paramref name="quantType"/>);
+        /// QuantizedVector value = effective-dims * (quantized bits-per-element / 8); NeighborList value = <paramref name="numLinks"/> * sizeof(int).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void SetActiveReadGeometry(uint dimensions, uint numLinks, VectorQuantType quantType, uint reduceDims)
+        {
+            // The stored FullVector element size depends on the quantizer: the Redis quantizers (NoQuant/Bin/Q8)
+            // store F32 (4 bytes/dim), while the extended X* quantizers store 1 byte/dim. See the format mapping in
+            // VectorManager.TryGetEmbedding. Over-estimating only wastes bandwidth; under-estimating would force a
+            // second IO, so this must match the actual stored size.
+            var isBinaryQuant = quantType is VectorQuantType.Bin or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8;
+            var fullVectorElementBytes = quantType is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8
+                or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8
+                ? 1
+                : sizeof(float);
+
+            // QuantizedVector reads (term 2, used for the approximate-distance pass on quantized sets) are sized to
+            // the quantized width, which is much smaller than the full vector and differs by quantizer: the byte
+            // quantizers (Q8) store 1 byte/dim, while the binary quantizers (Bin) pack 1 bit/dim. Quantization is
+            // applied to the (optionally reduced) dimensions. Sizing per-quantizer avoids over-reading whole sectors
+            // for the tiny binary records; the overhead covers any per-vector scale, and an under-read just self-
+            // corrects with a second IO.
+            var quantizedDims = reduceDims != 0 ? reduceDims : dimensions;
+            var quantizedValueBytes = isBinaryQuant ? checked((int)quantizedDims + 7) / 8 : checked((int)quantizedDims);
+
+            ActiveReadGeometry = new VectorReadGeometry
+            {
+                FullVectorIOSize = checked((int)dimensions * fullVectorElementBytes) + VectorRecordReadOverheadBytes,
+                NeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes,
+                QuantizedVectorIOSize = quantizedValueBytes + VectorRecordReadOverheadBytes,
+            };
+        }
+
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void ReadCallbackUnmanaged(
             ulong context,
@@ -208,9 +346,9 @@ namespace Garnet.server
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(context, ref nsBytes);
+
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -224,6 +362,7 @@ namespace Garnet.server
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
+
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             input.AlignmentExpected = true;
@@ -283,9 +422,10 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
-            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { (byte)context };
-#pragma warning restore IDE0302
+            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
+
+            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            StoreContextInNamespace(context, ref nsBytes);
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
@@ -338,8 +478,8 @@ namespace Garnet.server
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
             // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key
-            Span<byte> nsBytes = new(((byte*)keyData) - 1, 1);
-            nsBytes[0] = (byte)context;
+            Span<byte> nsBytes = new(((byte*)keyData) - sizeof(uint), sizeof(uint));
+            StoreContextInNamespace(context, ref nsBytes);
 
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 

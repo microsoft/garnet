@@ -42,7 +42,9 @@ class Program
 
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 #if DEBUG
-            .Run(passthroughArgs, new DebugInProcessConfig());
+            .Run(passthroughArgs, new DebugInProcessConfig()
+                .WithOrderer(new BDN.benchmark.NamespaceTypeOrderer())
+                .AddColumn(CategoriesColumn.Default));
 #else
             .Run(passthroughArgs, new BaseConfig());
 #endif
@@ -85,6 +87,11 @@ public class BaseConfig : ManualConfig
         _ = AddExporter(DefaultExporters.Markdown);
         _ = AddColumnProvider(DefaultColumnProviders.Instance);
         _ = WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
+
+        // Order the results table by namespace, then type, then the normal within-type ordering (categories, etc.).
+        // Show the per-benchmark categories so the grouping is visible in the table.
+        _ = WithOrderer(new BDN.benchmark.NamespaceTypeOrderer());
+        _ = AddColumn(CategoriesColumn.Default);
 
         var baseJob = Job.Default.WithGcServer(true);
 

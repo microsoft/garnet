@@ -361,9 +361,12 @@ namespace Garnet.server
 
                     case RespCommand.VADD:
                     case RespCommand.VREM:
-                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg)
                         {
-                            // During replication we might trigger a CU, in which case... make sure there's space for the index we'll copy over
+                            // A copy-update of the index key copies the whole index value to the new record: this is
+                            // triggered when a CU is forced on the index record - during replication (VADD/VREM append
+                            // log args) or when the index record is read back from disk and the native index must be
+                            // recreated (RecreateIndexArg, e.g. after eviction or recovery). Size the destination for it.
                             fieldInfo.ValueSize = VectorManager.IndexSize;
                         }
 

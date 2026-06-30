@@ -492,7 +492,7 @@ namespace Garnet
         public NativeStorageDevice.IoBackend? DeviceIoBackend { get; set; }
 
         [IntRangeValidation(1, 64)]
-        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 1, max 64). On io_uring this is the dominant knob for completion throughput; libaio sees little benefit beyond 1-2 threads.")]
+        [Option("device-completion-threads", Required = false, HelpText = "Linux-only: Number of IO completion drain threads for DeviceType=Native (default 4, max 64). Under high concurrent pending-read load a single drainer convoys on the completion-signal path and collapses throughput; 4 removes that on both backends. On io_uring this scales further/more CPU-efficiently; libaio benefits less beyond a few.")]
         public int? DeviceCompletionThreads { get; set; }
 
         [IntRangeValidation(0, 65536)]
@@ -920,7 +920,7 @@ namespace Garnet
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,
                         ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
-                        numCompletionThreads: DeviceCompletionThreads ?? 1,
+                        numCompletionThreads: DeviceCompletionThreads ?? 4,
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
@@ -939,7 +939,7 @@ namespace Garnet
                 ClusterPassword = ClusterPassword,
                 DeviceType = deviceType,
                 DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
-                DeviceCompletionThreads = DeviceCompletionThreads ?? 1,
+                DeviceCompletionThreads = DeviceCompletionThreads ?? 4,
                 DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,

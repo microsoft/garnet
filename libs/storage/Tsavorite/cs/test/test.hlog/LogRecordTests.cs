@@ -156,8 +156,14 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(valueLengthBack, Is.EqualTo(valueLength));
                 Assert.That(valueAddressBack, Is.EqualTo(valueAddress));
 
-                // TODO: Will need to change for variable length namespaces
-                Assert.That(namespaceAddress, Is.EqualTo(recordBaseAddress + RecordInfo.Size + RecordDataHeader.NamespaceOffsetInHeader));
+                if (exNameSpaceLength == 0)
+                {
+                    Assert.That(namespaceAddress, Is.EqualTo(recordBaseAddress + RecordInfo.Size + RecordDataHeader.NamespaceOffsetInHeader));
+                }
+                else
+                {
+                    Assert.That(namespaceAddress, Is.EqualTo(recordBaseAddress + Constants.FixedHeaderSize));
+                }
             }
         }
 
