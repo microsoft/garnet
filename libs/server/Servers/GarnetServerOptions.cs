@@ -877,7 +877,7 @@ namespace Garnet.server
         /// Tsavorite requires this to be at most 0xFFFFFE (the RecordDataHeader value-length field's
         /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
         /// is internal to Tsavorite.core and not visible from Garnet.server). If this value is not specified, it defaults
-        /// to the minimum of 1m or <paramref name="pageSize"/> / 2; otherwise, the value must be <= pageSize / 2.
+        /// to the minimum of 1m or <paramref name="pageSize"/> / 2; otherwise, the value must be &lt;= pageSize / 2.
         /// <returns>The byte-length value used for <c>KVSettings.MaxInlineValueSize</c>.</returns>
         /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
         /// </summary>
