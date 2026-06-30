@@ -1420,6 +1420,10 @@ namespace Tsavorite.core
                 }
                 catch (DllNotFoundException) { }
                 catch (EntryPointNotFoundException) { }
+                // A present-but-broken native lib (wrong-arch/corrupt) throws these; managed
+                // devices don't require it, so fall back to the managed probe instead of failing.
+                catch (BadImageFormatException) { }
+                catch (FileLoadException) { }
             }
 
             if (result == 0)
