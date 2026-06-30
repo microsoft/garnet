@@ -273,8 +273,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Execute a single batch of pre-generated operations (offline mode).
-        /// Routes the entire batch to either primary or replica based on operation type.
-        /// In offline mode, all operations in a batch are of the same type.
+        /// In mixed workload mode, pipelines both primary (write) and replica (read) to overlap RTT.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ExecuteSingleOfflineBatch()
@@ -287,18 +286,8 @@ namespace Resp.benchmark
                 InitializeConnections();
 
             var opStart = Stopwatch.GetTimestamp();
-            var batchSize = opts.BatchSize.First();
-            var dbSizePerShard = opts.DbSize;
-            var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
-            var numCommands = isMCommand ? 1 : batchSize;
-
-            // Determine routing: for mixed workload (write op + replicas), use pre-computed routing
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            var useReplica = workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx];
-
-            // For non-mixed workload, fall back to standard routing
-            if (workload.ReplicaRequests == null)
-                useReplica = ShouldUseReplica(opts.Op);
+            var useReplica = workload.ReplicaRequests == null && ShouldUseReplica(opts.Op);
 
             switch (opts.Client)
             {
@@ -306,13 +295,13 @@ namespace Resp.benchmark
                     ExecuteOfflineBatchLightClient(useReplica, batchIdx);
                     break;
                 case ClientType.GarnetClientSession:
-                    ExecuteOfflineBatchGarnetSession(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    ExecuteOfflineBatchGarnetSession(useReplica, opts.BatchSize.First(), opts.DbSize, opts.Op is OpType.MGET or OpType.MSET);
                     break;
                 case ClientType.GarnetClient:
-                    ExecuteOfflineBatchGarnetClient(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    ExecuteOfflineBatchGarnetClient(useReplica, opts.BatchSize.First(), opts.DbSize, opts.Op is OpType.MGET or OpType.MSET);
                     break;
                 case ClientType.SERedis:
-                    ExecuteOfflineBatchSERedis(useReplica, batchSize, dbSizePerShard, isMCommand);
+                    ExecuteOfflineBatchSERedis(useReplica, opts.BatchSize.First(), opts.DbSize, opts.Op is OpType.MGET or OpType.MSET);
                     break;
             }
 
@@ -321,39 +310,57 @@ namespace Resp.benchmark
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                 histogram.RecordValue(elapsed);
 
-            // Get the actual command count from the request that was sent
-            var request = useReplica ? workload.ReplicaRequests[batchIdx] : workload.PrimaryRequests[batchIdx];
-            Interlocked.Add(ref opsCompleted, request.CommandCount);
+            // Track ops
+            ref var primaryRequest = ref workload.PrimaryRequests[batchIdx];
+            Interlocked.Add(ref opsCompleted, primaryRequest.CommandCount);
+            Interlocked.Add(ref primaryOps, primaryRequest.CommandCount);
 
-            // Track per-endpoint metrics
-            if (useReplica && hasReplica)
-                Interlocked.Add(ref replicaOps, request.CommandCount);
-            else
-                Interlocked.Add(ref primaryOps, request.CommandCount);
+            // Mixed workload: also count replica ops
+            if (workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx])
+            {
+                ref var replicaRequest = ref workload.ReplicaRequests[batchIdx];
+                Interlocked.Add(ref opsCompleted, replicaRequest.CommandCount);
+                Interlocked.Add(ref replicaOps, replicaRequest.CommandCount);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ExecuteOfflineBatchLightClient(bool useReplica, int batchIdx)
         {
-            // Select the appropriate request based on routing decision
-            ref var request = ref (useReplica && workload.ReplicaRequests != null
-                ? ref workload.ReplicaRequests[batchIdx]
-                : ref workload.PrimaryRequests[batchIdx]);
-
-            var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
+            ref var primaryRequest = ref workload.PrimaryRequests[batchIdx];
 
             unsafe
             {
-                fixed (byte* bufPtr = request.RespData)
+                // Send primary request
+                fixed (byte* bufPtr = primaryRequest.RespData)
                 {
-                    client.Send(bufPtr, request.ByteCount, request.CommandCount);
-                    client.CompletePendingRequests();
+                    primaryLightClient.Send(bufPtr, primaryRequest.ByteCount, primaryRequest.CommandCount);
                 }
+
+                // Mixed workload: also send replica request (overlaps RTT)
+                if (workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx])
+                {
+                    ref var replicaRequest = ref workload.ReplicaRequests[batchIdx];
+                    fixed (byte* bufPtr = replicaRequest.RespData)
+                    {
+                        replicaLightClient.Send(bufPtr, replicaRequest.ByteCount, replicaRequest.CommandCount);
+                    }
+                }
+
+                // Complete phase: wait for all responses
+                primaryLightClient.CompletePendingRequests();
+                if (workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx])
+                    replicaLightClient.CompletePendingRequests();
             }
 
-            var bytesRcvd = client.TotalBytesReceived;
-            Interlocked.Exchange(ref bytesReceived, bytesRcvd);
-            Interlocked.Add(ref bytesSent, request.ByteCount);
+            // Track bytes
+            Interlocked.Add(ref bytesSent, primaryRequest.ByteCount);
+            if (workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx])
+                Interlocked.Add(ref bytesSent, workload.ReplicaRequests[batchIdx].ByteCount);
+
+            var totalRcvd = primaryLightClient.TotalBytesReceived
+                + (replicaLightClient != null ? replicaLightClient.TotalBytesReceived : 0);
+            Interlocked.Exchange(ref bytesReceived, totalRcvd);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
