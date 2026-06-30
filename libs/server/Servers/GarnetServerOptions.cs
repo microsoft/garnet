@@ -122,10 +122,16 @@ namespace Garnet.server
         public int IndexResizeThreshold = 50;
 
         /// <summary>
-        /// The size at which a value string becomes an overflow byte[]. Accepts bytes or k/m/g suffixes (e.g. "4k", "1m").
-        /// Valid range: 64 bytes to 256m. Rounds down to previous power of 2 by Tsavorite.
+        /// Maximum size of a key stored inline in the in-memory portion of the main log.
+        /// Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.
         /// </summary>
-        public string ValueOverflowThreshold = "16k";
+        public string MaxInlineKeySize = null;
+
+        /// <summary>
+        /// Maximum size of a value stored inline in the in-memory portion of the main log.
+        /// Accepts a memory size (e.g. \"4k\", \"15m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).
+        /// </summary>
+        public string MaxInlineValueSize = null;
 
         /// <summary>
         /// Initial IO read size for records on disk. Accepts bytes or k/m/g suffixes (e.g. "4k", "8k").
@@ -634,15 +640,17 @@ namespace Garnet.server
 
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexMemorySize);
 
+            var pageSize = 1L << PageSizeBits();
             KVSettings kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
-                PageSize = 1L << PageSizeBits(),
+                PageSize = pageSize,
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
-                MaxInlineValueSize = ValueOverflowThresholdBytes(),
+                MaxInlineKeySize = MaxInlineKeySizeBytes(),
+                MaxInlineValueSize = MaxInlineValueSizeBytes(pageSize),
                 InitialIORecordSize = GetInitialIORecordSizeBytes(),
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
@@ -842,47 +850,55 @@ namespace Garnet.server
         internal int ReadCachePageSizeBits() => ValidatedPageSizeBits(ReadCachePageSize, nameof(ReadCachePageSize));
 
         /// <summary>
-        /// Parse and validate <see cref="ValueOverflowThreshold"/> as a byte count.
-        /// Tsavorite requires this to be at least 64 bytes and at most 0xFFFFFE (the RecordDataHeader value-length field's
-        /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
-        /// is internal to Tsavorite.core and not visible from Garnet.server).
-        /// The value will be used directly.
-        /// Additionally, the effective value must be strictly less than the effective PageSize
-        /// so that a value of this size, plus per-record overhead, can be allocated within a single page;
-        /// if not, it is clamped down to the largest valid value (with a warning).
+        /// Parse <see cref="MaxInlineKeySize"/> as a byte count.
+        /// Returns the default value (1022 bytes, the Tsavorite limit) if the value is null or empty.
         /// </summary>
-        /// <returns>The byte value used for <c>KVSettings.MaxInlineValueSize</c>.</returns>
-        /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
-        public int ValueOverflowThresholdBytes()
+        /// <returns>The byte-length value used for <c>KVSettings.MaxInlineKeySize</c>.</returns>
+        /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed range.</exception>
+        public int MaxInlineKeySizeBytes()
         {
-            const long MinBytes = 64L;                  // LogSettings.MinMaxInlineSize
-            const long MaxBytes = 0xFFFFFE;             // LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
+            const long MinBytes = 0;                    // TODO: LogSettings.MinMaxInlineSize
+            const long MaxBytes = 1022;                 // TODO: LogSettings.MaxInlineKeySizeLimit (= (1 << kKeyLengthBits) - 2)
 
-            if (string.IsNullOrEmpty(ValueOverflowThreshold))
-                throw new Exception($"{nameof(ValueOverflowThreshold)} must be specified");
+            if (string.IsNullOrEmpty(MaxInlineKeySize))
+                return KVSettings.DefaultMaxInlineKeySize;
 
-            if (!TryParseSize(ValueOverflowThreshold, out var sizeInBytes))
-                throw new Exception($"Unable to parse {nameof(ValueOverflowThreshold)} value '{ValueOverflowThreshold}'. Expected a memory size string (e.g. '4k', '1m').");
+            if (!TryParseSize(MaxInlineKeySize, out var sizeInBytes))
+                throw new Exception($"Unable to parse {nameof(MaxInlineKeySize)} value '{MaxInlineKeySize}'. Expected a memory size string (e.g. '1k', '128').");
 
             if (sizeInBytes < MinBytes || sizeInBytes > MaxBytes)
-                throw new Exception($"{nameof(ValueOverflowThreshold)} value '{ValueOverflowThreshold}' ({sizeInBytes} bytes) is outside the allowed range [{MinBytes}, {MaxBytes}] bytes.");
+                throw new Exception($"{nameof(MaxInlineKeySize)} value '{MaxInlineKeySize}' ({sizeInBytes} bytes) is outside the allowed range [{MinBytes}, {MaxBytes}] bytes.");
 
-            // Cross-property check: a value of MaxInlineValueSize plus per-record overhead must fit on a page.
-            // Both PageSize and MaxInlineValueSize are rounded down to the previous power of 2 by Tsavorite,
-            // so we require effectiveValue < effectivePage (i.e., value bits < page bits), which guarantees the
-            // value occupies at most half the page and leaves room for the record header, key, and optional fields.
-            // If not satisfied (e.g. defaults combined with an unusually small PageSize), clamp down with a warning
-            // rather than failing — this preserves the "rounds down silently" behavior of other size settings.
-            var valueBits = (int)Math.Log(PreviousPowerOf2(sizeInBytes), 2);
-            var pageBits = PageSizeBits();
-            if (valueBits >= pageBits)
-            {
-                var clampedBits = pageBits - 1;
-                var clampedBytes = 1L << clampedBits;
-                logger?.LogWarning("Warning: clamping {Name} '{Value}' (effective {EffectiveValue} bytes) down to {Clamped} bytes so it fits within PageSize '{Page}' (effective {EffectivePage} bytes).",
-                    nameof(ValueOverflowThreshold), ValueOverflowThreshold, 1L << valueBits, clampedBytes, PageSize, 1L << pageBits);
-                return (int)clampedBytes;
-            }
+            return (int)sizeInBytes;
+        }
+
+        /// <summary>
+        /// Parse and validate <see cref="MaxInlineValueSize"/> as a byte count.
+        /// Tsavorite requires this to be at most 0xFFFFFE (the RecordDataHeader value-length field's
+        /// inline limit; see <c>LogSettings.MaxInlineValueSizeLimit</c> — this value MUST be kept in sync because LogSettings
+        /// is internal to Tsavorite.core and not visible from Garnet.server). If this value is not specified, it defaults
+        /// to the minimum of 1m or <paramref name="pageSize"/> / 2; otherwise, the value must be &lt;= pageSize / 2.
+        /// <returns>The byte-length value used for <c>KVSettings.MaxInlineValueSize</c>.</returns>
+        /// <exception cref="Exception">Thrown when the value cannot be parsed or is outside the allowed byte range.</exception>
+        /// </summary>
+        public int MaxInlineValueSizeBytes(long pageSize)
+        {
+            const long MinBytes = 0;                    // TODO: LogSettings.MinMaxInlineSize
+            const long MaxBytes = 0xFFFFFE;             // TODO: LogSettings.MaxInlineValueSizeLimit (= (1 << kValueLengthBits) - 2)
+
+            if (string.IsNullOrEmpty(MaxInlineValueSize))
+                return (int)Math.Min(pageSize / 2, KVSettings.DefaultMaxInlineValueSize);
+
+            if (!TryParseSize(MaxInlineValueSize, out var sizeInBytes))
+                throw new Exception($"Unable to parse {nameof(MaxInlineValueSize)} value '{MaxInlineValueSize}'. Expected a memory size string (e.g. '4k', '16m').");
+
+            if (sizeInBytes < MinBytes || sizeInBytes > MaxBytes)
+                throw new Exception($"{nameof(MaxInlineValueSize)} value '{MaxInlineValueSize}' ({sizeInBytes} bytes) is outside the allowed range [{MinBytes}, {MaxBytes}] bytes.");
+
+            // This check guarantees at least one record fits on a page, because the minimum page size is 4k, and 2k is larger than
+            // the PageHeader plus non-value components of a record (RecordInfo, RecordDataHeader, Key, and possible Optional fields).
+            if (sizeInBytes > pageSize / 2)
+                throw new Exception($"{nameof(MaxInlineValueSize)} value '{MaxInlineValueSize}' ({sizeInBytes} bytes) is greater than half the page size ({pageSize / 2} bytes for PageSize {pageSize} bytes).");
 
             return (int)sizeInBytes;
         }
