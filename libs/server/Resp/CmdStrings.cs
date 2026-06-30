@@ -430,6 +430,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
         public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
         public static ReadOnlySpan<byte> UNBLOCK => "UNBLOCK"u8;
+        public static ReadOnlySpan<byte> REPLY => "REPLY"u8;
+        public static ReadOnlySpan<byte> SKIP => "SKIP"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;

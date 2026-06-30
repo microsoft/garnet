@@ -1216,6 +1216,43 @@
             ]
           }
         ]
+      },
+      {
+        "Command": "CLIENT_REPLY",
+        "Name": "CLIENT|REPLY",
+        "Summary": "Instructs the server whether to reply to commands.",
+        "Group": "Connection",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "ON-OFF-SKIP",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ON",
+                "DisplayText": "on",
+                "Type": "PureToken",
+                "Token": "ON"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "OFF",
+                "DisplayText": "off",
+                "Type": "PureToken",
+                "Token": "OFF"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "SKIP",
+                "DisplayText": "skip",
+                "Type": "PureToken",
+                "Token": "SKIP"
+              }
+            ]
+          }
+        ]
       }
     ]
   },
