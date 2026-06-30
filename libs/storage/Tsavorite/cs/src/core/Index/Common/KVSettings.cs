@@ -154,7 +154,7 @@ namespace Tsavorite.core
         public int MaxInlineKeySize = DefaultMaxInlineKeySize;
 
         /// <summary>
-        /// Default maximum size of a value stored inline in the in-memory portion of the main log for both allocators.
+        /// Default maximum size of a value stored inline in the in-memory portion of the main log for both allocators; this is less than the maximum inline size for <see cref="RecordDataHeader.ValueLength"/>.
         /// </summary>
         public const int DefaultMaxInlineValueSize = 1024 * 1024;
 
