@@ -69,9 +69,14 @@ namespace Resp.benchmark
 
                     if (replicaEndpoint != null)
                     {
+                        // For mixed workload (write op + replicas), replica receives read responses
+                        var replicaOpType = workload.ReplicaRequests != null
+                            ? (int)GetReadOperationType()
+                            : (int)opts.Op;
+
                         replicaLightClient = new LightClient(
                             replicaEndpoint,
-                            (int)opts.Op,
+                            replicaOpType,
                             onResponse,
                             bufferSize,
                             opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -282,16 +287,23 @@ namespace Resp.benchmark
                 InitializeConnections();
 
             var opStart = Stopwatch.GetTimestamp();
-            var useReplica = ShouldUseReplica(opts.Op);
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
             var numCommands = isMCommand ? 1 : batchSize;
 
+            // Determine routing: for mixed workload (write op + replicas), use pre-computed routing
+            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
+            var useReplica = workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx];
+
+            // For non-mixed workload, fall back to standard routing
+            if (workload.ReplicaRequests == null)
+                useReplica = ShouldUseReplica(opts.Op);
+
             switch (opts.Client)
             {
                 case ClientType.LightClient:
-                    ExecuteOfflineBatchLightClient(useReplica, batchSize, numCommands);
+                    ExecuteOfflineBatchLightClient(useReplica, batchIdx);
                     break;
                 case ClientType.GarnetClientSession:
                     ExecuteOfflineBatchGarnetSession(useReplica, batchSize, dbSizePerShard, isMCommand);
@@ -309,22 +321,24 @@ namespace Resp.benchmark
             if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
                 histogram.RecordValue(elapsed);
 
-            // Update counters
-            Interlocked.Add(ref opsCompleted, numCommands);
+            // Get the actual command count from the request that was sent
+            var request = useReplica ? workload.ReplicaRequests[batchIdx] : workload.PrimaryRequests[batchIdx];
+            Interlocked.Add(ref opsCompleted, request.CommandCount);
 
             // Track per-endpoint metrics
             if (useReplica && hasReplica)
-                Interlocked.Add(ref replicaOps, numCommands);
+                Interlocked.Add(ref replicaOps, request.CommandCount);
             else
-                Interlocked.Add(ref primaryOps, numCommands);
+                Interlocked.Add(ref primaryOps, request.CommandCount);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ExecuteOfflineBatchLightClient(bool useReplica, int batchSize, int numCommands)
+        private void ExecuteOfflineBatchLightClient(bool useReplica, int batchIdx)
         {
-            // Select batch index (cycle through pre-generated batches)
-            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            ref var request = ref workload.PrimaryRequests[batchIdx];
+            // Select the appropriate request based on routing decision
+            ref var request = ref (useReplica && workload.ReplicaRequests != null
+                ? ref workload.ReplicaRequests[batchIdx]
+                : ref workload.PrimaryRequests[batchIdx]);
 
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
@@ -522,23 +536,28 @@ namespace Resp.benchmark
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
-            var numCommands = isMCommand ? 1 : batchSize;
 
-            // Route batch
-            var useReplica = ShouldUseReplica(opts.Op);
+            // Determine routing: for mixed workload, use pre-computed routing
+            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
+            var useReplica = workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx];
+
+            if (workload.ReplicaRequests == null)
+                useReplica = ShouldUseReplica(opts.Op);
+
+            var request = useReplica ? workload.ReplicaRequests[batchIdx] : workload.PrimaryRequests[batchIdx];
 
             // Record start timestamp for all clients
             pendingStartTimestamp = Stopwatch.GetTimestamp();
-            pendingBatchSize = numCommands;
+            pendingBatchSize = request.CommandCount;
             pendingUsedReplica = useReplica;
 
             switch (opts.Client)
             {
                 case ClientType.LightClient:
-                    SendOfflineBatchLightClient(batchSize, numCommands, useReplica);
+                    SendOfflineBatchLightClient(ref request, useReplica);
                     break;
                 case ClientType.GarnetClientSession:
-                    SendOfflineBatchGarnetSession(batchSize, dbSizePerShard, isMCommand, numCommands, useReplica);
+                    SendOfflineBatchGarnetSession(batchSize, dbSizePerShard, isMCommand, request.CommandCount, useReplica);
                     break;
                 case ClientType.GarnetClient:
                     SendOfflineBatchGarnetClient(batchSize, dbSizePerShard, isMCommand, useReplica);
@@ -550,12 +569,8 @@ namespace Resp.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendOfflineBatchLightClient(int batchSize, int numCommands, bool useReplica)
+        private void SendOfflineBatchLightClient(ref Request request, bool useReplica)
         {
-            // Select batch
-            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            ref var request = ref workload.PrimaryRequests[batchIdx];
-
             var client = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
 
             // Send without waiting for response
