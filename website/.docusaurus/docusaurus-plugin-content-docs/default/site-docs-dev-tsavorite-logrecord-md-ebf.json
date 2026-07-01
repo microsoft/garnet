@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/logrecord",
+  "title": "LogRecord",
+  "description": "The LogRecord struct is a major revision in the Tsavorite ISessionFunctions design. It replaces individual ref key and ref value parameters in the ISessionFunctions methods (as well as endoding optional ETag and Expiration into the Value) with a single LogRecord, which may be either LogRecord for in-memory log records, or DiskLogRecord for on-disk records. These LogRecord have properties for Key and Value as well as making Etag and Expiration first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.",
+  "source": "@site/docs/dev/tsavorite/logrecord.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/logrecord",
+  "permalink": "/garnet/docs/dev/tsavorite/logrecord",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/logrecord.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "logrecord",
+    "sidebar_label": "LogRecord",
+    "title": "LogRecord"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "EpochProtection",
+    "permalink": "/garnet/docs/dev/tsavorite/epochprotection"
+  },
+  "next": {
+    "title": "ObjectAllocator",
+    "permalink": "/garnet/docs/dev/tsavorite/object-allocator"
+  }
+}

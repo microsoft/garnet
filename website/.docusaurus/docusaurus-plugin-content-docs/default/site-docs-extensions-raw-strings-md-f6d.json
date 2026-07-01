@@ -1,0 +1,28 @@
+{
+  "id": "extensions/raw-strings",
+  "title": "Raw Strings",
+  "description": "Custom raw-string extensions allows adding new functions that operate on raw strings and registering them with Garnet. This registered function can then be invoked from any Garnet client and be executed on the Garnet server.",
+  "source": "@site/docs/extensions/raw-strings.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/raw-strings",
+  "permalink": "/garnet/docs/extensions/raw-strings",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/raw-strings.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "raw-strings",
+    "sidebar_label": "Raw Strings",
+    "title": "Raw Strings"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/extensions/overview"
+  },
+  "next": {
+    "title": "Objects",
+    "permalink": "/garnet/docs/extensions/objects"
+  }
+}

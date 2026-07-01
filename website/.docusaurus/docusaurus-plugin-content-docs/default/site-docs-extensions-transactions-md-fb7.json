@@ -1,0 +1,28 @@
+{
+  "id": "extensions/transactions",
+  "title": "Transactions",
+  "description": "Custom transactions allows adding a new transaction and registering it with Garnet. This registered transaction can then be invoked from any Garnet client to perform a transaction on the Garnet server.",
+  "source": "@site/docs/extensions/transactions.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/transactions",
+  "permalink": "/garnet/docs/extensions/transactions",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/transactions.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "transactions",
+    "sidebar_label": "Transactions",
+    "title": "Transactions"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Objects",
+    "permalink": "/garnet/docs/extensions/objects"
+  },
+  "next": {
+    "title": "Procedures",
+    "permalink": "/garnet/docs/extensions/procedure"
+  }
+}
