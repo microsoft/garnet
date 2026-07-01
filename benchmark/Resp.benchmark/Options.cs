@@ -26,17 +26,20 @@ namespace Resp.benchmark
         [Option("totalops", Required = false, Default = 1 << 25, HelpText = "Total ops")]
         public int TotalOps { get; set; }
 
-        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, MGET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
+        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, SET, MGET, MSET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
         public OpType Op { get; set; }
 
-        [Option("keylength", Required = false, Default = 1, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
+        [Option("keylength", Required = false, Default = 8, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
         public int KeyLength { get; set; }
 
         [Option("valuelength", Required = false, Default = 8, HelpText = "Value length (bytes) - 0 indicates use key as value")]
         public int ValueLength { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size, number of requests (comma separated)")]
+        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size / pipeline depth (for GET/SET: number of commands, for MGET/MSET: number of keys per command)")]
         public IEnumerable<int> BatchSize { get; set; }
+
+        [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
+        public IEnumerable<int> Pipeline { set { if (value != null && value.Any()) BatchSize = value; } get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
         public int RunTime { get; set; }
@@ -59,8 +62,11 @@ namespace Resp.benchmark
         [Option("client", Required = false, Default = ClientType.LightClient, HelpText = "Choose ClientType to run benchmark (LightClient, SERedis, GarnetClientSession)")]
         public ClientType Client { get; set; }
 
-        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. Supports SERedis, GarnetClient and GarnetClientSession (online bench only).")]
+        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
         public bool Pool { get; set; }
+
+        [Option("broadcast", Required = false, Default = false, HelpText = "Enable broadcast mode in worker pool (--pool). Sends a request to every shard in parallel, then completes all pending responses.")]
+        public bool Broadcast { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]
         public bool EnableTLS { get; set; }
@@ -112,6 +118,12 @@ namespace Resp.benchmark
 
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
+
+        [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
+        public bool ClusterBench { get; set; }
+
+        [Option("replica-ops-percent", Required = false, Default = 50, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
+        public int ReplicaOpsPercent { get; set; }
 
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
         public bool AofBench { get; set; }
