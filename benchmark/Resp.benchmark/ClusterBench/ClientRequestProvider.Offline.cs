@@ -377,7 +377,7 @@ namespace Resp.benchmark
                     // Model B: Choose ONE request per iteration based on ReadUseReplica flag
                     if (workload.ReplicaRequests != null && workload.ReadUseReplica[bufIdx])
                     {
-                        // Execute read request to replica
+                        // Mixed workload mode: execute read request to replica
                         request = workload.ReplicaRequests[bufIdx];
                         useReplica = true;
                     }
@@ -385,7 +385,9 @@ namespace Resp.benchmark
                     {
                         // Execute primary request (write or fallback read)
                         request = workload.PrimaryRequests[bufIdx];
-                        useReplica = false;
+                        
+                        // For read operations (non-mixed mode), use ShouldUseReplica routing
+                        useReplica = (workload.ReplicaRequests == null) && ShouldUseReplica(opts.Op);
                     }
 
                     var opStart = Stopwatch.GetTimestamp();
@@ -486,8 +488,9 @@ namespace Resp.benchmark
                     }
                     else
                     {
-                        useReplica = false;
                         currentOp = primaryOp;
+                        // For read operations (non-mixed mode), use ShouldUseReplica routing
+                        useReplica = (workload.ReplicaRequests == null) && ShouldUseReplica(opts.Op);
                     }
 
                     var isMCommand = currentOp is OpType.MGET or OpType.MSET;
@@ -619,8 +622,9 @@ namespace Resp.benchmark
                     }
                     else
                     {
-                        useReplica = false;
                         currentOp = primaryOp;
+                        // For read operations (non-mixed mode), use ShouldUseReplica routing
+                        useReplica = (workload.ReplicaRequests == null) && ShouldUseReplica(opts.Op);
                     }
 
                     var isMCommand = currentOp is OpType.MGET or OpType.MSET;
@@ -746,8 +750,9 @@ namespace Resp.benchmark
                     }
                     else
                     {
-                        useReplica = false;
                         currentOp = primaryOp;
+                        // For read operations (non-mixed mode), use ShouldUseReplica routing
+                        useReplica = (workload.ReplicaRequests == null) && ShouldUseReplica(opts.Op);
                     }
 
                     var isMCommand = currentOp is OpType.MGET or OpType.MSET;
