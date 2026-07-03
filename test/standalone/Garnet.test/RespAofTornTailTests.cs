@@ -16,7 +16,7 @@ namespace Garnet.test
     /// valid commit.
     /// </summary>
     [TestFixture]
-    class RespAofTornTailTests
+    public class RespAofTornTailTests : TestBase
     {
         GarnetServer server;
 
@@ -30,7 +30,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server?.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
