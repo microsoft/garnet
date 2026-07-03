@@ -125,9 +125,9 @@ namespace Garnet.test
             int segNum = int.Parse(lastSeg[(lastSeg.LastIndexOf('.') + 1)..]);
 
             // Walk records to find the last commit record (negative length header). Segment 0 starts
-            // at kFirstValidAddress (64); higher segments start at their file offset 0.
+            // at LogAddress.FirstValidAddress; higher segments start at their file offset 0.
             byte[] data = File.ReadAllBytes(lastSeg);
-            long offset = segNum == 0 ? 64 : 0;
+            long offset = segNum == 0 ? Tsavorite.core.LogAddress.FirstValidAddress : 0;
             long lastCommitOffset = -1;
             int lastCommitPayload = 0;
             while (offset + headerSize <= data.Length)
