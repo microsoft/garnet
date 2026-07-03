@@ -65,11 +65,6 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         public void Initialize(ReadOnlySpan<byte> input)
         {
-            // Parse into locals and only assign to this struct's fields AFTER the record has been
-            // fully validated below. A torn/incomplete commit record (e.g., the final one left
-            // half-written by an ungraceful shutdown) must never mutate recovery state; otherwise the
-            // recovered UntilAddress would advance to include the torn record and AOF replay would
-            // then fail its checksum. See TsavoriteLogScanIterator.ScanForwardForCommit.
             int version = BinaryPrimitives.ReadInt32LittleEndian(input);
             input = input.Slice(sizeof(int));
 
@@ -118,7 +113,6 @@ namespace Tsavorite.core
             BeginAddress = beginAddress;
             UntilAddress = untilAddress;
             CommitNum = commitNum;
-            // Preserve existing semantics: only overwrite the cookie when one is present in this record.
             if (cookieLength >= 0)
                 Cookie = cookie;
         }
