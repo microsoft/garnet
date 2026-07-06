@@ -291,9 +291,15 @@ namespace Garnet.server
                     break;
                 case RespCommand.VADD:
                     {
-                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg or VectorManager.VADDSetFlagsArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
                         {
                             // Synthetic op, do nothing
+                            break;
+                        }
+
+                        if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                        {
+                            functionsState.logger?.LogError("InitialUpdater called with VADDSetFlagsArg, which should never happen");
                             break;
                         }
 

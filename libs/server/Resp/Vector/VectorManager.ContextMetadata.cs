@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -745,6 +746,7 @@ namespace Garnet.server
             // Not a Vector Set index
             if (value.Length != Index.Size)
             {
+                logger?.LogError("Updating hash slot for {oldKey} -> {newKey} failed due to incorrect index length {actualLength} != {expectedLength}", SpanByte.ToShortString(oldKey), SpanByte.ToShortString(newKey), value.Length, Index.Size);
                 return;
             }
 
