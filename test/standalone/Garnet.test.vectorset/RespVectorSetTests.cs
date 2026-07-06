@@ -3162,7 +3162,7 @@ namespace Garnet.test
                 var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
                 ClassicAssert.IsTrue(setRes);
 
-                // RENAMENX shoudl fail
+                // RENAMENX should fail
                 var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
@@ -3194,7 +3194,7 @@ namespace Garnet.test
                 var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
                 ClassicAssert.AreEqual(1, vaddRes2);
 
-                // RENAMENX shoudl fail
+                // RENAMENX should fail
                 var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
@@ -3224,14 +3224,14 @@ namespace Garnet.test
                 var vaddRes = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
                 ClassicAssert.AreEqual(1, vaddRes);
 
-                // RENAMENX shoudl fail
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
+                // RENAMENX should fail
                 var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
                 ClassicAssert.IsFalse(renameNxRes);
 
                 var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
-
-                AssertExpectedHashSlot(server, DestKey, destHashSlot);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
                 ClassicAssert.IsFalse(existsRes);
