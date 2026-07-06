@@ -51,6 +51,25 @@ namespace Garnet.server
         Task[] replayTasks = null;
 
         /// <summary>
+        /// Test-only switch that forces intra-page multi-replay to run serially (single-threaded,
+        /// one replay task at a time over each consumed page) instead of spawning parallel tasks
+        /// coordinated by the LeaderFollowerBarrier.
+        /// This lets tests deterministically isolate the entry partition/apply logic
+        /// (<see cref="AofProcessor.CanReplay"/> + <see cref="AofProcessor.ProcessAofRecordInternal"/>)
+        /// from the concurrent barrier handoff — a serial run must still apply every entry exactly once.
+        /// Only valid for non-transactional workloads: transaction replay blocks on
+        /// ProcessSynchronizedOperation awaiting all participant tasks and would deadlock when serialized.
+        /// </summary>
+        internal static bool ForceSerialIntraPageReplay;
+
+        /// <summary>
+        /// Test-only counter of how many pages were replayed through the serial
+        /// (<see cref="ForceSerialIntraPageReplay"/>) branch. Lets tests assert the serial path was
+        /// actually exercised, so a passing result cannot be silently attributed to the parallel path.
+        /// </summary>
+        internal static long SerialIntraPageReplayInvocations;
+
+        /// <summary>
         /// Gets the total number of records that have been replayed.
         /// </summary>
         public long ReplayedRecordCount { get; private set; } = 0;
@@ -117,6 +136,24 @@ namespace Garnet.server
                 if (nextAddress == untilAddress)
                     cts.Cancel();
             }
+            else if (ForceSerialIntraPageReplay)
+            {
+                // Test-only deterministic path: run each replay task's page scan sequentially
+                // (single-threaded) to isolate the entry partition/apply logic from the parallel
+                // LeaderFollowerBarrier handoff. Must apply every owned entry exactly once.
+                for (var replayTaskIdx = 0; replayTaskIdx < serverOptions.AofReplayTaskCount; replayTaskIdx++)
+                {
+                    var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
+                    ReplayPage(replayTaskIdx, virtualSublogIdx, physicalSublog, record, recordLength, currentAddress, isProtected);
+                }
+
+                _ = Interlocked.Increment(ref SerialIntraPageReplayInvocations);
+                ReplayedRecordCount++;
+
+                // Completed replay
+                if (nextAddress == untilAddress)
+                    cts.Cancel();
+            }
             else
             {
                 // Wait for previous batch to complete before overwriting shared batch context
@@ -170,57 +207,14 @@ namespace Garnet.server
                 {
                     unsafe
                     {
-
-                        var record = replayBatchContext.Record;
-                        var recordLength = replayBatchContext.RecordLength;
-                        var currentAddress = replayBatchContext.CurrentAddress;
-                        var nextAddress = replayBatchContext.NextAddress;
-                        var isProtected = replayBatchContext.IsProtected;
-                        var ptr = record;
-
-                        var maxSequenceNumber = 0L;
-
-                        // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
-                        while (ptr < record + recordLength)
-                        {
-                            cts.Token.ThrowIfCancellationRequested();
-                            var entryLength = appendOnlyFile.HeaderSize;
-                            var payloadLength = replaySublog.UnsafeGetLength(ptr);
-                            if (payloadLength > 0)
-                            {
-                                var entryPtr = ptr + entryLength;
-                                var logAddressSequenceNumber = currentAddress + (ptr - record);
-                                Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
-                                // Check if entry is assigned for processing to this replay task and
-                                // the sequence number is below the threshold to ensure prefix consistency
-                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out var sequenceNumber))
-                                {
-                                    if (untilSequenceNumber != -1 && sequenceNumber > untilSequenceNumber)
-                                    {
-                                        // Sequence numbers are monotonically increasing — stop processing this batch
-                                        break;
-                                    }
-                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
-                                    maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                            }
-                            else if (payloadLength < 0)
-                            {
-                                // Only a single thread should commit metadata
-                                if (replayTaskIdx == 0)
-                                {
-                                    TsavoriteLogRecoveryInfo info = new();
-                                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                                    replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                            }
-                            ptr += entryLength;
-                        }
-
-                        // Update max sequence number for this virtual sublog which is mapped
-                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
+                        ReplayPage(
+                            replayTaskIdx,
+                            virtualSublogIdx,
+                            replaySublog,
+                            replayBatchContext.Record,
+                            replayBatchContext.RecordLength,
+                            replayBatchContext.CurrentAddress,
+                            replayBatchContext.IsProtected);
                     }
                 }
                 catch (Exception ex)
@@ -236,6 +230,65 @@ namespace Garnet.server
                         replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                 }
             }
+        }
+
+        /// <summary>
+        /// Scans a single consumed page for the given replay task, applying every entry that this task
+        /// owns (per <see cref="AofProcessor.CanReplay"/>) exactly once. Shared by the parallel replay
+        /// tasks (<see cref="ContinuousBackgroundReplayAsync"/>) and the serial test path in the LeaderFollowerBarrier-free Consume branch.
+        /// </summary>
+        private unsafe void ReplayPage(
+            int replayTaskIdx,
+            int virtualSublogIdx,
+            TsavoriteLog replaySublog,
+            byte* record,
+            int recordLength,
+            long currentAddress,
+            bool isProtected)
+        {
+            var ptr = record;
+            var maxSequenceNumber = 0L;
+
+            while (ptr < record + recordLength)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var entryLength = appendOnlyFile.HeaderSize;
+                var payloadLength = replaySublog.UnsafeGetLength(ptr);
+                if (payloadLength > 0)
+                {
+                    var entryPtr = ptr + entryLength;
+                    var logAddressSequenceNumber = currentAddress + (ptr - record);
+                    Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
+                    // Check if entry is assigned for processing to this replay task and
+                    // the sequence number is below the threshold to ensure prefix consistency
+                    if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out var sequenceNumber))
+                    {
+                        if (untilSequenceNumber != -1 && sequenceNumber > untilSequenceNumber)
+                        {
+                            // Sequence numbers are monotonically increasing — stop processing this batch
+                            break;
+                        }
+                        aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);
+                        maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
+                    }
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                }
+                else if (payloadLength < 0)
+                {
+                    // Only a single thread should commit metadata
+                    if (replayTaskIdx == 0)
+                    {
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
+                    }
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                }
+                ptr += entryLength;
+            }
+
+            // Update max sequence number for this virtual sublog which is mapped
+            appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
         }
 
         public void Throttle() { }

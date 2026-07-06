@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -35,7 +34,6 @@ namespace Garnet.cluster
         readonly ReplayBatchContext replayBatchContext = replayDriver.replayBatchContext;
         readonly CancellationTokenSource cts = cts;
         readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.physicalSublogIdx);
-        readonly ActiveWorkerMonitor activeWorkerMonitor = new();
         private readonly Channel<ReplayRecord> replayChannel = Channel.CreateUnbounded<ReplayRecord>(
             new() { SingleWriter = true, SingleReader = true, AllowSynchronousContinuations = false });
         readonly ILogger logger = logger;
