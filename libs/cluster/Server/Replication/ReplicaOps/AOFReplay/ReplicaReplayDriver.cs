@@ -34,6 +34,8 @@ namespace Garnet.cluster
         readonly TsavoriteLog physicalSublog;
         readonly bool useChannels = false;
 
+        int throttleCounter;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
 
@@ -270,7 +272,52 @@ namespace Garnet.cluster
             }
         }
 
-        public void Throttle() { }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Throttle()
+        {
+            if (serverOptions.AofPhysicalSublogCount <= 1)
+                return;
+
+            var w = serverOptions.AofReplayMaxDrift;
+            if (w <= 0)
+                return;
+
+            if (++throttleCounter < w)
+                return;
+            throttleCounter = 0;
+            ThrottleSlow(w);
+
+            void ThrottleSlow(long w)
+            {
+                var rcm = appendOnlyFile.readConsistencyManager;
+                if (rcm == null)
+                    return;
+
+                var myMax = rcm.GetPhysicalSublogMax(physicalSublogIdx);
+
+                // If we're too far ahead, wait until all peers reach our current max
+                if (!AllPeersReached(rcm, Math.Max(myMax - w, w)))
+                {
+                    do
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        Thread.Yield();
+                    } while (!AllPeersReached(rcm, myMax));
+                }
+
+                bool AllPeersReached(ReadConsistencyManager rcm, long target)
+                {
+                    for (var i = 0; i < serverOptions.AofPhysicalSublogCount; i++)
+                    {
+                        if (i == physicalSublogIdx)
+                            continue;
+                        if (rcm.GetPhysicalSublogMax(i) < target)
+                            return false;
+                    }
+                    return true;
+                }
+            }
+        }
         #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

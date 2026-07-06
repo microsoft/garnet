@@ -23,7 +23,6 @@ namespace Tsavorite.core
         private readonly ILogger logger;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
-        private static uint sectorSize = 0;
 
         /// <summary>
         /// Number of pending reads on device
@@ -36,7 +35,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
+            return $"secSize {SectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
         }
 
         /// <summary>
@@ -52,7 +51,7 @@ namespace Tsavorite.core
         /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="logger"></param>
         public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false, ILogger logger = null)
-            : base(filename, GetSectorSize(filename), capacity)
+            : base(filename, NativeStorageDevice.ProbeSectorSize(filename), capacity)
         {
             pool = new(1, 1);
             ThrottleLimit = 120;
@@ -405,13 +404,6 @@ namespace Tsavorite.core
         }
 
         private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
-
-        private static uint GetSectorSize(string filename)
-        {
-            if (sectorSize <= 0)
-                sectorSize = Native32.GetDeviceSectorSize(filename);
-            return sectorSize;
-        }
 
         private Stream CreateReadHandle(int segmentId)
         {

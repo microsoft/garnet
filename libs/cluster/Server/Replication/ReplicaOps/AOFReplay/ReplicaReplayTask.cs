@@ -63,7 +63,7 @@ namespace Garnet.cluster
                 {
                     await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
-                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
                     // Suppress the exception if the task was cancelled because of store wrapper disposal
                 }
@@ -131,7 +131,7 @@ namespace Garnet.cluster
                         appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
                     }
                 }
-                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
                     // Suppress the exception if the task was cancelled because of store wrapper disposal
                 }
@@ -143,8 +143,21 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    // Signal work completion after processing
-                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                    // Signal work completion after processing.
+                    // Pass cancellation token so participants are unblocked if the leader
+                    // times out in WaitCompleted and never calls Release().
+                    try
+                    {
+                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted(cts.Token);
+                    }
+                    catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                    {
+                        // Suppress: leader timed out or store is disposing; exit cleanly.
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "{method} failed at SignalCompleted", nameof(FullPageBasedBackgroundReplayAsync));
+                    }
                 }
             }
         }
@@ -178,7 +191,20 @@ namespace Garnet.cluster
                 }
 
                 // Signal work completion after processing
-                replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                try
+                {
+                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted(cts.Token);
+                }
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    // Suppress: leader timed out or store is disposing; exit cleanly.
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at SignalCompleted", nameof(ChannelBasedBackgroundReplayAsync));
+                    break;
+                }
             }
         }
     }
