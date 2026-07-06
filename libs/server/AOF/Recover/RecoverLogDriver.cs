@@ -59,25 +59,6 @@ namespace Garnet.server
         WorkReadyComplete[] signals = null;
 
         /// <summary>
-        /// Test-only switch that forces intra-page multi-replay to run serially (single-threaded,
-        /// one replay task at a time over each consumed page) instead of spawning parallel tasks
-        /// coordinated by the per-task WorkReadyComplete handshakes.
-        /// This lets tests deterministically isolate the entry partition/apply logic
-        /// (<see cref="AofProcessor.CanReplay"/> + <see cref="AofProcessor.ProcessAofRecordInternal"/>)
-        /// from the concurrent barrier handoff — a serial run must still apply every entry exactly once.
-        /// Only valid for non-transactional workloads: transaction replay blocks on
-        /// ProcessSynchronizedOperation awaiting all participant tasks and would deadlock when serialized.
-        /// </summary>
-        internal static bool ForceSerialIntraPageReplay;
-
-        /// <summary>
-        /// Test-only counter of how many pages were replayed through the serial
-        /// (<see cref="ForceSerialIntraPageReplay"/>) branch. Lets tests assert the serial path was
-        /// actually exercised, so a passing result cannot be silently attributed to the parallel path.
-        /// </summary>
-        internal static long SerialIntraPageReplayInvocations;
-
-        /// <summary>
         /// Gets the total number of records that have been replayed.
         /// </summary>
         public long ReplayedRecordCount { get; private set; } = 0;
@@ -139,24 +120,6 @@ namespace Garnet.server
                         logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", ReplayedRecordCount, untilAddress, dbId);
                     }
                 }
-
-                // Completed replay
-                if (nextAddress == untilAddress)
-                    cts.Cancel();
-            }
-            else if (ForceSerialIntraPageReplay)
-            {
-                // Test-only deterministic path: run each replay task's page scan sequentially
-                // (single-threaded) to isolate the entry partition/apply logic from the parallel
-                // per-task WorkReadyComplete handoff. Must apply every owned entry exactly once.
-                for (var replayTaskIdx = 0; replayTaskIdx < serverOptions.AofReplayTaskCount; replayTaskIdx++)
-                {
-                    var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-                    ReplayPage(replayTaskIdx, virtualSublogIdx, physicalSublog, record, recordLength, currentAddress, isProtected);
-                }
-
-                _ = Interlocked.Increment(ref SerialIntraPageReplayInvocations);
-                ReplayedRecordCount++;
 
                 // Completed replay
                 if (nextAddress == untilAddress)
@@ -259,8 +222,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Scans a single consumed page for the given replay task, applying every entry that this task
-        /// owns (per <see cref="AofProcessor.CanReplay"/>) exactly once. Shared by the parallel replay
-        /// tasks (<see cref="ContinuousBackgroundReplayAsync"/>) and the serial test path in the per-task-signal-free Consume branch.
+        /// owns (per <see cref="AofProcessor.CanReplay"/>) exactly once. Invoked by each parallel replay
+        /// task (<see cref="ContinuousBackgroundReplayAsync"/>).
         /// </summary>
         private unsafe void ReplayPage(
             int replayTaskIdx,
