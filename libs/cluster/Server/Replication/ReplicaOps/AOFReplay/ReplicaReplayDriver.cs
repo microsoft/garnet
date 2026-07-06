@@ -32,7 +32,6 @@ namespace Garnet.cluster
         internal readonly ReplayBatchContext replayBatchContext;
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
-        readonly bool useChannels = false;
 
         int throttleCounter;
 
@@ -71,16 +70,7 @@ namespace Garnet.cluster
                 replayBatchContext = new ReplayBatchContext(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                {
-                    if (!useChannels)
-                    {
-                        _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
-                    }
-                    else
-                    {
-                        _ = Task.Run(() => replayTask.ChannelBasedBackgroundReplayAsync());
-                    }
-                }
+                    _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
             }
         }
 
@@ -110,14 +100,7 @@ namespace Garnet.cluster
             }
             else
             {
-                if (!useChannels)
-                {
-                    ConsumeSchedulePage(record, recordLength, currentAddress, nextAddress, isProtected);
-                }
-                else
-                {
-                    ConsumeScheduleChannel(record, recordLength, currentAddress, nextAddress, isProtected);
-                }
+                ConsumeSchedulePage(record, recordLength, currentAddress, nextAddress, isProtected);
             }
         }
 
@@ -128,79 +111,26 @@ namespace Garnet.cluster
             replayBatchContext.CurrentAddress = currentAddress;
             replayBatchContext.NextAddress = nextAddress;
             replayBatchContext.IsProtected = isProtected;
-            replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+
+            // Hand this page to every replay task.
+            for (var i = 0; i < replayTasks.Length; i++)
+                replayTasks[i].workReadyComplete.SignalWorkReady();
 
             // Set replication offset currentAddress
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
 
-            // Wait for replay to complete.
-            if (!replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
-                ExceptionUtils.ThrowException(new GarnetException("Timed out waiting for parallel replay tasks to complete", LogLevel.Warning, clientResponse: false));
-            // Release participants for next cycle
-            replayBatchContext.LeaderFollowerBarrier.Release();
+            // Wait for every replay task to finish applying its partition of the page before advancing.
+            for (var i = 0; i < replayTasks.Length; i++)
+            {
+                if (!replayTasks[i].workReadyComplete.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
+                    ExceptionUtils.ThrowException(new GarnetException("Timed out waiting for parallel replay tasks to complete", LogLevel.Warning, clientResponse: false));
+            }
 
             // Before updating replication offset, we must wait for any pending Vector Set ops to complete
             replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
 
             // Advertise new replicaton offset after replay completes
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
-        }
-
-        private unsafe void ConsumeScheduleChannel(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
-        {
-            ValidateSublogIndex(physicalSublogIdx);
-            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
-            var replicationOffset = currentAddress;
-            var ptr = record;
-
-            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
-            while (ptr < record + recordLength)
-            {
-                cts.Token.ThrowIfCancellationRequested();
-                var entryLength = appendOnlyFile.HeaderSize;
-                var payloadLength = physicalSublog.UnsafeGetLength(ptr);
-                if (payloadLength > 0)
-                {
-                    var entryPtr = ptr + entryLength;
-                    var logAddressSequenceNumber = currentAddress + (ptr - record);
-                    var replayTaskIdx = replicationManager.AofProcessor.GetReplayTaskIdx(entryPtr);
-                    replayTasks[replayTaskIdx].AddRecord(new ReplayRecord()
-                    {
-                        entryPtr = entryPtr,
-                        payloadLength = payloadLength,
-                        logAddressSequenceNumber = logAddressSequenceNumber
-                    });
-                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                }
-                else if (payloadLength < 0)
-                {
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
-                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                }
-                ptr += entryLength;
-                replicationOffset += entryLength;
-            }
-
-            // Wait for every task to drain its ring and signal on the barrier.
-            if (!replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
-                throw new GarnetException("Timed out draining replay batch", LogLevel.Warning, clientResponse: false);
-            // Release participants for next cycle
-            replayBatchContext.LeaderFollowerBarrier.Release();
-
-            // Before updating replication offset, we must wait for any pending Vector Set ops to complete
-            replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
-
-            // Set replication offset after replay completes
-            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
-            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
-
-            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
-            {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
-                throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
-            }
         }
 
         /// <summary>

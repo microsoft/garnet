@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -51,9 +52,16 @@ namespace Garnet.server
         Task[] replayTasks = null;
 
         /// <summary>
+        /// Per-task leader/worker handshakes (one per parallel replay task). The recover leader hands each
+        /// task exactly one page at a time and waits for its completion on the matching signal, so no
+        /// permit can be stolen across tasks or leak across cycles.
+        /// </summary>
+        WorkReadyComplete[] signals = null;
+
+        /// <summary>
         /// Test-only switch that forces intra-page multi-replay to run serially (single-threaded,
         /// one replay task at a time over each consumed page) instead of spawning parallel tasks
-        /// coordinated by the LeaderFollowerBarrier.
+        /// coordinated by the per-task WorkReadyComplete handshakes.
         /// This lets tests deterministically isolate the entry partition/apply logic
         /// (<see cref="AofProcessor.CanReplay"/> + <see cref="AofProcessor.ProcessAofRecordInternal"/>)
         /// from the concurrent barrier handoff — a serial run must still apply every entry exactly once.
@@ -140,7 +148,7 @@ namespace Garnet.server
             {
                 // Test-only deterministic path: run each replay task's page scan sequentially
                 // (single-threaded) to isolate the entry partition/apply logic from the parallel
-                // LeaderFollowerBarrier handoff. Must apply every owned entry exactly once.
+                // per-task WorkReadyComplete handoff. Must apply every owned entry exactly once.
                 for (var replayTaskIdx = 0; replayTaskIdx < serverOptions.AofReplayTaskCount; replayTaskIdx++)
                 {
                     var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
@@ -159,8 +167,8 @@ namespace Garnet.server
                 // Wait for previous batch to complete before overwriting shared batch context
                 if (replayTasks != null)
                 {
-                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
-                    replayBatchContext.LeaderFollowerBarrier.Release();
+                    for (var i = 0; i < signals.Length; i++)
+                        signals[i].WaitCompleted();
                 }
 
                 CreateAndRunIntraPageParallelReplayTasks();
@@ -170,29 +178,39 @@ namespace Garnet.server
                 replayBatchContext.CurrentAddress = currentAddress;
                 replayBatchContext.NextAddress = nextAddress;
                 replayBatchContext.IsProtected = isProtected;
-                replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+
+                // Hand this page to every replay task.
+                for (var i = 0; i < signals.Length; i++)
+                    signals[i].SignalWorkReady();
 
                 // After the last batch, wait for workers and cancel to exit BulkConsumeAllAsync
                 if (nextAddress == untilAddress)
                 {
-                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
-                    replayBatchContext.LeaderFollowerBarrier.Release();
+                    for (var i = 0; i < signals.Length; i++)
+                        signals[i].WaitCompleted();
                     cts.Cancel();
                 }
             }
         }
 
         private void CreateAndRunIntraPageParallelReplayTasks()
-            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => ContinuousBackgroundReplayAsync(i, physicalSublog)))];
+        {
+            if (replayTasks != null)
+                return;
+
+            signals = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(_ => new WorkReadyComplete())];
+            replayTasks = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => ContinuousBackgroundReplayAsync(i, physicalSublog)))];
+        }
 
         internal async Task ContinuousBackgroundReplayAsync(int replayTaskIdx, TsavoriteLog replaySublog)
         {
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
+            var signal = signals[replayTaskIdx];
             while (!cts.Token.IsCancellationRequested)
             {
                 try
                 {
-                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    await signal.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException) when (cts.IsCancellationRequested)
                 { }
@@ -202,6 +220,9 @@ namespace Garnet.server
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
+
+                if (cts.Token.IsCancellationRequested)
+                    break;
 
                 try
                 {
@@ -217,25 +238,29 @@ namespace Garnet.server
                             replayBatchContext.IsProtected);
                     }
                 }
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    // Cancelled during store disposal / prefix-consistency stop: break without signalling.
+                    break;
+                }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplayAsync));
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
-                finally
-                {
-                    // Signal work completion after processing (skip if cancelled to avoid blocking on resetReady)
-                    if (!cts.Token.IsCancellationRequested)
-                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
-                }
+
+                // Signal completion ONLY after the page was fully applied. On cancellation or fault we
+                // break above without signalling, so the leader observes cancellation instead of a
+                // completion for a page that was not fully applied.
+                signal.SignalCompleted();
             }
         }
 
         /// <summary>
         /// Scans a single consumed page for the given replay task, applying every entry that this task
         /// owns (per <see cref="AofProcessor.CanReplay"/>) exactly once. Shared by the parallel replay
-        /// tasks (<see cref="ContinuousBackgroundReplayAsync"/>) and the serial test path in the LeaderFollowerBarrier-free Consume branch.
+        /// tasks (<see cref="ContinuousBackgroundReplayAsync"/>) and the serial test path in the per-task-signal-free Consume branch.
         /// </summary>
         private unsafe void ReplayPage(
             int replayTaskIdx,
