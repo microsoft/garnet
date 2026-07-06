@@ -180,7 +180,7 @@ namespace Garnet.server
         /// <summary>
         /// Issues an RMW to set the <see cref="VectorSetFlags.SuppressCleanup"/> flag on the given index.
         /// 
-        /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
         internal static void MarkSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
             where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
@@ -192,7 +192,7 @@ namespace Garnet.server
         /// <summary>
         /// Issues an RMW to clear the <see cref="VectorSetFlags.SuppressCleanup"/> flag on the given index.
         /// 
-        /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
         internal static void ClearSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
             where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
@@ -204,7 +204,7 @@ namespace Garnet.server
         /// <summary>
         /// Issues an RMW to set <see cref="VectorSetFlags"/> on the given index.
         /// 
-        /// Assuems that appropriate locking has been done to prevent concurrent modification to the index.
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
         private static void SetFlags<TContext>(ReadOnlySpan<byte> key, VectorSetFlags flags, ref TContext stringContext)
             where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>

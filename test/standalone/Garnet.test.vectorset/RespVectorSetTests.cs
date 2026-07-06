@@ -3106,7 +3106,6 @@ namespace Garnet.test
             const string SourceKey = nameof(RenamesAsync) + "_source";
             const string DestKey = nameof(RenamesAsync) + "_dest";
 
-            // TODO: In non-cluster mode the hash slot change change, make sure that is done correctly
             ushort sourceHashSlot;
             ushort destHashSlot;
 
