@@ -147,7 +147,7 @@ namespace Garnet.server
                 try
                 {
                     // TODO: Can we async this method rather than blocking?  We're in recovery.
-                    var recoveryTasks = Task.WhenAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTaskAsync())]);
+                    var recoveryTasks = Task.WhenAll([.. recoverDrivers.Select(driver => driver.RunAsync())]);
                     AsyncUtils.BlockingWait(recoveryTasks);
 
                     recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);

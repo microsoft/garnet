@@ -129,7 +129,7 @@ namespace Garnet.cluster
             // Before updating replication offset, we must wait for any pending Vector Set ops to complete
             replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
 
-            // Advertise new replicaton offset after replay completes
+            // Advertise new replication offset after replay completes
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
         }
 
