@@ -673,13 +673,17 @@ namespace Tsavorite.core
         {
             epoch.Resume();
             var foundCommit = false;
+            // Track the address of the record currently being processed so a torn/invalid commit
+            // record can be reported precisely.
+            long currentRecordAddress = nextAddress;
             try
             {
                 // Continue looping until we find a record that is a commit record
-                while (GetNextInternal(out long physicalAddress, out var entryLength, out _,
+                while (GetNextInternal(out long physicalAddress, out var entryLength, out var currentAddress,
                     out _,
                     out var isCommitRecord, out _))
                 {
+                    currentRecordAddress = currentAddress;
                     if (!isCommitRecord) continue;
 
                     foundCommit = true;
@@ -691,9 +695,19 @@ namespace Tsavorite.core
                     if (info.CommitNum == commitNum) break;
                 }
             }
-            catch (TsavoriteException)
+            catch (TsavoriteException ex)
             {
-                // If we are here --- simply stop scanning because we ran into an incomplete entry
+                // We ran into an incomplete/torn commit record. This is expected when the tail of the
+                // log was left half-written by an ungraceful shutdown. Stop scanning here; recovery
+                // uses the last VALID commit as the upper bound of the redo window. Because
+                // TsavoriteLogRecoveryInfo.Initialize validates before mutating, `info` still holds
+                // that last valid commit's metadata at this point.
+                logger?.LogWarning(ex,
+                    "ScanForwardForCommit stopped at an invalid/torn commit record near address {recordAddress}; " +
+                    "recovering to last valid commit (until address {untilAddress}, commitNum {commitNum}). " +
+                    "This typically indicates a torn tail from an ungraceful shutdown; any operations after " +
+                    "the last valid commit were never durably committed and are intentionally dropped.",
+                    currentRecordAddress, info.UntilAddress, info.CommitNum);
             }
             finally
             {

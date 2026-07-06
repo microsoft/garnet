@@ -71,13 +71,13 @@ namespace Tsavorite.core
             long checkSum = BinaryPrimitives.ReadInt64LittleEndian(input);
             input = input.Slice(sizeof(long));
 
-            BeginAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
+            long beginAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
             input = input.Slice(sizeof(long));
 
-            UntilAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
+            long untilAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
             input = input.Slice(sizeof(long));
 
-            CommitNum = BinaryPrimitives.ReadInt64LittleEndian(input);
+            long commitNum = BinaryPrimitives.ReadInt64LittleEndian(input);
             input = input.Slice(sizeof(long));
 
             if (version < 0 || version > TsavoriteLogRecoveryVersion)
@@ -85,28 +85,36 @@ namespace Tsavorite.core
 
             int cookieLength = -1;
             long cookieChecksum = 0;
+            byte[] cookie = null;
 
             if (BinaryPrimitives.TryReadInt32LittleEndian(input, out cookieLength))
                 input = input.Slice(sizeof(int));
 
             if (cookieLength >= 0)
             {
-                Cookie = input.Slice(0, cookieLength).ToArray();
+                cookie = input.Slice(0, cookieLength).ToArray();
                 unsafe
                 {
-                    fixed (byte* ptr = Cookie)
+                    fixed (byte* ptr = cookie)
                         cookieChecksum = (long)Utility.XorBytes(ptr, cookieLength);
                 }
             }
 
-            long computedChecksum = BeginAddress ^ UntilAddress ^ CommitNum ^ cookieLength ^ cookieChecksum;
+            long computedChecksum = beginAddress ^ untilAddress ^ commitNum ^ cookieLength ^ cookieChecksum;
 
             // Handle case where all fields are zero
-            if (version == 0 && BeginAddress == 0 && UntilAddress == 0)
+            if (version == 0 && beginAddress == 0 && untilAddress == 0)
                 throw new TsavoriteException("Invalid all-fields-zero found during commit recovery");
 
             if (checkSum != computedChecksum)
                 throw new TsavoriteException("Invalid checksum found during commit recovery");
+
+            // Validation succeeded: it is now safe to commit the parsed values to this struct.
+            BeginAddress = beginAddress;
+            UntilAddress = untilAddress;
+            CommitNum = commitNum;
+            if (cookieLength >= 0)
+                Cookie = cookie;
         }
 
         /// <summary>
