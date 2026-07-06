@@ -150,6 +150,17 @@ namespace Garnet.server
 
             try
             {
+#if DEBUG
+                if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.RangeIndex_Migration_Receive_Publish_Fail))
+                {
+                    // Fault injection: simulate a destination-side publish failure (e.g. a BfTree
+                    // recover error or disk failure). PublishMigratedIndex returns Failed, which
+                    // the receive path (RangeIndexMigrationReceiveState.ProcessRecord) surfaces as
+                    // an error — reproducing the data-loss gap where the destination still ACKs OK.
+                    logger?.LogWarning("PublishMigratedIndex: fault injection RangeIndex_Migration_Receive_Publish_Fail - returning Failed");
+                    return PublishMigratedIndexResult.Failed;
+                }
+#endif
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
                 // TODO(RI): Before publishing the migrated index, insert the chunked RI file into AOF to replicate to secondaries.

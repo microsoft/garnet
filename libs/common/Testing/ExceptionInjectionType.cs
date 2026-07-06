@@ -112,5 +112,11 @@ namespace Garnet.common
         /// in-flight ProcessRecord.
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
+        /// <summary>
+        /// RangeIndex migration (receive side): make <c>PublishMigratedIndex</c> return
+        /// <c>Failed</c>, simulating a destination-side publish failure. Used to reproduce the
+        /// data-loss gap where the destination still ACKs OK to the source despite the failure.
+        /// </summary>
+        RangeIndex_Migration_Receive_Publish_Fail,
     }
 }

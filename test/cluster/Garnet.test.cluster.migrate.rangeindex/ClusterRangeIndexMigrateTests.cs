@@ -1268,6 +1268,92 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// DATA-LOSS REPRO: when the destination fails to publish a migrated RangeIndex key, the
+        /// migration receive handler (<c>RespClusterMigrateCommands</c>) still ACKs <c>+OK</c> to the
+        /// source. It sets <c>migrateState = 1</c> on the failed record but never checks it before
+        /// unconditionally writing <c>RESP_OK</c> (RespClusterMigrateCommands.cs), so the source treats
+        /// the migration as successful, hands off the slot, and DELETES the key. The key then exists on
+        /// NEITHER node — silent data loss.
+        ///
+        /// <para>Contrast with <see cref="ClusterMigrateRangeIndexExceptionDuringTransmit"/>: a
+        /// SOURCE-side failure aborts the migration and the source correctly keeps the key.</para>
+        ///
+        /// <para>The assertions capture the CURRENT (buggy) behavior. The correct behavior would be
+        /// for the source to keep the key (as in the source-side failure case). Once fixed, this test
+        /// should be inverted to assert the key survives on the source.</para>
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexDestinationPublishFailureLosesData()
+        {
+            const int shards = 2;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexDestinationPublishFailureLosesData), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
+            CreateRangeIndexWithFields(primary0, riKey, fields);
+
+            // Sanity: the key is fully readable on the source before migration.
+            VerifyFieldsOnEndpoint(primary0, riKey, fields);
+
+            // Force the DESTINATION's publish to fail. Despite the failure the receive handler ACKs
+            // +OK, so the source completes the migration (including deleting the key).
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_Receive_Publish_Fail);
+            try
+            {
+                context.clusterTestUtils.MigrateSlots(primary0, primary1, [slot]);
+                context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Migration_Receive_Publish_Fail);
+            }
+
+            // The source considered the migration successful and gave up ownership of the slot...
+            var sourceSlots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+            ClassicAssert.IsFalse(sourceSlots.Contains(slot),
+                "Source gave up the slot because the destination (wrongly) ACKed OK for the failed publish");
+
+            // ...and the source deleted the key: it is not readable on the source.
+            ClassicAssert.IsFalse(RiValuePresent(primary0, riKey, fields[0].Item1, fields[0].Item2),
+                "DATA LOSS repro: the source deleted the migrated key after the destination ACKed OK");
+
+            // The destination never published it either: it is not readable on the target.
+            ClassicAssert.IsFalse(RiValuePresent(primary1, riKey, fields[0].Item1, fields[0].Item2),
+                "DATA LOSS repro: the destination failed to publish the migrated key");
+
+            // RI.EXISTS on the new slot owner confirms the key is gone everywhere.
+            var exists = (int)context.clusterTestUtils.Execute(
+                primary1, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(0, exists, "DATA LOSS repro: the migrated key exists on neither node");
+        }
+
+        /// <summary>Whether RI.GET (NoRedirect) on the given node returns the expected value for the field.</summary>
+        private bool RiValuePresent(IPEndPoint endpoint, string key, string field, string expected)
+        {
+            try
+            {
+                var v = (string)context.clusterTestUtils.Execute(endpoint, "RI.GET", [key, field], flags: CommandFlags.NoRedirect);
+                return v == expected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
 #endif
 
         #region Post-migration lifecycle
