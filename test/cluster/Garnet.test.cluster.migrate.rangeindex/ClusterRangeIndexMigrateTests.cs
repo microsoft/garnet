@@ -1321,37 +1321,77 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Migration_Receive_Publish_Fail);
             }
 
-            // The source considered the migration successful and gave up ownership of the slot...
+            // The source treated the migration as successful and gave up ownership of the slot.
             var sourceSlots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
             ClassicAssert.IsFalse(sourceSlots.Contains(slot),
                 "Source gave up the slot because the destination (wrongly) ACKed OK for the failed publish");
 
-            // ...and the source deleted the key: it is not readable on the source.
-            ClassicAssert.IsFalse(RiValuePresent(primary0, riKey, fields[0].Item1, fields[0].Item2),
-                "DATA LOSS repro: the source deleted the migrated key after the destination ACKed OK");
-
-            // The destination never published it either: it is not readable on the target.
-            ClassicAssert.IsFalse(RiValuePresent(primary1, riKey, fields[0].Item1, fields[0].Item2),
-                "DATA LOSS repro: the destination failed to publish the migrated key");
-
-            // RI.EXISTS on the new slot owner confirms the key is gone everywhere.
-            var exists = (int)context.clusterTestUtils.Execute(
+            // (1) The DESTINATION owns the migrated slot now but never published the key.
+            var existsOnTarget = (int)context.clusterTestUtils.Execute(
                 primary1, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
-            ClassicAssert.AreEqual(0, exists, "DATA LOSS repro: the migrated key exists on neither node");
+            ClassicAssert.AreEqual(0, existsOnTarget, "DATA LOSS: the destination owns the slot but has no key");
+
+            // (2) The SOURCE deleted its copy. Reclaim the slot to the source and read it there — reading
+            // the slot owner avoids MOVED/ASK ambiguity and confirms the local copy is gone.
+            context.clusterTestUtils.BumpEpoch(0, waitForSync: true, logger: context.logger);
+            context.clusterTestUtils.SetSlot(0, slot, "NODE", primary0Id);
+            WaitForSlotOwnership(primary1, primary0, slot);
+
+            var existsOnSource = (int)context.clusterTestUtils.Execute(
+                primary0, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(0, existsOnSource, "DATA LOSS: the source deleted the migrated key");
+
+            // The key that existed before migration now exists on neither node.
         }
 
-        /// <summary>Whether RI.GET (NoRedirect) on the given node returns the expected value for the field.</summary>
-        private bool RiValuePresent(IPEndPoint endpoint, string key, string field, string expected)
+        /// <summary>
+        /// DATA-LOSS REPRO (NOT RangeIndex-specific): the same migrate-receive gap affects a plain
+        /// string key. The receive handler's <c>LogRecord</c> branch sets <c>migrateState = 1</c> when
+        /// the destination's slot is not in the IMPORTING state (a real race if the destination's
+        /// IMPORTING state is cleared or config propagation lags mid-migration), but it still ACKs
+        /// <c>+OK</c>. The source therefore deletes the key even though the destination dropped it.
+        ///
+        /// <para>This test needs no fault injection — it drives the destination-reject path directly by
+        /// migrating a key while the destination is not importing the slot.</para>
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateStringKeyDestinationRejectLosesData()
         {
-            try
-            {
-                var v = (string)context.clusterTestUtils.Execute(endpoint, "RI.GET", [key, field], flags: CommandFlags.NoRedirect);
-                return v == expected;
-            }
-            catch
-            {
-                return false;
-            }
+            const int shards = 2;
+
+            context.CreateInstances(shards, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var strKey = FindKeyOnNode(nameof(ClusterMigrateStringKeyDestinationRejectLosesData), primary0Id, slots);
+            var slot = context.clusterTestUtils.HashSlot(strKey);
+
+            // A plain string key, readable on the source before migration.
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary0, "SET", [strKey, "v-original"], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("v-original", (string)context.clusterTestUtils.Execute(primary0, "GET", [strKey], flags: CommandFlags.NoRedirect));
+
+            // Put the SOURCE into MIGRATING but deliberately leave the TARGET not-IMPORTING, so the
+            // destination rejects the record (slot-not-importing -> migrateState=1) yet still ACKs +OK.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(0, slot, "MIGRATING", primary1Id));
+            context.clusterTestUtils.MigrateKeys(primary0, primary1, [Encoding.ASCII.GetBytes(strKey)], context.logger);
+
+            // Reclaim the source slot to STABLE (the source never gave up ownership) so we can read its
+            // local store directly, without MOVED/ASK redirection.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(0, slot, "STABLE", ""));
+
+            // DATA LOSS (no RangeIndex, no fault injection): the source deleted the key even though the
+            // destination dropped it — because the destination ACKed +OK.
+            var getOnSource = (string)context.clusterTestUtils.Execute(primary0, "GET", [strKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsNull(getOnSource, "DATA LOSS repro: source deleted the string key though the destination rejected it");
+            var existsOnSource = (int)context.clusterTestUtils.Execute(primary0, "EXISTS", [strKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(0, existsOnSource, "DATA LOSS repro: the string key is gone from the source");
         }
 
 #endif
