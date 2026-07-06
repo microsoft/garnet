@@ -385,7 +385,7 @@ namespace Resp.benchmark
                     {
                         // Execute primary request (write or fallback read)
                         request = workload.PrimaryRequests[bufIdx];
-                        
+
                         // For read operations (non-mixed mode), use ShouldUseReplica routing
                         useReplica = (workload.ReplicaRequests == null) && ShouldUseReplica(opts.Op);
                     }

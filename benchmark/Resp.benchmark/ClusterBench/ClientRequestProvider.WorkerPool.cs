@@ -287,11 +287,11 @@ namespace Resp.benchmark
 
             var opStart = Stopwatch.GetTimestamp();
             var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
-            
+
             // Determine which request to execute
             bool useReplica;
             int commandCount;
-            
+
             if (workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx])
             {
                 // Mixed workload: execute replica request
@@ -328,7 +328,7 @@ namespace Resp.benchmark
 
             // Track ops
             Interlocked.Add(ref opsCompleted, commandCount);
-            
+
             // Track per-endpoint metrics
             if (useReplica && hasReplica)
                 Interlocked.Add(ref replicaOps, commandCount);
@@ -340,7 +340,7 @@ namespace Resp.benchmark
         private void ExecuteOfflineBatchLightClient(bool useReplica, int batchIdx)
         {
             LightClient selectedClient;
-            
+
             unsafe
             {
                 // Model B: Choose ONE request per iteration
@@ -361,7 +361,7 @@ namespace Resp.benchmark
                     // Execute primary request (write or read based on useReplica routing)
                     ref var primaryRequest = ref workload.PrimaryRequests[batchIdx];
                     selectedClient = (useReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
-                    
+
                     fixed (byte* bufPtr = primaryRequest.RespData)
                     {
                         selectedClient.Send(bufPtr, primaryRequest.ByteCount, primaryRequest.CommandCount);
