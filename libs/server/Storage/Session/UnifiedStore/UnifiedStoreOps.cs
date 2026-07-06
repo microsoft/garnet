@@ -269,7 +269,7 @@ namespace Garnet.server
             //     * We can copy old's record into new and then delete old
             //  2. old IS a Vector Set and new IS NOT a Vector Set
             //     * We mark old with suppress cleanup before we copy it into new key,
-            //       then delete after after teh rename
+            //       then delete after the rename
             //  3. old IS NOT a Vector Set and new IS a Vector Set
             //     * We must explicitly delete new before copying old into new
             //       and then delete old
