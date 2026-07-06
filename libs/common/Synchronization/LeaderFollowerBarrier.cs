@@ -20,6 +20,15 @@ namespace Garnet.common
         readonly SemaphoreSlim resetReady = new(0);
 
         /// <summary>
+        /// Test-only hook invoked inside <see cref="SignalCompleted"/> after the completion permit has
+        /// been released but before waiting on the reset permit. Lets tests deterministically park a
+        /// participant between "signalled completion" and "consumed its reset permit", which is the exact
+        /// window that allows a fast participant to steal a leaked reset permit across the cycle boundary.
+        /// Null (and therefore a no-op) outside of tests.
+        /// </summary>
+        internal Action AfterWorkCompletedReleased;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="LeaderFollowerBarrier"/> class.
         /// </summary>
         /// <param name="participantCount">Number of participant tasks that will process work.</param>
@@ -75,6 +84,7 @@ namespace Garnet.common
         public void SignalCompleted(CancellationToken cancellationToken = default)
         {
             workCompleted.Release();
+            AfterWorkCompletedReleased?.Invoke();
             resetReady.Wait(cancellationToken);
         }
     }
